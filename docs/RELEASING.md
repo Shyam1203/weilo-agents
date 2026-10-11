@@ -9,7 +9,7 @@ A release is a Git tag. The workflow `.github/workflows/release.yml` does the re
    git tag v0.1.0
    git push origin v0.1.0
    ```
-4. The workflow checks the tag equals `VERSION`, builds the image for amd64 and arm64, pushes `ghcr.io/shyam1203/weilo-agents:0.1.0` (and `latest` for a version without a `-` suffix), and publishes a GitHub release with `weilo-agents-0.1.0.zip` (`compose.yaml`, the start scripts, `VERSION`, `README.md`).
+4. The workflow checks the tag equals `VERSION`, builds the image for amd64 and arm64, pushes `ghcr.io/shyam1203/weilo-agents:0.1.0` (and `latest` for a version without a `-` suffix), and publishes a GitHub release with `weilo-agents-0.1.0.zip` (`compose.yaml`, the start and update scripts, `VERSION`, `README.md`). `update.cmd` and `update.sh` read the newest release from the GitHub API, so a release is all an update needs.
 
 The first time, the package on ghcr.io is private: open it under the repository's Packages, Package settings, and make it public, or users cannot pull it.
 

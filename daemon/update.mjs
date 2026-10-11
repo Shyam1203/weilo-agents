@@ -4,7 +4,7 @@ import { BUILD } from "./version.mjs";
 
 // Whether a newer release exists: the newest one on GitHub, asked at most every UPDATE_CACHE_MS, and only if the user
 // has not turned the check off (weilo.json `checkUpdates`). A build made without a version ("dev") never asks. The app does not
-// update itself: the user runs the start script again.
+// update itself: the user runs update.cmd / update.sh, which fetch the release zip and run the start script.
 let cache = null; // { at, latest: { version, url } | null }
 let asking = null; // the request in flight, shared by whoever asks meanwhile
 

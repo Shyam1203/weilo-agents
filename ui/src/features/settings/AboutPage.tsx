@@ -34,7 +34,7 @@ export function AboutPage() {
           title={update?.available ? `Version ${update.latest} is available` : "Updates"}
           description={
             update?.available
-              ? "Download it and run its start script (or pull the latest code and run the start script again). Your chats and settings stay in ~/.weilo-agents."
+              ? "Run update.cmd (Windows) or update.sh in your Weilo Agents folder. Without them, download the new zip once and unzip it over the folder. Your chats and settings stay in ~/.weilo-agents."
               : update?.enabled === false
                 ? "Checking for updates is off."
                 : update?.latest

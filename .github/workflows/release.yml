@@ -56,7 +56,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          zip "weilo-agents-$VERSION.zip" compose.yaml start.sh start.cmd VERSION README.md
+          zip "weilo-agents-$VERSION.zip" compose.yaml start.sh start.cmd update.sh update.cmd VERSION README.md
           flags=""
           case "$VERSION" in *-*) flags="--prerelease" ;; esac
           gh release create "$GITHUB_REF_NAME" "weilo-agents-$VERSION.zip" --generate-notes --verify-tag $flags
