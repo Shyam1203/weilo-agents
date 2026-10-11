@@ -24,7 +24,7 @@ export function Row({ icon, title, description, children, below }: { icon?: Icon
   );
 }
 
-/** A page of the settings popup: its heading, what it is for, and an action at the right. */
+/** A page of Settings: its heading, what it is for, and an action at the right. */
 export function Page({ title, description, action, children }: { title: string; description?: ReactNode; action?: ReactNode; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-4">

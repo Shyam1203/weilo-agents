@@ -11,6 +11,20 @@ export const PORT = 3210;
 // Largest request body, in characters: a message with the UI's most images and files, which travel as base64.
 export const MAX_BODY = 64e6;
 
+// --- The app (contact.mjs, update.mjs) --------------------------------------------------------
+
+// Where "Contact us" sends a message (weilo-api, which passes it on to Weilo), and the longest wait for it (ms).
+export const CONTACT_URL = "https://api.weilo.xyz/public/contact";
+export const CONTACT_TIMEOUT_MS = 15_000;
+// Where the newest release is looked up, how long an answer is kept (ms), and the longest wait for it (ms).
+export const RELEASES_URL = "https://api.github.com/repos/Shyam1203/weilo-agents/releases/latest";
+export const UPDATE_CACHE_MS = 6 * 60 * MINUTE;
+export const UPDATE_TIMEOUT_MS = 10_000;
+// "Contact us" limits (the API's own: 100, 254 and 5000 characters), in characters (UI).
+export const MAX_CONTACT_NAME = 100;
+export const MAX_CONTACT_EMAIL = 254;
+export const MAX_CONTACT_MESSAGE = 4000;
+
 // --- Agents (agents/) ------------------------------------------------------------------------
 
 // Pi's built-in tools every agent has: read and change files, and run programs.

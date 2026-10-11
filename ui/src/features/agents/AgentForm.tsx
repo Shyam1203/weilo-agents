@@ -10,7 +10,7 @@ import { Modal } from "../../components/ui/Modal";
 import { Card, Row } from "../../components/ui/Row";
 import { Select } from "../../components/ui/Select";
 import { Switch } from "../../components/ui/Switch";
-import type { SettingsPage } from "../settings/SettingsModal";
+import type { SettingsPage } from "../settings/SettingsView";
 import { Toggles } from "../../components/ui/Toggles";
 import { useAction } from "../../lib/useAction";
 import { AvatarPicker } from "./AvatarPicker";
@@ -43,8 +43,10 @@ interface Props {
   /** The models the saved keys can use; undefined while they load. */
   models?: Model[];
   onAddProvider: () => void;
-  /** Opens the settings popup at a page: where add-ons are added. */
+  /** Opens Settings at a page: where add-ons are added. The form stays, out of sight, and comes back with Settings closed. */
   onOpenSettings: (page: SettingsPage) => void;
+  /** Out of sight while Settings is open. */
+  hidden?: boolean;
   onClose: () => void;
   onSaved: (agent: Agent) => Promise<void>;
   /** Runs after the agent is deleted. */
@@ -52,7 +54,7 @@ interface Props {
 }
 
 /** Creates an agent, or edits `agent`. */
-export function AgentForm({ agent, providers, skills, plugins, extensions, models, onAddProvider, onOpenSettings, onClose, onSaved, onDeleted }: Props) {
+export function AgentForm({ agent, providers, skills, plugins, extensions, models, onAddProvider, onOpenSettings, hidden, onClose, onSaved, onDeleted }: Props) {
   const [draft, setDraft] = useState<Draft>(() =>
     agent ? { name: agent.name, model: agent.model, thinking: agent.thinking, skills: agent.skills, plugins: agent.plugins, extensions: agent.extensions, disabled: agent.disabled, instructions: agent.instructions, avatar: avatarOf(agent) } : { name: "", model: "", thinking: "", skills: [], plugins: [], extensions: [], disabled: [], instructions: "", avatar: randomAvatar() },
   );
@@ -73,16 +75,13 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
   const pickProvider = (id: string) => {
     if (id === ADD) return onAddProvider();
     setProviderId(id);
-    change({ model: choosableOf(models ?? [], id)[0]?.id ?? "" });
+    change({ model: "" });
   };
 
-  // What is still empty fills in once it can: the first provider (one added while this is open) and its first model (once they load).
+  // The provider fills in once there is one (added in Settings while this is hidden). The model is always yours to choose.
   useEffect(() => {
-    const id = providerId || firstConnected;
-    if (id !== providerId) setProviderId(id);
-    const first = choosableOf(models ?? [], id)[0]?.id;
-    if (id && !draft.model && first) change({ model: first });
-  }, [providerId, firstConnected, models, draft.model]);
+    if (!providerId && firstConnected) setProviderId(firstConnected);
+  }, [providerId, firstConnected]);
 
   const save = (e: FormEvent) => {
     e.preventDefault();
@@ -90,7 +89,7 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
   };
 
   return (
-    <Modal title={agent ? "Edit agent" : "New agent"} onClose={onClose}>
+    <Modal title={agent ? "Edit agent" : "New agent"} hidden={hidden} onClose={onClose}>
       <form onSubmit={save} className="flex flex-col gap-4">
         <AvatarPicker value={draft.avatar} onChange={(avatar) => change({ avatar })} />
         <Field label="Name">

@@ -34,14 +34,20 @@ export const COLOR_NAMES: Record<string, string> = { "#D85A30": "Orange", "#7F77
 
 const INK = "#2C2C2A";
 
+/** What a working avatar acts out, by the tool it is using: reading with glasses and a book, searching with a magnifying glass, typing at a laptop. Anything else (thinking, other tools) just bobs and looks around. */
+type Scene = "read" | "search" | "type" | null;
+const SCENES: Record<string, Scene> = { read: "read", grep: "search", find: "search", ls: "search", fetch_knowledge: "search", memory: "search", bash: "type", edit: "type", write: "type", browser: "type" };
+const sceneOf = (doing?: string | null): Scene => (doing ? (SCENES[doing] ?? null) : null);
+
 /**
  * An avatar. Below 24px only the eyes show (blush and mouth would be smudges). `working`: it bobs
  * and looks around. Hovering it squishes it and it blinks (index.css, `.avatar`).
  */
-export function Avatar({ spec, size = 36, working = false }: { spec: AvatarSpec; size?: number; working?: boolean }) {
+export function Avatar({ spec, size = 36, working = false, doing }: { spec: AvatarSpec; size?: number; working?: boolean; /** The tool it is using; a working avatar acts it out. */ doing?: string | null }) {
   const shape = SHAPES[spec.shape] ?? SHAPES.blob;
   const y = shape.eyes;
   const detailed = size >= 24;
+  const scene = working && detailed ? sceneOf(doing) : null;
   return (
     <svg
       aria-hidden="true"
@@ -70,6 +76,40 @@ export function Avatar({ spec, size = 36, working = false }: { spec: AvatarSpec;
             <ellipse cx={75} cy={y + 10} rx={7} ry={4} fill="#fff" opacity={0.35} />
             <path d={`M45 ${y + 9} Q47.5 ${y + 13} 50 ${y + 9} Q52.5 ${y + 13} 55 ${y + 9}`} stroke={INK} strokeWidth={2.6} fill="none" strokeLinecap="round" />
           </>
+        )}
+        {scene === "read" && (
+          <>
+            {/* Glasses on the eyes, and an open book whose page turns. */}
+            <g fill="#fff" fillOpacity={0.3} stroke={INK} strokeWidth={3}>
+              <circle cx={37} cy={y} r={12} />
+              <circle cx={63} cy={y} r={12} />
+            </g>
+            <path d={`M49 ${y - 1} Q50 ${y - 3} 51 ${y - 1}`} stroke={INK} strokeWidth={2.5} fill="none" />
+            <g stroke={INK} strokeWidth={2} strokeLinejoin="round">
+              <path d="M24 78L50 84V102L24 96Z" fill="#fff" />
+              <path d="M76 78L50 84V102L76 96Z" fill="#f1efe8" />
+              <path className="avatar-page" d="M76 78L50 84V102L76 96Z" fill="#fff" />
+            </g>
+          </>
+        )}
+        {scene === "search" && (
+          <g className="avatar-magnify">
+            <circle r={14} fill="#fff" fillOpacity={0.3} stroke={INK} strokeWidth={4} />
+            <path d="M10 10L24 24" stroke={INK} strokeWidth={5} strokeLinecap="round" />
+          </g>
+        )}
+        {scene === "type" && (
+          <g>
+            {/* A laptop at the bottom with lines of code that appear. */}
+            <rect x={22} y={70} width={56} height={28} rx={3} fill={INK} />
+            <g stroke="#fff" strokeWidth={2.4} strokeLinecap="round">
+              <path className="avatar-type-line" d="M29 77H50" />
+              <path className="avatar-type-line" d="M29 84H62" />
+              <path className="avatar-type-line" d="M29 91H44" />
+            </g>
+            <rect className="avatar-cursor" x={47} y={88} width={3} height={6} fill="#fff" />
+            <rect x={14} y={98} width={72} height={5} rx={2.5} fill={INK} />
+          </g>
         )}
       </g>
     </svg>

@@ -6,7 +6,7 @@ import { fail } from "../common.mjs";
 const UI = join(import.meta.dirname, "..", "ui");
 const TYPES = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css",
-  ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon",
+  ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".webmanifest": "application/manifest+json",
   ".woff2": "font/woff2",
 };
 

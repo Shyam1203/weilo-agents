@@ -53,6 +53,11 @@ export interface PiEvent extends Partial<Asking> {
   message?: PiMessage;
   error?: string;
   assistantMessageEvent?: StreamEvent;
+  /** With `queue_update`: the messages sent during a run that wait for it to take them, the whole queue each time. */
+  steering?: string[];
+  followUp?: string[];
+  /** With `compaction_end`: the summary was made (not aborted or failed). */
+  result?: unknown;
 }
 
 interface Conversation {
@@ -63,11 +68,13 @@ interface Conversation {
   /** The last message has started and not ended (it is still arriving). */
   open: boolean;
   asking: Asking | null;
+  /** Messages you sent during a run that it has not taken yet. */
+  queued: string[];
   /** Why pi stopped, when it did not stop on its own. */
   exit?: string;
 }
 
-export const empty: Conversation = { ready: false, messages: [], busy: false, open: false, asking: null };
+export const empty: Conversation = { ready: false, messages: [], busy: false, open: false, asking: null, queued: [] };
 
 // Your messages and the agent's, and the answers to its questions (they show with the question).
 const shows = (m: PiMessage) => m.role === "user" || m.role === "assistant" || (m.role === "toolResult" && (m.toolName === "ask" || m.toolName === "routine"));
@@ -88,11 +95,16 @@ function stream(messages: PiMessage[], e: StreamEvent): PiMessage[] {
   return [...messages.slice(0, -1), { ...last, content }];
 }
 
+// A message is in the list once: the same one arriving again (a stream that joined mid-message, say) is not added.
+const has = (messages: PiMessage[], m: PiMessage) => m.role !== "toolResult" && m.timestamp !== undefined && messages.some((x) => x.role === m.role && x.timestamp === m.timestamp);
+
 export function reduce(state: Conversation, e: PiEvent): Conversation {
   const { message } = e;
   switch (e.type) {
     case "history":
-      return { ready: true, messages: (e.messages ?? []).filter(shows), busy: !!e.busy, open: false, asking: e.asking ?? null };
+      return { ready: true, messages: (e.messages ?? []).filter(shows), busy: !!e.busy, open: false, asking: e.asking ?? null, queued: [] };
+    case "queue_update":
+      return { ...state, queued: [...(e.steering ?? []), ...(e.followUp ?? [])] };
     case "extension_ui_request":
       // Only the agent's own questions reach the chat.
       return (e.method === "select" || e.method === "input") && e.id ? { ...state, asking: { id: e.id, title: e.title ?? "", options: e.options } } : state;
@@ -101,9 +113,9 @@ export function reduce(state: Conversation, e: PiEvent): Conversation {
     case "agent_start":
       return { ...state, busy: true };
     case "agent_settled":
-      return { ...state, busy: false, asking: null };
+      return { ...state, busy: false, asking: null, queued: [] };
     case "message_start":
-      if (!message || !shows(message)) return state;
+      if (!message || !shows(message) || has(state.messages, message)) return state;
       return { ...state, messages: [...state.messages, message], busy: state.busy || message.role === "user", open: true };
     // A viewer that joined during a message has not seen it start: it shows once it ends.
     case "message_update":
@@ -111,7 +123,7 @@ export function reduce(state: Conversation, e: PiEvent): Conversation {
     case "message_end": {
       if (!message || !shows(message)) return state;
       const messages = state.open ? state.messages.slice(0, -1) : state.messages;
-      return { ...state, messages: [...messages, message], open: false };
+      return { ...state, messages: has(messages, message) ? messages : [...messages, message], open: false };
     }
     case "exit":
       return { ...state, busy: false, asking: null, exit: e.error || undefined };

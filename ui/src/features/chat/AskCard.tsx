@@ -24,11 +24,15 @@ export function AskCard({ question, options, answer, onAnswer }: Props) {
     <section className="w-full max-w-md rounded-2xl border border-line bg-page px-3.5 py-3">
       <p className="text-[14.5px] font-medium [overflow-wrap:anywhere]">{question}</p>
       {options?.length ? (
-        <div className="mt-2.5 flex flex-wrap gap-2">
-          {options.map((o) => (
-            <PickButton key={o} label={o} picked={answer === o} onPick={onAnswer && !busy ? () => void send(o) : undefined} />
-          ))}
-        </div>
+        <>
+          <div className="mt-2.5 flex flex-wrap gap-2">
+            {options.map((o) => (
+              <PickButton key={o} label={o} picked={answer === o} onPick={onAnswer && !busy ? () => void send(o) : undefined} />
+            ))}
+          </div>
+          {/* An answer typed in the message box, not one of the choices. */}
+          {answer !== undefined && !options.includes(answer) && <p className="mt-2 rounded-xl bg-card px-3 py-2 text-[14px] whitespace-pre-wrap [overflow-wrap:anywhere]">{answer}</p>}
+        </>
       ) : answer !== undefined ? (
         <p className="mt-2 rounded-xl bg-card px-3 py-2 text-[14px] [overflow-wrap:anywhere]">{answer}</p>
       ) : (

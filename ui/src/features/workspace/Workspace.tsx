@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getUpdate, type Update } from "../../api/app";
 import type { Agent } from "../../api/agents";
 import type { Extension } from "../../api/extensions";
 import type { Plugin } from "../../api/plugins";
@@ -9,7 +10,8 @@ import { KEYS, read, write } from "../../lib/storage";
 import { useMedia } from "../../lib/useMedia";
 import { AgentForm } from "../agents/AgentForm";
 import { ChatView } from "../chat/ChatView";
-import { SettingsModal, type SettingsPage } from "../settings/SettingsModal";
+import { SettingsView, type SettingsPage } from "../settings/SettingsView";
+import { ContactDialog } from "../support/ContactDialog";
 import { Welcome } from "../user/Welcome";
 import { GetStarted } from "./GetStarted";
 import { Sidebar } from "./Sidebar";
@@ -33,8 +35,15 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
   const [selected, setSelected] = useState(() => read(KEYS.agent));
   const [showChat, setShowChat] = useState(false);
   const [form, setForm] = useState<"new" | "edit" | null>(null);
-  // The settings popup, open at a page.
+  // Settings, in place of the chat, open at a page. Opening it reads the lists again (an agent may have added a skill).
   const [settings, setSettings] = useState<SettingsPage | "menu" | null>(null);
+  const openSettings = (page: SettingsPage | "menu") => (void reload(), setSettings(page));
+  const [contact, setContact] = useState(false);
+  // A newer release, if there is one (the daemon asks now and then).
+  const [update, setUpdate] = useState<Update | null>(null);
+  // Asked again when Settings closes: the check may have been switched on or off there.
+  const settingsOpen = settings !== null;
+  useEffect(() => void getUpdate().then(setUpdate, () => {}), [settingsOpen]);
   // The first time, and until you give a name or skip: ask what agents should call you.
   const [welcome, setWelcome] = useState(!user.name && !read(KEYS.welcomed));
   const agent = agents.find((a) => a.id === selected) ?? agents[0];
@@ -56,29 +65,47 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
   const select = (id: string) => {
     setSelected(id);
     write(KEYS.agent, id);
+    setSettings(null);
+    setForm(null);
     setShowChat(true);
   };
 
   return (
     <div className="flex h-full">
-      <div className={`${showChat ? "hidden" : "flex"} w-full md:flex md:w-auto`}>
-        <Sidebar agents={agents} unread={unread} selected={agent?.id} onSelect={select} onNew={() => setForm("new")} onSkills={() => setSettings("skills")} onPlugins={() => setSettings("plugins")} onSettings={() => setSettings("menu")} />
+      <div className={`${showChat || settings ? "hidden" : "flex"} w-full md:flex md:w-auto`}>
+        <Sidebar
+          agents={agents}
+          unread={unread}
+          selected={settings ? undefined : agent?.id}
+          update={update}
+          onSelect={select}
+          onNew={() => setForm("new")}
+          onSkills={() => openSettings("skills")}
+          onPlugins={() => openSettings("plugins")}
+          onSettings={() => openSettings("menu")}
+          onAbout={() => openSettings("about")}
+          onContact={() => setContact(true)}
+        />
       </div>
-      <main className={`${showChat ? "flex" : "hidden"} min-w-0 flex-1 md:flex`}>
-        {agent ? (
-          <ChatView
-            key={agent.id}
-            agent={agent}
-            models={models}
-            hasProvider={providers.some((p) => p.connected)}
-            onBack={() => setShowChat(false)}
-            onEdit={() => setForm("edit")}
-            onActivity={reloadAgents}
-            onOpenSettings={() => setSettings("providers")}
-          />
-        ) : (
-          <GetStarted onCreateAgent={() => setForm("new")} />
-        )}
+      <main className={`${showChat || settings ? "flex" : "hidden"} min-w-0 flex-1 md:flex`}>
+        {settings && <SettingsView page={settings} providers={providers} skills={skills} plugins={plugins} extensions={extensions} user={user} models={models} onModels={onModels} onChange={reload} onClose={() => setSettings(null)} />}
+        {/* The chat stays mounted behind Settings, so what you were typing is still there. */}
+        <div className={settings ? "hidden" : "contents"}>
+          {agent ? (
+            <ChatView
+              key={agent.id}
+              agent={agent}
+              models={models}
+              hasProvider={providers.some((p) => p.connected)}
+              onBack={() => setShowChat(false)}
+              onEdit={() => setForm("edit")}
+              onActivity={reloadAgents}
+              onOpenSettings={() => openSettings("providers")}
+            />
+          ) : (
+            <GetStarted onCreateAgent={() => setForm("new")} />
+          )}
+        </div>
       </main>
       {form && (
         <AgentForm
@@ -88,15 +115,16 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
           plugins={plugins}
           extensions={extensions}
           models={models}
-          onAddProvider={() => setSettings("providers")}
-          onOpenSettings={setSettings}
+          hidden={settings !== null}
+          onAddProvider={() => openSettings("providers")}
+          onOpenSettings={openSettings}
           onClose={() => setForm(null)}
           onSaved={async (saved) => (await reloadAgents(), select(saved.id), setForm(null))}
           onDeleted={() => (setForm(null), setShowChat(false), reloadAgents())}
         />
       )}
       {welcome && <Welcome user={user} onDone={() => (write(KEYS.welcomed, "1"), setWelcome(false), reload())} />}
-      {settings && <SettingsModal page={settings} providers={providers} skills={skills} plugins={plugins} extensions={extensions} user={user} models={models} onModels={onModels} onChange={reload} onClose={() => setSettings(null)} />}
+      {contact && <ContactDialog name={user.name} onClose={() => setContact(false)} />}
     </div>
   );
 }

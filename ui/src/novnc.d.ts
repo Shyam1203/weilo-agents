@@ -7,5 +7,7 @@ declare module "@novnc/novnc" {
     background: string;
     disconnect(): void;
     focus(): void;
+    /** Presses and releases a key (with `down` given, only the one). `code` is the physical key, if known. */
+    sendKey(keysym: number, code: string | null, down?: boolean): void;
   }
 }

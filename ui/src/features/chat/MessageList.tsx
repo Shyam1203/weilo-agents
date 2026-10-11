@@ -18,11 +18,13 @@ interface Props {
   onAnswer: (value?: string) => Promise<void>;
   /** Sends a reply (a pressed button). */
   onReply: (message: string) => void;
+  /** Messages you sent during a run that it has not taken yet. */
+  queued: string[];
   /** How the last turn ended, when it ended without an answer. */
   note?: string;
 }
 
-export function MessageList({ messages, busy, asking, onAnswer, onReply, note }: Props) {
+export function MessageList({ messages, busy, asking, onAnswer, onReply, queued, note }: Props) {
   // A model can say nothing but a blank line before it uses a tool: no empty bubble for it.
   // A question still open shows at the end, as the one you answer.
   const shown = messages.filter((m) => (m.kind === "ask" ? m.answer !== undefined || !asking : m.kind === "show" || m.role === "human" || m.text.trim()));
@@ -47,6 +49,16 @@ export function MessageList({ messages, busy, asking, onAnswer, onReply, note }:
           </li>
         );
       })}
+      {queued.map((text, i) => (
+        <li key={`queued-${i}`} className="mt-1.5 animate-fade-in">
+          <div className="flex flex-col items-end gap-1">
+            <p className="max-w-[85%] rounded-2xl bg-bubble-me/60 px-3.5 py-2 text-[14.5px] leading-relaxed whitespace-pre-wrap text-on-bubble-me [overflow-wrap:anywhere]">{text}</p>
+            <span className="flex items-center gap-1 text-xs text-ink-3">
+              <Icon name="clock" size={11} /> Queued, the agent reads it next
+            </span>
+          </div>
+        </li>
+      ))}
       {asking && (
         <li className="mt-2.5 animate-fade-in">
           <AskCard question={asking.title} options={asking.options} onAnswer={onAnswer} />

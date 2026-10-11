@@ -17,6 +17,10 @@ The version is shown in Settings > About. Changes are listed in [CHANGELOG.md](C
 
 To build the image from a checkout instead: `docker compose up -d --build`.
 
+## What leaves your computer
+
+Besides your provider's API (the model you pick), the app asks GitHub now and then whether a newer release exists (turn it off in Settings > About), and sends a message only when you use Contact us (your name, email, message and the app version, to api.weilo.xyz). Your chats and files stay on your computer.
+
 ## Develop
 
 ```sh

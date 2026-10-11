@@ -2,6 +2,8 @@
 import type { ReactNode } from "react";
 import { fileUrl } from "../../api/chat";
 import { Icon } from "../../components/ui/Icon";
+import { kindOf } from "../files/kinds";
+import { usePreview } from "../files/PreviewContext";
 import { AgentText } from "./AgentText";
 import type { Block } from "./blockData";
 import { PickButton } from "./PickButton";
@@ -119,15 +121,26 @@ function Choice({ label, done, message, chosen, onReply }: { label: string; done
   return <PickButton label={label} done={done} picked={chosen === message} onPick={onReply && (() => onReply(message))} />;
 }
 
-// A file in the workspace: a picture shows, and any file can be downloaded.
+// A file in the workspace: a picture shows, most files can be previewed in the app, and any file can be downloaded.
 function File({ path, name }: { path: string; name: string }) {
   const url = fileUrl(path);
+  const preview = usePreview();
+  const kind = kindOf(path);
   return (
     <div className={`${CARD} max-w-sm overflow-hidden`}>
-      {/\.(png|jpe?g|gif|webp)$/i.test(path) && <img src={url} alt={name} className="max-h-72 w-full object-contain" />}
+      {kind === "image" && (
+        <button type="button" onClick={() => preview(path, name)} aria-label={`Preview ${name}`} className="block w-full">
+          <img src={url} alt={name} className="max-h-72 w-full object-contain" />
+        </button>
+      )}
       <div className="flex items-center gap-2.5 px-3.5 py-2.5">
         <Icon name="attach" size={15} className="shrink-0 text-ink-3" />
         <span className="min-w-0 flex-1 truncate text-[13.5px]">{name}</span>
+        {kind !== "other" && kind !== "image" && (
+          <button type="button" onClick={() => preview(path, name)} className="shrink-0 text-[13px] font-medium underline underline-offset-2">
+            Preview
+          </button>
+        )}
         <a href={url} download={name} className="shrink-0 text-[13px] font-medium underline underline-offset-2">
           Download
         </a>

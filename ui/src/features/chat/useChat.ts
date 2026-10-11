@@ -2,6 +2,7 @@ import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { abort, answerAsk, compactChat, eventsUrl, getContext, reloadAgent, send, type Context, type Outgoing } from "../../api/chat";
 import { empty, failureOf, itemsOf, noteOf, reduce, type PiEvent } from "./conversation";
 
+const RELOADED = "Reloaded: skills, instructions and notes were read again.";
 const ACTIVITY = ["agent_start", "agent_settled", "tool_execution_start", "tool_execution_end"];
 // After these the context has changed: measure it again.
 const MEASURE = ["history", "agent_settled", "compaction_end"];
@@ -12,6 +13,10 @@ export function useChat(agentId: string, onActivity: () => void) {
   const [attempt, setAttempt] = useState(0);
   const [context, setContext] = useState<Context | null>(null);
   const [compacting, setCompacting] = useState(false);
+  // What /compact, /reload or an automatic summary just did, in a line under the chat; it goes when the agent starts again.
+  const [status, setStatus] = useState<string | null>(null);
+  // A /reload sent while the agent works takes effect when it finishes.
+  const reloading = useRef(false);
   const activity = useRef(onActivity);
   activity.current = onActivity;
 
@@ -23,7 +28,9 @@ export function useChat(agentId: string, onActivity: () => void) {
       if (event.type === "exit" && event.error) source.close();
       dispatch(event);
       if (event.type === "compaction_start") setCompacting(true);
-      if (event.type === "compaction_end") setCompacting(false);
+      if (event.type === "compaction_end") (setCompacting(false), event.result && setStatus("The conversation was summarized."));
+      if (event.type === "agent_start") setStatus(null);
+      if (event.type === "agent_settled" && reloading.current) (reloading.current = false, setStatus(RELOADED));
       if (MEASURE.includes(event.type)) void getContext(agentId).then(setContext, () => {});
       if (ACTIVITY.includes(event.type)) activity.current();
     };
@@ -48,7 +55,8 @@ export function useChat(agentId: string, onActivity: () => void) {
     stopped: !!chat.exit,
     busy: chat.busy,
     asking: chat.asking,
-    note: noteOf(chat),
+    queued: chat.queued,
+    note: status ?? noteOf(chat),
     messages: useMemo(() => itemsOf(chat), [chat]),
     error: chat.exit ?? failureOf(chat) ?? null,
     retry: () => setAttempt((n) => n + 1),
@@ -56,7 +64,8 @@ export function useChat(agentId: string, onActivity: () => void) {
     send: (message: Outgoing) => {
       const command = !message.images.length && !message.files.length && /^\/(compact|reload)(?:\s+([\s\S]*))?$/.exec(message.text.trim());
       if (!command) return send(agentId, message);
-      return command[1] === "compact" ? compact(command[2]) : reloadAgent(agentId);
+      if (command[1] === "compact") return compact(command[2]);
+      return reloadAgent(agentId).then(() => (reloading.current = chat.busy, setStatus(chat.busy ? "The agent reloads when it finishes." : RELOADED)));
     },
     /** Answers the question the agent waits on; no value skips it. */
     answer: (value?: string) => answerAsk(agentId, chat.asking!.id, value),

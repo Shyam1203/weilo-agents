@@ -2,6 +2,11 @@
 # Start Weilo Agents and open it in the browser.
 cd "$(dirname "$0")" || exit 1
 
+if [ ! -f compose.yaml ]; then
+  echo "compose.yaml is not in this folder. Run start.sh from the extracted folder."
+  exit 1
+fi
+
 if ! docker info >/dev/null 2>&1; then
   echo "Docker is not running. Install or start Docker Desktop. Then run this script again."
   exit 1
@@ -13,9 +18,16 @@ mkdir -p "$HOME/.weilo-agents"
 # The released image for this version (the VERSION file); built here only if it cannot be pulled.
 WEILO_VERSION=$(tr -d '[:space:]' < VERSION 2>/dev/null)
 export WEILO_VERSION
-docker compose pull --quiet 2>/dev/null || docker compose build || exit 1
+echo "Getting Weilo Agents ${WEILO_VERSION:-latest}. The first time this downloads the app and can take a few minutes."
+if ! docker compose pull; then
+  echo "Could not download it. Building it here instead, which takes longer."
+  docker compose build || exit 1
+fi
+
+echo "Starting Weilo Agents..."
 docker compose up -d || exit 1
 
+echo "Waiting for Weilo Agents to be ready..."
 url=http://localhost:3210
 tries=0
 until curl -fs "$url" >/dev/null 2>&1; do
