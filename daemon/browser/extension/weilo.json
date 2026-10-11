@@ -1,0 +1,10 @@
+{
+  "apiVersion": 1,
+  "name": "browser",
+  "title": "Browser",
+  "description": "Use websites in its own browser window.",
+  "entry": "index.js",
+  "tools": [
+    "browser"
+  ]
+}

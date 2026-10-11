@@ -1,0 +1,25 @@
+name: weilo-agents
+
+services:
+  core:
+    build:
+      context: .
+      dockerfile: image/Dockerfile
+    image: weilo-core
+    container_name: weilo-core
+    init: true
+    restart: unless-stopped
+    cap_drop: [NET_RAW, NET_ADMIN]
+    security_opt: ["no-new-privileges:true"]
+    # Chromium needs more shared memory than the default 64 MB.
+    shm_size: 1gb
+    ports:
+      - "127.0.0.1:3210:3210"
+    volumes:
+      - ${USERPROFILE:-${HOME}}/.weilo-agents:/home/node/.pi
+      - tools:/home/node/.local
+      - browser:/home/node/.browser
+
+volumes:
+  tools:
+  browser:

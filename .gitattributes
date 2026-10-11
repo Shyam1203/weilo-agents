@@ -1,0 +1,3 @@
+# Files are copied into a Linux image: keep LF whatever core.autocrlf says.
+* text=auto eol=lf
+*.cmd text eol=crlf

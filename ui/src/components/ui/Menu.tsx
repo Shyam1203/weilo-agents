@@ -1,0 +1,66 @@
+// A popover menu: a trigger and a list of actions, closed by a click outside or Escape.
+import { useCallback, useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useDismiss } from "../../lib/useDismiss";
+import { Icon, type IconName } from "./Icon";
+
+interface Props {
+  /** The trigger; gets the open state and a toggle. */
+  trigger: (props: { open: boolean; toggle: () => void }) => ReactNode;
+  /** Where the menu opens, relative to the trigger. */
+  placement?: "below-end" | "above-start";
+  children: (close: () => void) => ReactNode;
+}
+
+const PLACEMENT = {
+  "below-end": "top-full right-0 mt-1",
+  "above-start": "bottom-full left-0 mb-1",
+};
+
+export function Menu({ trigger, placement = "below-end", children }: Props) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  const ref = useDismiss<HTMLDivElement>(open, close);
+  const items = () => [...(ref.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]') ?? [])];
+
+  // Opening moves focus to the first item; arrows, Home and End move between items.
+  useEffect(() => {
+    if (open) items()[0]?.focus();
+  }, [open]);
+
+  const onKeyDown = (e: KeyboardEvent) => {
+    // Escape closes the menu (useDismiss); focus goes back to the trigger, the first button.
+    if (e.key === "Escape") ref.current?.querySelector("button")?.focus();
+    const list = items();
+    const at = list.indexOf(document.activeElement as HTMLElement);
+    const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: list.length - 1 }[e.key];
+    if (to === undefined || !list.length) return;
+    e.preventDefault();
+    list[(to + list.length) % list.length].focus();
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      {trigger({ open, toggle: () => setOpen((v) => !v) })}
+      {open && (
+        <div role="menu" onKeyDown={onKeyDown} className={`absolute z-30 animate-rise max-h-56 overflow-y-auto rounded-xl border border-line bg-raised p-1 shadow-pop w-52 ${PLACEMENT[placement]}`}>
+          {children(close)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function MenuItem({ icon, label, onClick }: { icon?: IconName; label: ReactNode; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13.5px] transition-colors hover:bg-select text-ink"
+    >
+      {icon && <Icon name={icon} size={15} className="text-ink-2" />}
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+    </button>
+  );
+}
+

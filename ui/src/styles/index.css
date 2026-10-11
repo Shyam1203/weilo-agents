@@ -1,0 +1,250 @@
+@import "tailwindcss";
+
+@theme {
+  /* Corners: less round than Tailwind's defaults (every rounded-lg, -xl and -2xl follows). */
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "Cascadia Code", Consolas, monospace;
+
+  /* Neutral surfaces; red only for errors.
+     Each is light-dark(light, dark): the theme picks by color-scheme (below). */
+  --color-page: light-dark(#ffffff, #212121); /* the main pane */
+  --color-panel: light-dark(#f7f7f8, #181818); /* the sidebar */
+  --color-card: light-dark(#efeff1, #2a2a2a); /* fields, quiet tiles */
+  --color-raised: light-dark(#ffffff, #262626); /* menus and dialogs, above everything else */
+  --color-bubble: light-dark(#f0f0f2, #2f2f2f); /* the agent's messages */
+  --color-bubble-me: light-dark(#1f1f22, #ececec); /* yours */
+  --color-on-bubble-me: light-dark(#f5f5f5, #141414);
+  --color-line: light-dark(rgb(0 0 0 / 0.07), rgb(255 255 255 / 0.07));
+  --color-line-strong: light-dark(rgb(0 0 0 / 0.13), rgb(255 255 255 / 0.13));
+  --color-ink: light-dark(#111113, #ececec);
+  --color-ink-2: light-dark(#55555c, #b4b4b4);
+  --color-ink-3: light-dark(#8b8b93, #8a8a8a);
+  --color-select: light-dark(rgb(0 0 0 / 0.05), rgb(255 255 255 / 0.065));
+  --color-bad: light-dark(#c4320a, #f97066);
+  --color-bad-soft: light-dark(#fdecea, #3a1714);
+  --color-screen: #121826; /* the browser's desktop, behind its live view */
+  --color-live: #ef4444; /* the ring around a screen you have taken over */
+  --color-working: var(--color-ink-2); /* the "Working…" text */
+
+  --shadow-pop: 0 1px 2px light-dark(rgb(0 0 0 / 0.04), rgb(0 0 0 / 0.4)), 0 8px 24px -6px light-dark(rgb(0 0 0 / 0.14), rgb(0 0 0 / 0.6));
+  --shadow-lift: 0 1px 2px light-dark(rgb(0 0 0 / 0.05), rgb(0 0 0 / 0.4)), 0 24px 48px -12px light-dark(rgb(0 0 0 / 0.22), rgb(0 0 0 / 0.7));
+
+  --animate-fade-in: fade-in 160ms ease-out both;
+  --animate-rise: rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(6px) scale(0.99); }
+  }
+}
+
+/* Theme: the system setting unless Settings picks one (data-theme on <html>). */
+@layer base {
+  :root {
+    color-scheme: light dark;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+  }
+  /* Weilo: the brand's warm ember palette (weilo-brainweave) and its fire orange, light or dark
+     by system setting. */
+  :root[data-theme="weilo"] {
+    --color-page: light-dark(#fffaf5, #0f0b09);
+    --color-panel: light-dark(#f7efe6, #080605);
+    --color-card: light-dark(#f2e8dd, #16110d);
+    --color-raised: light-dark(#ffffff, #16110d);
+    --color-bubble: light-dark(#f4ebe1, #1d1611);
+    --color-bubble-me: #ff7a00;
+    --color-on-bubble-me: #080605;
+    --color-line: light-dark(rgb(120 60 10 / 0.1), rgb(255 150 70 / 0.09));
+    --color-line-strong: light-dark(rgb(120 60 10 / 0.18), rgb(255 150 70 / 0.18));
+    --color-ink: light-dark(#1c140e, #f4e9df);
+    --color-ink-2: light-dark(#5e4f42, #b3a395);
+    --color-ink-3: light-dark(#7d6e61, #8a7b6e);
+    --color-select: light-dark(rgb(255 122 0 / 0.08), rgb(255 150 70 / 0.07));
+    --color-bad: light-dark(#c4320a, #fb7185);
+    --color-bad-soft: light-dark(#fdecea, #3a1419);
+    --color-working: light-dark(#d45f00, #ff7a00);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--color-page);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--color-ink) 18%, transparent);
+  }
+  :focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--color-ink) 45%, transparent);
+    outline-offset: 2px;
+  }
+  /* Slim scrollbars, as on the Weilo site: a thin rounded thumb, ember on hover. */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: none;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line-strong);
+    border-radius: 20px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, #ff7a00 40%, transparent);
+  }
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--color-line-strong) transparent;
+    }
+  }
+}
+
+@layer components {
+  .input {
+    @apply w-full rounded-xl border border-line-strong bg-page px-3 py-2 text-[14px] text-ink transition-colors outline-none placeholder:text-ink-3 focus:border-ink-3 focus-visible:outline-none;
+  }
+  /* One height for every one-line field, so a text box and a dropdown line up. */
+  input.input {
+    @apply h-10;
+  }
+  .label {
+    @apply text-[13px] font-medium text-ink-2;
+  }
+  .hint {
+    @apply text-xs leading-relaxed text-ink-3;
+  }
+}
+
+/* Markdown in a message bubble. */
+.prose-chat {
+  font-size: 14.5px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.prose-chat > * + * {
+  margin-top: 0.6em;
+}
+.prose-chat ul,
+.prose-chat ol {
+  padding-left: 1.25em;
+}
+.prose-chat ul {
+  list-style: disc;
+}
+.prose-chat ol {
+  list-style: decimal;
+}
+.prose-chat li + li {
+  margin-top: 0.2em;
+}
+.prose-chat strong {
+  font-weight: 600;
+}
+.prose-chat code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--color-select);
+  padding: 0.1em 0.35em;
+  border-radius: 5px;
+}
+.prose-chat pre {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  background: var(--color-page);
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  overflow-x: auto;
+}
+.prose-chat pre code {
+  background: none;
+  padding: 0;
+}
+.prose-chat a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.prose-chat h1,
+.prose-chat h2,
+.prose-chat h3 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.prose-chat blockquote {
+  border-left: 2px solid var(--color-line-strong);
+  padding-left: 0.8em;
+  color: var(--color-ink-2);
+}
+.prose-chat table {
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.prose-chat th,
+.prose-chat td {
+  border: 1px solid var(--color-line-strong);
+  padding: 4px 8px;
+}
+
+/* Avatars (components/ui/Avatar.tsx): hovering one squishes it and it blinks; a working one bobs
+   and looks around. */
+.avatar .avatar-body,
+.avatar .avatar-eyes {
+  transform-box: fill-box;
+}
+.avatar .avatar-body { transform-origin: 50% 100%; }
+.avatar .avatar-eyes { transform-origin: center; }
+.avatar:hover .avatar-body { animation: avatar-squish 0.55s cubic-bezier(0.3, 1.5, 0.5, 1); }
+.avatar:hover .avatar-eyes { animation: avatar-blink 0.45s ease 0.1s; }
+.avatar-working .avatar-body { animation: avatar-bob 1.2s ease-in-out infinite; }
+.avatar-working .avatar-look { animation: avatar-look 2.4s ease-in-out infinite; }
+@keyframes avatar-squish {
+  30% { transform: scale(1.12, 0.86); }
+  60% { transform: scale(0.94, 1.08) translateY(-4px); }
+}
+@keyframes avatar-blink {
+  45% { transform: scaleY(0.1); }
+}
+@keyframes avatar-bob {
+  50% { transform: translateY(-3px); }
+}
+@keyframes avatar-look {
+  50%, 90% { transform: translateX(5px); }
+}
+
+/* The working indicator above the composer: its dots pulse one after another. */
+.working-dots span { animation: dot 1.2s infinite; }
+.working-dots span:nth-child(2) { animation-delay: 0.2s; }
+.working-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dot {
+  0%, 60%, 100% { opacity: 0.2; }
+  30% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}

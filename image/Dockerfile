@@ -1,0 +1,46 @@
+FROM node:22-bookworm-slim AS ui
+WORKDIR /ui
+COPY ui/package.json ui/package-lock.json ./
+RUN npm ci
+COPY ui .
+RUN npm run build
+
+FROM node:22-bookworm-slim
+
+ARG PI_VERSION=1.1.0
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl git openssh-client jq less unzip procps \
+      python3 python3-pip python3-venv ripgrep fd-find \
+      chromium tigervnc-standalone-server openbox fonts-noto fonts-noto-color-emoji \
+ && ln -s "$(command -v fdfind)" /usr/local/bin/fd \
+ && rm -rf /var/lib/apt/lists/*
+
+ARG PLAYWRIGHT_VERSION=1.64.0
+
+# Pi, and the library the daemon drives the browser with (it downloads no browser: Chromium comes from apt).
+# NODE_PATH lets the daemon and the extension find these global packages.
+ENV NODE_PATH=/usr/local/lib/node_modules
+RUN npm install -g --ignore-scripts --omit=dev @earendil-works/pi-coding-agent@${PI_VERSION} playwright-core@${PLAYWRIGHT_VERSION} \
+ && npm cache clean --force
+
+# The agent's own installs (npm -g, pip --user) go to ~/.local, a volume. Debian blocks pip
+# outside a venv; --user installs do not touch the system's packages.
+RUN mkdir -p /home/node/.local /home/node/.browser && chown node:node /home/node/.local /home/node/.browser
+ENV npm_config_prefix=/home/node/.local \
+    PIP_BREAK_SYSTEM_PACKAGES=1 \
+    PATH=/home/node/.local/bin:$PATH
+
+# The window manager draws no frame and maximizes windows: the browser fills the whole screen.
+RUN sed -i 's|<applications>|&<application class="*"><decor>no</decor><maximized>yes</maximized></application>|' /etc/xdg/openbox/rc.xml
+
+# Pages in the browser cannot open this app or the browser's debugging port.
+COPY image/chromium-policy.json /etc/chromium/policies/managed/weilo.json
+
+COPY daemon /app
+COPY --from=ui /ui/dist /app/ui
+
+USER node
+
+# No WORKDIR: on a fresh mount Docker would create it as root.
+CMD ["sh", "-c", "mkdir -p /home/node/.pi/workspace && exec node /app/server.mjs"]
