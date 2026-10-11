@@ -76,7 +76,7 @@ export function ChatView({ agent, models, hasProvider, onBack, onEdit, onActivit
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar
           onBack={onBack}
-          leading={<Avatar spec={avatarOf(agent)} size={32} working={chat.busy} doing={agent.doing} />}
+          leading={<Avatar spec={avatarOf(agent)} size={32} working={chat.busy} doing={chat.doing ?? agent.doing} />}
           title={agent.name}
           subtitle={agent.model ? (models?.find((m) => m.id === agent.model)?.name ?? agent.model) : "Choose a model"}
           onTitle={onEdit}
@@ -104,7 +104,7 @@ export function ChatView({ agent, models, hasProvider, onBack, onEdit, onActivit
                 shortcuts={shortcuts}
                 to={agent.name}
                 avatar={avatarOf(agent)}
-                doing={agent.doing}
+                doing={chat.doing ?? agent.doing}
                 busy={chat.busy}
                 waiting={!!chat.asking}
                 onAnswer={chat.asking ? chat.answer : undefined}

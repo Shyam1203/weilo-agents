@@ -51,6 +51,8 @@ export interface PiEvent extends Partial<Asking> {
   /** With `history`: a run is going. */
   busy?: boolean;
   message?: PiMessage;
+  /** With `tool_execution_start`: the tool. */
+  toolName?: string;
   error?: string;
   assistantMessageEvent?: StreamEvent;
   /** With `queue_update`: the messages sent during a run that wait for it to take them, the whole queue each time. */

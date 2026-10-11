@@ -139,9 +139,12 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
         event.preventDefault();
         return setActive((i) => (i + step + offered.length) % offered.length);
       }
-      if (event.key === "Enter" || event.key === "Tab") {
+      const chosen = offered[Math.min(active, offered.length - 1)];
+      // Enter on a command that is already typed out sends it (picking it would change nothing); Tab still picks.
+      const typedOut = event.key === "Enter" && text.trim() === chosen.insert.trim();
+      if ((event.key === "Enter" || event.key === "Tab") && !typedOut) {
         event.preventDefault();
-        return pick(offered[Math.min(active, offered.length - 1)]);
+        return pick(chosen);
       }
       if (event.key === "Escape") return setClosedFor(text);
     }
@@ -199,7 +202,7 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
           onClick={() => setSmall((v) => !v)}
           className={`absolute bottom-full left-4 mb-2 flex animate-rise items-center gap-2 rounded-xl bg-raised/40 py-1 pl-1.5 shadow-pop ring-1 ring-line backdrop-blur-sm ${small ? "pr-1.5" : "pr-3.5"}`}
         >
-          <Avatar spec={avatar} size={32} working doing={doing} />
+          <Avatar spec={avatar} size={44} working doing={doing} />
           {!small && (
             <span className="working-dots text-xs text-working">
               {waiting ? "Waiting for you" : "Working"}<span>.</span>

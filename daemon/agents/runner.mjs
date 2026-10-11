@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { fail, PI_ENV, SESSIONS, WORKSPACE } from "../common.mjs";
+import { fail, PI_ENV, SESSIONS, SKILLS, WORKSPACE } from "../common.mjs";
 import { CORE_TOOLS, IDLE_MS, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
 import { askBefore } from "../browser/rule.mjs";
 import { memoryFlags } from "../memory/memory.mjs";
@@ -53,6 +53,10 @@ const toolsFlags = (plugins, extensions) => {
   return plugins.length ? ["--tools", [...tools, "codemode", ...plugins].join(",")] : ["--no-mcp", "--tools", tools.join(",")];
 };
 
+// pi's docs also name ~/.agents/skills and .agents/skills as places for skills, and an agent that makes one picks them. The app's
+// skills are in one folder only (Settings lists it, and it is kept), so the agent is told to save there.
+const SKILLS_RULE = `A skill you create or change is saved only in ${SKILLS}/<name>/SKILL.md (front matter with name and description). Never in .agents/skills, .pi/skills or anywhere else: only that folder is the skill library.`;
+
 // pi's command line for an agent: its profile (which holds its instructions), what it knows about you and remembers, model, thinking level, the extensions it loads (pi's built-in ones, the app's that it has not turned off, and the ones it uses), skills and plugins, and its one conversation.
 const argvOf = (agent, skills, plugins, extensions, about) => {
   const { id, model, thinking } = agent;
@@ -61,6 +65,7 @@ const argvOf = (agent, skills, plugins, extensions, about) => {
     ...(model ? ["--model", model] : []),
     ...(thinking ? ["--thinking", thinking] : []),
     "--append-system-prompt", profilePath(id),
+    "--append-system-prompt", SKILLS_RULE,
     ...about,
     "-ne", ...PI_BUILTINS.flatMap((name) => ["-e", `builtin:${name}`]),
     ...CORE_EXTENSIONS.flatMap((path) => ["-e", path]), ...extensions.flatMap((e) => ["-e", e.entry]),
