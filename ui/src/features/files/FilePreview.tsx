@@ -6,7 +6,7 @@ import { messageOf } from "../../api/http";
 import { Button } from "../../components/ui/Button";
 import { Loading } from "../../components/ui/List";
 import { Modal } from "../../components/ui/Modal";
-import { Markdown } from "../chat/AgentText";
+import { Markdown } from "../../components/Markdown";
 import { ShowPage } from "../chat/ShowPage";
 import { kindOf, parseTable, type Kind } from "./kinds";
 
@@ -26,7 +26,7 @@ export function FilePreview({ path, name, onClose }: { path: string; name: strin
     if (!TEXT_KINDS.includes(kind)) return;
     let current = true;
     fetch(url).then(
-      async (res) => (res.ok ? res.text() : Promise.reject(new Error("This file is no longer there."))),
+      async (res) => (res.ok ? startOf(res) : Promise.reject(new Error("This file is no longer there."))),
     ).then(
       (t) => current && setText(t),
       (err) => current && setError(messageOf(err)),
@@ -43,11 +43,13 @@ export function FilePreview({ path, name, onClose }: { path: string; name: strin
     <Modal title={name} onClose={onClose} width="max-w-4xl">
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-end gap-2">
-          <a href={url} target="_blank" rel="noreferrer noopener">
-            <Button size="sm" icon="external" disabled={kind === "other"}>
-              Open in a new tab
-            </Button>
-          </a>
+          {kind !== "other" && (
+            <a href={url} target="_blank" rel="noreferrer noopener">
+              <Button size="sm" icon="external">
+                Open in a new tab
+              </Button>
+            </a>
+          )}
           <a href={fileUrl(path)} download={name}>
             <Button size="sm" icon="download">
               Download
@@ -81,6 +83,21 @@ export function FilePreview({ path, name, onClose }: { path: string; name: strin
       </div>
     </Modal>
   );
+}
+
+// The start of a response's text: a huge file is not read to its end.
+async function startOf(res: Response) {
+  if (!res.body) return res.text();
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  while (text.length <= MAX_TEXT) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    text += decoder.decode(value, { stream: true });
+  }
+  void reader.cancel();
+  return text;
 }
 
 // JSON laid out with indentation, or as it is when it does not parse.

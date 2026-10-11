@@ -35,9 +35,9 @@ const DESCRIPTION = `Show the user something to look at or use, instead of descr
 - cards: things to read about. Give a card a message to let the user choose it (options, recipes, products...).
 - chart: bar or line, one value per label.
 - buttons: short choices; pressing one sends its message as the user's reply.
-When the blocks let the user choose (cards with a message, or buttons), end your turn right after the show and wait for the choice: do not ask another question or carry on, or the choice can no longer be made.
 - file: a file you made in the workspace, for the user to download (pictures show in the chat).
-- page: a small app of your own (calculator, form, game, visual) as one self-contained HTML document. It runs in a sandbox: it can load scripts, styles, fonts, images and data from https:// addresses (maps, chart libraries...), but cannot reach the app, the workspace or the user's files, and cannot open frames. Never put the user's private information into an address. Call weilo.reply("text") from a click handler to send the user's reply to you.`;
+- page: a small app of your own (calculator, form, game, visual) as one self-contained HTML document. It runs in a sandbox: it can load scripts, styles, fonts, images and data from https:// addresses (maps, chart libraries...), but cannot reach the app, the workspace or the user's files, and cannot open frames. Never put the user's private information into an address. Call weilo.reply("text") from a click handler to send the user's reply to you.
+When the blocks let the user choose (cards with a message, or buttons), end your turn right after the show and wait for the choice: do not ask another question or carry on, or the choice can no longer be made.`;
 
 const ASK = `Ask the user a question and wait for the answer. Give options when the answer is one of a few choices (they pick one); leave them out to let the user type a short answer. Ask only when you cannot continue without the answer.`;
 

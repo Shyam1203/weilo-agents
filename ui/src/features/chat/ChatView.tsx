@@ -87,7 +87,7 @@ export function ChatView({ agent, models, hasProvider, onBack, onEdit, onActivit
             <div className="mx-auto w-full max-w-3xl px-4 py-5">{chat.ready ? <MessageList messages={chat.messages} busy={chat.busy} asking={chat.asking} onAnswer={chat.answer} onReply={reply} queued={chat.queued} note={chat.note} /> : <Loading />}</div>
           </div>
           <div ref={dock} className="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-page from-55% to-transparent pt-8">
-            <div className="pointer-events-auto mx-auto flex w-full max-w-3xl flex-col gap-2 pr-[max(0.75rem,env(safe-area-inset-right))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] sm:pr-4 sm:pb-4 sm:pl-4">
+            <div className="pointer-events-auto mx-auto flex w-full max-w-3xl flex-col gap-2 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4 sm:pb-[max(1rem,env(safe-area-inset-bottom))]">
               {!hasProvider && (
                 <Notice title="Add a provider to send messages." action={<Button size="sm" onClick={onOpenSettings}>Add provider</Button>}>
                   Weilo Agents needs an API key to use a model.

@@ -1,6 +1,6 @@
 // Settings and the add-ons, as a page in place of the chat. On a wide screen: pages in a menu on the left, rows
 // on the right. On a phone: the list of pages first, then a page with a back arrow.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Extension } from "../../api/extensions";
 import type { Plugin } from "../../api/plugins";
 import type { Model, Provider } from "../../api/providers";
@@ -70,14 +70,17 @@ export function SettingsView({ page: first, providers, skills, plugins, extensio
   const list = !wide && chosen === null;
   const back = wide || list ? onClose : () => setChosen(null);
 
+  const goBack = useRef(back);
+  goBack.current = back;
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !document.querySelector('[role="dialog"]') && back();
+    // A dialog that handled Escape has marked it, so it does not close this too.
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && !document.querySelector('[role="dialog"]') && goBack.current();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  });
+  }, []);
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col">
+    <div className="flex min-w-0 flex-1 flex-col pb-[env(safe-area-inset-bottom)]">
       <header className="flex h-14 shrink-0 items-center gap-2.5 border-b border-line px-3 sm:px-4">
         <IconButton icon="chevronLeft" label={wide || list ? "Back to the chat" : "Back"} onClick={back} className="-ml-1" />
         <h2 className="text-[15px] font-semibold tracking-tight">{wide || list ? "Settings" : LABELS[page]}</h2>

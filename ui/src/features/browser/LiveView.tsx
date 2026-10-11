@@ -20,11 +20,17 @@ function typeInto(client: RFB, text: string) {
   }
 }
 
+// noVNC has already sent Ctrl or Cmd to the screen when V arrives (on Windows it holds it back about 100 ms), so they are
+// let go before the text is typed, or the screen would get shortcuts instead of letters.
+const MODIFIERS = [0xffe3, 0xffe4, 0xffe7, 0xffe8, 0xffeb, 0xffec];
+const MODIFIER_DELAY = 150;
+
 export function LiveView({ interactive = false }: { interactive?: boolean }) {
   const screen = useRef<HTMLDivElement>(null);
   const rfb = useRef<RFB | null>(null);
   const [state, setState] = useState<State>("connecting");
   const [attempt, setAttempt] = useState(0);
+  const [pasteError, setPasteError] = useState(false);
 
   useEffect(() => {
     setState("connecting");
@@ -54,10 +60,20 @@ export function LiveView({ interactive = false }: { interactive?: boolean }) {
   }, [interactive, state]);
 
   // Ctrl+V (Cmd+V) types what you copied into the screen; so does the Paste button, which a phone needs.
-  const paste = () => {
+  const paste = (modifiers = false) => {
     const client = rfb.current;
-    if (client) void navigator.clipboard.readText().then((text) => typeInto(client, text), () => {});
-    client?.focus();
+    if (!client) return;
+    client.focus();
+    navigator.clipboard.readText().then(
+      (text) => {
+        setPasteError(false);
+        setTimeout(() => {
+          if (modifiers) for (const key of MODIFIERS) client.sendKey(key, null, false);
+          typeInto(client, text);
+        }, modifiers ? MODIFIER_DELAY : 0);
+      },
+      () => setPasteError(true),
+    );
   };
   useEffect(() => {
     const el = screen.current;
@@ -66,7 +82,7 @@ export function LiveView({ interactive = false }: { interactive?: boolean }) {
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "v") {
         e.preventDefault();
         e.stopPropagation();
-        if (e.type === "keydown") paste();
+        if (e.type === "keydown" && !e.repeat) paste(true);
       }
     };
     el.addEventListener("keydown", onKey, true);
@@ -78,9 +94,14 @@ export function LiveView({ interactive = false }: { interactive?: boolean }) {
     <div className={`relative aspect-[8/5] w-full overflow-hidden rounded-xl ${state === "connected" ? "bg-white" : "bg-screen"} ring-1 ${interactive ? "ring-2 ring-live" : "ring-line"}`}>
       <div ref={screen} className={`absolute inset-0 ${interactive ? "" : "pointer-events-none"}`} />
       {interactive && state === "connected" && (
-        <button type="button" onClick={paste} className="absolute top-2 right-2 rounded-lg bg-black/60 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm hover:bg-black/75">
+        <button type="button" onClick={() => paste()} className="absolute top-2 right-2 rounded-lg bg-black/60 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm hover:bg-black/75">
           Paste
         </button>
+      )}
+      {pasteError && (
+        <p role="alert" className="absolute inset-x-2 bottom-2 rounded-lg bg-black/70 px-3 py-1.5 text-center text-xs text-white">
+          This browser would not let the app read what you copied. Allow it to read the clipboard, then try again.
+        </p>
       )}
       {state !== "connected" && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-4 text-center text-[13px] text-white/70">

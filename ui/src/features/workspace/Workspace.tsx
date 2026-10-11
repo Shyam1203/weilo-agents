@@ -41,7 +41,9 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
   const [contact, setContact] = useState(false);
   // A newer release, if there is one (the daemon asks now and then).
   const [update, setUpdate] = useState<Update | null>(null);
-  useEffect(() => void getUpdate().then(setUpdate, () => {}), []);
+  // Asked again when Settings closes: the check may have been switched on or off there.
+  const settingsOpen = settings !== null;
+  useEffect(() => void getUpdate().then(setUpdate, () => {}), [settingsOpen]);
   // The first time, and until you give a name or skip: ask what agents should call you.
   const [welcome, setWelcome] = useState(!user.name && !read(KEYS.welcomed));
   const agent = agents.find((a) => a.id === selected) ?? agents[0];
@@ -64,6 +66,7 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
     setSelected(id);
     write(KEYS.agent, id);
     setSettings(null);
+    setForm(null);
     setShowChat(true);
   };
 
@@ -112,8 +115,9 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
           plugins={plugins}
           extensions={extensions}
           models={models}
-          onAddProvider={() => (setForm(null), openSettings("providers"))}
-          onOpenSettings={(page) => (setForm(null), openSettings(page))}
+          hidden={settings !== null}
+          onAddProvider={() => openSettings("providers")}
+          onOpenSettings={openSettings}
           onClose={() => setForm(null)}
           onSaved={async (saved) => (await reloadAgents(), select(saved.id), setForm(null))}
           onDeleted={() => (setForm(null), setShowChat(false), reloadAgents())}

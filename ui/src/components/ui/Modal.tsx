@@ -9,6 +9,8 @@ interface Props {
   onClose: () => void;
   /** Tailwind max-width class for the dialog. */
   width?: string;
+  /** Kept mounted (its state stays) but out of sight, while something else is shown. */
+  hidden?: boolean;
   /** No padding around the content: it fills the dialog (it has its own layout). */
   flush?: boolean;
   children: ReactNode;
@@ -20,7 +22,7 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
  * A dialog, rendered into <body> through a portal: an ancestor with a filter or backdrop-filter
  * would otherwise become the containing block of this fixed overlay and clip it.
  */
-export function Modal({ title, onBack, onClose, width = "max-w-lg", flush = false, children }: Props) {
+export function Modal({ title, onBack, onClose, width = "max-w-lg", hidden = false, flush = false, children }: Props) {
   const dialog = useRef<HTMLDivElement>(null);
   const topmost = () => {
     const all = document.querySelectorAll('[role="dialog"]');
@@ -42,8 +44,8 @@ export function Modal({ title, onBack, onClose, width = "max-w-lg", flush = fals
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Only the topmost dialog answers (a dialog can open another).
-      if (!topmost()) return;
-      if (e.key === "Escape") onClose();
+      if (hidden || !topmost()) return;
+      if (e.key === "Escape") (e.preventDefault(), onClose());
       // Tab stays inside the dialog.
       if (e.key === "Tab" && dialog.current) {
         const items = [...dialog.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
@@ -55,14 +57,14 @@ export function Modal({ title, onBack, onClose, width = "max-w-lg", flush = fals
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, hidden]);
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6">
+    <div hidden={hidden} className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6">
       <div className="absolute inset-0 animate-fade-in bg-black/40 backdrop-blur-[2px]" onClick={onClose} aria-hidden="true" />
       <div
         ref={dialog}
-        role="dialog"
+        role={hidden ? undefined : "dialog"}
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}

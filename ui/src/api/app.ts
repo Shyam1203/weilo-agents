@@ -14,6 +14,7 @@ export interface Update {
 export const getUpdate = () => request<Update>("GET", "/api/update");
 export const setUpdateCheck = (enabled: boolean) => request<Update>("PUT", "/api/update", { enabled });
 
+// Must match TOPICS in daemon/contact.mjs.
 export const TOPICS = ["Problem", "Idea", "Question", "Other"] as const;
 
 /** A message to Weilo. */

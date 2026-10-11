@@ -89,6 +89,10 @@
     overflow: hidden;
     overscroll-behavior: none;
   }
+  /* An installed app draws under the status bar and the notch: the edges are kept clear (the bottom edge by what sits there). */
+  #root {
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+  }
   body {
     margin: 0;
     background: var(--color-page);

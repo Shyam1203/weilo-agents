@@ -1,11 +1,12 @@
-import { APP, readJson, updateJson } from "./common.mjs";
+import { APP, fail, readJson, updateJson } from "./common.mjs";
 import { RELEASES_URL, UPDATE_CACHE_MS, UPDATE_TIMEOUT_MS } from "./config.mjs";
 import { BUILD } from "./version.mjs";
 
 // Whether a newer release exists: the newest one on GitHub, asked at most every UPDATE_CACHE_MS, and only if the user
-// has not turned the check off (weilo.json `checkUpdates`). A build from a checkout ("dev") never asks. The app does not
+// has not turned the check off (weilo.json `checkUpdates`). A build made without a version ("dev") never asks. The app does not
 // update itself: the user runs the start script again.
 let cache = null; // { at, latest: { version, url } | null }
+let asking = null; // the request in flight, shared by whoever asks meanwhile
 
 // 1.2.3 (a leading v and a -suffix are ignored) as numbers.
 const parts = (version) => String(version).replace(/^v/, "").split("-")[0].split(".").map(Number);
@@ -15,11 +16,15 @@ const newer = (a, b) => {
   return false;
 };
 
-async function latest() {
+function latest() {
   if (cache && Date.now() - cache.at < UPDATE_CACHE_MS) return cache.latest;
+  return (asking ??= ask().finally(() => (asking = null)));
+}
+
+async function ask() {
   try {
     const res = await fetch(RELEASES_URL, { headers: { Accept: "application/vnd.github+json", "User-Agent": "weilo-agents" }, signal: AbortSignal.timeout(UPDATE_TIMEOUT_MS) });
-    if (!res.ok) throw new Error(String(res.status));
+    if (!res.ok) throw fail(502, String(res.status));
     const { tag_name, html_url } = await res.json();
     cache = { at: Date.now(), latest: { version: String(tag_name).replace(/^v/, ""), url: html_url } };
   } catch {
@@ -39,7 +44,7 @@ export async function updateStatus() {
 }
 
 export async function setUpdateCheck({ enabled } = {}) {
-  if (typeof enabled !== "boolean") throw Object.assign(new Error("The setting is not valid"), { status: 400 });
+  if (typeof enabled !== "boolean") throw fail(400, "The setting is not valid");
   await updateJson(APP, (data) => ({ ...data, checkUpdates: enabled }));
   return updateStatus();
 }

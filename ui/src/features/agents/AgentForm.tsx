@@ -43,8 +43,10 @@ interface Props {
   /** The models the saved keys can use; undefined while they load. */
   models?: Model[];
   onAddProvider: () => void;
-  /** Opens the settings popup at a page: where add-ons are added. */
+  /** Opens Settings at a page: where add-ons are added. The form stays, out of sight, and comes back with Settings closed. */
   onOpenSettings: (page: SettingsPage) => void;
+  /** Out of sight while Settings is open. */
+  hidden?: boolean;
   onClose: () => void;
   onSaved: (agent: Agent) => Promise<void>;
   /** Runs after the agent is deleted. */
@@ -52,7 +54,7 @@ interface Props {
 }
 
 /** Creates an agent, or edits `agent`. */
-export function AgentForm({ agent, providers, skills, plugins, extensions, models, onAddProvider, onOpenSettings, onClose, onSaved, onDeleted }: Props) {
+export function AgentForm({ agent, providers, skills, plugins, extensions, models, onAddProvider, onOpenSettings, hidden, onClose, onSaved, onDeleted }: Props) {
   const [draft, setDraft] = useState<Draft>(() =>
     agent ? { name: agent.name, model: agent.model, thinking: agent.thinking, skills: agent.skills, plugins: agent.plugins, extensions: agent.extensions, disabled: agent.disabled, instructions: agent.instructions, avatar: avatarOf(agent) } : { name: "", model: "", thinking: "", skills: [], plugins: [], extensions: [], disabled: [], instructions: "", avatar: randomAvatar() },
   );
@@ -76,7 +78,7 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
     change({ model: "" });
   };
 
-  // The provider fills in once there is one (added while this is open). The model is always yours to choose.
+  // The provider fills in once there is one (added in Settings while this is hidden). The model is always yours to choose.
   useEffect(() => {
     if (!providerId && firstConnected) setProviderId(firstConnected);
   }, [providerId, firstConnected]);
@@ -87,7 +89,7 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
   };
 
   return (
-    <Modal title={agent ? "Edit agent" : "New agent"} onClose={onClose}>
+    <Modal title={agent ? "Edit agent" : "New agent"} hidden={hidden} onClose={onClose}>
       <form onSubmit={save} className="flex flex-col gap-4">
         <AvatarPicker value={draft.avatar} onChange={(avatar) => change({ avatar })} />
         <Field label="Name">

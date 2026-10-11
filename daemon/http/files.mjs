@@ -8,6 +8,7 @@ import { fail, WORKSPACE } from "../common.mjs";
 // else downloads, so a file an agent wrote can never run as a page of ours. With `view` (the chat's preview) a text file is
 // sent as plain text, for the chat to draw, and a PDF inline.
 const PICTURES = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml" };
+// Must match TEXT in ui/src/features/files/kinds.ts.
 const TEXT = new Set(
   ".md .markdown .txt .csv .tsv .json .jsonl .log .yaml .yml .toml .xml .html .htm .css .js .mjs .ts .tsx .jsx .py .sh .sql .java .go .rs .c .cpp .h .rb .php .ini".split(" "),
 );
