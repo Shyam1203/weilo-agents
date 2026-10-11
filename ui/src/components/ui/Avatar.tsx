@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 // Avatars: a colored character with a face. An avatar is a spec (shape + color): add a shape to
 // SHAPES or a color to COLORS, and the picker and every place that shows avatars can show it.
 
@@ -37,6 +39,17 @@ const INK = "#2C2C2A";
 /** What a working avatar acts out, by the tool it is using: reading with glasses and a book, searching with a magnifying glass, typing at a laptop. Anything else (thinking, other tools) just bobs and looks around. */
 type Scene = "read" | "search" | "type" | null;
 const SCENES: Record<string, Scene> = { read: "read", grep: "search", find: "search", ls: "search", fetch_knowledge: "search", memory: "search", bash: "type", edit: "type", write: "type", browser: "type" };
+// A tool's scene stays up at least this long (ms) after the tool is gone: many tools finish in a blink, and the list's copy is polled.
+const SCENE_MIN_MS = 1500;
+function useLingering(doing?: string | null) {
+  const [shown, setShown] = useState(doing);
+  useEffect(() => {
+    if (doing) return setShown(doing);
+    const timer = setTimeout(() => setShown(null), SCENE_MIN_MS);
+    return () => clearTimeout(timer);
+  }, [doing]);
+  return doing || shown;
+}
 const sceneOf = (doing?: string | null): Scene => (doing ? (SCENES[doing] ?? null) : null);
 
 /**
@@ -47,7 +60,8 @@ export function Avatar({ spec, size = 36, working = false, doing }: { spec: Avat
   const shape = SHAPES[spec.shape] ?? SHAPES.blob;
   const y = shape.eyes;
   const detailed = size >= 24;
-  const scene = working && detailed ? sceneOf(doing) : null;
+  const lingering = useLingering(doing);
+  const scene = working && detailed ? sceneOf(lingering) : null;
   return (
     <svg
       aria-hidden="true"

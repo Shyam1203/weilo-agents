@@ -3,8 +3,6 @@ import { abort, answerAsk, compactChat, eventsUrl, getContext, reloadAgent, send
 import { empty, failureOf, itemsOf, noteOf, reduce, type PiEvent } from "./conversation";
 
 const RELOADED = "Reloaded: skills, instructions and notes were read again.";
-// A tool's scene (the avatar reading, searching, typing) stays up at least this long (ms): many tools finish in a blink.
-const DOING_MIN_MS = 1500;
 const ACTIVITY = ["agent_start", "agent_settled", "tool_execution_start", "tool_execution_end"];
 // After these the context has changed: measure it again.
 const MEASURE = ["history", "agent_settled", "compaction_end"];
@@ -17,7 +15,6 @@ export function useChat(agentId: string, onActivity: () => void) {
   const [compacting, setCompacting] = useState(false);
   // The tool in use now, from the live stream (the agent list's own copy is polled and lags).
   const [doing, setDoing] = useState<string | null>(null);
-  const doingTimer = useRef<number>(undefined);
   // What /compact, /reload or an automatic summary just did, in a line under the chat; it goes when the agent starts again.
   const [status, setStatus] = useState<string | null>(null);
   // A /reload sent while the agent works takes effect when it finishes.
@@ -35,14 +32,13 @@ export function useChat(agentId: string, onActivity: () => void) {
       if (event.type === "compaction_start") setCompacting(true);
       if (event.type === "compaction_end") (setCompacting(false), event.result && setStatus("The conversation was summarized."));
       if (event.type === "agent_start") setStatus(null);
-      if (event.type === "tool_execution_start") (clearTimeout(doingTimer.current), setDoing(event.toolName ?? null));
-      if (event.type === "tool_execution_end") (clearTimeout(doingTimer.current), (doingTimer.current = window.setTimeout(() => setDoing(null), DOING_MIN_MS)));
-      if (event.type === "agent_settled" || event.type === "exit") (clearTimeout(doingTimer.current), setDoing(null));
+      if (event.type === "tool_execution_start") setDoing(event.toolName ?? null);
+      if (event.type === "tool_execution_end" || event.type === "agent_settled" || event.type === "exit") setDoing(null);
       if (event.type === "agent_settled" && reloading.current) (reloading.current = false, setStatus(RELOADED));
       if (MEASURE.includes(event.type)) void getContext(agentId).then(setContext, () => {});
       if (ACTIVITY.includes(event.type)) activity.current();
     };
-    return () => (source.close(), clearTimeout(doingTimer.current));
+    return () => source.close();
   }, [agentId, attempt]);
 
   // Summarizes now (pi's /compact); the error, if any, is for the caller to show.
@@ -62,7 +58,7 @@ export function useChat(agentId: string, onActivity: () => void) {
     ready: chat.ready,
     stopped: !!chat.exit,
     busy: chat.busy,
-    /** The tool in use now (a bit longer than it runs); null when none. */
+    /** The tool in use now; null when none. */
     doing,
     asking: chat.asking,
     queued: chat.queued,
