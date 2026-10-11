@@ -4,6 +4,9 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 ## Unreleased
 
+- The agent list's working avatar follows the open chat (same scene, same moment) and no longer flickers between tools.
+- The + button in the agent list opens New agent from Settings (it stayed in Settings).
+
 ## 0.1.1
 
 - Settings is a page, not a popup. Contact us (mail button beside Settings), and an update check (Settings > About).

@@ -39,6 +39,8 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
   const [settings, setSettings] = useState<SettingsPage | "menu" | null>(null);
   const openSettings = (page: SettingsPage | "menu") => (void reload(), setSettings(page));
   const [contact, setContact] = useState(false);
+  // The open chat's own word on whether its agent works and what it does: the list polls, so it follows the chat for that agent.
+  const [live, setLive] = useState<{ busy: boolean; doing: string | null } | null>(null);
   // A newer release, if there is one (the daemon asks now and then).
   const [update, setUpdate] = useState<Update | null>(null);
   // Asked again when Settings closes: the check may have been switched on or off there.
@@ -74,12 +76,12 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
     <div className="flex h-full">
       <div className={`${showChat || settings ? "hidden" : "flex"} w-full md:flex md:w-auto`}>
         <Sidebar
-          agents={agents}
+          agents={agents.map((a) => (live && a.id === agent?.id ? { ...a, working: live.busy, doing: live.busy ? (live.doing ?? "") : null } : a))}
           unread={unread}
           selected={settings ? undefined : agent?.id}
           update={update}
           onSelect={select}
-          onNew={() => setForm("new")}
+          onNew={() => (setSettings(null), setForm("new"))}
           onSkills={() => openSettings("skills")}
           onPlugins={() => openSettings("plugins")}
           onSettings={() => openSettings("menu")}
@@ -100,6 +102,7 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
               onBack={() => setShowChat(false)}
               onEdit={() => setForm("edit")}
               onActivity={reloadAgents}
+              onLive={setLive}
               onOpenSettings={() => openSettings("providers")}
             />
           ) : (

@@ -31,12 +31,16 @@ interface Props {
   onEdit: () => void;
   /** A run started, moved on or ended: the agent list shows what it is doing, and its newest message. */
   onActivity: () => void;
+  /** What the agent is doing, live from the chat: the agent list shows the same, in step with it. Null again when the chat closes. */
+  onLive: (live: { busy: boolean; doing: string | null } | null) => void;
   onOpenSettings: () => void;
 }
 
 /** One agent's chat. Give it a `key` of the agent's id. */
-export function ChatView({ agent, models, hasProvider, onBack, onEdit, onActivity, onOpenSettings }: Props) {
+export function ChatView({ agent, models, hasProvider, onBack, onEdit, onActivity, onLive, onOpenSettings }: Props) {
   const chat = useChat(agent.id, onActivity);
+  useEffect(() => onLive({ busy: chat.busy, doing: chat.doing }), [chat.busy, chat.doing]);
+  useEffect(() => () => onLive(null), []);
   // The browser and the routines: beside the chat on a wide screen (you can hide them), over it on a narrow one.
   const wide = useMedia("(min-width: 1024px)");
   const [sidebar, setSidebar] = useState(() => read(KEYS.sidebar) !== "0");
@@ -76,7 +80,7 @@ export function ChatView({ agent, models, hasProvider, onBack, onEdit, onActivit
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar
           onBack={onBack}
-          leading={<Avatar spec={avatarOf(agent)} size={32} working={chat.busy} doing={chat.doing ?? agent.doing} />}
+          leading={<Avatar spec={avatarOf(agent)} size={32} working={chat.busy} doing={chat.doing} />}
           title={agent.name}
           subtitle={agent.model ? (models?.find((m) => m.id === agent.model)?.name ?? agent.model) : "Choose a model"}
           onTitle={onEdit}
@@ -104,7 +108,7 @@ export function ChatView({ agent, models, hasProvider, onBack, onEdit, onActivit
                 shortcuts={shortcuts}
                 to={agent.name}
                 avatar={avatarOf(agent)}
-                doing={chat.doing ?? agent.doing}
+                doing={chat.doing}
                 busy={chat.busy}
                 waiting={!!chat.asking}
                 onAnswer={chat.asking ? chat.answer : undefined}
