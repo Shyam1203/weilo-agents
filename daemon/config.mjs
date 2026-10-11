@@ -71,6 +71,9 @@ export const MAX_UNZIPPED = 50e6;
 export const SKILL_DEPTH = 3;
 // About you (USER.md): longest name and text, in characters (UI).
 export const MAX_NAME = 100;
+// A skill an agent saves: its description (what pi shows the model to choose by) and its instructions (characters).
+export const MAX_SKILL_DESCRIPTION = 1024;
+export const MAX_SKILL_TEXT = 60_000;
 export const MAX_ABOUT = 4000;
 
 // --- Memory (memory/) ------------------------------------------------------------------------
