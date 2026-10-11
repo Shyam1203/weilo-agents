@@ -2,10 +2,15 @@ name: weilo-agents
 
 services:
   core:
+    # `docker compose pull` gets the released image for WEILO_VERSION (the start scripts set it from the VERSION file);
+    # `docker compose up -d --build` builds this checkout instead and names it the same.
+    image: ghcr.io/shyam1203/weilo-agents:${WEILO_VERSION:-latest}
     build:
       context: .
       dockerfile: image/Dockerfile
-    image: weilo-core
+      args:
+        VERSION: ${WEILO_VERSION:-dev}
+        COMMIT: ${WEILO_COMMIT:-unknown}
     container_name: weilo-core
     init: true
     restart: unless-stopped

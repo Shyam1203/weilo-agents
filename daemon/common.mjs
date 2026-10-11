@@ -22,6 +22,8 @@ export const USER = join(AGENT_DIR, "USER.md");
 export const MEMORY = join(AGENT_DIR, "MEMORY.md");
 // The knowledge vault the curator keeps (folders of markdown pages), beside agent/ and workspace/.
 export const KNOWLEDGE = join(ROOT, "knowledge");
+// Which app and data version last used the data folder (migrate.mjs).
+export const APP = join(ROOT, "weilo.json");
 export const CURATOR = join(AGENT_DIR, "curator.json");
 export const ROUTINES = join(AGENT_DIR, "routines.json");
 export const BROWSER = join(AGENT_DIR, "browser.json");

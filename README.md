@@ -8,10 +8,14 @@ data stays in one folder, `~/.weilo-agents`.
 
 You need Docker.
 
-Run `start.cmd` (Windows) or `./start.sh` (macOS, Linux). The script builds and starts the app,
-then opens http://localhost:3210. In Settings, add a provider key. Then create an agent.
+Download `weilo-agents-<version>.zip` from the [releases](https://github.com/Shyam1203/weilo-agents/releases), unzip it,
+and run `start.cmd` (Windows) or `./start.sh` (macOS, Linux). The script pulls the released image for the version in
+`VERSION`, starts the app, then opens http://localhost:3210. In Settings, add a provider key. Then create an agent.
 
-To start the app manually: `docker compose up -d --build`.
+To update, download the newer zip (or `git pull`) and run the script again. Your data stays in `~/.weilo-agents`.
+The version is shown in Settings > About. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
+
+To build the image from a checkout instead: `docker compose up -d --build`.
 
 ## Develop
 
@@ -23,4 +27,4 @@ npm run build   # type-check and build
 
 After you change the daemon or the UI, build the container again: `docker compose up -d --build`.
 
-How it works and the design decisions: [DESIGN.md](docs/DESIGN.md).
+How it works and the design decisions: [DESIGN.md](docs/DESIGN.md). How a release is made: [RELEASING.md](docs/RELEASING.md).

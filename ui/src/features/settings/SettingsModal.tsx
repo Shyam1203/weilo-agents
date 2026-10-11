@@ -16,10 +16,11 @@ import { MemoryPage } from "../memory/MemoryPage";
 import { PluginsPage } from "../plugins/PluginsPage";
 import { SkillsPage } from "../skills/SkillsPage";
 import { AboutYouForm } from "../user/AboutYouForm";
+import { AboutPage } from "./AboutPage";
 import { Appearance } from "./Appearance";
 import { ProvidersPage } from "./ProvidersPage";
 
-export type SettingsPage = "providers" | "you" | "memory" | "browser" | "appearance" | "skills" | "plugins" | "extensions";
+export type SettingsPage = "providers" | "you" | "memory" | "browser" | "appearance" | "about" | "skills" | "plugins" | "extensions";
 
 const MENU: { group: string; pages: { value: SettingsPage; label: string; icon: IconName }[] }[] = [
   {
@@ -30,6 +31,7 @@ const MENU: { group: string; pages: { value: SettingsPage; label: string; icon: 
       { value: "memory", label: "Memory", icon: "brain" },
       { value: "browser", label: "Browser", icon: "globe" },
       { value: "appearance", label: "Appearance", icon: "sun" },
+      { value: "about", label: "About", icon: "info" },
     ],
   },
   {
@@ -104,6 +106,8 @@ export function SettingsModal({ page: first, providers, skills, plugins, extensi
               <BrowserSettings />
             ) : page === "appearance" ? (
               <Appearance />
+            ) : page === "about" ? (
+              <AboutPage />
             ) : page === "skills" ? (
               <SkillsPage skills={skills} onChange={onChange} />
             ) : page === "plugins" ? (
