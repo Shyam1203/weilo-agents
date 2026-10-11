@@ -4,6 +4,8 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 ## Unreleased
 
+## 0.1.1
+
 - Settings is a page, not a popup. Contact us (mail button beside Settings), and an update check (Settings > About).
 - Preview files an agent made in the app: pictures, PDFs, Markdown, CSV, JSON, HTML and text.
 - The message box continues lists (bullets and numbers) and can start one from the + menu.
