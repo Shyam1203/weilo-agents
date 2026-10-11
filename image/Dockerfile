@@ -37,6 +37,12 @@ RUN sed -i 's|<applications>|&<application class="*"><decor>no</decor><maximized
 # Pages in the browser cannot open this app or the browser's debugging port.
 COPY image/chromium-policy.json /etc/chromium/policies/managed/weilo.json
 
+# What this build is (GET /api/version). Set late, so a new version keeps the layers above in the cache.
+ARG VERSION=dev
+ARG COMMIT=unknown
+ENV WEILO_VERSION=${VERSION} WEILO_COMMIT=${COMMIT} WEILO_PI=${PI_VERSION}
+LABEL org.opencontainers.image.title="Weilo Agents"       org.opencontainers.image.version=${VERSION}       org.opencontainers.image.revision=${COMMIT}       org.opencontainers.image.source="https://github.com/Shyam1203/weilo-agents"
+
 COPY daemon /app
 COPY --from=ui /ui/dist /app/ui
 

@@ -19,12 +19,15 @@ import { addPlugin,listPlugins, pluginStatus, removePlugin } from "./settings/pl
 import { listModels, listProviders, removeKey, saveKey, setEnabledModels, syncCompaction } from "./settings/providers.mjs";
 import { addSkills, listSkills, removeSkill } from "./settings/skills.mjs";
 import { getUser, saveUser } from "./settings/user.mjs";
+import { migrate } from "./migrate.mjs";
+import { BUILD } from "./version.mjs";
 
 // JSON API. A handler gets (id, body, request, second id) and returns the reply; no reply means 204.
 const routes = [];
 const route = (method, path, handler) =>
   routes.push({ method, handler, scoped: path.startsWith("/api/agents/:id"), pattern: new RegExp(`^${path.replace(":id", "([^/]+)").replace(":rid", "([^/]+)")}$`) });
 
+route("GET", "/api/version", () => BUILD);
 route("GET", "/api/providers", () => listProviders());
 route("PUT", "/api/providers/:id", (id, { key }) => saveKey(id, key));
 route("DELETE", "/api/providers/:id", (id) => removeKey(id));
@@ -146,6 +149,14 @@ server.on("upgrade", (req, socket, head) => {
   } catch {}
   socket.destroy();
 });
+
+// The data folder is brought to this app's shape before anything reads it; one made by a newer app stops the start.
+try {
+  await migrate();
+} catch (err) {
+  console.error(err.message);
+  process.exit(1);
+}
 
 server.listen(PORT, "0.0.0.0", () => console.log(`weilo-core listening on :${PORT}`));
 

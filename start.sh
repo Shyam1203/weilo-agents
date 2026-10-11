@@ -9,7 +9,12 @@ fi
 
 # Made here, not by Docker: Docker would make it owned by root.
 mkdir -p "$HOME/.weilo-agents"
-docker compose up -d --build || exit 1
+
+# The released image for this version (the VERSION file); built here only if it cannot be pulled.
+WEILO_VERSION=$(tr -d '[:space:]' < VERSION 2>/dev/null)
+export WEILO_VERSION
+docker compose pull --quiet 2>/dev/null || docker compose build || exit 1
+docker compose up -d || exit 1
 
 url=http://localhost:3210
 tries=0

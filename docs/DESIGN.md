@@ -14,7 +14,8 @@ container serves the UI and runs pi. All user data is one host folder, `~/.weilo
 | Agents | Lean profiles: a folder with one file, `agent.json`, which holds the instructions too. Shared pi config. Each agent is one continuous conversation (messenger style): no chat list, no titles. |
 | Network | No token. Port on `127.0.0.1` only, plus `Host`, `Origin` and `Sec-Fetch-Site` checks; no other site may frame the app. |
 | User | Non-root `node` (uid 1000). Agent installs (`npm -g`, `pip --user`) persist in volume `tools`. `start.sh` makes `~/.weilo-agents` first, so Docker does not make it as root. |
-| Names | Stack `weilo-agents`, container and image `weilo-core`. |
+| Names | Stack `weilo-agents`, container `weilo-core`, image `ghcr.io/shyam1203/weilo-agents:<version>`. |
+| Versions | One `VERSION` file (SemVer). The image build takes `VERSION` and `COMMIT` as build arguments and keeps them as `WEILO_VERSION`, `WEILO_COMMIT` and `WEILO_PI` (`daemon/version.mjs`, `GET /api/version`, Settings > About) and as OCI labels. A `v*` tag runs `.github/workflows/release.yml`: it builds amd64 and arm64, pushes the image and publishes a release with a zip (`compose.yaml`, start scripts, `VERSION`). The start scripts set `WEILO_VERSION` from `VERSION`, pull that image, and build only if the pull fails. The data folder has `weilo.json` `{dataVersion, version}` (`daemon/migrate.mjs`): older data is brought up by ordered steps at start, newer data stops the start with a message. See `docs/RELEASING.md`. |
 | Hardening | `cap_drop` NET_RAW and NET_ADMIN, `no-new-privileges`. |
 | Attachments | Images go to pi as image blocks. Other files are saved to `workspace/uploads/` and named in the message. |
 | Thinking | Optional per agent (`off` to `max`); empty means pi's default. |
@@ -91,6 +92,7 @@ An agent's pi loads only pi's built-in extensions (`PI_BUILTINS` in `config.mjs`
 
 | Route | Does |
 |---|---|
+| `GET /api/version` | `{version, commit, pi}` of this build (`dev` / `unknown` when built from a checkout) |
 | `GET /api/providers` | `[{id, name, keyUrl, connected}]` |
 | `PUT /api/providers/:id` `{key}` | merge into `agent/auth.json` (mode 0600); never returned |
 | `DELETE /api/providers/:id` | remove the key |
@@ -154,6 +156,8 @@ config.mjs          the values to tune (port, timeouts, limits, intervals), grou
 common.mjs          data paths, errors, private JSON and text files
 weilo.mjs           the pi extension (`-e /app/weilo.mjs`): show, ask
 tool.mjs            what the bundled extensions share: the API call and the tool helper
+version.mjs         what this build is (version, commit, pi), from the image's environment
+migrate.mjs         brings the data folder to this app's data version at start (weilo.json)
 http/               request.mjs (Host/Origin checks, JSON body and reply), static.mjs (the UI),
                     events.mjs (SSE), files.mjs (workspace files)
 agents/             agents.mjs (profiles), runner.mjs (pi processes), pi.mjs (spawn and RPC framing),

@@ -9,7 +9,15 @@ if errorlevel 1 (
   exit /b 1
 )
 
-docker compose up -d --build
+rem The released image for this version (the VERSION file); built here only if it cannot be pulled.
+if exist VERSION set /p WEILO_VERSION=<VERSION
+docker compose pull --quiet >nul 2>&1
+if errorlevel 1 docker compose build
+if errorlevel 1 (
+  pause
+  exit /b 1
+)
+docker compose up -d
 if errorlevel 1 (
   pause
   exit /b 1
