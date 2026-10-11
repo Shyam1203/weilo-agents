@@ -12,7 +12,7 @@ Download `weilo-agents-<version>.zip` from the [releases](https://github.com/Shy
 and run `start.cmd` (Windows) or `./start.sh` (macOS, Linux). The script pulls the released image for the version in
 `VERSION`, starts the app, then opens http://localhost:3210. In Settings, add a provider key. Then create an agent.
 
-To update, download the newer zip (or `git pull`) and run the script again. Your data stays in `~/.weilo-agents`.
+To update, run `update.cmd` (Windows) or `./update.sh` in the same folder: it downloads the newest release, replaces the scripts, and starts it. (A folder from before 0.1.2 has no update script: download the newest zip once and unzip it over the folder.) With a checkout, `git pull` and run the start script. Your data stays in `~/.weilo-agents`.
 The version is shown in Settings > About. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 To build the image from a checkout instead: `docker compose up -d --build`.
