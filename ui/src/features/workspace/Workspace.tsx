@@ -81,7 +81,7 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
           selected={settings ? undefined : agent?.id}
           update={update}
           onSelect={select}
-          onNew={() => setForm("new")}
+          onNew={() => (setSettings(null), setForm("new"))}
           onSkills={() => openSettings("skills")}
           onPlugins={() => openSettings("plugins")}
           onSettings={() => openSettings("menu")}
