@@ -7,8 +7,8 @@ export interface Outgoing {
   files: { name: string; data: string }[];
 }
 
-/** Where a file in the workspace can be viewed or downloaded. */
-export const fileUrl = (path: string) => `/api/files/${path.split("/").map(encodeURIComponent).join("/")}`;
+/** Where a file in the workspace can be downloaded; with `view`, shown (text as plain text, a PDF inline). */
+export const fileUrl = (path: string, view = false) => `/api/files/${path.split("/").map(encodeURIComponent).join("/")}${view ? "?view=1" : ""}`;
 
 /** A skill the agent can run as a /command. */
 export interface Command {

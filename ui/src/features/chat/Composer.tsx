@@ -12,6 +12,7 @@ import { MAX_FILE_MB, MAX_FILES, MAX_IMAGES } from "../../lib/limits";
 import { useDictation } from "../../lib/useDictation";
 import { CameraDialog } from "./CameraDialog";
 import { COMMAND_LIST, CommandMenu, type Shortcut } from "./CommandMenu";
+import { continueList, withList } from "./lists";
 
 const MAX_HEIGHT = 200;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
@@ -24,6 +25,8 @@ interface Props {
   /** Who the message goes to, and what they look like while they work. */
   to: string;
   avatar: AvatarSpec;
+  /** The tool the agent is using now. */
+  doing?: string | null;
   busy: boolean;
   /** The agent waits for your answer to a question. */
   waiting: boolean;
@@ -37,7 +40,7 @@ interface Props {
   meter?: ReactNode;
 }
 
-export function Composer({ onEdit, shortcuts, to, avatar, busy, waiting, onAnswer, disabled, onSend, onStop, meter }: Props) {
+export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, onAnswer, disabled, onSend, onStop, meter }: Props) {
   const [text, setText] = useState("");
   const [images, setImages] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
@@ -49,6 +52,8 @@ export function Composer({ onEdit, shortcuts, to, avatar, busy, waiting, onAnswe
   const [small, setSmall] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
+  // Where the caret goes once the text a list changed is drawn.
+  const caret = useRef<number | null>(null);
   // A message that so far is just "/" and a word offers the shortcuts that match it; Escape closes the list.
   const [active, setActive] = useState(0);
   const [closedFor, setClosedFor] = useState<string | null>(null);
@@ -73,6 +78,11 @@ export function Composer({ onEdit, shortcuts, to, avatar, busy, waiting, onAnswe
     observer.observe(el);
     return () => observer.disconnect();
   }, [text, dictation.interim]);
+
+  useLayoutEffect(() => {
+    if (caret.current !== null && box.current) box.current.setSelectionRange(caret.current, caret.current);
+    caret.current = null;
+  }, [text]);
 
   const attach = async (picked: File[]) => {
     setError(null);
@@ -135,10 +145,20 @@ export function Composer({ onEdit, shortcuts, to, avatar, busy, waiting, onAnswe
       }
       if (event.key === "Escape") return setClosedFor(text);
     }
+    if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
     // On phones Enter adds a line; the send button sends.
-    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && matchMedia("(pointer: fine)").matches) {
+    const newLine = event.shiftKey || !matchMedia("(pointer: fine)").matches;
+    if (!newLine) {
       event.preventDefault();
-      void submit();
+      return void submit();
+    }
+    // A new line in a list carries the list on.
+    const el = event.currentTarget;
+    const next = el.selectionStart === el.selectionEnd ? continueList(el.value, el.selectionStart) : null;
+    if (next) {
+      event.preventDefault();
+      caret.current = next.caret;
+      setText(next.text);
     }
   };
 
@@ -179,7 +199,7 @@ export function Composer({ onEdit, shortcuts, to, avatar, busy, waiting, onAnswe
           onClick={() => setSmall((v) => !v)}
           className={`absolute bottom-full left-4 mb-2 flex animate-rise items-center gap-2 rounded-xl bg-raised/40 py-1 pl-1.5 shadow-pop ring-1 ring-line backdrop-blur-sm ${small ? "pr-1.5" : "pr-3.5"}`}
         >
-          <Avatar spec={avatar} size={26} working />
+          <Avatar spec={avatar} size={32} working doing={doing} />
           {!small && (
             <span className="working-dots text-xs text-working">
               {waiting ? "Waiting for you" : "Working"}<span>.</span>
@@ -223,6 +243,8 @@ export function Composer({ onEdit, shortcuts, to, avatar, busy, waiting, onAnswe
               <>
                 <MenuItem icon="attach" label="Files and photos" onClick={() => (close(), picker.current?.click())} />
                 <MenuItem icon="camera" label="Camera" onClick={() => (close(), setCamera(true))} />
+                <MenuItem icon="list" label="Bulleted list" onClick={() => (close(), setText((t) => withList(t, "- ")), box.current?.focus())} />
+                <MenuItem icon="listNumbered" label="Numbered list" onClick={() => (close(), setText((t) => withList(t, "1. ")), box.current?.focus())} />
               </>
             )}
           </Menu>

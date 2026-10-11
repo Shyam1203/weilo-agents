@@ -1,13 +1,13 @@
-// The one popup for Settings and the add-ons. On a wide screen: pages in a menu on the left, rows
+// Settings and the add-ons, as a page in place of the chat. On a wide screen: pages in a menu on the left, rows
 // on the right. On a phone: the list of pages first, then a page with a back arrow.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Extension } from "../../api/extensions";
 import type { Plugin } from "../../api/plugins";
 import type { Model, Provider } from "../../api/providers";
 import type { Skill } from "../../api/skills";
 import type { User } from "../../api/user";
+import { IconButton } from "../../components/ui/Button";
 import { Icon, type IconName } from "../../components/ui/Icon";
-import { Modal } from "../../components/ui/Modal";
 import { Page } from "../../components/ui/Row";
 import { useMedia } from "../../lib/useMedia";
 import { BrowserSettings } from "../browser/BrowserSettings";
@@ -57,21 +57,34 @@ interface Props {
   models?: Model[];
   onChange: () => void;
   onModels: (ids: string[]) => void;
+  /** Leaves Settings (back to the chat). */
   onClose: () => void;
 }
 
-export function SettingsModal({ page: first, providers, skills, plugins, extensions, user, models, onChange, onModels, onClose }: Props) {
+export function SettingsView({ page: first, providers, skills, plugins, extensions, user, models, onChange, onModels, onClose }: Props) {
   const wide = useMedia("(min-width: 768px)");
   // On a phone `null` is the list of pages.
   const [chosen, setChosen] = useState<SettingsPage | null>(first === "menu" ? null : first);
+  useEffect(() => setChosen(first === "menu" ? null : first), [first]);
   const page = chosen ?? "providers";
   const list = !wide && chosen === null;
+  const back = wide || list ? onClose : () => setChosen(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !document.querySelector('[role="dialog"]') && back();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   return (
-    <Modal title={wide || list ? "Settings" : LABELS[page]} onBack={wide || list ? undefined : () => setChosen(null)} onClose={onClose} width="max-w-3xl" flush>
-      <div className="flex h-[80dvh] min-h-0 w-full flex-col border-t border-line sm:h-[34rem] sm:max-h-[72dvh] md:flex-row">
+    <div className="flex min-w-0 flex-1 flex-col">
+      <header className="flex h-14 shrink-0 items-center gap-2.5 border-b border-line px-3 sm:px-4">
+        <IconButton icon="chevronLeft" label={wide || list ? "Back to the chat" : "Back"} onClick={back} className="-ml-1" />
+        <h2 className="text-[15px] font-semibold tracking-tight">{wide || list ? "Settings" : LABELS[page]}</h2>
+      </header>
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         {(wide || list) && (
-          <nav aria-label="Settings" className={`flex shrink-0 flex-col gap-1 overflow-y-auto p-2 md:w-48 md:border-r md:border-line md:bg-panel ${list ? "flex-1" : ""}`}>
+          <nav aria-label="Settings" className={`flex shrink-0 flex-col gap-1 overflow-y-auto p-2 md:w-56 md:border-r md:border-line md:bg-panel ${list ? "flex-1" : ""}`}>
             {MENU.map(({ group, pages }) => (
               <div key={group} className="flex flex-col gap-1">
                 <p className="px-2.5 pt-2 pb-1 text-[11px] font-medium tracking-wide text-ink-3 uppercase">{group}</p>
@@ -93,31 +106,33 @@ export function SettingsModal({ page: first, providers, skills, plugins, extensi
           </nav>
         )}
         {!list && (
-          <div className="min-w-0 flex-1 overflow-y-auto p-5 sm:p-6">
-            {page === "providers" ? (
-              <ProvidersPage providers={providers} models={models} onChange={onChange} onModels={onModels} />
-            ) : page === "you" ? (
-              <Page title="About you" description="Agents use this to talk to you.">
-                <AboutYouForm user={user} onSaved={onChange} />
-              </Page>
-            ) : page === "memory" ? (
-              <MemoryPage providers={providers} models={models} />
-            ) : page === "browser" ? (
-              <BrowserSettings />
-            ) : page === "appearance" ? (
-              <Appearance />
-            ) : page === "about" ? (
-              <AboutPage />
-            ) : page === "skills" ? (
-              <SkillsPage skills={skills} onChange={onChange} />
-            ) : page === "plugins" ? (
-              <PluginsPage plugins={plugins} onChange={onChange} />
-            ) : (
-              <ExtensionsPage extensions={extensions} onChange={onChange} />
-            )}
+          <div className="min-w-0 flex-1 overflow-y-auto p-5 sm:p-8">
+            <div className="mx-auto w-full max-w-2xl">
+              {page === "providers" ? (
+                <ProvidersPage providers={providers} models={models} onChange={onChange} onModels={onModels} />
+              ) : page === "you" ? (
+                <Page title="About you" description="Agents use this to talk to you.">
+                  <AboutYouForm user={user} onSaved={onChange} />
+                </Page>
+              ) : page === "memory" ? (
+                <MemoryPage providers={providers} models={models} />
+              ) : page === "browser" ? (
+                <BrowserSettings />
+              ) : page === "appearance" ? (
+                <Appearance />
+              ) : page === "about" ? (
+                <AboutPage />
+              ) : page === "skills" ? (
+                <SkillsPage skills={skills} onChange={onChange} />
+              ) : page === "plugins" ? (
+                <PluginsPage plugins={plugins} onChange={onChange} />
+              ) : (
+                <ExtensionsPage extensions={extensions} onChange={onChange} />
+              )}
+            </div>
           </div>
         )}
       </div>
-    </Modal>
+    </div>
   );
 }

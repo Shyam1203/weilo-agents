@@ -35,6 +35,7 @@ const DESCRIPTION = `Show the user something to look at or use, instead of descr
 - cards: things to read about. Give a card a message to let the user choose it (options, recipes, products...).
 - chart: bar or line, one value per label.
 - buttons: short choices; pressing one sends its message as the user's reply.
+When the blocks let the user choose (cards with a message, or buttons), end your turn right after the show and wait for the choice: do not ask another question or carry on, or the choice can no longer be made.
 - file: a file you made in the workspace, for the user to download (pictures show in the chat).
 - page: a small app of your own (calculator, form, game, visual) as one self-contained HTML document. It runs in a sandbox: it can load scripts, styles, fonts, images and data from https:// addresses (maps, chart libraries...), but cannot reach the app, the workspace or the user's files, and cannot open frames. Never put the user's private information into an address. Call weilo.reply("text") from a click handler to send the user's reply to you.`;
 
@@ -46,8 +47,9 @@ export default function (pi) {
     label: "Show",
     description: DESCRIPTION,
     parameters: object({ blocks: { ...list({ anyOf: BLOCKS }), description: "What to show, top to bottom." } }, ["blocks"]),
-    async execute() {
-      return { content: [{ type: "text", text: "Shown to the user." }] };
+    async execute(_id, { blocks }) {
+      const choice = blocks.some((b) => (b.type === "cards" && b.items.some((i) => i.message)) || b.type === "buttons");
+      return { content: [{ type: "text", text: choice ? "Shown to the user. They choose from it now: end your turn and wait for their reply." : "Shown to the user." }] };
     },
   });
 

@@ -19,7 +19,9 @@ import { addPlugin,listPlugins, pluginStatus, removePlugin } from "./settings/pl
 import { listModels, listProviders, removeKey, saveKey, setEnabledModels, syncCompaction } from "./settings/providers.mjs";
 import { addSkills, listSkills, removeSkill } from "./settings/skills.mjs";
 import { getUser, saveUser } from "./settings/user.mjs";
+import { sendContact } from "./contact.mjs";
 import { migrate } from "./migrate.mjs";
+import { setUpdateCheck, updateStatus } from "./update.mjs";
 import { BUILD } from "./version.mjs";
 
 // JSON API. A handler gets (id, body, request, second id) and returns the reply; no reply means 204.
@@ -28,6 +30,9 @@ const route = (method, path, handler) =>
   routes.push({ method, handler, scoped: path.startsWith("/api/agents/:id"), pattern: new RegExp(`^${path.replace(":id", "([^/]+)").replace(":rid", "([^/]+)")}$`) });
 
 route("GET", "/api/version", () => BUILD);
+route("GET", "/api/update", () => updateStatus());
+route("PUT", "/api/update", (_, body) => setUpdateCheck(body));
+route("POST", "/api/contact", (_, body) => sendContact(body));
 route("GET", "/api/providers", () => listProviders());
 route("PUT", "/api/providers/:id", (id, { key }) => saveKey(id, key));
 route("DELETE", "/api/providers/:id", (id) => removeKey(id));
@@ -121,7 +126,7 @@ const server = createServer(async (req, res) => {
     guard(req, path);
     if (!path.startsWith("/api/")) return await serveUi(req, res);
     const file = path.match(/^\/api\/files\/(.+)$/);
-    if (file && req.method === "GET") return await serveFile(res, file[1]);
+    if (file && req.method === "GET") return await serveFile(res, file[1], new URL(req.url, "http://localhost").searchParams.has("view"));
     const stream = path.match(/^\/api\/agents\/([^/]+)\/events$/);
     if (stream && req.method === "GET") return await events(req, res, stream[1]);
     for (const { method, pattern, handler, scoped } of routes) {

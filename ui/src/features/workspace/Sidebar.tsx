@@ -1,4 +1,5 @@
 import { doingText, type Agent } from "../../api/agents";
+import type { Update } from "../../api/app";
 import { Avatar } from "../../components/ui/Avatar";
 import { Button, IconButton } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
@@ -10,14 +11,19 @@ interface Props {
   /** The agents with a reply you have not seen. */
   unread: Set<string>;
   selected?: string;
+  /** A newer release, if one exists. */
+  update?: Update | null;
   onSelect: (id: string) => void;
   onNew: () => void;
   onSkills: () => void;
   onPlugins: () => void;
   onSettings: () => void;
+  /** Opens Settings > About, where the update is. */
+  onAbout: () => void;
+  onContact: () => void;
 }
 
-export function Sidebar({ agents, unread, selected, onSelect, onNew, onSkills, onPlugins, onSettings }: Props) {
+export function Sidebar({ agents, unread, selected, update, onSelect, onNew, onSkills, onPlugins, onSettings, onAbout, onContact }: Props) {
   return (
     <nav aria-label="Agents" className="flex h-full w-full shrink-0 flex-col border-r border-line bg-panel md:w-72">
       <div className="flex h-14 shrink-0 items-center justify-between pr-4 pl-5">
@@ -34,7 +40,7 @@ export function Sidebar({ agents, unread, selected, onSelect, onNew, onSkills, o
               className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors ${a.id === selected ? "bg-select" : "hover:bg-select"}`}
             >
               <span className="relative shrink-0">
-                <Avatar spec={avatarOf(a)} size={36} working={!!a.working} />
+                <Avatar spec={avatarOf(a)} size={36} working={!!a.working} doing={a.doing} />
                 {unread.has(a.id) && <span role="img" aria-label="Unread reply" className="absolute -top-0.5 -right-0.5 size-3.5 rounded-full bg-[#ff7a00] ring-2 ring-panel" />}
               </span>
               <span className="min-w-0 flex-1">
@@ -43,7 +49,7 @@ export function Sidebar({ agents, unread, selected, onSelect, onNew, onSkills, o
                   {a.last && <span className="shrink-0 text-[11px] text-ink-3">{shortWhen(a.last.at)}</span>}
                 </span>
                 {a.taken ? (
-                  <span className="flex items-center gap-1 truncate text-xs font-medium text-live">
+                  <span className="flex items-center gap-1 truncate text-xs font-medium text-ink">
                     <Icon name="pointer" size={12} className="shrink-0" /> You have the browser
                   </span>
                 ) : a.working ? (
@@ -68,9 +74,17 @@ export function Sidebar({ agents, unread, selected, onSelect, onNew, onSkills, o
         <Button variant="ghost" icon="puzzle" onClick={onPlugins} className="w-full justify-start">
           Plugins
         </Button>
-        <Button variant="ghost" icon="settings" onClick={onSettings} className="w-full justify-start">
-          Settings
-        </Button>
+        {update?.available && (
+          <Button variant="ghost" icon="download" onClick={onAbout} className="w-full justify-start text-ink">
+            Update {update.latest} is available
+          </Button>
+        )}
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" icon="settings" onClick={onSettings} className="flex-1 justify-start">
+            Settings
+          </Button>
+          <IconButton icon="mail" label="Contact us" onClick={onContact} />
+        </div>
       </div>
     </nav>
   );

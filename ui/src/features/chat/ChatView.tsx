@@ -20,6 +20,7 @@ import { useChat } from "./useChat";
 import { BrowserPanel } from "../browser/BrowserPanel";
 import { RoutinesPanel } from "../routines/RoutinesPanel";
 import { Modal } from "../../components/ui/Modal";
+import { PreviewProvider } from "../files/PreviewContext";
 
 interface Props {
   agent: Agent;
@@ -70,11 +71,12 @@ export function ChatView({ agent, models, hasProvider, onBack, onEdit, onActivit
   const shortcuts = [{ label: "compact", description: "Summarize the conversation now. Add what to keep.", insert: "/compact ", icon: "sparkle", group: "Commands" } as Shortcut, { label: "reload", description: "Read the agent's skills, instructions and notes again.", insert: "/reload", icon: "sparkle", group: "Commands" } as Shortcut, ...skills, ...agent.plugins.map((name): Shortcut => ({ label: name, description: "Plugin", insert: `Use the ${name} plugin to `, icon: "puzzle", group: "Plugins" }))];
 
   return (
+    <PreviewProvider>
     <div className="flex h-full min-w-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar
           onBack={onBack}
-          leading={<Avatar spec={avatarOf(agent)} size={32} working={chat.busy} />}
+          leading={<Avatar spec={avatarOf(agent)} size={32} working={chat.busy} doing={agent.doing} />}
           title={agent.name}
           subtitle={agent.model ? (models?.find((m) => m.id === agent.model)?.name ?? agent.model) : "Choose a model"}
           onTitle={onEdit}
@@ -82,10 +84,10 @@ export function ChatView({ agent, models, hasProvider, onBack, onEdit, onActivit
         />
         <div className="relative min-h-0 flex-1">
           <div ref={scroller} style={{ paddingBottom: room }} className="h-full overflow-y-auto">
-            <div className="mx-auto w-full max-w-3xl px-4 py-5">{chat.ready ? <MessageList messages={chat.messages} busy={chat.busy} asking={chat.asking} onAnswer={chat.answer} onReply={reply} note={chat.note} /> : <Loading />}</div>
+            <div className="mx-auto w-full max-w-3xl px-4 py-5">{chat.ready ? <MessageList messages={chat.messages} busy={chat.busy} asking={chat.asking} onAnswer={chat.answer} onReply={reply} queued={chat.queued} note={chat.note} /> : <Loading />}</div>
           </div>
           <div ref={dock} className="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-page from-55% to-transparent pt-8">
-            <div className="pointer-events-auto mx-auto flex w-full max-w-3xl flex-col gap-2 px-3 pb-3 sm:px-4 sm:pb-4">
+            <div className="pointer-events-auto mx-auto flex w-full max-w-3xl flex-col gap-2 pr-[max(0.75rem,env(safe-area-inset-right))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] sm:pr-4 sm:pb-4 sm:pl-4">
               {!hasProvider && (
                 <Notice title="Add a provider to send messages." action={<Button size="sm" onClick={onOpenSettings}>Add provider</Button>}>
                   Weilo Agents needs an API key to use a model.
@@ -102,6 +104,7 @@ export function ChatView({ agent, models, hasProvider, onBack, onEdit, onActivit
                 shortcuts={shortcuts}
                 to={agent.name}
                 avatar={avatarOf(agent)}
+                doing={agent.doing}
                 busy={chat.busy}
                 waiting={!!chat.asking}
                 onAnswer={chat.asking ? chat.answer : undefined}
@@ -125,6 +128,7 @@ export function ChatView({ agent, models, hasProvider, onBack, onEdit, onActivit
         </Modal>
       )}
     </div>
+    </PreviewProvider>
   );
 }
 

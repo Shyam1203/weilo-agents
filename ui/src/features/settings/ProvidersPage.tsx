@@ -39,7 +39,7 @@ function ProviderRow({ provider, models, onChange, onModels }: { provider: Provi
     });
 
   const save = (e: FormEvent) => (e.preventDefault(), change(() => saveKey(provider.id, key.trim())));
-  const below = (provider.connected && picking) || (!provider.connected && open) || error;
+  const below = (provider.connected && picking) || open || error;
 
   return (
     <Row
@@ -50,9 +50,9 @@ function ProviderRow({ provider, models, onChange, onModels }: { provider: Provi
         below ? (
           <>
             {provider.connected && picking && <ModelPicker providerId={provider.id} models={models} onChange={onModels} />}
-            {!provider.connected && open && (
+            {open && (
               <form onSubmit={save} className="flex flex-col gap-2">
-                <input autoFocus type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder="API key" aria-label={`${provider.name} API key`} className="input" />
+                <input autoFocus type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder={provider.connected ? "New API key" : "API key"} aria-label={`${provider.name} API key`} className="input" />
                 <div className="flex items-center justify-between gap-2">
                   {provider.keyUrl ? (
                     <a href={provider.keyUrl} target="_blank" rel="noreferrer noopener" className="hint underline">
@@ -75,8 +75,11 @@ function ProviderRow({ provider, models, onChange, onModels }: { provider: Provi
       {provider.connected ? (
         <>
           <Tag>Connected</Tag>
-          <Button size="sm" variant="ghost" aria-expanded={picking} onClick={() => setPicking(!picking)}>
+          <Button size="sm" variant="ghost" aria-expanded={picking} onClick={() => (setPicking(!picking), setOpen(false))}>
             Models
+          </Button>
+          <Button size="sm" variant="ghost" aria-expanded={open} onClick={() => (setOpen(!open), setPicking(false))}>
+            Edit key
           </Button>
           <Button size="sm" variant="ghost" busy={!!busy} onClick={() => change(() => removeKey(provider.id))}>
             Remove

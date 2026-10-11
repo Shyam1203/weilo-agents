@@ -10,7 +10,7 @@ import { Modal } from "../../components/ui/Modal";
 import { Card, Row } from "../../components/ui/Row";
 import { Select } from "../../components/ui/Select";
 import { Switch } from "../../components/ui/Switch";
-import type { SettingsPage } from "../settings/SettingsModal";
+import type { SettingsPage } from "../settings/SettingsView";
 import { Toggles } from "../../components/ui/Toggles";
 import { useAction } from "../../lib/useAction";
 import { AvatarPicker } from "./AvatarPicker";
@@ -73,16 +73,13 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
   const pickProvider = (id: string) => {
     if (id === ADD) return onAddProvider();
     setProviderId(id);
-    change({ model: choosableOf(models ?? [], id)[0]?.id ?? "" });
+    change({ model: "" });
   };
 
-  // What is still empty fills in once it can: the first provider (one added while this is open) and its first model (once they load).
+  // The provider fills in once there is one (added while this is open). The model is always yours to choose.
   useEffect(() => {
-    const id = providerId || firstConnected;
-    if (id !== providerId) setProviderId(id);
-    const first = choosableOf(models ?? [], id)[0]?.id;
-    if (id && !draft.model && first) change({ model: first });
-  }, [providerId, firstConnected, models, draft.model]);
+    if (!providerId && firstConnected) setProviderId(firstConnected);
+  }, [providerId, firstConnected]);
 
   const save = (e: FormEvent) => {
     e.preventDefault();
