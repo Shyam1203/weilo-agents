@@ -2,7 +2,7 @@ import { access, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "no
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
 import { fail, SKILLS, slug } from "../common.mjs";
-import { SKILL_DEPTH } from "../config.mjs";
+import { MAX_SKILL_DESCRIPTION, MAX_SKILL_TEXT, SKILL_DEPTH } from "../config.mjs";
 import { unzip } from "./zip.mjs";
 
 // Skills are pi's own: a folder in agent/skills/ with a SKILL.md. Which agent uses which is the
@@ -11,7 +11,15 @@ import { unzip } from "./zip.mjs";
 const ID = /^[\w-]+$/;
 
 // A value from SKILL.md's front matter.
-const field = (text, key) => (text.split(/^---\s*$/m)[1] ?? "").match(new RegExp(`^${key}:[ \\t]*(.+)$`, "m"))?.[1].trim().replace(/^["']|["']$/g, "");
+const field = (text, key) => {
+  const value = (text.split(/^---\s*$/m)[1] ?? "").match(new RegExp(`^${key}:[ \\t]*(.+)$`, "m"))?.[1].trim();
+  if (value?.startsWith('"')) {
+    try {
+      return JSON.parse(value);
+    } catch {}
+  }
+  return value?.replace(/^["']|["']$/g, "");
+};
 
 export async function listSkills() {
   const ids = (await readdir(SKILLS).catch(() => [])).filter((id) => ID.test(id));
@@ -65,6 +73,24 @@ export async function addSkills({ name, data }) {
   } finally {
     await rm(work, { recursive: true, force: true });
   }
+}
+
+// A skill an agent makes (its `skill` tool): the folder is the library's, so Settings lists it. SKILL.md is written whole; other files
+// in the folder (an earlier version's scripts) stay. Returns the skill's id and folder, for the agent to add files to.
+export async function saveSkill({ name, description, instructions } = {}) {
+  const id = typeof name === "string" ? slug(name, 48) : "";
+  if (!id) throw fail(400, "Give the skill a name");
+  const about = typeof description === "string" ? description.replace(/\s+/g, " ").trim() : "";
+  if (!about) throw fail(400, "Give the skill a description: when to use it");
+  if (about.length > MAX_SKILL_DESCRIPTION) throw fail(400, `The description is too long. Use ${MAX_SKILL_DESCRIPTION} characters at most.`);
+  if (typeof instructions !== "string" || !instructions.trim()) throw fail(400, "Give the skill its instructions");
+  if (instructions.length > MAX_SKILL_TEXT) throw fail(400, `The instructions are too long. Use ${MAX_SKILL_TEXT} characters at most.`);
+  const folder = join(SKILLS, id);
+  await mkdir(folder, { recursive: true });
+  // Quoted when plain YAML would misread it (a colon and a space, a leading symbol).
+  const line = /: |\s#|^[-?&*!|>%@`'"[\]{}]/.test(about) ? JSON.stringify(about) : about;
+  await writeFile(join(folder, "SKILL.md"), `---\nname: ${id}\ndescription: ${line}\n---\n\n${instructions.trim()}\n`);
+  return { id, folder };
 }
 
 export async function removeSkill(id) {

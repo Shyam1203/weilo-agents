@@ -4,6 +4,8 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 ## Unreleased
 
+## 0.1.1
+
 - Settings is a page, not a popup. Contact us (mail button beside Settings), and an update check (Settings > About).
 - Preview files an agent made in the app: pictures, PDFs, Markdown, CSV, JSON, HTML and text.
 - The message box continues lists (bullets and numbers) and can start one from the + menu.
@@ -13,7 +15,8 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 - Providers: Edit key. The agent form no longer picks a model for you.
 - Phones: the page no longer scrolls under the message box, the message box respects the screen edges, and fields no longer zoom the page. The app can be installed to the home screen.
 - Pasting into the agent's browser (Ctrl+V or the Paste button) types the text in, for passwords.
-- Skills an agent adds appear in Settings.
+- A new `skill` tool: an agent saves a skill in the skill library (it shows in Settings and is switched on for that agent) instead of writing files where the app does not look.
+- `/reload` sent with Enter from the command list works. The working avatar's scenes (reading, searching, typing) follow the live chat and stay up at least 1.5 s, and the message box's avatar is larger.
 - Fixes from review: Ctrl+V into the agent's browser no longer types shortcuts; the chat keeps its place when Settings closes and follows new content reliably; Add provider and add-on links no longer discard a new agent's draft; the installed app respects the status bar and notch; a reload sent during a run reports when it happens.
 - The start scripts show progress (download, start, waiting) and say so when `compose.yaml` is missing, for example when run from inside the zip.
 

@@ -17,7 +17,7 @@ import { addRoutine, forgetRoutines, listRoutines, noteZone, removeRoutine, star
 import { addExtension, listExtensions, removeExtension } from "./settings/extensions.mjs";
 import { addPlugin,listPlugins, pluginStatus, removePlugin } from "./settings/plugins.mjs";
 import { listModels, listProviders, removeKey, saveKey, setEnabledModels, syncCompaction } from "./settings/providers.mjs";
-import { addSkills, listSkills, removeSkill } from "./settings/skills.mjs";
+import { addSkills, listSkills, removeSkill, saveSkill } from "./settings/skills.mjs";
 import { getUser, saveUser } from "./settings/user.mjs";
 import { sendContact } from "./contact.mjs";
 import { migrate } from "./migrate.mjs";
@@ -107,6 +107,14 @@ route("GET", "/api/agents/:id/browser", async (id) => ({ taken: isTaken(id), has
 route("POST", "/api/agents/:id/browser/show", (id) => showBrowser(id));
 route("POST", "/api/agents/:id/browser/take-over", (id) => takeOver(id));
 route("POST", "/api/agents/:id/browser/give-back", (id) => giveBack(id));
+// An agent's `skill` tool: the skill goes into the library and is switched on for that agent, which reads it when its run ends.
+route("POST", "/api/agents/:id/skill", async (id, body) => {
+  const { id: skill, folder } = await saveSkill(body);
+  const agent = await getAgent(id);
+  await updateAgent(id, { skills: [...new Set([...agent.skills, skill])] });
+  await restart(id);
+  return { text: `Saved the skill "${skill}" in ${folder}/ (put any scripts or other files it needs there). It is on for you and loads when this reply ends. It shows under Skills in Settings.` };
+});
 route("POST", "/api/agents/:id/memory", async (_, body) => ({ text: await useMemory(body) }));
 route("POST", "/api/agents/:id/fetch_knowledge", async (_, body) => ({ text: await fetchKnowledge(body) }));
 route("GET", "/api/browser/rule", () => getRule());

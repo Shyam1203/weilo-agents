@@ -5,6 +5,8 @@
 // `ask`: the agent asks the user a question and waits. Pi's own dialogs carry it: the daemon passes
 // the request to the chat and the answer back.
 
+import { daemonTool } from "./tool.mjs";
+
 const object = (properties, required) => ({ type: "object", properties, required });
 const str = { type: "string" };
 const list = (items) => ({ type: "array", items });
@@ -41,7 +43,14 @@ When the blocks let the user choose (cards with a message, or buttons), end your
 
 const ASK = `Ask the user a question and wait for the answer. Give options when the answer is one of a few choices (they pick one); leave them out to let the user type a short answer. Ask only when you cannot continue without the answer.`;
 
+const SKILL = `Save a skill: instructions for a kind of task that you or the user will want again (a procedure, a checklist, the quirks of a website). Use this when the user asks you to make or change a skill, and offer it after you worked out something hard that will come again. To change a skill, save it again under the same name with the whole new text.
+- name: short, lowercase, with hyphens.
+- description: when to use it, in one or two sentences. Later you choose the skill by this alone.
+- instructions: the skill itself, in Markdown: the steps, what to check, what goes wrong. Never put secrets in it.
+The skill is saved in the skill library and switched on for you. Use only this tool to make or change a skill: do not write skill files yourself or save them in .agents or anywhere else, because only the library is read.`;
+
 export default function (pi) {
+  daemonTool(pi, "skill", "Skill", SKILL, { name: note("Short, lowercase, with hyphens."), description: note("When to use the skill."), instructions: note("The skill, in Markdown.") }, ["name", "description", "instructions"]);
   pi.registerTool({
     name: "show",
     label: "Show",
