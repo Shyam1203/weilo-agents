@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // How close to the bottom (px) the reader must be for new content to pull the view down; scrolling up further stays put.
 const NEAR = 80;
@@ -9,12 +9,16 @@ const NEAR = 80;
  * (message count, the last message's size). Where the reader is is noted as they scroll, not when
  * content arrives (a tall block would otherwise look like scrolled away), and kept while the box
  * is hidden (Settings is open over the chat).
+ * Returns the box, whether the reader is `away` from the bottom, whether something new arrived meanwhile (`unseen`),
+ * and `toBottom`, which scrolls down to the newest.
  */
 export function useFollowBottom(deps: unknown[]) {
   const box = useRef<HTMLDivElement>(null);
   const opened = useRef(false);
   const atBottom = useRef(true);
   const top = useRef(0);
+  const [away, setAway] = useState(false);
+  const [unseen, setUnseen] = useState(false);
 
   useEffect(() => {
     const el = box.current;
@@ -23,6 +27,8 @@ export function useFollowBottom(deps: unknown[]) {
       if (!el.clientHeight) return;
       top.current = el.scrollTop;
       atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR;
+      setAway(!atBottom.current);
+      if (atBottom.current) setUnseen(false);
     };
     // Hidden boxes lose their scroll position; it returns when the box is shown again.
     let height = el.clientHeight;
@@ -41,6 +47,9 @@ export function useFollowBottom(deps: unknown[]) {
     const first = !opened.current && el.scrollHeight > el.clientHeight;
     if (first) opened.current = true;
     if (first || atBottom.current) el.scrollTop = el.scrollHeight;
+    else if (opened.current) setUnseen(true);
   }, deps);
-  return box;
+
+  const toBottom = () => box.current?.scrollTo({ top: box.current.scrollHeight, behavior: "smooth" });
+  return { box, away, unseen, toBottom };
 }

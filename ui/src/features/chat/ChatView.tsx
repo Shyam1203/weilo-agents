@@ -5,6 +5,7 @@ import { messageOf } from "../../api/http";
 import type { Model } from "../../api/providers";
 import { Avatar } from "../../components/ui/Avatar";
 import { Button, IconButton } from "../../components/ui/Button";
+import { Icon } from "../../components/ui/Icon";
 import { Notice } from "../../components/ui/Notice";
 import { TopBar } from "../../components/ui/TopBar";
 import { Loading } from "../../components/ui/List";
@@ -15,7 +16,9 @@ import { avatarOf } from "../agents/avatars";
 import { Composer } from "./Composer";
 import type { Shortcut } from "./CommandMenu";
 import { ContextMeter } from "./ContextMeter";
+import { FindBar } from "./FindBar";
 import { MessageList } from "./MessageList";
+import { useFind } from "./useFind";
 import { useChat } from "./useChat";
 import { BrowserPanel } from "../browser/BrowserPanel";
 import { RoutinesPanel } from "../routines/RoutinesPanel";
@@ -28,6 +31,8 @@ interface Props {
   /** A provider is connected, so there is a model to talk to. */
   hasProvider: boolean;
   onBack: () => void;
+  /** Words to find as the chat opens, near the message at `at` (s). */
+  find?: { query: string; at: number } | null;
   onEdit: () => void;
   /** A run started, moved on or ended: the agent list shows what it is doing, and its newest message. */
   onActivity: () => void;
@@ -37,7 +42,7 @@ interface Props {
 }
 
 /** One agent's chat. Give it a `key` of the agent's id. */
-export function ChatView({ agent, models, hasProvider, onBack, onEdit, onActivity, onLive, onOpenSettings }: Props) {
+export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onActivity, onLive, onOpenSettings }: Props) {
   const chat = useChat(agent.id, onActivity);
   useEffect(() => onLive({ busy: chat.busy, doing: chat.doing }), [chat.busy, chat.doing]);
   useEffect(() => () => onLive(null), []);
@@ -49,6 +54,15 @@ export function ChatView({ agent, models, hasProvider, onBack, onEdit, onActivit
   const toggleSide = () => (wide ? (write(KEYS.sidebar, sidebar ? "0" : "1"), setSidebar(!sidebar)) : setSheet(!sheet));
   const routinesChanged = chat.messages.filter((m) => m.kind === "note").length;
   const scroller = useFollowBottom([chat.messages, chat.asking]);
+  const { away, unseen, toBottom } = scroller;
+  // Finding words in this chat: open with a search's words, or from the header's button.
+  const [finding, setFinding] = useState(!!find);
+  const [query, setQuery] = useState(find?.query ?? "");
+  useEffect(() => {
+    if (find) (setFinding(true), setQuery(find.query));
+  }, [find]);
+  const found = useFind(scroller.box, finding ? query : "", [chat.messages, chat.ready], find);
+  const closeFind = () => (setFinding(false), setQuery(""));
 
   // A message sent from the message box shows its own error. A reply from a button, card or page has no box: its error shows above it.
   const [replyError, setReplyError] = useState<string | null>(null);
@@ -84,14 +98,27 @@ export function ChatView({ agent, models, hasProvider, onBack, onEdit, onActivit
           title={agent.name}
           subtitle={agent.model ? (models?.find((m) => m.id === agent.model)?.name ?? agent.model) : "Choose a model"}
           onTitle={onEdit}
-          actions={<IconButton icon="globe" label={sideOpen ? "Hide the browser" : "Show the browser"} aria-pressed={sideOpen} className={sideOpen ? "bg-select text-ink" : ""} onClick={toggleSide} />}
+          actions={<><IconButton icon="search" label="Find in this chat" aria-pressed={finding} className={finding ? "bg-select text-ink" : ""} onClick={() => (finding ? closeFind() : setFinding(true))} /><IconButton icon="globe" label={sideOpen ? "Hide the browser" : "Show the browser"} aria-pressed={sideOpen} className={sideOpen ? "bg-select text-ink" : ""} onClick={toggleSide} /></>}
         />
+        {finding && <FindBar query={query} onQuery={setQuery} count={found.count} current={found.current} onNext={found.next} onPrevious={found.previous} onClose={closeFind} />}
         <div className="relative min-h-0 flex-1">
-          <div ref={scroller} style={{ paddingBottom: room }} className="h-full overflow-y-auto">
+          <div ref={scroller.box} style={{ paddingBottom: room }} className="h-full overflow-y-auto">
             <div className="mx-auto w-full max-w-3xl px-4 py-5">{chat.ready ? <MessageList messages={chat.messages} busy={chat.busy} asking={chat.asking} onAnswer={chat.answer} onReply={reply} queued={chat.queued} note={chat.note} /> : <Loading />}</div>
           </div>
           <div ref={dock} className="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-page from-55% to-transparent pt-8">
             <div className="pointer-events-auto mx-auto flex w-full max-w-3xl flex-col gap-2 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4 sm:pb-[max(1rem,env(safe-area-inset-bottom))]">
+              {/* Scrolled up: a way back down to the newest, which says when something new came meanwhile. */}
+              {away && (
+                <button
+                  type="button"
+                  onClick={toBottom}
+                  aria-label={unseen ? "New messages: scroll to the newest" : "Scroll to the newest"}
+                  className="mx-auto flex animate-fade-in items-center gap-1.5 rounded-full bg-raised px-3 py-1.5 text-[13px] font-medium text-ink shadow-pop ring-1 ring-line"
+                >
+                  <Icon name="arrowDown" size={15} />
+                  {unseen && "New messages"}
+                </button>
+              )}
               {!hasProvider && (
                 <Notice title="Add a provider to send messages." action={<Button size="sm" onClick={onOpenSettings}>Add provider</Button>}>
                   Weilo Agents needs an API key to use a model.

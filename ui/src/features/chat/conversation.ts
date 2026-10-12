@@ -190,7 +190,40 @@ export interface Note {
   at: number | null;
 }
 
-export type Item = Message | ShownBlocks | Question | Note;
+/** What the agent did between its words (tools it used, what it said while using them), folded into one line in the chat. */
+export interface Steps {
+  kind: "steps";
+  id: string;
+  role: "agent";
+  steps: Step[];
+  at: number | null;
+}
+
+/** One thing the agent did: a tool and what it used it on ("read", "src/app.ts"), or "say" and what it said meanwhile. */
+export interface Step {
+  tool: string;
+  detail: string;
+}
+
+export type Item = Message | ShownBlocks | Question | Note | Steps;
+
+// What a tool was used on, in a few words, from its arguments.
+function detailOf(tool: string, args: unknown) {
+  const a = (args ?? {}) as Record<string, unknown>;
+  const first = (...keys: string[]) => keys.map((k) => a[k]).find((v): v is string => typeof v === "string" && !!v.trim()) ?? "";
+  if (tool === "bash") return first("command").split("\n")[0];
+  if (tool === "browser") return [first("action"), first("url", "text")].filter(Boolean).join(" ");
+  return first("path", "file_path", "pattern", "query", "url", "action", "name");
+}
+
+// Steps next to each other (the agent used tools over several messages) are one line.
+const joined = (items: Item[]) =>
+  items.reduce<Item[]>((all, item) => {
+    const last = all.at(-1);
+    if (item.kind === "steps" && last?.kind === "steps") all[all.length - 1] = { ...last, steps: [...last.steps, ...item.steps] };
+    else all.push(item);
+    return all;
+  }, []);
 
 // A routine's task reaches the agent as a message that starts with this (daemon/routines/routines.mjs).
 const ROUTINE_MARK = "⏰ Routine: ";
@@ -202,10 +235,10 @@ function routineNote(details: PiMessage["details"]) {
   return details?.action === "delete" ? "Routine deleted" : null;
 }
 
-/** Your messages, the agent's answers and what it shows; what it does between them (thinking, other tools, and what it says about them) is not shown, and an answer appears when it is complete. */
+/** Your messages, the agent's answers and what it shows, with what it did between them folded into steps (its thinking is not shown); an answer appears when it is complete. */
 export function itemsOf({ messages, open }: Conversation): Item[] {
   const results = new Map(messages.flatMap((m) => (m.role === "toolResult" && m.toolCallId ? [[m.toolCallId, m] as const] : [])));
-  return messages.flatMap((m, i): Item[] => {
+  return joined(messages.flatMap((m, i): Item[] => {
     const at = m.timestamp ? m.timestamp / 1000 : null;
     if (m.role === "user") {
       const text = textOf(m.content);
@@ -218,6 +251,7 @@ export function itemsOf({ messages, open }: Conversation): Item[] {
     const arriving = open && i === messages.length - 1;
     const working = arriving || m.content.some((b) => b.type === "toolCall" && b.name !== "show" && b.name !== "ask");
     return m.content.flatMap((b, j): Item[] => {
+      if (b.type === "text" && working && !arriving && b.text?.trim()) return [{ kind: "steps", id: `${i}.${j}`, role: "agent", steps: [{ tool: "say", detail: b.text.trim() }], at }];
       if (b.type === "text") return working ? [] : [{ kind: "message", id: `${i}.${j}`, role: "agent", text: b.text ?? "", images: [], at }];
       if (b.type === "toolCall" && b.name === "show") return [{ kind: "show", id: `${i}.${j}`, role: "agent", blocks: blocksOf(b.arguments), at }];
       if (b.type === "toolCall" && b.name === "ask") {
@@ -228,7 +262,8 @@ export function itemsOf({ messages, open }: Conversation): Item[] {
         const text = routineNote(b.id ? results.get(b.id)?.details : undefined);
         return text ? [{ kind: "note", id: `${i}.${j}`, role: "agent", text, at }] : [];
       }
+      if (b.type === "toolCall" && b.name) return [{ kind: "steps", id: `${i}.${j}`, role: "agent", steps: [{ tool: b.name, detail: detailOf(b.name, b.arguments) }], at }];
       return [];
     });
-  });
+  }));
 }

@@ -23,4 +23,5 @@ export const KEYS = {
   seen: "weilo.seen",
   welcomed: "weilo.welcomed",
   sidebar: "weilo.sidebar",
+  device: "weilo.device",
 } as const;

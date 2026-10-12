@@ -4,6 +4,9 @@ import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "./styles/index.css";
 import { App } from "./App";
+import { registerWorker } from "./lib/push";
+
+registerWorker();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

@@ -35,7 +35,7 @@ const DOING: Record<string, string> = { read: "Reading files", bash: "Running a 
 /** What an agent is doing, in a few words: a plugin's or extension's tools have many names. */
 export const doingText = (tool?: string | null) => (tool ? (DOING[tool] ?? "Using an add-on") : "Working");
 
-export const listAgents = () => request<Agent[]>("GET", "/api/agents");
+export const listAgents = () => request<Agent[]>("GET", document.visibilityState === "visible" ? "/api/agents?seen" : "/api/agents");
 export const createAgent = (input: AgentInput) => request<Agent>("POST", "/api/agents", input);
 export const updateAgent = (id: string, input: AgentInput) => request<Agent>("PUT", `/api/agents/${id}`, input);
 /** The agent list's order, as the user dragged it. */

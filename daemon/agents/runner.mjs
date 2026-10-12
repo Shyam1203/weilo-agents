@@ -9,6 +9,7 @@ import { extensionsOf } from "../settings/extensions.mjs";
 import { pluginTools } from "../settings/plugins.mjs";
 import { skillPaths } from "../settings/skills.mjs";
 import { userFlags } from "../settings/user.mjs";
+import { notify } from "../push.mjs";
 import { getAgent, profilePath } from "./agents.mjs";
 import { spawnPi } from "./pi.mjs";
 import { asTyped } from "./sessions.mjs";
@@ -16,7 +17,8 @@ import { saveFiles, toImages } from "./uploads.mjs";
 
 // One pi per agent that is open. It starts on first use and stops after IDLE_MS with nobody
 // watching and no run in progress.
-// agent id -> run: { id, ready: Promise<run>, pi, listeners, busy, doing, asking, stale, timer, done }
+// agent id -> run: { id, ready: Promise<run>, pi, listeners, busy, doing, asking, reply, stale, timer, done }
+// `reply` is the run's newest message from the agent, for the notification when the run ends.
 // `asking` is the question the agent waits on, as pi sent it (`extension_ui_request`).
 const runs = new Map();
 
@@ -71,6 +73,18 @@ const argvOf = (agent, skills, plugins, extensions, about) => {
   ];
 };
 
+// A notification on your devices (push.mjs) when a run ends: its answer, or its error. A run you stopped sends none.
+const notifyAbout = (id, kind, text) => getAgent(id).then((agent) => notify(agent, kind, text)).catch(() => {});
+function tell(run) {
+  const { reply } = run;
+  run.reply = null;
+  if (!reply || reply.stopReason === "aborted") return;
+  if (reply.stopReason === "error") return void notifyAbout(run.id, "error", reply.errorMessage);
+  const text = typeof reply.content === "string" ? reply.content : reply.content.filter((b) => b.type === "text").map((b) => b.text).join(" ");
+  const shown = Array.isArray(reply.content) && reply.content.some((b) => b.type === "toolCall" && b.name === "show");
+  void notifyAbout(run.id, "reply", text.trim() || (shown ? "Showed you something." : ""));
+}
+
 async function start(run) {
   const agent = await getAgent(run.id);
   const [ask, skills, plugins, extensions, user, memory] = await Promise.all([askBefore(), skillPaths(agent.skills), pluginTools(agent.plugins), extensionsOf(agent), userFlags(), memoryFlags()]);
@@ -80,13 +94,14 @@ async function start(run) {
       cwd: WORKSPACE,
       env: { ...PI_ENV, WEILO_AGENT: run.id, WEILO_API: `http://127.0.0.1:${PORT}/api`, WEILO_ASK_BEFORE: ask },
       onEvent(event) {
-        if (event.type === "agent_start") run.busy = true;
-        if (event.type === "agent_settled") run.busy = false;
+        if (event.type === "agent_start") (run.busy = true), (run.reply = null);
+        if (event.type === "message_end" && event.message?.role === "assistant") run.reply = event.message;
+        if (event.type === "agent_settled") (run.busy = false), tell(run);
         if (event.type === "tool_execution_start") run.doing = event.toolName;
         if (event.type === "tool_execution_end" || !run.busy) run.doing = "";
         if (event.type === "extension_ui_request") {
           // Only the agent's own questions (`ask`: a choice or a line of text) reach the user; pi may ask others.
-          if (event.method === "select" || event.method === "input") run.asking = event;
+          if (event.method === "select" || event.method === "input") (run.asking = event), void notifyAbout(run.id, "ask", event.title);
           else if (event.method === "confirm" || event.method === "editor") run.pi.reply({ type: "extension_ui_response", id: event.id, cancelled: true });
         }
         if (event.type === "tool_execution_end" || !run.busy) endAsk(run);
