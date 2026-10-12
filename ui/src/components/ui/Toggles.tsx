@@ -19,9 +19,10 @@ interface Props {
   onChange: (value: string[]) => void;
 }
 
-/** A switch per item, with All and Enabled views and a search, so a long list stays easy to work with. */
+/** A switch per item, with Enabled and All views and a search, so a long list stays easy to work with. It opens on
+ * Enabled, unless none are. */
 export function Toggles({ label, items, empty, value, onChange }: Props) {
-  const [show, setShow] = useState<"all" | "enabled">("all");
+  const [show, setShow] = useState<"all" | "enabled">(() => (value.length ? "enabled" : "all"));
   const [query, setQuery] = useState("");
   if (items.length === 0) return <p className="hint">{empty}</p>;
 
@@ -33,8 +34,8 @@ export function Toggles({ label, items, empty, value, onChange }: Props) {
       <Tabs
         label={`Show ${label}`}
         tabs={[
+          { value: "enabled", label: `Enabled ${on.length}` },
           { value: "all", label: `All ${items.length}` },
-          { value: "enabled", label: `On ${on.length}` },
         ]}
         value={show}
         onChange={setShow}
@@ -50,7 +51,7 @@ export function Toggles({ label, items, empty, value, onChange }: Props) {
             <Switch label={item.name} checked={value.includes(item.id)} onChange={(checked) => onChange(checked ? [...value, item.id] : value.filter((id) => id !== item.id))} />
           </li>
         ))}
-        {shown.length === 0 && <li className="px-3.5 py-3 text-[13px] text-ink-3">{show === "enabled" && !query.trim() ? "None are on." : "No match."}</li>}
+        {shown.length === 0 && <li className="px-3.5 py-3 text-[13px] text-ink-3">{show === "enabled" && !query.trim() ? "None are enabled." : "No match."}</li>}
       </ul>
     </div>
   );

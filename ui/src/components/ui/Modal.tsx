@@ -68,7 +68,7 @@ export function Modal({ title, onBack, onClose, width = "max-w-lg", hidden = fal
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={`relative flex max-h-[92dvh] w-full animate-rise flex-col overflow-hidden rounded-t-2xl outline-none border border-line bg-raised shadow-lift sm:rounded-2xl ${width}`}
+        className={`relative flex max-h-[calc(92dvh/var(--zoom))] w-full animate-rise flex-col overflow-hidden rounded-t-2xl outline-none border border-line bg-raised shadow-lift sm:rounded-2xl ${width}`}
       >
         <header className="flex items-start gap-3 px-6 pt-5 pb-1">
           {onBack && <IconButton icon="chevronLeft" label="Back" onClick={onBack} className="-mt-1 -ml-2" />}

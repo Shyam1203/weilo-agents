@@ -4,8 +4,12 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 ## Unreleased
 
+- Sign in to a provider with your account instead of an API key: Claude Pro or Max, ChatGPT Plus or Pro, GitHub Copilot and OpenRouter (Settings > Providers > Sign in). It works from a phone too.
+- The app is drawn 10% larger on a computer.
+- A provider's model list opens on the enabled models (Enabled, then All).
+- On iPhone, Notifications no longer asks to add the app to the Home Screen when it was opened from there.
 - Notifications (Settings > Notifications): when an agent replies, asks you something or runs into a problem while the app is not on screen. Per device, with a switch per agent. On iPhone, from the app added to the Home Screen.
-- Search all chats from the agent list; a result opens the chat at that message. Find in a chat from its header (search button).
+- Search from the agent list: agents by name, and every chat's messages; a message opens the chat at that message. Find in a chat from its header (search button).
 - What an agent did between its words shows as one line ("Read 2 files · Ran a command"); tap it for each step.
 - A button to jump back to the newest message when you scroll up, which says when new messages came.
 - Unread agents: a dot at the end of the row and the time in colour, instead of a dot on the avatar.

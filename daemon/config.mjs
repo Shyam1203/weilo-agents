@@ -64,13 +64,22 @@ export const SEARCH_RESULTS = 50;
 
 // --- Providers and models (settings/) --------------------------------------------------------
 
-// Offered in Settings (ids are pi's). Providers already in auth.json are listed too.
+// Offered in Settings (ids are pi's). Providers already in auth.json are listed too. `signIn` names the account a
+// provider can be signed in with instead of a key (pi's own login, settings/login.mjs); `keyUrl` is where a key is made.
 export const PROVIDERS = [
-  { id: "openrouter", name: "OpenRouter", keyUrl: "https://openrouter.ai/keys" },
-  { id: "anthropic", name: "Anthropic", keyUrl: "https://console.anthropic.com/settings/keys" },
-  { id: "openai", name: "OpenAI", keyUrl: "https://platform.openai.com/api-keys" },
+  { id: "anthropic", name: "Anthropic", keyUrl: "https://console.anthropic.com/settings/keys", signIn: "Claude Pro or Max" },
+  { id: "openai", name: "OpenAI", keyUrl: "https://platform.openai.com/api-keys", signIn: "ChatGPT Plus or Pro" },
+  { id: "github-copilot", name: "GitHub Copilot", signIn: "GitHub Copilot" },
+  { id: "openrouter", name: "OpenRouter", keyUrl: "https://openrouter.ai/keys", signIn: "OpenRouter" },
   { id: "google", name: "Google Gemini", keyUrl: "https://aistudio.google.com/apikey" },
 ];
+// pi's own code, for signing in (the image installs it there), and how this app introduces itself to a provider.
+export const PI_SDK = "/usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/index.js";
+export const SIGN_IN_AS = "Weilo Agents";
+// A sign-in not finished in this long (ms) is given up.
+export const SIGN_IN_TIMEOUT_MS = 15 * MINUTE;
+// How long (ms) a sign-in request waits for the next step before answering with where it is.
+export const SIGN_IN_STEP_MS = 8000;
 // Longest wait for pi to list the models the keys can use (ms).
 export const MODELS_TIMEOUT_MS = 90_000;
 // Long conversations are summarized when this share of the context window is used: 40% of a 1M window, 80% of a 500k

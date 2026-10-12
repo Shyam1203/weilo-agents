@@ -1,6 +1,7 @@
 // Dragging an agent to a new place in the list. With a mouse it starts as soon as the pointer moves; with a finger, after
 // holding the agent still for a moment, so a quick swipe still scrolls the list.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { zoom } from "../../lib/zoom";
 
 /** How long (ms) a finger holds an agent before it lifts and can be dragged. */
 const HOLD_MS = 350;
@@ -40,7 +41,7 @@ export function useDragOrder(ids: string[], onDrop: (ids: string[]) => Promise<u
     const el = d?.active && items.current.get(d.id);
     if (!d || !el) return;
     el.style.transform = "";
-    el.style.transform = `translateY(${d.y - d.grab - el.getBoundingClientRect().top}px)`;
+    el.style.transform = `translateY(${(d.y - d.grab - el.getBoundingClientRect().top) / zoom()}px)`;
   };
   useLayoutEffect(place, [order]);
 
@@ -84,7 +85,7 @@ export function useDragOrder(ids: string[], onDrop: (ids: string[]) => Promise<u
     }
     const el = items.current.get(d.id);
     if (!el) return;
-    const middle = d.y - d.grab + el.offsetHeight / 2;
+    const middle = d.y - d.grab + el.getBoundingClientRect().height / 2;
     const others = current.current.filter((id) => id !== d.id);
     const before = others.filter((id) => {
       const rect = items.current.get(id)?.getBoundingClientRect();

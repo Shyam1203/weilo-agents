@@ -1,6 +1,7 @@
 // Finding words in the open chat. Every match is marked with CSS highlights (the messages' own markup is untouched), and
 // one is current: the view scrolls to it.
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { zoom } from "../../lib/zoom";
 
 const supported = () => typeof CSS !== "undefined" && "highlights" in CSS;
 
@@ -69,7 +70,7 @@ export function useFind(box: RefObject<HTMLElement | null>, query: string, deps:
     if (!el || !range) return;
     const at = range.getBoundingClientRect();
     const view = el.getBoundingClientRect();
-    if (at.top < view.top + 40 || at.bottom > view.bottom - 120) el.scrollTo({ top: el.scrollTop + at.top - view.top - view.height / 3, behavior: "smooth" });
+    if (at.top < view.top + 40 || at.bottom > view.bottom - 120) el.scrollTo({ top: el.scrollTop + (at.top - view.top - view.height / 3) / zoom(), behavior: "smooth" });
   }, [ranges, current]);
 
   const step = (by: number) => ranges.length && setCurrent((current + by + ranges.length) % ranges.length);
