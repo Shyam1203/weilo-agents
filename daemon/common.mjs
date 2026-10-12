@@ -13,6 +13,7 @@ export const AUTH = join(AGENT_DIR, "auth.json");
 export const SETTINGS = join(AGENT_DIR, "settings.json");
 export const SESSIONS = join(AGENT_DIR, "sessions");
 export const PROFILES = join(AGENT_DIR, "profiles");
+export const ORDER = join(AGENT_DIR, "order.json");
 export const SKILLS = join(AGENT_DIR, "skills");
 export const EXTENSIONS = join(AGENT_DIR, "extensions");
 // The extensions that come with the app: the `extension/` folder of each feature that has one, next to its code. (Memory's is not one of them: every agent has it.)

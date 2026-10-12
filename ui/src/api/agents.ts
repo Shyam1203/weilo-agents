@@ -38,5 +38,7 @@ export const doingText = (tool?: string | null) => (tool ? (DOING[tool] ?? "Usin
 export const listAgents = () => request<Agent[]>("GET", "/api/agents");
 export const createAgent = (input: AgentInput) => request<Agent>("POST", "/api/agents", input);
 export const updateAgent = (id: string, input: AgentInput) => request<Agent>("PUT", `/api/agents/${id}`, input);
+/** The agent list's order, as the user dragged it. */
+export const reorderAgents = (ids: string[]) => request("PUT", "/api/agents", { order: ids });
 /** With `keepChat` the conversation stays on disk, out of sight. */
 export const deleteAgent = (id: string, keepChat = false) => request("DELETE", `/api/agents/${id}`, { keepChat });

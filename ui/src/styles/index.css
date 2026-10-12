@@ -219,14 +219,33 @@
   padding-left: 0.8em;
   color: var(--color-ink-2);
 }
+/* A table wider than the bubble scrolls sideways: its words are never broken. */
 .prose-chat table {
   border-collapse: collapse;
   font-size: 13.5px;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
 }
 .prose-chat th,
 .prose-chat td {
   border: 1px solid var(--color-line-strong);
   padding: 4px 8px;
+  overflow-wrap: normal;
+  min-width: 6em;
+}
+.prose-chat th {
+  white-space: nowrap;
+}
+/* A code block under its Copy bar (features/chat/AgentText.tsx): the frame goes around both. */
+.prose-chat .code-block {
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.prose-chat .code-block pre {
+  border: 0;
+  border-radius: 0;
 }
 
 /* Avatars (components/ui/Avatar.tsx): hovering one squishes it and it blinks; a working one bobs

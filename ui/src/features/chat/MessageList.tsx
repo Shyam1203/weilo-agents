@@ -3,6 +3,7 @@ import { longWhen } from "../../lib/format";
 import { AgentText } from "./AgentText";
 import { AskCard } from "./AskCard";
 import { Icon } from "../../components/ui/Icon";
+import { ReplyActions } from "./ReplyActions";
 import { ShowBlocks } from "./ShowBlocks";
 import type { Asking, Item, Message } from "./conversation";
 
@@ -36,6 +37,24 @@ export function MessageList({ messages, busy, asking, onAnswer, onReply, queued,
     return { chosen, onReply: chosen === undefined && !busy ? onReply : undefined };
   };
 
+  // The end of a reply: its last text before your next message (or the end, once the agent is done).
+  const isHuman = (m?: Item) => m?.kind === "message" && m.role === "human";
+  const endsReply = (i: number) => shown[i].kind === "message" && !isHuman(shown[i]) && (i === shown.length - 1 ? !busy : isHuman(shown[i + 1]));
+  // All the text of the reply that ends at `i` (a reply can be text, tools, then more text).
+  const replyText = (i: number) => {
+    const parts: string[] = [];
+    for (let j = i; j >= 0; j--) {
+      const m = shown[j];
+      if (m.kind !== "message") continue;
+      if (m.role === "human") break;
+      parts.unshift(m.text.trim());
+    }
+    return parts.join("\n\n");
+  };
+  // The message to send again: your last one, if it was only text and the agent is done with it.
+  const last = shown.findLast((m): m is Message => m.kind === "message" && m.role === "human");
+  const again = !busy && !asking && last?.text && !last.images.length ? last.text : undefined;
+
   return (
     <ol aria-live="polite" aria-relevant="additions" className="flex flex-col gap-1.5">
       {shown.map((message, i) => {
@@ -46,6 +65,7 @@ export function MessageList({ messages, busy, asking, onAnswer, onReply, queued,
           <li key={message.id} className={`animate-fade-in ${sameSide || label ? "" : "mt-2.5"}`}>
             {label && <p className="mt-4 mb-2.5 text-center text-xs font-medium text-ink-3">{label}</p>}
             {message.kind === "ask" ? <AskCard question={message.question} options={message.options} answer={message.answer} /> : message.kind === "note" ? <p className="flex items-center justify-center gap-1.5 py-1 text-xs text-ink-3"><Icon name="clock" size={12} /> {message.text}</p> : message.kind === "show" ? <ShowBlocks blocks={message.blocks} {...answerTo(i)} /> : message.role === "human" ? <HumanMessage message={message} /> : <AgentText text={message.text} />}
+            {endsReply(i) && <ReplyActions text={replyText(i)} onRetry={i === shown.length - 1 && again ? () => onReply(again) : undefined} />}
           </li>
         );
       })}

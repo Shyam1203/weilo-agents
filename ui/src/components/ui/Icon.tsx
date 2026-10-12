@@ -1,7 +1,7 @@
 // Lucide, the Weilo icon set, by our own short names.
 import {
-  ArrowUp, Bot, Brain, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Download, ExternalLink, FileText, Globe, Info, Key, List, ListOrdered, LoaderCircle, Mail, Mic, MousePointer2,
-  Paperclip, Plug, Plus, Puzzle, Settings, Sparkles, Square, Sun, TriangleAlert, User, X,
+  ArrowUp, Bot, Brain, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Download, ExternalLink, FileText, Globe, Info, Key, List, ListOrdered, LoaderCircle, Mail, Mic, MousePointer2,
+  Paperclip, Plug, Plus, Puzzle, RotateCcw, Settings, Share, Sparkles, Square, Sun, TriangleAlert, User, X,
 } from "lucide-react";
 
 const ICONS = {
@@ -35,6 +35,9 @@ const ICONS = {
   file: FileText,
   download: Download,
   external: ExternalLink,
+  copy: Copy,
+  share: Share,
+  retry: RotateCcw,
 } as const;
 
 export type IconName = keyof typeof ICONS | "spinner" | "stop";
