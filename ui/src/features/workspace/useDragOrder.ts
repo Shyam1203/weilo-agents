@@ -27,7 +27,6 @@ export function useDragOrder(ids: string[], onDrop: (ids: string[]) => Promise<u
   const [order, setOrder] = useState<string[] | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const items = useRef(new Map<string, HTMLElement>());
-  const list = useRef<HTMLUListElement>(null);
   const drag = useRef<Drag | null>(null);
   // The click that ends a drag does not also open the agent.
   const dropped = useRef(false);
@@ -105,12 +104,12 @@ export function useDragOrder(ids: string[], onDrop: (ids: string[]) => Promise<u
     cancel: () => latest.current.end(false),
   }));
 
-  // While an agent is lifted, a finger's move drags it instead of scrolling the list.
+  // While an agent is lifted, a finger's move drags it instead of scrolling the list. On the document: the list itself
+  // comes and goes (search results take its place).
   useEffect(() => {
-    const ul = list.current;
     const hold = (e: TouchEvent) => drag.current?.active && e.preventDefault();
-    ul?.addEventListener("touchmove", hold, { passive: false });
-    return () => (ul?.removeEventListener("touchmove", hold), latest.current.end(false));
+    document.addEventListener("touchmove", hold, { passive: false });
+    return () => (document.removeEventListener("touchmove", hold), latest.current.end(false));
   }, []);
 
   const itemProps = (id: string) => ({
@@ -141,5 +140,5 @@ export function useDragOrder(ids: string[], onDrop: (ids: string[]) => Promise<u
     },
   });
 
-  return { order: shown, dragging, list, itemProps, wasDrag: () => dropped.current };
+  return { order: shown, dragging, itemProps, wasDrag: () => dropped.current };
 }

@@ -5,6 +5,7 @@ import { AskCard } from "./AskCard";
 import { Icon } from "../../components/ui/Icon";
 import { ReplyActions } from "./ReplyActions";
 import { ShowBlocks } from "./ShowBlocks";
+import { StepsLine } from "./StepsLine";
 import type { Asking, Item, Message } from "./conversation";
 
 /** A new time label when this much passes between messages. */
@@ -28,7 +29,7 @@ interface Props {
 export function MessageList({ messages, busy, asking, onAnswer, onReply, queued, note }: Props) {
   // A model can say nothing but a blank line before it uses a tool: no empty bubble for it.
   // A question still open shows at the end, as the one you answer.
-  const shown = messages.filter((m) => (m.kind === "ask" ? m.answer !== undefined || !asking : m.kind === "show" || m.role === "human" || m.text.trim()));
+  const shown = messages.filter((m) => (m.kind === "ask" ? m.answer !== undefined || !asking : m.kind === "show" || m.kind === "steps" || m.role === "human" || m.text.trim()));
   let shownAt = 0;
 
   // What you replied after the blocks at `i`; until you do, they can be answered (not while the agent works).
@@ -62,9 +63,9 @@ export function MessageList({ messages, busy, asking, onAnswer, onReply, queued,
         if (label) shownAt = message.at!;
         const sameSide = shown[i - 1]?.role === message.role;
         return (
-          <li key={message.id} className={`animate-fade-in ${sameSide || label ? "" : "mt-2.5"}`}>
+          <li key={message.id} data-at={message.at ?? undefined} className={`animate-fade-in ${sameSide || label ? "" : "mt-2.5"}`}>
             {label && <p className="mt-4 mb-2.5 text-center text-xs font-medium text-ink-3">{label}</p>}
-            {message.kind === "ask" ? <AskCard question={message.question} options={message.options} answer={message.answer} /> : message.kind === "note" ? <p className="flex items-center justify-center gap-1.5 py-1 text-xs text-ink-3"><Icon name="clock" size={12} /> {message.text}</p> : message.kind === "show" ? <ShowBlocks blocks={message.blocks} {...answerTo(i)} /> : message.role === "human" ? <HumanMessage message={message} /> : <AgentText text={message.text} />}
+            {message.kind === "ask" ? <AskCard question={message.question} options={message.options} answer={message.answer} /> : message.kind === "note" ? <p className="flex items-center justify-center gap-1.5 py-1 text-xs text-ink-3"><Icon name="clock" size={12} /> {message.text}</p> : message.kind === "steps" ? <StepsLine steps={message.steps} working={busy && i === shown.length - 1} /> : message.kind === "show" ? <ShowBlocks blocks={message.blocks} {...answerTo(i)} /> : message.role === "human" ? <HumanMessage message={message} /> : <AgentText text={message.text} />}
             {endsReply(i) && <ReplyActions text={replyText(i)} onRetry={i === shown.length - 1 && again ? () => onReply(again) : undefined} />}
           </li>
         );

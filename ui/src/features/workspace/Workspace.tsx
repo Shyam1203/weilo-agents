@@ -7,6 +7,8 @@ import type { Model, Provider } from "../../api/providers";
 import type { Skill } from "../../api/skills";
 import type { User } from "../../api/user";
 import { KEYS, read, write } from "../../lib/storage";
+import { useBackStep } from "../../lib/useBackStep";
+import { useEdgeSwipe } from "../../lib/useEdgeSwipe";
 import { useMedia } from "../../lib/useMedia";
 import { AgentForm } from "../agents/AgentForm";
 import { ChatView } from "../chat/ChatView";
@@ -32,13 +34,20 @@ interface Props {
 
 /** The agent list beside the open chat; on a phone, one at a time. */
 export function Workspace({ agents, providers, skills, plugins, extensions, user, models, onModels, reload, reloadAgents }: Props) {
-  const [selected, setSelected] = useState(() => read(KEYS.agent));
-  const [showChat, setShowChat] = useState(false);
+  // A tapped notification opens the app at its agent (`?agent=`).
+  const [opened] = useState(() => new URLSearchParams(location.search).get("agent"));
+  const [selected, setSelected] = useState(() => opened ?? read(KEYS.agent));
+  const [showChat, setShowChat] = useState(!!opened);
+  useEffect(() => {
+    if (opened) history.replaceState(history.state, "", location.pathname);
+  }, [opened]);
   const [form, setForm] = useState<"new" | "edit" | null>(null);
   // Settings, in place of the chat, open at a page. Opening it reads the lists again (an agent may have added a skill).
   const [settings, setSettings] = useState<SettingsPage | "menu" | null>(null);
   const openSettings = (page: SettingsPage | "menu") => (void reload(), setSettings(page));
   const [contact, setContact] = useState(false);
+  // Words to find in the chat as it opens (a search of all chats), and near which message (its time, s).
+  const [find, setFind] = useState<{ query: string; at: number } | null>(null);
   // The open chat's own word on whether its agent works and what it does: the list polls, so it follows the chat for that agent.
   const [live, setLive] = useState<{ busy: boolean; doing: string | null } | null>(null);
   // A newer release, if there is one (the daemon asks now and then).
@@ -72,6 +81,21 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
     setShowChat(true);
   };
 
+  // A notification tapped while the app is open already: the service worker says which agent.
+  const choose = useRef(select);
+  choose.current = select;
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => e.data?.type === "open-agent" && e.data.agent && choose.current(e.data.agent);
+    navigator.serviceWorker?.addEventListener("message", onMessage);
+    return () => navigator.serviceWorker?.removeEventListener("message", onMessage);
+  }, []);
+
+  // On a phone the chat and Settings cover the list: back (the phone's button or gesture, or a swipe from the left edge) shows it again.
+  const covered = !wide && (showChat || settings !== null);
+  const uncover = () => (setShowChat(false), setSettings(null));
+  useBackStep(covered, uncover);
+  const swipe = useEdgeSwipe(uncover, covered);
+
   return (
     <div className="flex h-full">
       <div className={`${showChat || settings ? "hidden" : "flex"} w-full md:flex md:w-auto`}>
@@ -80,7 +104,8 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
           unread={unread}
           selected={settings ? undefined : agent?.id}
           update={update}
-          onSelect={select}
+          onSelect={(id) => (setFind(null), select(id))}
+          onFound={(id, query, at) => (setFind({ query, at }), select(id))}
           onReorder={(ids) => reorderAgents(ids).then(reloadAgents, () => {})}
           onNew={() => (setSettings(null), setForm("new"))}
           onSkills={() => openSettings("skills")}
@@ -90,8 +115,8 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
           onContact={() => setContact(true)}
         />
       </div>
-      <main className={`${showChat || settings ? "flex" : "hidden"} min-w-0 flex-1 md:flex`}>
-        {settings && <SettingsView page={settings} providers={providers} skills={skills} plugins={plugins} extensions={extensions} user={user} models={models} onModels={onModels} onChange={reload} onClose={() => setSettings(null)} />}
+      <main ref={swipe} className={`${showChat || settings ? "flex" : "hidden"} min-w-0 flex-1 md:flex`}>
+        {settings && <SettingsView page={settings} agents={agents} providers={providers} skills={skills} plugins={plugins} extensions={extensions} user={user} models={models} onModels={onModels} onChange={reload} onClose={() => setSettings(null)} />}
         {/* The chat stays mounted behind Settings, so what you were typing is still there. */}
         <div className={settings ? "hidden" : "contents"}>
           {agent ? (
@@ -104,6 +129,7 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
               onEdit={() => setForm("edit")}
               onActivity={reloadAgents}
               onLive={setLive}
+              find={find}
               onOpenSettings={() => openSettings("providers")}
             />
           ) : (

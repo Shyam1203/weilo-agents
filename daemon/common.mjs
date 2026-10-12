@@ -28,10 +28,21 @@ export const APP = join(ROOT, "weilo.json");
 export const CURATOR = join(AGENT_DIR, "curator.json");
 export const ROUTINES = join(AGENT_DIR, "routines.json");
 export const BROWSER = join(AGENT_DIR, "browser.json");
+export const PUSH = join(AGENT_DIR, "push.json");
 
 // Keys, tokens, passwords and card numbers are never saved, in a note or in a page of the vault. A false alarm costs a retry (a note) or replaces the line (a page).
 export const SECRET =
   /\b(sk-[\w-]{16,}|gh[pousr]_\w{20,}|AKIA[0-9A-Z]{16}|xox[abprs]-[\w-]{10,}|eyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{8,})|-----BEGIN [A-Z ]*PRIVATE KEY|\b(?:\d[ -]?){13,19}\b|\b(password|passwd|api[ _-]?key|secret|token)\s*[:=]/i;
+
+// Markdown as plain text on one line (a notification, a search result): no heading, list, bold, code or table marks; a link as its text.
+export const plainText = (markdown) =>
+  markdown
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+/gm, "")
+    .replace(/^\s*\|?(\s*:?-{3,}:?\s*\|?)+\s*$/gm, "")
+    .replace(/\*\*|__|~~|`|\|/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
 // An error the server can show: a message and an HTTP status.
 export const fail = (status, message) => Object.assign(new Error(message), { status });

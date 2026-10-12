@@ -4,6 +4,12 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 ## Unreleased
 
+- Notifications (Settings > Notifications): when an agent replies, asks you something or runs into a problem while the app is not on screen. Per device, with a switch per agent. On iPhone, from the app added to the Home Screen.
+- Search all chats from the agent list; a result opens the chat at that message. Find in a chat from its header (search button).
+- What an agent did between its words shows as one line ("Read 2 files · Ran a command"); tap it for each step.
+- A button to jump back to the newest message when you scroll up, which says when new messages came.
+- Unread agents: a dot at the end of the row and the time in colour, instead of a dot on the avatar.
+- On a phone, the back button or gesture returns from a chat to the list (and a swipe from the left edge, in the app added to the Home Screen).
 - Drag agents to reorder the list (on a phone, hold one, then drag; Alt + arrow keys also move it). The order is saved, so phone and PC match.
 - The agent list previews show plain text, without Markdown symbols.
 - Tables in chat scroll sideways instead of breaking words, and replies use the full width on a phone.

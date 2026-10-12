@@ -1,6 +1,7 @@
 // Settings and the add-ons, as a page in place of the chat. On a wide screen: pages in a menu on the left, rows
 // on the right. On a phone: the list of pages first, then a page with a back arrow.
 import { useEffect, useRef, useState } from "react";
+import type { Agent } from "../../api/agents";
 import type { Extension } from "../../api/extensions";
 import type { Plugin } from "../../api/plugins";
 import type { Model, Provider } from "../../api/providers";
@@ -17,16 +18,18 @@ import { PluginsPage } from "../plugins/PluginsPage";
 import { SkillsPage } from "../skills/SkillsPage";
 import { AboutYouForm } from "../user/AboutYouForm";
 import { AboutPage } from "./AboutPage";
+import { NotificationsPage } from "./NotificationsPage";
 import { Appearance } from "./Appearance";
 import { ProvidersPage } from "./ProvidersPage";
 
-export type SettingsPage = "providers" | "you" | "memory" | "browser" | "appearance" | "about" | "skills" | "plugins" | "extensions";
+export type SettingsPage = "providers" | "notifications" | "you" | "memory" | "browser" | "appearance" | "about" | "skills" | "plugins" | "extensions";
 
 const MENU: { group: string; pages: { value: SettingsPage; label: string; icon: IconName }[] }[] = [
   {
     group: "Settings",
     pages: [
       { value: "providers", label: "Providers", icon: "key" },
+      { value: "notifications", label: "Notifications", icon: "bell" },
       { value: "you", label: "About you", icon: "user" },
       { value: "memory", label: "Memory", icon: "brain" },
       { value: "browser", label: "Browser", icon: "globe" },
@@ -49,6 +52,7 @@ const LABELS = Object.fromEntries(MENU.flatMap((m) => m.pages).map((p) => [p.val
 interface Props {
   /** The page to open first; "menu" opens the list of pages on a phone (and Providers on a wide screen). */
   page: SettingsPage | "menu";
+  agents: Agent[];
   providers: Provider[];
   skills: Skill[];
   plugins: Plugin[];
@@ -61,7 +65,7 @@ interface Props {
   onClose: () => void;
 }
 
-export function SettingsView({ page: first, providers, skills, plugins, extensions, user, models, onChange, onModels, onClose }: Props) {
+export function SettingsView({ page: first, agents, providers, skills, plugins, extensions, user, models, onChange, onModels, onClose }: Props) {
   const wide = useMedia("(min-width: 768px)");
   // On a phone `null` is the list of pages.
   const [chosen, setChosen] = useState<SettingsPage | null>(first === "menu" ? null : first);
@@ -113,6 +117,8 @@ export function SettingsView({ page: first, providers, skills, plugins, extensio
             <div className="mx-auto w-full max-w-2xl">
               {page === "providers" ? (
                 <ProvidersPage providers={providers} models={models} onChange={onChange} onModels={onModels} />
+              ) : page === "notifications" ? (
+                <NotificationsPage agents={agents} />
               ) : page === "you" ? (
                 <Page title="About you" description="Agents use this to talk to you.">
                   <AboutYouForm user={user} onSaved={onChange} />

@@ -36,6 +36,8 @@ container serves the UI and runs pi. All user data is one host folder, `~/.weilo
 | Compaction | Pi summarizes by tokens kept free (`compaction.modelOverrides.<provider/id>.reserveTokens`). The daemon writes it per enabled model (all, when none is), if none is set: summarize at 40% of a 1M window, 80% of a 500k one and 90% of any smaller (`COMPACT_AT`, in `settings/compaction.mjs` with the reading back), never under 16384 free. Values set by hand are kept, and a value written earlier by another rule stays until removed from `settings.json`. The chat's ring fills as the context nears that point; hovering shows tokens of the window (`GET /api/agents/:id/context`) and offers `/compact [what to keep]` (`POST …/compact`, refused during a run) and `/reload` (`POST …/reload`: pi starts anew, now if idle, else when the run ends). |
 | Routines | Work an agent does on a schedule (once, hourly, daily, weekdays, weekly; several times a day). The daemon keeps them in `agent/routines.json` and sends a due routine's task to the agent's chat. See Routines under Daemon. |
 | Browser | One Chromium on a virtual screen inside the container; each agent has its own window with its own tabs, all sharing one set of logins. You watch it in the chat's side panel and can take over. Agents are asked to check with you before anything that cannot be undone (a request, not a lock). See Browser under Daemon. |
+| Notifications | Web Push, without a library (`daemon/push.mjs`): the daemon makes its own VAPID key pair (`agent/push.json`, with the browsers that turned notifications on and the agents muted), encrypts each notification for one browser (RFC 8291, aes128gcm) and posts it to that browser's push service (only Google's, Apple's, Mozilla's or Microsoft's addresses are accepted). The runner sends one when a run ends (the answer's start, or its error; a run you stopped sends none) and when the agent asks you something. None while the app is on screen anywhere: the agent list asks `GET /api/agents?seen` every few seconds while visible, and 15 seconds after the last, notifications go out again. The service worker (`ui/public/sw.js`) shows them, one per agent, and a tap opens the app at that agent (`?agent=`, or a message to an open window). On iPhone, only from the app added to the Home Screen. |
+| Search | `GET /api/search?q=` reads every agent's chat (the same tail of the chat files the memory reads) and returns the messages that hold the words (any case, in plain text), newest first, at most 50. A result opens the chat with the find bar open at that message. The find bar searches the chat on screen and marks matches with CSS highlights (`::highlight(find)`), so the messages' markup is untouched. |
 | Not in v1 | Groups, host mode, OAuth login, import from `~/.pi`, a firewall that keeps the browser off your network (it needs root and `NET_ADMIN`), keeping keys and logins from agents that can run commands, screenshots in the browser tool. |
 
 ## Layout
@@ -43,7 +45,7 @@ container serves the UI and runs pi. All user data is one host folder, `~/.weilo
 ```
 ~/.weilo-agents/
 ├── agent/               pi's own, shared by all agents: auth.json, settings.json, mcp.json,
-│   │                    AGENTS.md, USER.md, MEMORY.md, curator.json, routines.json, browser.json, skills/, extensions/
+│   │                    AGENTS.md, USER.md, MEMORY.md, curator.json, routines.json, browser.json, push.json, skills/, extensions/
 │   ├── sessions/<id>/   each agent's conversation
 │   ├── order.json       { "agents": [ids] }: the agent list order, as dragged (newer agents after)
 │   └── profiles/<id>/   Weilo agent profiles
@@ -188,12 +190,12 @@ layer is ours. Built in a Docker build stage, so the image holds static files on
 data library. Dark and light by system setting; Settings > Appearance picks Light, Dark, or the
 Weilo Theme (`data-theme` on `<html>`, which overrides the colour tokens).
 
-- Sidebar: the name "Weilo Agents" as plain text, then agents (avatar, name, newest message), + New agent, Skills, Plugins, Settings. On a
-  phone, list and chat are separate screens. Edit agent opens from the chat's title, and Delete (with its choice to keep the chat) is in that form; it has
+- Sidebar: the name "Weilo Agents" as plain text, a search of all chats, then agents (avatar, name, newest message as plain text; an unread one has its time in the unread colour and a dot at the end), + New agent, Skills, Plugins, Settings. Drag an agent to reorder (hold first on a phone). On a
+  phone, list and chat are separate screens; the chat (or Settings) is a step in the browser's history, so the phone's back button or gesture returns to the list, and from the Home Screen on an iPhone a swipe from the left edge does. Edit agent opens from the chat's title, and Delete (with its choice to keep the chat) is in that form; it has
   avatar, name, instructions, then cards of rows: Model (provider, model, thinking), Built-in extensions (a switch each) and Add-ons (skills, plugins, extensions: each row says what is on and opens a list of switches, or "Add" when there are none).
 - Chat state is one reducer over pi's events (`features/chat/useChat.ts`): history, then live
   text, thinking and tool-call deltas. `conversation.ts` holds the reducer and maps pi's messages to bubbles.
-  Thinking and tool calls are not shown (except `show`, a question the agent asks, and a line for what it did with a routine), and an agent's text appears when its message is complete, so text that comes with a tool call never flashes; a pill above the composer says "Working" (or "Waiting for you") and folds when clicked. The composer floats over the chat. While the agent waits for your answer, a message you type in the box is the answer.
+  Thinking is not shown. What the agent did between its words (its tools, and what it said while using them) is one folded line ("Read 2 files · Ran a command") that opens to each step; `show`, a question the agent asks and a line for what it did with a routine show as themselves. An agent's text appears when its message is complete, so text that comes with a tool call never flashes; a pill above the composer says "Working" (or "Waiting for you") and folds when clicked. The composer floats over the chat. While the agent waits for your answer, a message you type in the box is the answer.
 - Composer: text, attachments (files and photos, camera, paste, drop) and voice typing; disabled
   with "Add a provider" until a key exists. Stop appears while a run is going. A failed start
   closes the stream and shows pi's message with Try again; a clean restart reconnects by itself.

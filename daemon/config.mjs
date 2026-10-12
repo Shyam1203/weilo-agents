@@ -25,6 +25,18 @@ export const MAX_CONTACT_NAME = 100;
 export const MAX_CONTACT_EMAIL = 254;
 export const MAX_CONTACT_MESSAGE = 4000;
 
+// --- Notifications (push.mjs) -----------------------------------------------------------------
+
+// Who the app is, to the push services (they ask for a contact: a mailto: or https: address).
+export const PUSH_SUBJECT = "https://github.com/Shyam1203/weilo-agents";
+// No notification while the app was on screen this recently (ms): its agent list asks every 2 to 5 seconds while it is.
+export const PUSH_SEEN_MS = 15_000;
+// How long a push service keeps a notification for a device that is off (s), the longest wait for one (ms), and the most
+// characters of the agent's words a notification shows.
+export const PUSH_TTL_S = 24 * 60 * 60;
+export const PUSH_TIMEOUT_MS = 10_000;
+export const PUSH_BODY_CHARS = 180;
+
 // --- Agents (agents/) ------------------------------------------------------------------------
 
 // Pi's built-in tools every agent has: read and change files, and run programs.
@@ -46,6 +58,9 @@ export const PI_KILL_MS = 5000;
 // The agent list reads this much of the end of a chat file (bytes), and shows this many characters of its newest message.
 export const PREVIEW_TAIL = 64 * 1024;
 export const PREVIEW_CHARS = 140;
+// Searching the chats (agents/search.mjs): the longest search, in characters (UI), and the most results.
+export const MAX_SEARCH = 200;
+export const SEARCH_RESULTS = 50;
 
 // --- Providers and models (settings/) --------------------------------------------------------
 

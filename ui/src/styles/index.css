@@ -29,6 +29,7 @@
   --color-screen: #121826; /* the browser's desktop, behind its live view */
   --color-live: #ef4444; /* the ring around a screen you have taken over */
   --color-working: var(--color-ink-2); /* the "Working…" text */
+  --color-unread: light-dark(#007aff, #0a84ff); /* an agent with a reply you have not seen */
 
   --shadow-pop: 0 1px 2px light-dark(rgb(0 0 0 / 0.04), rgb(0 0 0 / 0.4)), 0 8px 24px -6px light-dark(rgb(0 0 0 / 0.14), rgb(0 0 0 / 0.6));
   --shadow-lift: 0 1px 2px light-dark(rgb(0 0 0 / 0.05), rgb(0 0 0 / 0.4)), 0 24px 48px -12px light-dark(rgb(0 0 0 / 0.22), rgb(0 0 0 / 0.7));
@@ -74,6 +75,7 @@
     --color-bad: light-dark(#c4320a, #fb7185);
     --color-bad-soft: light-dark(#fdecea, #3a1419);
     --color-working: light-dark(#d45f00, #ff7a00);
+    --color-unread: light-dark(#d45f00, #ff7a00);
   }
 
   /* The page itself never scrolls (the chat and the lists inside it do), so on a phone dragging the message box or the
@@ -156,6 +158,15 @@
   select {
     font-size: 16px;
   }
+}
+
+/* Words found in a chat (features/chat/useFind.ts), and the current one. */
+::highlight(find) {
+  background-color: color-mix(in srgb, var(--color-unread) 28%, transparent);
+}
+::highlight(find-current) {
+  background-color: color-mix(in srgb, var(--color-unread) 70%, transparent);
+  color: white;
 }
 
 /* Markdown in a message bubble. */

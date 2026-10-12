@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { createAgent, getAgent, listAgents, removeChat, removeProfile, setOrder, updateAgent } from "./agents/agents.mjs";
+import { searchChats } from "./agents/search.mjs";
 import { abort, activityOf, answer, compact, contextOf, prompt, restart, restartAll, skillCommands, stop, stopAll } from "./agents/runner.mjs";
 import { closeBrowser, giveBack, hasWindow, isTaken, showBrowser, takeOver, useBrowser } from "./browser/browser.mjs";
 import { getRule, saveRule } from "./browser/rule.mjs";
@@ -21,6 +22,7 @@ import { addSkills, listSkills, removeSkill, saveSkill } from "./settings/skills
 import { getUser, saveUser } from "./settings/user.mjs";
 import { sendContact } from "./contact.mjs";
 import { migrate } from "./migrate.mjs";
+import { addDevice, markSeen, pushStatus, removeDevice, setMuted } from "./push.mjs";
 import { setUpdateCheck, updateStatus } from "./update.mjs";
 import { BUILD } from "./version.mjs";
 
@@ -79,8 +81,14 @@ route("PUT", "/api/memory", async (_, { text }) => {
   return { text: saved };
 });
 route("PUT", "/api/memory/curator", (_, body) => setCurator(body));
-route("GET", "/api/agents", async () => (await listAgents()).map((agent) => ({ ...agent, working: activityOf(agent.id) !== null, doing: activityOf(agent.id), taken: isTaken(agent.id) })));
+route("GET", "/api/push", () => pushStatus());
+route("POST", "/api/push/devices", (_, body) => addDevice(body));
+route("DELETE", "/api/push/devices/:id", (id) => removeDevice(id));
+route("PUT", "/api/push/muted", (_, { muted }) => setMuted(muted));
+// The app asks for the agent list every few seconds while it is on screen (`?seen`): no notifications meanwhile.
+route("GET", "/api/agents", async (_, __, req) => (new URL(req.url, "http://localhost").searchParams.has("seen") && markSeen(), await listAgents()).map((agent) => ({ ...agent, working: activityOf(agent.id) !== null, doing: activityOf(agent.id), taken: isTaken(agent.id) })));
 route("POST", "/api/agents", (_, body) => createAgent(body));
+route("GET", "/api/search", (_, __, req) => searchChats(new URL(req.url, "http://localhost").searchParams.get("q")));
 route("PUT", "/api/agents", (_, { order }) => setOrder(order));
 route("PUT", "/api/agents/:id", async (id, body) => {
   const agent = await updateAgent(id, body);
