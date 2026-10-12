@@ -38,7 +38,7 @@ export function Sidebar({ agents, unread, selected, update, onSelect, onFound, o
   const [query, setQuery] = useState("");
   const shown = order.map((id) => agents.find((a) => a.id === id)).filter((a): a is Agent => !!a);
   return (
-    <nav aria-label="Agents" className="flex h-full w-full shrink-0 flex-col border-r border-line bg-panel pb-[env(safe-area-inset-bottom)] md:w-72">
+    <nav aria-label="Agents" className="flex h-full w-full shrink-0 flex-col border-r border-line bg-panel pb-[var(--safe-bottom)] md:w-72">
       <div className="flex h-14 shrink-0 items-center justify-between pr-4 pl-5">
         <h1 className="text-[15px] font-semibold tracking-tight">Weilo Agents</h1>
         <IconButton icon="plus" label="New agent" onClick={onNew} />

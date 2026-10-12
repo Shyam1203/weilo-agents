@@ -84,7 +84,7 @@ export function SettingsView({ page: first, agents, providers, skills, plugins, 
   }, []);
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col pb-[env(safe-area-inset-bottom)]">
+    <div className="flex min-w-0 flex-1 flex-col pb-[var(--safe-bottom)]">
       <header className="flex h-14 shrink-0 items-center gap-2.5 border-b border-line px-3 sm:px-4">
         <IconButton icon="chevronLeft" label={wide || list ? "Back to the chat" : "Back"} onClick={back} className="-ml-1" />
         <h2 className="text-[15px] font-semibold tracking-tight">{wide || list ? "Settings" : LABELS[page]}</h2>

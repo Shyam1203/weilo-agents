@@ -86,14 +86,26 @@
     height: 100%;
     height: calc(100dvh / var(--zoom));
   }
-  /* On a computer the app is drawn 10% larger than the browser's own size: text and controls read better at a desk.
-     A height in dvh is drawn larger too, so it is divided back (`--zoom`; lib/zoom.ts for sizes measured on screen). */
+  /* The app is drawn larger than the browser's own size: 10% on a computer, where text and controls read better at a desk,
+     and 15% on a touch screen, where they are read at arm's length and tapped with a finger. A height in dvh and the
+     screen's safe areas are drawn larger too, so they are divided back (`--zoom`, `--safe-*`; lib/zoom.ts for sizes
+     measured on screen). */
   :root {
     --zoom: 1;
+    --safe-top: calc(env(safe-area-inset-top) / var(--zoom));
+    --safe-right: calc(env(safe-area-inset-right) / var(--zoom));
+    --safe-bottom: calc(env(safe-area-inset-bottom) / var(--zoom));
+    --safe-left: calc(env(safe-area-inset-left) / var(--zoom));
   }
   @media (min-width: 768px) and (pointer: fine) {
     :root {
       --zoom: 1.1;
+      zoom: var(--zoom);
+    }
+  }
+  @media (pointer: coarse) {
+    :root {
+      --zoom: 1.15;
       zoom: var(--zoom);
     }
   }
@@ -104,7 +116,7 @@
   }
   /* An installed app draws under the status bar and the notch: the edges are kept clear (the bottom edge by what sits there). */
   #root {
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+    padding: var(--safe-top) var(--safe-right) 0 var(--safe-left);
   }
   body {
     margin: 0;
