@@ -8,6 +8,8 @@ const AGENT_DIR = join(ROOT, "agent");
 
 // Where every pi runs, the environment that points it at the shared config, and what lives there.
 export const WORKSPACE = join(ROOT, "workspace");
+// Each agent's scratch folder lives under here, outside the data folder: it is not kept (agents/workspace.mjs).
+export const SCRATCH = "/tmp/weilo";
 export const PI_ENV = { PI_CODING_AGENT_DIR: AGENT_DIR };
 export const AUTH = join(AGENT_DIR, "auth.json");
 export const SETTINGS = join(AGENT_DIR, "settings.json");

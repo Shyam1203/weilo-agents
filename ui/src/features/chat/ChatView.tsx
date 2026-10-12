@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Agent } from "../../api/agents";
 import { listCommands, type Outgoing } from "../../api/chat";
 import { messageOf } from "../../api/http";
@@ -41,6 +41,9 @@ interface Props {
   onOpenSettings: () => void;
 }
 
+/** How near the top (px) the reader must scroll for earlier messages to load. */
+const TOP_PX = 400;
+
 /** One agent's chat. Give it a `key` of the agent's id. */
 export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onActivity, onLive, onOpenSettings }: Props) {
   const chat = useChat(agent.id, onActivity);
@@ -53,15 +56,48 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
   const sideOpen = wide ? sidebar : sheet;
   const toggleSide = () => (wide ? (write(KEYS.sidebar, sidebar ? "0" : "1"), setSidebar(!sidebar)) : setSheet(!sheet));
   const routinesChanged = chat.messages.filter((m) => m.kind === "note").length;
-  const scroller = useFollowBottom([chat.messages, chat.asking]);
+  // Only what pi sends moves the view down: earlier messages load above without counting as new.
+  const scroller = useFollowBottom([chat.live, chat.asking]);
   const { away, unseen, toBottom } = scroller;
+
+  // Messages pi summarized away load as the reader nears the top (or at once, when the chat does not fill the view).
+  const load = useRef(chat.loadEarlier);
+  load.current = chat.loadEarlier;
+  useEffect(() => {
+    const el = scroller.box.current;
+    if (!el || !chat.more) return;
+    const check = () => el.clientHeight && el.scrollTop < TOP_PX && void load.current();
+    check();
+    el.addEventListener("scroll", check, { passive: true });
+    return () => el.removeEventListener("scroll", check);
+  }, [chat.more, chat.loadingEarlier, chat.ready]);
+  // They load above what is on screen, which stays where it is: the distance from the bottom is kept.
+  const fromBottom = useRef(0);
+  const earliest = chat.messages[0]?.id;
+  const before = useRef(earliest);
+  if (before.current !== earliest && scroller.box.current) {
+    const el = scroller.box.current;
+    fromBottom.current = el.scrollHeight - el.scrollTop;
+  }
+  useLayoutEffect(() => {
+    const el = scroller.box.current;
+    if (el && before.current !== earliest && before.current !== undefined && fromBottom.current) el.scrollTop = el.scrollHeight - fromBottom.current;
+    before.current = earliest;
+    fromBottom.current = 0;
+  }, [earliest]);
   // Finding words in this chat: open with a search's words, or from the header's button.
   const [finding, setFinding] = useState(!!find);
   const [query, setQuery] = useState(find?.query ?? "");
   useEffect(() => {
     if (find) (setFinding(true), setQuery(find.query));
   }, [find]);
-  const found = useFind(scroller.box, finding ? query : "", [chat.messages, chat.ready], find);
+  // A search result older than what is loaded: earlier messages load until it is there, then the view goes to it.
+  const first = chat.messages.find((m) => m.at !== null)?.at ?? 0;
+  const loadingFor = !!find && chat.more && first > find.at;
+  useEffect(() => {
+    if (loadingFor && !chat.loadingEarlier) void chat.loadEarlier();
+  }, [loadingFor, chat.loadingEarlier]);
+  const found = useFind(scroller.box, finding ? query : "", [chat.messages, chat.ready], loadingFor ? null : find);
   const closeFind = () => (setFinding(false), setQuery(""));
 
   // A message sent from the message box shows its own error. A reply from a button, card or page has no box: its error shows above it.
@@ -103,7 +139,10 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
         {finding && <FindBar query={query} onQuery={setQuery} count={found.count} current={found.current} onNext={found.next} onPrevious={found.previous} onClose={closeFind} />}
         <div className="relative min-h-0 flex-1">
           <div ref={scroller.box} style={{ paddingBottom: room }} className="h-full overflow-y-auto">
-            <div className="mx-auto w-full max-w-3xl px-4 py-5">{chat.ready ? <MessageList messages={chat.messages} busy={chat.busy} asking={chat.asking} onAnswer={chat.answer} onReply={reply} queued={chat.queued} note={chat.note} /> : <Loading />}</div>
+            <div className="mx-auto w-full max-w-3xl px-4 py-5">
+              {chat.more && <p className="flex items-center justify-center gap-2 pb-4 text-xs text-ink-3">{chat.loadingEarlier ? <><Icon name="spinner" size={12} /> Loading earlier messages…</> : <button type="button" onClick={() => void chat.loadEarlier()} className="underline">Load earlier messages</button>}</p>}
+              {chat.ready ? <MessageList messages={chat.messages} busy={chat.busy} asking={chat.asking} onAnswer={chat.answer} onReply={reply} queued={chat.queued} note={chat.note} /> : <Loading />}
+            </div>
           </div>
           <div ref={dock} className="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-page from-55% to-transparent pt-8">
             <div className="pointer-events-auto mx-auto flex w-full max-w-3xl flex-col gap-2 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4 sm:pb-[max(1rem,env(safe-area-inset-bottom))]">

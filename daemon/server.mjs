@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { createAgent, getAgent, listAgents, removeChat, removeProfile, setOrder, updateAgent } from "./agents/agents.mjs";
 import { searchChats } from "./agents/search.mjs";
+import { earlierOf } from "./agents/sessions.mjs";
 import { abort, activityOf, answer, compact, contextOf, prompt, restart, restartAll, skillCommands, stop, stopAll } from "./agents/runner.mjs";
 import { closeBrowser, giveBack, hasWindow, isTaken, showBrowser, takeOver, useBrowser } from "./browser/browser.mjs";
 import { getRule, saveRule } from "./browser/rule.mjs";
@@ -26,6 +27,7 @@ import { migrate } from "./migrate.mjs";
 import { addDevice, markSeen, pushStatus, removeDevice, setMuted } from "./push.mjs";
 import { setUpdateCheck, updateStatus } from "./update.mjs";
 import { BUILD } from "./version.mjs";
+import { clearScratch } from "./agents/workspace.mjs";
 
 // JSON API. A handler gets (id, body, request, second id) and returns the reply; no reply means 204.
 const routes = [];
@@ -114,6 +116,7 @@ route("POST", "/api/agents/:id/abort", (id) => abort(id));
 route("POST", "/api/agents/:id/answer", (id, body) => answer(id, body));
 route("GET", "/api/agents/:id/commands", (id) => skillCommands(id));
 route("GET", "/api/agents/:id/context", (id) => contextOf(id));
+route("GET", "/api/agents/:id/earlier", (id, _, req) => earlierOf(id, Math.max(0, Number(new URL(req.url, "http://localhost").searchParams.get("skip")) || 0)));
 route("POST", "/api/agents/:id/reload", (id) => restart(id));
 route("POST", "/api/agents/:id/compact", (id, { instructions }) => compact(id, instructions));
 route("POST", "/api/agents/:id/browser", async (id, body) => ({ text: await useBrowser(id, body) }));
@@ -188,6 +191,8 @@ try {
 server.listen(PORT, "0.0.0.0", () => console.log(`weilo-core listening on :${PORT}`));
 
 void syncCompaction();
+// Scratch files from before a restart are no one's now.
+void clearScratch();
 startRoutines();
 startScreen();
 startCurator();

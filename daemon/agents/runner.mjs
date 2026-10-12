@@ -14,6 +14,7 @@ import { getAgent, profilePath } from "./agents.mjs";
 import { spawnPi } from "./pi.mjs";
 import { asTyped } from "./sessions.mjs";
 import { saveFiles, toImages } from "./uploads.mjs";
+import { clearScratch, makeScratch, scratchOf, workspaceRules } from "./workspace.mjs";
 
 // One pi per agent that is open. It starts on first use and stops after IDLE_MS with nobody
 // watching and no run in progress.
@@ -43,7 +44,8 @@ const touch = (run) => {
   clearTimeout(run.timer);
   // A run that closed already needs no timer (a viewer can leave after it closed).
   if (run.busy || run.listeners.size || runs.get(run.id) !== run) return;
-  run.timer = setTimeout(() => close(run), IDLE_MS).unref();
+  // An agent that goes idle is done with its scratch files.
+  run.timer = setTimeout(() => (close(run), void clearScratch(run.id)), IDLE_MS).unref();
 };
 
 // Our extensions, which give every agent the chat's tools and memory.
@@ -55,7 +57,7 @@ const toolsFlags = (plugins, extensions) => {
   return plugins.length ? ["--tools", [...tools, "codemode", ...plugins].join(",")] : ["--no-mcp", "--tools", tools.join(",")];
 };
 
-// pi's command line for an agent: its profile (which holds its instructions), what it knows about you and remembers, model, thinking level, the extensions it loads (pi's built-in ones, the app's that it has not turned off, and the ones it uses), skills and plugins, and its one conversation.
+// pi's command line for an agent: its profile (which holds its instructions), the house rules for the shared workspace, what it knows about you and remembers, model, thinking level, the extensions it loads (pi's built-in ones, the app's that it has not turned off, and the ones it uses), skills and plugins, and its one conversation.
 const argvOf = (agent, skills, plugins, extensions, about) => {
   const { id, model, thinking } = agent;
   return [
@@ -63,6 +65,7 @@ const argvOf = (agent, skills, plugins, extensions, about) => {
     ...(model ? ["--model", model] : []),
     ...(thinking ? ["--thinking", thinking] : []),
     "--append-system-prompt", profilePath(id),
+    "--append-system-prompt", workspaceRules(scratchOf(id)),
     ...about,
     "-ne", ...PI_BUILTINS.flatMap((name) => ["-e", `builtin:${name}`]),
     ...CORE_EXTENSIONS.flatMap((path) => ["-e", path]), ...extensions.flatMap((e) => ["-e", e.entry]),
@@ -89,10 +92,11 @@ async function start(run) {
   const agent = await getAgent(run.id);
   const [ask, skills, plugins, extensions, user, memory] = await Promise.all([askBefore(), skillPaths(agent.skills), pluginTools(agent.plugins), extensionsOf(agent), userFlags(), memoryFlags()]);
   const argv = argvOf(agent, skills, plugins, extensions, [...user, ...memory]);
+  await makeScratch(run.id);
   run.done = new Promise((resolve) => {
     run.pi = spawnPi(argv, {
       cwd: WORKSPACE,
-      env: { ...PI_ENV, WEILO_AGENT: run.id, WEILO_API: `http://127.0.0.1:${PORT}/api`, WEILO_ASK_BEFORE: ask },
+      env: { ...PI_ENV, WEILO_AGENT: run.id, WEILO_API: `http://127.0.0.1:${PORT}/api`, WEILO_ASK_BEFORE: ask, WEILO_SCRATCH: scratchOf(run.id) },
       onEvent(event) {
         if (event.type === "agent_start") (run.busy = true), (run.reply = null);
         if (event.type === "message_end" && event.message?.role === "assistant") run.reply = event.message;

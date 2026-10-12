@@ -5,7 +5,7 @@ export type Block =
   | { type: "text"; text: string }
   | { type: "table"; title: string; columns: string[]; rows: string[][] }
   | { type: "metrics"; items: { label: string; value: string; note: string }[] }
-  | { type: "cards"; items: { title: string; text: string; link: string; message: string }[] }
+  | { type: "cards"; items: { title: string; text: string; link: string; message: string; image: string }[] }
   | { type: "chart"; title: string; shape: "bar" | "line"; points: { label: string; value: number }[] }
   | { type: "buttons"; options: { label: string; message: string }[] }
   | { type: "file"; path: string; name: string }
@@ -34,7 +34,7 @@ function blockOf(raw: Raw): Block | null {
     }
     case "cards": {
       const items = list(raw.items).map(record).filter((i) => str(i.title));
-      return items.length ? { type: "cards", items: items.map((i) => ({ title: str(i.title), text: str(i.text), link: link(i.link), message: str(i.message) })) } : null;
+      return items.length ? { type: "cards", items: items.map((i) => ({ title: str(i.title), text: str(i.text), link: link(i.link), message: str(i.message), image: link(i.image) })) } : null;
     }
     case "chart": {
       const points = list(raw.points).map(record).filter((p) => Number.isFinite(Number(p.value)));

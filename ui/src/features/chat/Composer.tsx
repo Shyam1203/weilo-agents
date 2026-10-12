@@ -1,6 +1,7 @@
 // The message box: text, attachments (+: pick files or take a photo; or paste, or drop) and voice
 // typing. The round button on the right sends, stops a run, or starts voice typing.
 import { useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { doingText } from "../../api/agents";
 import type { Outgoing } from "../../api/chat";
 import { messageOf } from "../../api/http";
 import { Avatar, type AvatarSpec } from "../../components/ui/Avatar";
@@ -48,8 +49,6 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [camera, setCamera] = useState(false);
-  // The working pill folds to its picture when clicked.
-  const [small, setSmall] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   // Where the caret goes once the text a list changed is drawn.
@@ -195,22 +194,14 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
     >
       {open && <CommandMenu shortcuts={offered} active={Math.min(active, offered.length - 1)} onPick={pick} hint={hint} onEdit={shortcuts.length ? undefined : onEdit} />}
       {busy && (
-        <button
-          type="button"
-          aria-label="Working"
-          aria-expanded={!small}
-          onClick={() => setSmall((v) => !v)}
-          className={`absolute bottom-full left-4 mb-2 flex animate-rise items-center gap-2 rounded-xl bg-raised/40 py-1 pl-1.5 shadow-pop ring-1 ring-line backdrop-blur-sm ${small ? "pr-1.5" : "pr-3.5"}`}
-        >
-          <Avatar spec={avatar} size={44} working doing={doing} />
-          {!small && (
-            <span className="working-dots text-xs text-working">
-              {waiting ? "Waiting for you" : "Working"}<span>.</span>
-              <span>.</span>
-              <span>.</span>
-            </span>
-          )}
-        </button>
+        <p role="status" className="absolute bottom-full left-3 mb-1.5 flex animate-rise items-center gap-1.5 rounded-full bg-raised py-0.5 pr-2.5 pl-0.5 text-xs text-ink-2 ring-1 ring-line">
+          <Avatar spec={avatar} size={26} working doing={doing} />
+          <span className="working-dots">
+            {waiting ? "Waiting for you" : doingText(doing)}<span>.</span>
+            <span>.</span>
+            <span>.</span>
+          </span>
+        </p>
       )}
       <div className={`flex flex-col rounded-2xl border bg-page transition-colors focus-within:border-ink-3 ${dragging ? "border-dashed border-ink-2" : "border-line-strong"}`}>
         {(files.length > 0 || images.length > 0) && (

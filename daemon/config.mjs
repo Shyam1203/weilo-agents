@@ -58,6 +58,8 @@ export const PI_KILL_MS = 5000;
 // The agent list reads this much of the end of a chat file (bytes), and shows this many characters of its newest message.
 export const PREVIEW_TAIL = 64 * 1024;
 export const PREVIEW_CHARS = 140;
+// A chat shows what pi holds; what it summarized away is read from the chat file, this many messages at a time.
+export const EARLIER_PAGE = 60;
 // Searching the chats (agents/search.mjs): the longest search, in characters (UI), and the most results.
 export const MAX_SEARCH = 200;
 export const SEARCH_RESULTS = 50;

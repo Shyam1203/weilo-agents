@@ -46,6 +46,13 @@ function CodeBlock({ children }: { children: ReactNode }) {
   );
 }
 
+/** Markdown without the bubble, in a smaller size: the text of a card. */
+export const CardText = ({ text }: { text: string }) => (
+  <div className="prose-chat text-[13.5px]! leading-relaxed! text-ink-2 [&_strong]:text-ink">
+    <Markdown text={text} components={MARKDOWN} />
+  </div>
+);
+
 export function AgentText({ text }: { text: string }) {
   // A phone's screen is narrow: a reply takes all of it.
   return (

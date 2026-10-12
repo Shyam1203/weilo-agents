@@ -1,7 +1,7 @@
 import { open, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { SESSIONS } from "../common.mjs";
-import { CHAT_TAIL, PREVIEW_CHARS, PREVIEW_TAIL } from "../config.mjs";
+import { CHAT_TAIL, EARLIER_PAGE, PREVIEW_CHARS, PREVIEW_TAIL } from "../config.mjs";
 
 const textOf = (content) => (typeof content === "string" ? content : (content ?? []).map((b) => b.text ?? "").join(""));
 
@@ -90,6 +90,40 @@ async function* linesOf(file) {
   } finally {
     await handle.close();
   }
+}
+
+// What the chat shows of an earlier message: your messages and the agent's without its thinking (never shown), and of the
+// tools' results only the answers to its questions and what a routine did (the rest, such as a browser's screenshots, is
+// what makes a chat file large).
+const shown = (m) => m?.role === "user" || m?.role === "assistant" || (m?.role === "toolResult" && (m.toolName === "ask" || m.toolName === "routine"));
+const slim = (m) => (Array.isArray(m.content) && m.role === "assistant" ? { ...m, content: m.content.filter((b) => b.type !== "thinking") } : m);
+
+/**
+ * The messages pi summarized away (it keeps a summary in their place, and the messages from `firstKeptEntryId` on), newest
+ * last: the page that ends `skip` messages before them. `more`: there are older ones still.
+ */
+export async function earlierOf(id, skip = 0) {
+  const entries = [];
+  let kept = null;
+  for (const file of await chatFiles(id)) {
+    for await (const raw of linesOf(file)) {
+      const head = raw.slice(0, 120);
+      if (!head.includes('"type":"message"') && !head.includes('"type":"compaction"')) continue;
+      let entry;
+      try {
+        entry = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+      if (entry.type === "compaction") kept = entry.firstKeptEntryId;
+      else entries.push(entry);
+    }
+  }
+  const end = kept ? entries.findIndex((e) => e.id === kept) : -1;
+  const earlier = entries.slice(0, Math.max(0, end)).filter((e) => shown(e.message));
+  const stop = Math.max(0, earlier.length - skip);
+  const start = Math.max(0, stop - EARLIER_PAGE);
+  return { messages: earlier.slice(start, stop).map((e) => slim(asTyped(e.message))), more: start > 0 };
 }
 
 /** The user's and the agent's messages of one chat folder, oldest first: { agent: name, id, speaker, at, date, body }. */
