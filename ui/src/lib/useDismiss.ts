@@ -5,12 +5,12 @@ export function useDismiss<T extends HTMLElement>(open: boolean, close: () => vo
   const ref = useRef<T>(null);
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && close();
+    const onDown = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && close();
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
-    document.addEventListener("mousedown", onDown);
+    document.addEventListener("pointerdown", onDown);
     window.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("pointerdown", onDown);
       window.removeEventListener("keydown", onKey);
     };
   }, [open, close]);
