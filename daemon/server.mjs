@@ -1,7 +1,6 @@
 import { createServer } from "node:http";
 import { createAgent, getAgent, listAgents, removeChat, removeProfile, setOrder, updateAgent } from "./agents/agents.mjs";
 import { searchChats } from "./agents/search.mjs";
-import { clearScratch } from "./agents/workspace.mjs";
 import { abort, activityOf, answer, compact, contextOf, prompt, restart, restartAll, skillCommands, stop, stopAll } from "./agents/runner.mjs";
 import { closeBrowser, giveBack, hasWindow, isTaken, showBrowser, takeOver, useBrowser } from "./browser/browser.mjs";
 import { getRule, saveRule } from "./browser/rule.mjs";
@@ -27,6 +26,7 @@ import { migrate } from "./migrate.mjs";
 import { addDevice, markSeen, pushStatus, removeDevice, setMuted } from "./push.mjs";
 import { setUpdateCheck, updateStatus } from "./update.mjs";
 import { BUILD } from "./version.mjs";
+import { clearScratch } from "./agents/workspace.mjs";
 
 // JSON API. A handler gets (id, body, request, second id) and returns the reply; no reply means 204.
 const routes = [];
