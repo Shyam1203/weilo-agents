@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { zoom } from "./zoom";
 
 /** How close to the left edge (px) a swipe must start, and how far (px) it must go to count. */
 const EDGE = 24;
@@ -43,7 +44,7 @@ export function useEdgeSwipe(onBack: () => void, enabled: boolean) {
       if (!dx && Math.abs(t.clientY - start.y) > Math.abs(t.clientX - start.x)) return void (start = null);
       dx = Math.max(0, t.clientX - start.x);
       e.preventDefault();
-      el.style.transform = `translateX(${dx}px)`;
+      el.style.transform = `translateX(${dx / zoom()}px)`;
     };
     const onEnd = () => {
       if (!start) return;

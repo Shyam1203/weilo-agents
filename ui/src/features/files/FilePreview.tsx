@@ -59,9 +59,9 @@ export function FilePreview({ path, name, onClose }: { path: string; name: strin
         {error ? (
           <p role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-[13px] text-bad">{error}</p>
         ) : kind === "image" ? (
-          <img src={fileUrl(path)} alt={name} className="mx-auto max-h-[70dvh] max-w-full rounded-lg object-contain" />
+          <img src={fileUrl(path)} alt={name} className="mx-auto max-h-[calc(70dvh/var(--zoom))] max-w-full rounded-lg object-contain" />
         ) : kind === "pdf" ? (
-          <object data={url} type="application/pdf" className="h-[70dvh] w-full rounded-lg border border-line">
+          <object data={url} type="application/pdf" className="h-[calc(70dvh/var(--zoom))] w-full rounded-lg border border-line">
             <p className="p-4 text-[13.5px] text-ink-2">This browser cannot show a PDF here. Open it in a new tab, or download it.</p>
           </object>
         ) : kind === "other" ? (
@@ -77,7 +77,7 @@ export function FilePreview({ path, name, onClose }: { path: string; name: strin
         ) : kind === "html" ? (
           <ShowPage title="" html={shown} />
         ) : (
-          <pre className="max-h-[70dvh] overflow-auto rounded-lg bg-card p-3 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">{kind === "json" ? pretty(shown) : shown}</pre>
+          <pre className="max-h-[calc(70dvh/var(--zoom))] overflow-auto rounded-lg bg-card p-3 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">{kind === "json" ? pretty(shown) : shown}</pre>
         )}
         {cut && <p className="hint">Only the start of this file is shown. Download it to see all of it.</p>}
       </div>
@@ -114,7 +114,7 @@ function Table({ text, separator }: { text: string; separator: string }) {
   if (!rows.length) return <p className="text-[13.5px] text-ink-2">The file is empty.</p>;
   const [head, ...body] = rows;
   return (
-    <div className="max-h-[70dvh] overflow-auto rounded-lg border border-line">
+    <div className="max-h-[calc(70dvh/var(--zoom))] overflow-auto rounded-lg border border-line">
       <table className="w-full border-collapse text-left text-[13px]">
         <thead className="sticky top-0 bg-card">
           <tr>

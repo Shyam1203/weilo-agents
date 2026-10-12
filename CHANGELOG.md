@@ -9,7 +9,7 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 - A smaller working indicator above the message box, which says what the agent is doing ("Using the browser…") instead of "Working".
 - Agents keep the workspace tidy: every agent has house rules for the shared workspace (a folder per task, clear file names, no leftover copies, never touching others' files) and a scratch folder of its own outside it for downloaded pages, one-off scripts and raw data, emptied when it goes idle.
 - Sign in to a provider with your account instead of an API key: Claude Pro or Max, ChatGPT Plus or Pro, GitHub Copilot and OpenRouter (Settings > Providers > Sign in). It works from a phone too.
-- The app is drawn 10% larger on a computer.
+- The app is drawn larger: 10% on a computer, and 15% on a phone or tablet, where text was hard to read and buttons hard to tap.
 - A provider's model list opens on the enabled models (Enabled, then All).
 - On iPhone, Notifications no longer asks to add the app to the Home Screen when it was opened from there.
 - Notifications (Settings > Notifications): when an agent replies, asks you something or runs into a problem while the app is not on screen. Per device, with a switch per agent. On iPhone, from the app added to the Home Screen.
