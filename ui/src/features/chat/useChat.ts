@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { abort, answerAsk, compactChat, eventsUrl, getContext, reloadAgent, send, type Context, type Outgoing } from "../../api/chat";
-import { empty, failureOf, itemsOf, noteOf, reduce, type PiEvent } from "./conversation";
+import { abort, answerAsk, compactChat, eventsUrl, getContext, getEarlier, reloadAgent, send, type Context, type Outgoing } from "../../api/chat";
+import { empty, failureOf, itemsOf, noteOf, reduce, type PiEvent, type PiMessage } from "./conversation";
 
 const RELOADED = "Reloaded: skills, instructions and notes were read again.";
 const ACTIVITY = ["agent_start", "agent_settled", "tool_execution_start", "tool_execution_end"];
@@ -17,6 +17,23 @@ export function useChat(agentId: string, onActivity: () => void) {
   const [doing, setDoing] = useState<string | null>(null);
   // What /compact, /reload or an automatic summary just did, in a line under the chat; it goes when the agent starts again.
   const [status, setStatus] = useState<string | null>(null);
+  // Messages pi summarized away are loaded a page at a time, one page at once.
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
+  const loading = useRef(false);
+  const loadEarlier = async () => {
+    if (loading.current || !chat.more) return;
+    loading.current = true;
+    setLoadingEarlier(true);
+    try {
+      const page = await getEarlier<PiMessage>(agentId, chat.earlier.length);
+      dispatch({ type: "earlier", messages: page.messages, more: page.more });
+    } catch {
+      // Scrolling up again tries again.
+    } finally {
+      loading.current = false;
+      setLoadingEarlier(false);
+    }
+  };
   // A /reload sent while the agent works takes effect when it finishes.
   const reloading = useRef(false);
   const activity = useRef(onActivity);
@@ -64,6 +81,12 @@ export function useChat(agentId: string, onActivity: () => void) {
     queued: chat.queued,
     note: status ?? noteOf(chat),
     messages: useMemo(() => itemsOf(chat), [chat]),
+    /** The messages pi holds: they change when something new arrives (loading earlier messages leaves them as they are). */
+    live: chat.messages,
+    /** Pi summarized messages that are not loaded yet; `loadEarlier` loads the next page of them. */
+    more: chat.more,
+    loadingEarlier,
+    loadEarlier,
     error: chat.exit ?? failureOf(chat) ?? null,
     retry: () => setAttempt((n) => n + 1),
     // "/compact" (and what to keep after it) and "/reload" are commands of the chat: pi's own prompt does not take them.

@@ -14,7 +14,7 @@ interface Block {
   arguments?: unknown;
 }
 
-interface PiMessage {
+export interface PiMessage {
   role: string;
   content: string | Block[];
   timestamp?: number;
@@ -25,6 +25,8 @@ interface PiMessage {
   toolName?: string;
   /** With role `toolResult`: what a tool of ours says about what it did. */
   details?: { action?: string; title?: string };
+  /** With role `compactionSummary`: pi's summary of the messages before it. */
+  summary?: string;
 }
 
 /** A question the agent waits on, as pi asks it: a choice when there are options, else a line of text. */
@@ -60,6 +62,8 @@ export interface PiEvent extends Partial<Asking> {
   followUp?: string[];
   /** With `compaction_end`: the summary was made (not aborted or failed). */
   result?: unknown;
+  /** With `earlier`: messages pi summarized away, read from the chat file, and whether there are older ones still. */
+  more?: boolean;
 }
 
 interface Conversation {
@@ -74,12 +78,17 @@ interface Conversation {
   queued: string[];
   /** Why pi stopped, when it did not stop on its own. */
   exit?: string;
+  /** The messages before pi's summary, as far as they have been loaded (pi itself holds only the summary of them). */
+  earlier: PiMessage[];
+  /** Pi summarized messages that are not loaded yet. */
+  more: boolean;
 }
 
-export const empty: Conversation = { ready: false, messages: [], busy: false, open: false, asking: null, queued: [] };
+export const empty: Conversation = { ready: false, messages: [], busy: false, open: false, asking: null, queued: [], earlier: [], more: false };
 
-// Your messages and the agent's, and the answers to its questions (they show with the question).
-const shows = (m: PiMessage) => m.role === "user" || m.role === "assistant" || (m.role === "toolResult" && (m.toolName === "ask" || m.toolName === "routine"));
+// Your messages and the agent's, the answers to its questions (they show with the question), and where pi summarized the
+// conversation.
+const shows = (m: PiMessage) => m.role === "user" || m.role === "assistant" || m.role === "compactionSummary" || (m.role === "toolResult" && (m.toolName === "ask" || m.toolName === "routine"));
 
 const textOf = (content: PiMessage["content"] | undefined) => (typeof content === "string" ? content : (content ?? []).map((b) => b.text ?? "").join(""));
 
@@ -103,8 +112,12 @@ const has = (messages: PiMessage[], m: PiMessage) => m.role !== "toolResult" && 
 export function reduce(state: Conversation, e: PiEvent): Conversation {
   const { message } = e;
   switch (e.type) {
-    case "history":
-      return { ready: true, messages: (e.messages ?? []).filter(shows), busy: !!e.busy, open: false, asking: e.asking ?? null, queued: [] };
+    case "history": {
+      const messages = (e.messages ?? []).filter(shows);
+      return { ready: true, messages, busy: !!e.busy, open: false, asking: e.asking ?? null, queued: [], earlier: [], more: messages[0]?.role === "compactionSummary" };
+    }
+    case "earlier":
+      return { ...state, earlier: [...(e.messages ?? []), ...state.earlier], more: !!e.more };
     case "queue_update":
       return { ...state, queued: [...(e.steering ?? []), ...(e.followUp ?? [])] };
     case "extension_ui_request":
@@ -190,6 +203,15 @@ export interface Note {
   at: number | null;
 }
 
+/** Where pi summarized the conversation: the messages above it are only a summary to the agent now. */
+export interface Summary {
+  kind: "summary";
+  id: string;
+  role: "agent";
+  text: string;
+  at: number | null;
+}
+
 /** What the agent did between its words (tools it used, what it said while using them), folded into one line in the chat. */
 export interface Steps {
   kind: "steps";
@@ -205,7 +227,7 @@ export interface Step {
   detail: string;
 }
 
-export type Item = Message | ShownBlocks | Question | Note | Steps;
+export type Item = Message | ShownBlocks | Question | Note | Steps | Summary;
 
 // What a tool was used on, in a few words, from its arguments.
 function detailOf(tool: string, args: unknown) {
@@ -236,10 +258,14 @@ function routineNote(details: PiMessage["details"]) {
 }
 
 /** Your messages, the agent's answers and what it shows, with what it did between them folded into steps (its thinking is not shown); an answer appears when it is complete. */
-export function itemsOf({ messages, open }: Conversation): Item[] {
+export function itemsOf({ messages: live, earlier, open }: Conversation): Item[] {
+  const messages = [...earlier, ...live];
   const results = new Map(messages.flatMap((m) => (m.role === "toolResult" && m.toolCallId ? [[m.toolCallId, m] as const] : [])));
-  return joined(messages.flatMap((m, i): Item[] => {
+  return joined(messages.flatMap((m, n): Item[] => {
+    // Counted from the first message pi holds, so an item keeps its id as earlier messages load above it.
+    const i = n - earlier.length;
     const at = m.timestamp ? m.timestamp / 1000 : null;
+    if (m.role === "compactionSummary") return [{ kind: "summary", id: `${i}`, role: "agent", text: "Summarized for the agent", at }];
     if (m.role === "user") {
       const text = textOf(m.content);
       if (text.startsWith(ROUTINE_MARK)) return [{ kind: "note", id: `${i}`, role: "agent", text: `Routine: ${text.slice(ROUTINE_MARK.length).split("\n")[0]}`, at }];
@@ -248,7 +274,7 @@ export function itemsOf({ messages, open }: Conversation): Item[] {
     if (m.role !== "assistant" || typeof m.content === "string") return [];
     // Text that comes with a call to a tool the chat does not show ("Let me scroll down:") is the agent working, not its answer.
     // A message still arriving may turn out to be that, so its text waits until it ends.
-    const arriving = open && i === messages.length - 1;
+    const arriving = open && n === messages.length - 1;
     const working = arriving || m.content.some((b) => b.type === "toolCall" && b.name !== "show" && b.name !== "ask");
     return m.content.flatMap((b, j): Item[] => {
       if (b.type === "text" && working && !arriving && b.text?.trim()) return [{ kind: "steps", id: `${i}.${j}`, role: "agent", steps: [{ tool: "say", detail: b.text.trim() }], at }];

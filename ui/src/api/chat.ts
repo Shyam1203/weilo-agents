@@ -29,6 +29,8 @@ export const answerAsk = (agentId: string, requestId: string, value?: string) =>
 
 export const abort = (agentId: string) => request("POST", `/api/agents/${agentId}/abort`);
 export const listCommands = (agentId: string) => request<Command[]>("GET", `/api/agents/${agentId}/commands`);
+/** Messages pi summarized away, a page at a time: the page that ends `skip` messages before what pi holds. */
+export const getEarlier = <M>(agentId: string, skip: number) => request<{ messages: M[]; more: boolean }>("GET", `/api/agents/${agentId}/earlier?skip=${skip}`);
 export const getContext = (agentId: string) => request<Context | null>("GET", `/api/agents/${agentId}/context`);
 /** Summarizes the conversation now; `instructions` say what to keep. Returns the context after it. */
 export const compactChat = (agentId: string, instructions?: string) => request<Context | null>("POST", `/api/agents/${agentId}/compact`, { instructions });
