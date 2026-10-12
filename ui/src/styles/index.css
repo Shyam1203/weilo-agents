@@ -9,7 +9,7 @@
   --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "Geist Mono Variable", ui-monospace, "Cascadia Code", Consolas, monospace;
 
-  /* Neutral surfaces; red only for errors.
+  /* Neutral surfaces; red only for errors, green only for "connected".
      Each is light-dark(light, dark): the theme picks by color-scheme (below). */
   --color-page: light-dark(#ffffff, #212121); /* the main pane */
   --color-panel: light-dark(#f7f7f8, #181818); /* the sidebar */
@@ -26,6 +26,7 @@
   --color-select: light-dark(rgb(0 0 0 / 0.05), rgb(255 255 255 / 0.065));
   --color-bad: light-dark(#c4320a, #f97066);
   --color-bad-soft: light-dark(#fdecea, #3a1714);
+  --color-good: light-dark(#0f8a4f, #34c77b); /* a provider that is connected */
   --color-screen: #121826; /* the browser's desktop, behind its live view */
   --color-live: #ef4444; /* the ring around a screen you have taken over */
   --color-working: var(--color-ink-2); /* the "Working…" text */

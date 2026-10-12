@@ -7,17 +7,18 @@ import type { IconName } from "./Icon";
 /** The card that holds rows. */
 export const Card = ({ children }: { children: ReactNode }) => <ul className="divide-y divide-line overflow-hidden rounded-xl ring-1 ring-line">{children}</ul>;
 
-/** One row. `children` is its control (a button, a switch, a tag); `below` is a form or list that opens under it. */
-export function Row({ icon, title, description, children, below }: { icon?: IconName; title: ReactNode; description?: ReactNode; children?: ReactNode; below?: ReactNode }) {
+/** One row. `children` is its control (a button, a switch, a tag); `below` is a form or list that opens under it.
+ *  A control marked with the class `pick` (a dropdown) takes the full width on a phone. */
+export function Row({ icon, tile, title, description, children, below }: { icon?: IconName; /** Shown instead of an icon. */ tile?: ReactNode; title: ReactNode; description?: ReactNode; children?: ReactNode; below?: ReactNode }) {
   return (
     <li className="px-4 py-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        {icon && <IconTile icon={icon} />}
+        {tile ?? (icon && <IconTile icon={icon} />)}
         <div className="min-w-[10rem] flex-1">
           <p className="truncate text-[13.5px] font-medium">{title}</p>
           {description && <p className="text-xs leading-relaxed text-ink-3 [overflow-wrap:anywhere]">{description}</p>}
         </div>
-        {children && <div className="ml-auto flex shrink-0 items-center gap-2">{children}</div>}
+        {children && <div className="ml-auto flex shrink-0 items-center gap-2 max-sm:has-[.pick]:min-w-0 max-sm:has-[.pick]:basis-full">{children}</div>}
       </div>
       {below && <div className="mt-3">{below}</div>}
     </li>

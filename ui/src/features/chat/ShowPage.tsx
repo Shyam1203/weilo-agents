@@ -53,9 +53,9 @@ export function ShowPage({ title, html, onReply }: Props) {
     return () => removeEventListener("message", listen);
   }, [onReply]);
 
+  // The title names the frame for screen readers only: pages start with their own heading, and a bar above repeated it.
   return (
     <section className="w-full max-w-full overflow-hidden rounded-2xl border border-line bg-page">
-      {title && <h3 className="px-3.5 pt-3 pb-1 text-[13.5px] font-medium">{title}</h3>}
       <iframe ref={frame} title={title || "Page"} sandbox="allow-scripts" srcDoc={doc} referrerPolicy="no-referrer" style={{ height }} className="block w-full border-0" />
     </section>
   );

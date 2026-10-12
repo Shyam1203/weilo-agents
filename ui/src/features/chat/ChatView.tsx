@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Agent } from "../../api/agents";
 import { listCommands, type Outgoing } from "../../api/chat";
 import { messageOf } from "../../api/http";
-import type { Model } from "../../api/providers";
+import { shortName, type Model } from "../../api/providers";
 import { Avatar } from "../../components/ui/Avatar";
 import { Button, IconButton } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
@@ -132,9 +132,9 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
           onBack={onBack}
           leading={<Avatar spec={avatarOf(agent)} size={32} working={chat.busy} doing={chat.doing} />}
           title={agent.name}
-          subtitle={agent.model ? (models?.find((m) => m.id === agent.model)?.name ?? agent.model) : "Choose a model"}
+          subtitle={agent.model ? shortName(models?.find((m) => m.id === agent.model)?.name ?? agent.model) : "Choose a model"}
           onTitle={onEdit}
-          actions={<><IconButton icon="search" label="Find in this chat" aria-pressed={finding} className={finding ? "bg-select text-ink" : ""} onClick={() => (finding ? closeFind() : setFinding(true))} /><IconButton icon="globe" label={sideOpen ? "Hide the browser" : "Show the browser"} aria-pressed={sideOpen} className={sideOpen ? "bg-select text-ink" : ""} onClick={toggleSide} /></>}
+          actions={<><IconButton icon="search" label="Find in this chat" aria-pressed={finding} className={finding ? "bg-select text-ink" : ""} onClick={() => (finding ? closeFind() : setFinding(true))} /><IconButton icon="panel" label={sideOpen ? "Hide browser and routines" : "Show browser and routines"} aria-pressed={sideOpen} className={sideOpen ? "bg-select text-ink" : ""} onClick={toggleSide} /></>}
         />
         {finding && <FindBar query={query} onQuery={setQuery} count={found.count} current={found.current} onNext={found.next} onPrevious={found.previous} onClose={closeFind} />}
         <div className="relative min-h-0 flex-1">

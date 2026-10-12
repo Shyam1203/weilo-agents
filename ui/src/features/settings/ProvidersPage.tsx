@@ -1,10 +1,10 @@
-import { useState, type FormEvent } from "react";
-import { removeKey, saveKey, type Model, type Provider } from "../../api/providers";
+import { useState, type FormEvent, type ReactNode } from "react";
+import { choosableOf, modelsOf, removeKey, saveKey, type Model, type Provider } from "../../api/providers";
 import { Button } from "../../components/ui/Button";
 import { ErrorText } from "../../components/ui/Field";
 import { List } from "../../components/ui/List";
 import { Page, Row } from "../../components/ui/Row";
-import { Tag } from "../../components/ui/Tag";
+import { LetterTile } from "../../components/ui/Tag";
 import { useAction } from "../../lib/useAction";
 import { ModelPicker } from "./ModelPicker";
 import { SignIn } from "./SignIn";
@@ -17,14 +17,34 @@ interface Props {
 }
 
 export function ProvidersPage({ providers, models, onChange, onModels }: Props) {
+  const connected = providers.filter((p) => p.connected);
+  const others = providers.filter((p) => !p.connected);
+  const row = (p: Provider) => <ProviderRow key={p.id} provider={p} models={models} onChange={onChange} onModels={onModels} />;
   return (
     <Page title="Providers" description="Agents use your own account with a model provider: sign in with it, or add an API key. Keys and sign-ins stay on this computer.">
-      <List items={providers} empty="No providers.">
-        {(p) => <ProviderRow key={p.id} provider={p} models={models} onChange={onChange} onModels={onModels} />}
-      </List>
+      {/* The providers in use first; the rest are offers to add one. */}
+      {connected.length > 0 && (
+        <Group title="In use">
+          <List items={connected} empty="">
+            {row}
+          </List>
+        </Group>
+      )}
+      <Group title={connected.length ? "Add another" : "Add a provider"}>
+        <List items={others} empty="Every provider is connected.">
+          {row}
+        </List>
+      </Group>
     </Page>
   );
 }
+
+const Group = ({ title, children }: { title: string; children: ReactNode }) => (
+  <section className="flex flex-col gap-1.5">
+    <h4 className="label">{title}</h4>
+    {children}
+  </section>
+);
 
 function ProviderRow({ provider, models, onChange, onModels }: { provider: Provider; models?: Model[]; onChange: () => void; onModels: (ids: string[]) => void }) {
   const [open, setOpen] = useState(false);
@@ -46,11 +66,16 @@ function ProviderRow({ provider, models, onChange, onModels }: { provider: Provi
   const keys = !!provider.keyUrl || !provider.signIn;
   const described = provider.account ? `Signed in with ${provider.signIn ?? "your account"}.` : provider.connected ? "Connected with an API key." : provider.signIn ? `Sign in with ${provider.signIn}${keys ? ", or use an API key" : ""}.` : "Use your own API key.";
 
+  // How many models agents can choose from it (all, when none is switched on).
+  const all = provider.connected && models ? modelsOf(models, provider.id).length : 0;
+  const choosable = all ? choosableOf(models!, provider.id).length : 0;
+  const counted = all ? ` ${choosable === all ? `All ${all} models` : `${choosable} of ${all} models`} on.` : "";
+
   return (
     <Row
-      icon="plug"
+      tile={<LetterTile name={provider.name} />}
       title={provider.name}
-      description={described}
+      description={described + counted}
       below={
         below ? (
           <>
@@ -80,7 +105,10 @@ function ProviderRow({ provider, models, onChange, onModels }: { provider: Provi
     >
       {provider.connected ? (
         <>
-          <Tag>Connected</Tag>
+          <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-good">
+            <span className="size-1.5 rounded-full bg-good" />
+            Connected
+          </span>
           <Button size="sm" variant="ghost" aria-expanded={picking} onClick={() => (setPicking(!picking), setOpen(false))}>
             Models
           </Button>

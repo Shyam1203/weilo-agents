@@ -48,3 +48,6 @@ export const answerSignIn = (id: string, answer: string) => request<SignIn>("PUT
 export const stopSignIn = (id: string) => request("DELETE", `/api/providers/${id}/sign-in`);
 export const listModels = () => request<Model[]>("GET", "/api/models");
 export const setEnabledModels = (ids: string[]) => request("PUT", "/api/models", { enabled: ids });
+
+/** A model's name without its maker said twice: "DeepSeek: DeepSeek V4.1 Flash" -> "DeepSeek V4.1 Flash". */
+export const shortName = (name: string) => name.replace(/^([^:]+):\s+(?=\1\b)/i, "");
