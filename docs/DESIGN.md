@@ -45,7 +45,7 @@ container serves the UI and runs pi. All user data is one host folder, `~/.weilo
 ```
 ~/.weilo-agents/
 ├── agent/               pi's own, shared by all agents: auth.json, settings.json, mcp.json,
-│   │                    AGENTS.md, USER.md, MEMORY.md, curator.json, routines.json, browser.json, push.json, skills/, extensions/
+│   │                    AGENTS.md, USER.md, MEMORY.md, curator.json, routines.json, browser.json, push.json, install.json, skills/, extensions/
 │   ├── sessions/<id>/   each agent's conversation
 │   ├── order.json       { "agents": [ids] }: the agent list order, as dragged (newer agents after)
 │   └── profiles/<id>/   Weilo agent profiles
@@ -97,9 +97,10 @@ An agent's pi loads only pi's built-in extensions (`PI_BUILTINS` in `config.mjs`
 | Route | Does |
 |---|---|
 | `GET /api/version` | `{version, commit, pi}` of this build (`dev` / `unknown` when built without a version) |
-| `GET /api/providers` | `[{id, name, keyUrl, connected}]` |
+| `GET /api/providers` | `[{id, name, keyUrl, signIn, connected, account}]` (`account`: signed in, not a key) |
 | `PUT /api/providers/:id` `{key}` | merge into `agent/auth.json` (mode 0600); never returned |
-| `DELETE /api/providers/:id` | remove the key |
+| `DELETE /api/providers/:id` | remove the key, or sign out |
+| `POST` · `GET` · `PUT` `{answer}` · `DELETE /api/providers/:id/sign-in` | sign in with an account (`settings/login.mjs`): start, where it is, answer its question, stop. Each answers `{state, url, code, ask, message}`: a page to open, a device code, or a question (a choice, text, or the code or address the provider's page ends on). pi's own login (`ModelRuntime.login`, from the installed pi) runs in the daemon and saves the tokens in `auth.json`, which pi renews. It picks the way that works from another device where a provider offers one. |
 | `GET /api/models` · `PUT /api/models` `{enabled}` | models the keys can use (`get_available_models`) · set pi's `enabledModels` |
 | `GET /api/user` · `PUT /api/user` `{name, about}` | what agents know about you (`USER.md`) |
 | `GET /api/memory` · `PUT /api/memory` `{text}` · `PUT /api/memory/curator` `{model}` | `{text, model}`: the `MEMORY.md` file and the curator's model ("" is off) · save the file (kept lines become notes) · choose the model |

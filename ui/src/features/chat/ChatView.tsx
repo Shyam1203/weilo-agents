@@ -73,7 +73,7 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
   const dock = useRef<HTMLDivElement>(null);
   const [room, setRoom] = useState(0);
   useEffect(() => {
-    const observer = new ResizeObserver(([entry]) => setRoom(entry.target.getBoundingClientRect().height));
+    const observer = new ResizeObserver(([entry]) => setRoom((entry.target as HTMLElement).offsetHeight));
     observer.observe(dock.current!);
     return () => observer.disconnect();
   }, []);

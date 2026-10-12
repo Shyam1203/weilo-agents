@@ -44,7 +44,7 @@ export function Sidebar({ agents, unread, selected, update, onSelect, onFound, o
         <IconButton icon="plus" label="New agent" onClick={onNew} />
       </div>
       <SearchBox query={query} onQuery={setQuery} />
-      {query.trim() ? <SearchResults query={query} agents={agents} onOpen={(id, at) => onFound(id, query.trim(), at)} /> : (
+      {query.trim() ? <SearchResults query={query} agents={agents} onAgent={onSelect} onOpen={(id, at) => onFound(id, query.trim(), at)} /> : (
         <ul className="flex flex-1 flex-col gap-1 overflow-y-auto px-2 py-1">
           {shown.map((a) => (
             <li key={a.id} {...itemProps(a.id)} className={`relative select-none [-webkit-touch-callout:none] ${dragging === a.id ? "z-10 rounded-xl bg-panel" : ""}`}>

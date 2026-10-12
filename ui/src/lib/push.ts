@@ -6,14 +6,15 @@ import { KEYS, read, write } from "./storage";
 export const registerWorker = () => void navigator.serviceWorker?.register("/sw.js").catch(() => {});
 
 const iOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-const standalone = () => window.matchMedia("(display-mode: standalone)").matches;
-
 /** Why this browser cannot get notifications, or null when it can. */
 export function unsupported(): string | null {
   if (!window.isSecureContext) return "Notifications need a secure address: open the app at localhost on this computer, or at its Tailscale https address.";
-  if (iOS() && !standalone()) return "On iPhone and iPad, add Weilo Agents to your Home Screen first (Share, then Add to Home Screen), and open it from there.";
-  if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return "This browser cannot show notifications.";
-  return null;
+  // What the browser can do decides, not how it was opened (an iPhone's Home Screen app does not always say it is one).
+  if ("serviceWorker" in navigator && "PushManager" in window && "Notification" in window) return null;
+  // Safari on an iPhone or iPad has notifications only in an app opened from the Home Screen.
+  if (iOS())
+    return "On iPhone and iPad, notifications work in the app opened from your Home Screen (Share, then Add to Home Screen, with Open as Web App on). If you opened it from there, update iOS to 16.4 or later.";
+  return "This browser cannot show notifications.";
 }
 
 /** A name for this device in the list: "iPhone", "Windows · Chrome". */

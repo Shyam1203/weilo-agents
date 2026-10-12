@@ -29,6 +29,9 @@ export const CURATOR = join(AGENT_DIR, "curator.json");
 export const ROUTINES = join(AGENT_DIR, "routines.json");
 export const BROWSER = join(AGENT_DIR, "browser.json");
 export const PUSH = join(AGENT_DIR, "push.json");
+// pi's model settings, and this installation's id (some providers' sign-in names the device).
+export const MODELS = join(AGENT_DIR, "models.json");
+export const INSTALL = join(AGENT_DIR, "install.json");
 
 // Keys, tokens, passwords and card numbers are never saved, in a note or in a page of the vault. A false alarm costs a retry (a note) or replaces the line (a page).
 export const SECRET =

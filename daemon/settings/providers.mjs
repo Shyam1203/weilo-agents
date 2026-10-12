@@ -3,7 +3,7 @@ import { AUTH, fail, PI_ENV, readJson, SETTINGS, updateJson, WORKSPACE } from ".
 import { MODELS_TIMEOUT_MS, PROVIDERS } from "../config.mjs";
 import { setReserves } from "./compaction.mjs";
 
-// Provider keys are pi's own: agent/auth.json, { "<provider>": { "type": "api_key", "key": … } }.
+// Provider keys are pi's own: agent/auth.json, { "<provider>": { "type": "api_key", "key": … } } (or "oauth" and tokens: login.mjs).
 // Keys are only ever written here, never returned. Settings offers PROVIDERS (config.mjs) and any other in auth.json.
 
 const check = (id) => {
@@ -12,10 +12,11 @@ const check = (id) => {
 
 export async function listProviders() {
   const auth = await readJson(AUTH);
-  const known = PROVIDERS.map((p) => ({ ...p, connected: Object.hasOwn(auth, p.id) }));
+  // `account`: signed in with an account (settings/login.mjs), not a key.
+  const known = PROVIDERS.map((p) => ({ ...p, connected: Object.hasOwn(auth, p.id), account: auth[p.id]?.type === "oauth" }));
   const others = Object.keys(auth)
     .filter((id) => !PROVIDERS.some((p) => p.id === id))
-    .map((id) => ({ id, name: id, connected: true }));
+    .map((id) => ({ id, name: id, connected: true, account: auth[id]?.type === "oauth" }));
   return [...known, ...others];
 }
 

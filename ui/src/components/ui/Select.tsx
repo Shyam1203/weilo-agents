@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
+import { zoom } from "../../lib/zoom";
 import { Icon } from "./Icon";
 
 interface Option {
@@ -35,7 +36,9 @@ export function Select({ label, value, options, onChange, placeholder = "", disa
     const below = innerHeight - r.bottom - MARGIN;
     const above = r.top - MARGIN;
     const up = below < ROOM && above > below;
-    setPlace({ left: r.left, minWidth: r.width, ...(up ? { bottom: innerHeight - r.top + GAP, maxHeight: above } : { top: r.bottom + GAP, maxHeight: below }) });
+    // Measured on the screen; the list's style is in the page's own (unzoomed) sizes.
+    const z = zoom();
+    setPlace({ left: r.left / z, minWidth: r.width / z, ...(up ? { bottom: (innerHeight - r.top) / z + GAP, maxHeight: above / z } : { top: r.bottom / z + GAP, maxHeight: below / z }) });
   };
 
   useEffect(() => {
