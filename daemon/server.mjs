@@ -27,6 +27,7 @@ import { migrate } from "./migrate.mjs";
 import { addDevice, markSeen, pushStatus, removeDevice, setMuted } from "./push.mjs";
 import { setUpdateCheck, updateStatus } from "./update.mjs";
 import { BUILD } from "./version.mjs";
+import { clearScratch } from "./agents/workspace.mjs";
 
 // JSON API. A handler gets (id, body, request, second id) and returns the reply; no reply means 204.
 const routes = [];
@@ -190,6 +191,8 @@ try {
 server.listen(PORT, "0.0.0.0", () => console.log(`weilo-core listening on :${PORT}`));
 
 void syncCompaction();
+// Scratch files from before a restart are no one's now.
+void clearScratch();
 startRoutines();
 startScreen();
 startCurator();
