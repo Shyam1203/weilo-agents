@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { createAgent, getAgent, listAgents, removeChat, removeProfile, setOrder, updateAgent } from "./agents/agents.mjs";
 import { searchChats } from "./agents/search.mjs";
+import { clearScratch } from "./agents/workspace.mjs";
 import { abort, activityOf, answer, compact, contextOf, prompt, restart, restartAll, skillCommands, stop, stopAll } from "./agents/runner.mjs";
 import { closeBrowser, giveBack, hasWindow, isTaken, showBrowser, takeOver, useBrowser } from "./browser/browser.mjs";
 import { getRule, saveRule } from "./browser/rule.mjs";
@@ -188,6 +189,8 @@ try {
 server.listen(PORT, "0.0.0.0", () => console.log(`weilo-core listening on :${PORT}`));
 
 void syncCompaction();
+// Scratch files from before a restart are no one's now.
+void clearScratch();
 startRoutines();
 startScreen();
 startCurator();
