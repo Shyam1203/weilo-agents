@@ -21,7 +21,7 @@ const BLOCKS = [
   object(
     {
       type: kind("cards"),
-      items: list(object({ title: str, text: str, link: note("A web address."), message: note("Makes the card choosable: choosing it sends this as the user's reply.") }, ["title"])),
+      items: list(object({ title: str, text: note("Markdown: a few short lines or a short list."), image: note("A picture's https:// address (a product photo, say), shown at the top of the card."), link: note("A web address."), message: note("Makes the card choosable: choosing it sends this as the user's reply.") }, ["title"])),
     },
     ["type", "items"],
   ),
@@ -34,7 +34,7 @@ const BLOCKS = [
 const DESCRIPTION = `Show the user something to look at or use, instead of describing it in text. Blocks appear in the chat in order; add a short text reply as well.
 - table: rows and columns to compare things.
 - metrics: a few key numbers, each with a label. Not for choices.
-- cards: things to read about. Give a card a message to let the user choose it (options, recipes, products...).
+- cards: things to read about, each with a short Markdown text and a picture when there is one (products, places, recipes). Give a card a message to let the user choose it.
 - chart: bar or line, one value per label.
 - buttons: short choices; pressing one sends its message as the user's reply.
 - file: a file you made in the workspace, for the user to download (pictures show in the chat).

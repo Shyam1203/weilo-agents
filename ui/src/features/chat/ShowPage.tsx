@@ -24,7 +24,7 @@ addEventListener("load", size);
 </script>`;
 
 const documentOf = (html: string) =>
-  `<!doctype html><meta http-equiv="Content-Security-Policy" content="${POLICY}"><style>:root{color-scheme:light dark}body{margin:12px;font:14px/1.5 system-ui,sans-serif}</style>${html}${BRIDGE}`;
+  `<!doctype html><meta http-equiv="Content-Security-Policy" content="${POLICY}"><meta name="referrer" content="no-referrer"><style>:root{color-scheme:light dark}body{margin:12px;font:14px/1.5 system-ui,sans-serif}</style>${html}${BRIDGE}`;
 
 interface Props {
   title: string;
