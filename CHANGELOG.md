@@ -4,6 +4,10 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 ## Unreleased
 
+- Drag agents to reorder the list (on a phone, hold one, then drag; Alt + arrow keys also move it). The order is saved, so phone and PC match.
+- The agent list previews show plain text, without Markdown symbols.
+- Tables in chat scroll sideways instead of breaking words, and replies use the full width on a phone.
+- A Copy button on code blocks, and Copy, Share (where the device has it) and Send again under replies.
 - `update.cmd` and `update.sh` in the release zip: run one to download the newest release and start it. The About page points to them.
 - The agent list's working avatar follows the open chat (same scene, same moment) and no longer flickers between tools.
 - The + button in the agent list opens New agent from Settings (it stayed in Settings).

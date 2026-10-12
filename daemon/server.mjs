@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { createAgent, getAgent, listAgents, removeChat, removeProfile, updateAgent } from "./agents/agents.mjs";
+import { createAgent, getAgent, listAgents, removeChat, removeProfile, setOrder, updateAgent } from "./agents/agents.mjs";
 import { abort, activityOf, answer, compact, contextOf, prompt, restart, restartAll, skillCommands, stop, stopAll } from "./agents/runner.mjs";
 import { closeBrowser, giveBack, hasWindow, isTaken, showBrowser, takeOver, useBrowser } from "./browser/browser.mjs";
 import { getRule, saveRule } from "./browser/rule.mjs";
@@ -81,6 +81,7 @@ route("PUT", "/api/memory", async (_, { text }) => {
 route("PUT", "/api/memory/curator", (_, body) => setCurator(body));
 route("GET", "/api/agents", async () => (await listAgents()).map((agent) => ({ ...agent, working: activityOf(agent.id) !== null, doing: activityOf(agent.id), taken: isTaken(agent.id) })));
 route("POST", "/api/agents", (_, body) => createAgent(body));
+route("PUT", "/api/agents", (_, { order }) => setOrder(order));
 route("PUT", "/api/agents/:id", async (id, body) => {
   const agent = await updateAgent(id, body);
   await restart(id);

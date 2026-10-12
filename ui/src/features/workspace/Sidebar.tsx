@@ -3,8 +3,9 @@ import type { Update } from "../../api/app";
 import { Avatar } from "../../components/ui/Avatar";
 import { Button, IconButton } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
-import { shortWhen } from "../../lib/format";
+import { plainText, shortWhen } from "../../lib/format";
 import { avatarOf } from "../agents/avatars";
+import { useDragOrder } from "./useDragOrder";
 
 interface Props {
   agents: Agent[];
@@ -14,6 +15,8 @@ interface Props {
   /** A newer release, if one exists. */
   update?: Update | null;
   onSelect: (id: string) => void;
+  /** Saves the list's new order (an agent was dragged to another place). */
+  onReorder: (ids: string[]) => Promise<unknown>;
   onNew: () => void;
   onSkills: () => void;
   onPlugins: () => void;
@@ -23,21 +26,27 @@ interface Props {
   onContact: () => void;
 }
 
-export function Sidebar({ agents, unread, selected, update, onSelect, onNew, onSkills, onPlugins, onSettings, onAbout, onContact }: Props) {
+export function Sidebar({ agents, unread, selected, update, onSelect, onReorder, onNew, onSkills, onPlugins, onSettings, onAbout, onContact }: Props) {
+  const { order, dragging, list, itemProps, wasDrag } = useDragOrder(
+    agents.map((a) => a.id),
+    onReorder,
+  );
+  const shown = order.map((id) => agents.find((a) => a.id === id)).filter((a): a is Agent => !!a);
   return (
     <nav aria-label="Agents" className="flex h-full w-full shrink-0 flex-col border-r border-line bg-panel pb-[env(safe-area-inset-bottom)] md:w-72">
       <div className="flex h-14 shrink-0 items-center justify-between pr-4 pl-5">
         <h1 className="text-[15px] font-semibold tracking-tight">Weilo Agents</h1>
         <IconButton icon="plus" label="New agent" onClick={onNew} />
       </div>
-      <ul className="flex flex-1 flex-col gap-1 overflow-y-auto px-2 py-1">
-        {agents.map((a) => (
-          <li key={a.id}>
+      <ul ref={list} className="flex flex-1 flex-col gap-1 overflow-y-auto px-2 py-1">
+        {shown.map((a) => (
+          <li key={a.id} {...itemProps(a.id)} className={`relative select-none [-webkit-touch-callout:none] ${dragging === a.id ? "z-10 rounded-xl bg-panel" : ""}`}>
             <button
               type="button"
-              onClick={() => onSelect(a.id)}
+              onClick={() => wasDrag() || onSelect(a.id)}
               aria-current={a.id === selected}
-              className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors ${a.id === selected ? "bg-select" : "hover:bg-select"}`}
+              aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+              className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-[background-color,box-shadow,scale] ${dragging === a.id ? "scale-[1.02] bg-select shadow-lg shadow-black/30" : a.id === selected ? "bg-select" : "hover:bg-select"}`}
             >
               <span className="relative shrink-0">
                 <Avatar spec={avatarOf(a)} size={36} working={!!a.working} doing={a.doing} />
@@ -60,7 +69,7 @@ export function Sidebar({ agents, unread, selected, update, onSelect, onNew, onS
                     <span>.</span>
                   </span>
                 ) : (
-                  <span className={`block truncate text-xs ${unread.has(a.id) ? "text-ink" : "text-ink-3"}`}>{a.last ? `${a.last.role === "user" ? "You: " : ""}${a.last.shown ? "Showed you something" : a.last.text}` : "No messages yet"}</span>
+                  <span className={`block truncate text-xs ${unread.has(a.id) ? "text-ink" : "text-ink-3"}`}>{a.last ? `${a.last.role === "user" ? "You: " : ""}${a.last.shown ? "Showed you something" : plainText(a.last.text)}` : "No messages yet"}</span>
                 )}
               </span>
             </button>

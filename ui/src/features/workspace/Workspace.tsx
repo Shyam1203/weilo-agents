@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getUpdate, type Update } from "../../api/app";
-import type { Agent } from "../../api/agents";
+import { reorderAgents, type Agent } from "../../api/agents";
 import type { Extension } from "../../api/extensions";
 import type { Plugin } from "../../api/plugins";
 import type { Model, Provider } from "../../api/providers";
@@ -81,6 +81,7 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
           selected={settings ? undefined : agent?.id}
           update={update}
           onSelect={select}
+          onReorder={(ids) => reorderAgents(ids).then(reloadAgents, () => {})}
           onNew={() => (setSettings(null), setForm("new"))}
           onSkills={() => openSettings("skills")}
           onPlugins={() => openSettings("plugins")}

@@ -45,6 +45,7 @@ container serves the UI and runs pi. All user data is one host folder, `~/.weilo
 ├── agent/               pi's own, shared by all agents: auth.json, settings.json, mcp.json,
 │   │                    AGENTS.md, USER.md, MEMORY.md, curator.json, routines.json, browser.json, skills/, extensions/
 │   ├── sessions/<id>/   each agent's conversation
+│   ├── order.json       { "agents": [ids] }: the agent list order, as dragged (newer agents after)
 │   └── profiles/<id>/   Weilo agent profiles
 │       └── agent.json   { "name", "model", "thinking", "skills", "plugins", "extensions", "disabled", "instructions", "avatar" }
 ├── knowledge/           the vault the curator keeps (markdown pages)

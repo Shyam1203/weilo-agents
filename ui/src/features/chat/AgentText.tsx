@@ -1,7 +1,9 @@
 // The agent's text, as Markdown in its bubble: its replies and the text blocks it shows.
+import { isValidElement, useRef, type ReactNode } from "react";
 import type { Components } from "react-markdown";
 import { Markdown } from "../../components/Markdown";
 import { Icon } from "../../components/ui/Icon";
+import { useCopy } from "../../lib/useCopy";
 import { workspacePath } from "../files/kinds";
 import { usePreview } from "../files/PreviewContext";
 
@@ -12,6 +14,7 @@ const MARKDOWN: Components = {
     const path = className || text.includes("\n") ? null : workspacePath(text);
     return path ? <FileLink path={path} /> : <code className={className}>{children}</code>;
   },
+  pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
 };
 
 function FileLink({ path }: { path: string }) {
@@ -24,9 +27,29 @@ function FileLink({ path }: { path: string }) {
   );
 }
 
-export function AgentText({ text }: { text: string }) {
+/** A code block under a bar with its language and a Copy button. */
+function CodeBlock({ children }: { children: ReactNode }) {
+  const pre = useRef<HTMLPreElement>(null);
+  const { copied, copy } = useCopy();
+  const className = isValidElement<{ className?: string }>(children) ? children.props.className : undefined;
+  const language = /language-([\w+#-]+)/.exec(className ?? "")?.[1] ?? "code";
   return (
-    <div className="prose-chat w-fit max-w-[85%] rounded-2xl bg-bubble px-3.5 py-2">
+    <div className="code-block">
+      <div className="flex items-center justify-between border-b border-line bg-page py-0.5 pr-1 pl-3 text-[11px] text-ink-3">
+        <span>{language}</span>
+        <button type="button" onClick={() => void copy(pre.current?.innerText ?? "")} className="flex items-center gap-1 rounded-md px-1.5 py-1 text-ink-2 hover:bg-select">
+          <Icon name={copied ? "check" : "copy"} size={12} /> {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <pre ref={pre}>{children}</pre>
+    </div>
+  );
+}
+
+export function AgentText({ text }: { text: string }) {
+  // A phone's screen is narrow: a reply takes all of it.
+  return (
+    <div className="prose-chat w-fit max-w-full rounded-2xl bg-bubble px-3.5 py-2 sm:max-w-[85%]">
       <Markdown text={text} components={MARKDOWN} />
     </div>
   );

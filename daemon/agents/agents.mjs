@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { BUNDLED, fail, PROFILES, SESSIONS, slug, updateJson } from "../common.mjs";
+import { BUNDLED, fail, ORDER, PROFILES, readJson, SESSIONS, slug, updateJson } from "../common.mjs";
 import { extensionsOf } from "../settings/extensions.mjs";
 import { lastMessage } from "./sessions.mjs";
 
@@ -48,8 +48,20 @@ export async function profiles() {
   return (await Promise.all(ids.map((id) => getAgent(id).catch(() => null)))).filter(Boolean);
 }
 
-// The profiles with the newest message of each chat, for the agent list.
-export const listAgents = async () => Promise.all((await profiles()).map(async (agent) => ({ ...agent, last: await lastMessage(agent.id) })));
+// The profiles with the newest message of each chat, for the agent list, in the order the user dragged them to
+// (order.json { agents: [ids] }). Agents not in it (made since) come after, in folder order.
+export async function listAgents() {
+  const { agents } = await readJson(ORDER);
+  const order = Array.isArray(agents) ? agents : [];
+  const place = (id) => (order.includes(id) ? order.indexOf(id) : order.length);
+  const sorted = (await profiles()).sort((a, b) => place(a.id) - place(b.id));
+  return Promise.all(sorted.map(async (agent) => ({ ...agent, last: await lastMessage(agent.id) })));
+}
+
+export async function setOrder(order) {
+  if (!ids(order)) throw fail(400, "The order is not valid");
+  await updateJson(ORDER, (data) => ({ ...data, agents: order.filter(isAgentId) }));
+}
 
 export async function createAgent(input) {
   const agent = clean(input);
