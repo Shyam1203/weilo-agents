@@ -36,7 +36,7 @@ const DESCRIPTION = `Show the user something to look at or use, instead of descr
 - metrics: a few key numbers, each with a label. Not for choices.
 - cards: things to read about, each with a short Markdown text and a picture when there is one (products, places, recipes). Give a card a message to let the user choose it.
 - chart: bar or line, one value per label.
-- buttons: short choices; pressing one sends its message as the user's reply.
+- buttons: short choices; pressing one sends its message as the user's reply. When you end a reply by offering a few next steps ("Want me to add X, or compare Y?"), show them as buttons too, so the user can tap one instead of typing.
 - file: a file you made in the workspace, for the user to download (pictures show in the chat).
 - page: a small app of your own (calculator, form, game, visual) as one self-contained HTML document. It runs in a sandbox: it can load scripts, styles, fonts, images and data from https:// addresses (maps, chart libraries...), but cannot reach the app, the workspace or the user's files, and cannot open frames. Never put the user's private information into an address. Call weilo.reply("text") from a click handler to send the user's reply to you.
 When the blocks let the user choose (cards with a message, or buttons), end your turn right after the show and wait for the choice: do not ask another question or carry on, or the choice can no longer be made.`;

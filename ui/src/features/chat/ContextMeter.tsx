@@ -1,4 +1,5 @@
-// How full the agent's context is: a small ring beside the send button. Hover or tap it for the tokens, where pi
+// How full the agent's context is, beside the send button: a number and a small bar (a ring looked like a loading
+// spinner). Hover or tap it for the tokens, where pi
 // summarizes, and a button to summarize now.
 import { useCallback, useState } from "react";
 import type { Context } from "../../api/chat";
@@ -16,14 +17,10 @@ interface Props {
 // 188100 -> "188.1k", 1048576 -> "1.05M".
 const short = (n: number) => (n >= 1e6 ? `${+(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${+(n / 1e3).toFixed(1)}k` : String(n));
 
-const SIZE = 22;
-const R = 8.5;
-const C = 2 * Math.PI * R;
-
 export function ContextMeter({ context, compacting, busy, onCompact }: Props) {
   const { tokens, window, point } = context;
   const used = tokens === null ? 0 : Math.min(tokens / window, 1);
-  // The ring fills as the context nears the point where pi summarizes.
+  // Red as the context nears the point where pi summarizes.
   const fill = tokens === null ? 0 : Math.min(tokens / point, 1);
   const tight = fill >= 0.8;
   // Hovering shows the details on a computer; a tap (a touch screen has no hover, and Safari does not focus a tapped
@@ -32,12 +29,12 @@ export function ContextMeter({ context, compacting, busy, onCompact }: Props) {
   const close = useCallback(() => setOpen(false), []);
   const ref = useDismiss<HTMLDivElement>(open, close);
   return (
-    <div ref={ref} className="group relative flex size-9 shrink-0 items-center justify-center">
-      <button type="button" aria-label={tokens === null ? "Context use" : `Context ${Math.round(used * 100)}% used`} aria-expanded={open} onClick={() => setOpen((v) => !v)} className="flex size-9 items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-line-strong">
-        <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} className={`-rotate-90 ${compacting ? "animate-pulse" : ""}`} aria-hidden>
-          <circle cx={SIZE / 2} cy={SIZE / 2} r={R} fill="none" strokeWidth="2.5" className="stroke-line-strong" />
-          <circle cx={SIZE / 2} cy={SIZE / 2} r={R} fill="none" strokeWidth="2.5" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - fill)} className={tight ? "stroke-bad" : "stroke-ink-2"} />
-        </svg>
+    <div ref={ref} className="group relative flex h-9 shrink-0 items-center justify-center">
+      <button type="button" aria-label={tokens === null ? "Context use" : `Context ${Math.round(used * 100)}% used`} aria-expanded={open} onClick={() => setOpen((v) => !v)} className={`flex h-9 items-center gap-1 rounded-lg px-1.5 text-xs tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-line-strong ${tight ? "text-bad" : "text-ink-3"}`}>
+        <span className={`relative h-1.5 w-4 overflow-hidden rounded-full bg-line-strong ${compacting ? "animate-pulse" : ""}`} aria-hidden>
+          <span className={`absolute inset-y-0 left-0 rounded-full ${tight ? "bg-bad" : "bg-ink-3"}`} style={{ width: `${Math.max(used * 100, 8)}%` }} />
+        </span>
+        {tokens === null ? "–" : `${Math.round(used * 100)}%`}
       </button>
       <div className={`absolute right-0 bottom-full z-30 pb-2 transition-opacity group-hover:visible group-hover:opacity-100 ${open ? "visible opacity-100" : "invisible opacity-0"}`}>
         <div className="flex w-52 flex-col gap-1.5 rounded-xl bg-raised px-3 py-2.5 text-xs shadow-pop">

@@ -232,11 +232,13 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
               e.target.value = "";
             }}
           />
-          <Menu placement="above-start" trigger={({ open, toggle }) => <RoundButton icon="plus" label="Add files and photos" active={open} disabled={disabled} onClick={toggle} />}>
+          <Menu placement="above-start" trigger={({ open, toggle }) => <RoundButton icon="plus" label="Add files and photos" open={open} disabled={disabled} onClick={toggle} />}>
             {(close) => (
               <>
                 <MenuItem icon="attach" label="Files and photos" onClick={() => (close(), picker.current?.click())} />
                 <MenuItem icon="camera" label="Camera" onClick={() => (close(), setCamera(true))} />
+                {/* Typing "/" is hard to find, on a phone most of all. */}
+                {shortcuts.length > 0 && <MenuItem icon="sparkle" label="Skills and commands" onClick={() => (close(), setText("/"), box.current?.focus())} />}
                 <MenuItem icon="list" label="Bulleted list" onClick={() => (close(), setText((t) => withList(t, "- ")), box.current?.focus())} />
                 <MenuItem icon="listNumbered" label="Numbered list" onClick={() => (close(), setText((t) => withList(t, "1. ")), box.current?.focus())} />
               </>
@@ -275,20 +277,22 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
   );
 }
 
-function RoundButton({ icon, label, solid = false, active = false, type = "button", disabled, onClick }: { icon: IconName; label: string; solid?: boolean; active?: boolean; type?: "button" | "submit"; disabled?: boolean; onClick?: () => void }) {
+// `active`: recording (red). `open`: its menu is open (a quiet pressed look, the + turned into an ×).
+function RoundButton({ icon, label, solid = false, active = false, open = false, type = "button", disabled, onClick }: { icon: IconName; label: string; solid?: boolean; active?: boolean; open?: boolean; type?: "button" | "submit"; disabled?: boolean; onClick?: () => void }) {
   return (
     <button
       type={type}
       aria-label={label}
       title={label}
       aria-pressed={active || undefined}
+      aria-expanded={open || undefined}
       disabled={disabled}
       onClick={onClick}
       className={`relative flex size-9 shrink-0 items-center justify-center rounded-lg transition-[opacity,background-color] disabled:opacity-30 ${
-        active ? "bg-bad-soft text-bad" : solid ? "bg-ink text-page hover:opacity-85" : "bg-card text-ink-2 hover:text-ink"
+        active ? "bg-bad-soft text-bad" : open ? "bg-select text-ink" : solid ? "bg-ink text-page hover:opacity-85" : "bg-card text-ink-2 hover:text-ink"
       }`}
     >
-      <Icon name={icon} size={icon === "stop" ? 13 : 17} />
+      <Icon name={icon} size={icon === "stop" ? 13 : 17} className={`transition-transform ${open ? "rotate-45" : ""}`} />
       {active && <span className="absolute top-1.5 right-1.5 size-1.5 animate-pulse rounded-full bg-bad" />}
     </button>
   );

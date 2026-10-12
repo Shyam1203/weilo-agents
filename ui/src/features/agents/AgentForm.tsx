@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { createAgent, deleteAgent, updateAgent, type Agent, type AgentInput } from "../../api/agents";
-import { choosableOf, providerOf, type Model, type Provider } from "../../api/providers";
+import { choosableOf, providerOf, shortName, type Model, type Provider } from "../../api/providers";
 import type { Extension } from "../../api/extensions";
 import type { Plugin } from "../../api/plugins";
 import type { Skill } from "../../api/skills";
@@ -71,7 +71,7 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
   const [providerId, setProviderId] = useState(() => providerOf(agent?.model ?? "") || firstConnected);
   const ofProvider = choosableOf(models ?? [], providerId);
   const providerOptions = [...providers.filter((p) => p.connected || p.id === providerId).map((p) => ({ value: p.id, label: p.name })), { value: ADD, label: "+ Add provider" }];
-  const modelOptions = [...(draft.model && !ofProvider.some((m) => m.id === draft.model) ? [{ value: draft.model, label: draft.model }] : []), ...ofProvider.map((m) => ({ value: m.id, label: m.name }))];
+  const modelOptions = [...(draft.model && !ofProvider.some((m) => m.id === draft.model) ? [{ value: draft.model, label: draft.model }] : []), ...ofProvider.map((m) => ({ value: m.id, label: shortName(m.name) }))];
   const pickProvider = (id: string) => {
     if (id === ADD) return onAddProvider();
     setProviderId(id);
@@ -158,7 +158,8 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
           </AddOn>
         </Section>
         <ErrorText>{error}</ErrorText>
-        <div className="flex items-center gap-2">
+        {/* Stays in reach at the bottom of the dialog while the form scrolls. */}
+        <div className="sticky -bottom-6 z-10 -mx-6 -mb-6 flex items-center gap-2 border-t border-line bg-raised px-6 py-3">
           {agent && (
             <Button variant="danger" onClick={() => setDeleting(true)}>
               Delete
@@ -185,7 +186,8 @@ const Section = ({ title, children }: { title: string; children: ReactNode }) =>
 );
 
 // The control of a row: a dropdown of a fixed width.
-const Pick = ({ children }: { children: ReactNode }) => <div className="w-44">{children}</div>;
+// On a phone the control takes the row's full width, so a long model name shows whole.
+const Pick = ({ children }: { children: ReactNode }) => <div className="pick w-full min-w-0 sm:w-44">{children}</div>;
 
 // The skills, plugins or extensions an agent can have: what is on, and a list to change it (or to add the first one).
 function AddOn({ title, on, none, open, onToggle, children }: { title: string; on: string[]; none: boolean; open: boolean; onToggle: () => void; children: ReactNode }) {
