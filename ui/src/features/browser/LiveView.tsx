@@ -92,7 +92,9 @@ export function LiveView({ interactive = false }: { interactive?: boolean }) {
 
   return (
     <div className={`relative aspect-[8/5] w-full overflow-hidden rounded-xl ${state === "connected" ? "bg-white" : "bg-screen"} ring-1 ${interactive ? "ring-2 ring-live" : "ring-line"}`}>
-      <div ref={screen} className={`absolute inset-0 ${interactive ? "" : "pointer-events-none"}`} />
+      {/* The app is drawn larger (CSS zoom, lib/zoom.ts). noVNC measures the pointer in zoomed pixels but scales the screen
+          in unzoomed ones, so a click landed right of the pointer; the screen undoes the zoom, and both agree. */}
+      <div ref={screen} style={{ zoom: "calc(1 / var(--zoom))" }} className={`absolute inset-0 ${interactive ? "" : "pointer-events-none"}`} />
       {interactive && state === "connected" && (
         <button type="button" onClick={() => paste()} className="absolute top-2 right-2 rounded-lg bg-black/60 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm hover:bg-black/75">
           Paste

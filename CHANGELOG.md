@@ -4,6 +4,7 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 ## Unreleased
 
+- The browser: when you take over, a click lands where the pointer is (it landed to the right, more so toward the right edge), and the whole screen shows (its right edge was cut off). The app's larger drawing threw both off.
 - Edit agent on a phone: Save stays at the bottom while you scroll, and the provider and model menus use the full width, so model names show whole. A model's maker is no longer said twice ("DeepSeek V4.1 Flash", not "DeepSeek: DeepSeek V4.1 Flash"), here and in the chat header.
 - The context ring next to the send button is now a number and a small bar ("13%"): the ring looked like a loading spinner.
 - The + menu in the message box: the open button turns grey with an × instead of red (red means recording), and Skills and commands lists what typing "/" offers.
