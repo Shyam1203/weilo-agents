@@ -4,6 +4,8 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 ## Unreleased
 
+- Cards an agent shows read better: their text is formatted (bold, lists) and a card can have a picture (a product photo, say). Pictures in an agent's page and in cards no longer tell the shop which site asked, so shops that refuse other sites' pages show them.
+- A smaller working indicator above the message box, which says what the agent is doing ("Using the browser…") instead of "Working".
 - Sign in to a provider with your account instead of an API key: Claude Pro or Max, ChatGPT Plus or Pro, GitHub Copilot and OpenRouter (Settings > Providers > Sign in). It works from a phone too.
 - The app is drawn 10% larger on a computer.
 - A provider's model list opens on the enabled models (Enabled, then All).

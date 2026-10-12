@@ -1,10 +1,10 @@
 // The blocks an agent shows with the `show` tool, drawn in the chat's own style.
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { fileUrl } from "../../api/chat";
 import { Icon } from "../../components/ui/Icon";
 import { kindOf } from "../files/kinds";
 import { usePreview } from "../files/PreviewContext";
-import { AgentText } from "./AgentText";
+import { AgentText, CardText } from "./AgentText";
 import type { Block } from "./blockData";
 import { PickButton } from "./PickButton";
 import { ShowPage } from "./ShowPage";
@@ -17,6 +17,18 @@ interface Props {
   onReply?: (message: string) => void;
   /** What you replied, when you have: the choice it matches is marked. */
   chosen?: string;
+}
+
+// A card's picture (a product photo, say), from the web. Shops often refuse pictures asked for from another site's page,
+// so the request says nothing of this one; a picture that does not load is left out.
+function CardImage({ src }: { src: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return (
+    <div className="flex h-36 items-center justify-center bg-white p-3">
+      <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} className="max-h-full max-w-full object-contain" />
+    </div>
+  );
 }
 
 export function ShowBlocks({ blocks, onReply, chosen }: Props) {
@@ -78,9 +90,11 @@ function One({ block, onReply, chosen }: Omit<Props, "blocks"> & { block: Block 
       return (
         <ul className="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-2">
           {block.items.map((c, i) => (
-            <li key={i} className={`${CARD} flex flex-col px-3.5 py-3 ${c.message && c.message === chosen ? "border-ink ring-1 ring-ink" : ""}`}>
+            <li key={i} className={`${CARD} flex flex-col overflow-hidden ${c.message && c.message === chosen ? "border-ink ring-1 ring-ink" : ""}`}>
+              {c.image && <CardImage src={c.image} />}
+              <div className="flex flex-1 flex-col px-3.5 py-3">
               <p className="text-[14.5px] font-medium [overflow-wrap:anywhere]">{c.title}</p>
-              {c.text && <p className="mt-1 text-[13.5px] leading-relaxed text-ink-2 [overflow-wrap:anywhere]">{c.text}</p>}
+              {c.text && <div className="mt-1"><CardText text={c.text} /></div>}
               {(c.message || c.link) && (
                 <div className="mt-auto flex items-center gap-3 pt-3">
                   {c.message && <Choice label="Choose" done="Chosen" message={c.message} chosen={chosen} onReply={onReply} />}
@@ -91,6 +105,7 @@ function One({ block, onReply, chosen }: Omit<Props, "blocks"> & { block: Block 
                   )}
                 </div>
               )}
+              </div>
             </li>
           ))}
         </ul>
