@@ -1,6 +1,7 @@
 // A popover menu: a trigger and a list of actions, closed by a click outside or Escape.
 import { useCallback, useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useDismiss } from "../../lib/useDismiss";
+import { useExit } from "../../lib/useExit";
 import { Icon, type IconName } from "./Icon";
 
 interface Props {
@@ -12,14 +13,16 @@ interface Props {
 }
 
 const PLACEMENT = {
-  "below-end": "top-full right-0 mt-1",
-  "above-start": "bottom-full left-0 mb-1",
+  "below-end": "top-full right-0 mt-1 origin-top-right",
+  "above-start": "bottom-full left-0 mb-1 origin-bottom-left",
 };
 
 export function Menu({ trigger, placement = "below-end", children }: Props) {
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
   const ref = useDismiss<HTMLDivElement>(open, close);
+  // It grows from the trigger and fades back into it.
+  const { shown, closing } = useExit(open);
   const items = () => [...(ref.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]') ?? [])];
 
   // Opening moves focus to the first item; arrows, Home and End move between items.
@@ -41,8 +44,8 @@ export function Menu({ trigger, placement = "below-end", children }: Props) {
   return (
     <div ref={ref} className="relative">
       {trigger({ open, toggle: () => setOpen((v) => !v) })}
-      {open && (
-        <div role="menu" onKeyDown={onKeyDown} className={`absolute z-30 animate-rise max-h-56 overflow-y-auto rounded-xl border border-line bg-raised p-1 shadow-pop w-52 ${PLACEMENT[placement]}`}>
+      {shown && (
+        <div role="menu" onKeyDown={onKeyDown} className={`absolute z-30 ${closing ? "pointer-events-none animate-pop-out" : "animate-pop"} max-h-56 overflow-y-auto rounded-xl border border-line bg-raised p-1 shadow-pop w-52 ${PLACEMENT[placement]}`}>
           {children(close)}
         </div>
       )}
