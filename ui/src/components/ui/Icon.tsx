@@ -1,6 +1,6 @@
 // Lucide, the Weilo icon set, by our own short names.
 import {
-  ArrowDown, ArrowUp, Bell, Bot, Brain, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Download, ExternalLink, FileText, Globe, Info, Key, List, ListOrdered, LoaderCircle, Mail, Mic, MousePointer2,
+  ArrowDown, ArrowUp, Bell, Bot, Brain, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Download, ExternalLink, FileText, Globe, Info, Key, List, LoaderCircle, Mail, Mic, MousePointer2,
   PanelRight, Paperclip, Plug, Plus, Puzzle, RotateCcw, Search, Settings, Share, Sparkles, Square, Sun, TriangleAlert, User, X,
 } from "lucide-react";
 
@@ -35,7 +35,6 @@ const ICONS = {
   user: User,
   mail: Mail,
   list: List,
-  listNumbered: ListOrdered,
   file: FileText,
   download: Download,
   external: ExternalLink,

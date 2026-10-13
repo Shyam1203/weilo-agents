@@ -10,6 +10,8 @@ import type { User } from "../../api/user";
 import { IconButton } from "../../components/ui/Button";
 import { Icon, type IconName } from "../../components/ui/Icon";
 import { Page } from "../../components/ui/Row";
+import { thisDevice } from "../../lib/push";
+import { getTheme } from "../../lib/theme";
 import { useMedia } from "../../lib/useMedia";
 import { BrowserSettings } from "../browser/BrowserSettings";
 import { ExtensionsPage } from "../extensions/ExtensionsPage";
@@ -74,6 +76,19 @@ export function SettingsView({ page: first, agents, providers, skills, plugins, 
   const list = !wide && chosen === null;
   const back = wide || list ? onClose : () => setChosen(null);
 
+  // What each page holds, at a glance in the list (a phone shows the list on its own).
+  const count = (n: number, one: string, many = `${one}s`) => (n ? `${n} ${n === 1 ? one : many}` : "None");
+  const theme = getTheme();
+  const hints: Partial<Record<SettingsPage, string>> = {
+    providers: count(providers.filter((p) => p.connected).length, "connected", "connected"),
+    notifications: thisDevice() ? "On" : "Off",
+    you: user.name || undefined,
+    appearance: theme === "weilo" ? "Weilo" : theme === "system" ? "System" : theme === "dark" ? "Dark" : "Light",
+    skills: count(skills.length, "skill"),
+    plugins: count(plugins.length, "plugin"),
+    extensions: count(extensions.length, "extension"),
+  };
+
   const goBack = useRef(back);
   goBack.current = back;
   useEffect(() => {
@@ -105,6 +120,7 @@ export function SettingsView({ page: first, agents, providers, skills, plugins, 
                   >
                     <Icon name={p.icon} size={15} className="shrink-0" />
                     <span className="flex-1">{p.label}</span>
+                    {!wide && hints[p.value] && <span className="max-w-[45%] truncate text-[12.5px] text-ink-3">{hints[p.value]}</span>}
                     {!wide && <Icon name="chevronRight" size={15} className="shrink-0 text-ink-3" />}
                   </button>
                 ))}
@@ -132,7 +148,7 @@ export function SettingsView({ page: first, agents, providers, skills, plugins, 
               ) : page === "about" ? (
                 <AboutPage />
               ) : page === "skills" ? (
-                <SkillsPage skills={skills} onChange={onChange} />
+                <SkillsPage skills={skills} agents={agents} onChange={onChange} />
               ) : page === "plugins" ? (
                 <PluginsPage plugins={plugins} onChange={onChange} />
               ) : (

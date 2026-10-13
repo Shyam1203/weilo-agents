@@ -31,8 +31,10 @@ ENV npm_config_prefix=/home/node/.local \
     PIP_BREAK_SYSTEM_PACKAGES=1 \
     PATH=/home/node/.local/bin:$PATH
 
-# The window manager draws no frame and maximizes windows: the browser fills the whole screen.
-RUN sed -i 's|<applications>|&<application class="*"><decor>no</decor><maximized>yes</maximized></application>|' /etc/xdg/openbox/rc.xml
+# The window manager draws no frame and maximizes windows: the browser fills the whole screen. A pop-up (a "Sign in
+# with Google" window) and a dialog have no tab strip, so no close button of their own: they keep a frame with one, at
+# their own size. Openbox applies the rules in order, so the later ones win.
+RUN sed -i 's|<applications>|&<application class="*"><decor>no</decor><maximized>yes</maximized></application><application role="pop-up"><decor>yes</decor><maximized>no</maximized></application><application type="dialog"><decor>yes</decor><maximized>no</maximized></application>|' /etc/xdg/openbox/rc.xml
 
 # Pages in the browser cannot open this app or the browser's debugging port.
 COPY image/chromium-policy.json /etc/chromium/policies/managed/weilo.json

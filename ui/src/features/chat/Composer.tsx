@@ -1,5 +1,5 @@
-// The message box: text, attachments (+: pick files or take a photo; or paste, or drop) and voice
-// typing. The round button on the right sends, stops a run, or starts voice typing.
+// The message box: text, attachments (+: pick files or take a photo; or paste, or drop) and voice typing. Lists need
+// no button: typing "- " or "1. " starts one. The round button on the right sends, stops a run, or starts voice typing.
 import { useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { doingText } from "../../api/agents";
 import type { Outgoing } from "../../api/chat";
@@ -13,7 +13,7 @@ import { MAX_FILE_MB, MAX_FILES, MAX_IMAGES } from "../../lib/limits";
 import { useDictation } from "../../lib/useDictation";
 import { CameraDialog } from "./CameraDialog";
 import { COMMAND_LIST, CommandMenu, type Shortcut } from "./CommandMenu";
-import { continueList, withList } from "./lists";
+import { continueList } from "./lists";
 
 const MAX_HEIGHT = 200;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
@@ -239,8 +239,6 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
                 <MenuItem icon="camera" label="Camera" onClick={() => (close(), setCamera(true))} />
                 {/* Typing "/" is hard to find, on a phone most of all. */}
                 {shortcuts.length > 0 && <MenuItem icon="sparkle" label="Skills and commands" onClick={() => (close(), setText("/"), box.current?.focus())} />}
-                <MenuItem icon="list" label="Bulleted list" onClick={() => (close(), setText((t) => withList(t, "- ")), box.current?.focus())} />
-                <MenuItem icon="listNumbered" label="Numbered list" onClick={() => (close(), setText((t) => withList(t, "1. ")), box.current?.focus())} />
               </>
             )}
           </Menu>
@@ -259,7 +257,8 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
             aria-expanded={offered.length > 0}
             aria-controls={offered.length ? COMMAND_LIST : undefined}
             aria-activedescendant={offered.length ? `${COMMAND_LIST}-${Math.min(active, offered.length - 1)}` : undefined}
-            className="block min-w-0 flex-1 resize-none bg-transparent px-1 py-1.5 text-[15px] leading-6 outline-none placeholder:text-ink-3 focus-visible:outline-none"
+            // A long placeholder ("Message Ralph's Job Hunt") stays on one line on a phone, so the empty box is not taller.
+            className="block min-w-0 flex-1 resize-none bg-transparent px-1 py-1.5 text-[15px] leading-6 outline-none placeholder:truncate placeholder:text-ink-3 focus-visible:outline-none"
           />
           {meter}
           {busy && !hasContent ? (

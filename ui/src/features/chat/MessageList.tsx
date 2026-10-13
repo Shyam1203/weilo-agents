@@ -94,6 +94,18 @@ export function MessageList({ messages, busy, asking, onAnswer, onReply, queued,
   );
 }
 
+/** While a chat loads: grey shapes where its messages go, yours on the right and the agent's on the left. */
+export function LoadingChat() {
+  const shapes = ["ml-auto h-10 w-1/2", "h-24 w-5/6", "ml-auto h-10 w-2/5", "h-16 w-2/3"];
+  return (
+    <div role="status" aria-label="Loading the chat" className="flex flex-col gap-4">
+      {shapes.map((shape) => (
+        <div key={shape} className={`animate-pulse rounded-2xl bg-bubble ${shape}`} />
+      ))}
+    </div>
+  );
+}
+
 function HumanMessage({ message }: { message: Message }) {
   return (
     <div className="flex flex-col items-end gap-1.5">
