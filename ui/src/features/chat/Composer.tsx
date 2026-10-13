@@ -196,7 +196,7 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
       {busy && (
         <p role="status" className="absolute bottom-full left-3 mb-1.5 flex animate-rise items-center gap-1.5 rounded-full bg-raised py-0.5 pr-2.5 pl-0.5 text-xs text-ink-2 ring-1 ring-line">
           <Avatar spec={avatar} size={26} working doing={doing} />
-          <span className="working-dots">
+          <span key={waiting ? "waiting" : doingText(doing)} className="working-dots animate-text-swap">
             {waiting ? "Waiting for you" : doingText(doing)}<span>.</span>
             <span>.</span>
             <span>.</span>
@@ -278,6 +278,10 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
 
 // `active`: recording (red). `open`: its menu is open (a quiet pressed look, the + turned into an ×).
 function RoundButton({ icon, label, solid = false, active = false, open = false, type = "button", disabled, onClick }: { icon: IconName; label: string; solid?: boolean; active?: boolean; open?: boolean; type?: "button" | "submit"; disabled?: boolean; onClick?: () => void }) {
+  // When the button changes job (send, stop, voice typing), its new icon grows in where the old one was.
+  const [last, setLast] = useState(icon);
+  const [swapped, setSwapped] = useState(false);
+  if (icon !== last) (setLast(icon), setSwapped(true));
   return (
     <button
       type={type}
@@ -291,7 +295,9 @@ function RoundButton({ icon, label, solid = false, active = false, open = false,
         active ? "bg-bad-soft text-bad" : open ? "bg-select text-ink" : solid ? "bg-ink text-page hover:opacity-85" : "bg-card text-ink-2 hover:text-ink"
       }`}
     >
-      <Icon name={icon} size={icon === "stop" ? 13 : 17} className={`transition-transform ${open ? "rotate-45" : ""}`} />
+      <span key={icon} className={`flex ${swapped ? "animate-swap" : ""}`}>
+        <Icon name={icon} size={icon === "stop" ? 13 : 17} className={`transition-transform ${open ? "rotate-45" : ""}`} />
+      </span>
       {active && <span className="absolute top-1.5 right-1.5 size-1.5 animate-pulse rounded-full bg-bad" />}
     </button>
   );

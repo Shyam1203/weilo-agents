@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { EXIT_MS } from "../../lib/useExit";
 import { IconButton } from "./Button";
 
 interface Props {
@@ -24,6 +25,13 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
  */
 export function Modal({ title, onBack, onClose, width = "max-w-lg", hidden = false, flush = false, children }: Props) {
   const dialog = useRef<HTMLDivElement>(null);
+  // Closing by hand (the close button, a click outside, Escape) lets the dialog animate out first.
+  const [closing, setClosing] = useState(false);
+  const dismiss = () => {
+    if (closing) return;
+    setClosing(true);
+    setTimeout(onClose, EXIT_MS);
+  };
   const topmost = () => {
     const all = document.querySelectorAll('[role="dialog"]');
     return all[all.length - 1] === dialog.current;
@@ -45,7 +53,7 @@ export function Modal({ title, onBack, onClose, width = "max-w-lg", hidden = fal
     const onKey = (e: KeyboardEvent) => {
       // Only the topmost dialog answers (a dialog can open another).
       if (hidden || !topmost()) return;
-      if (e.key === "Escape") (e.preventDefault(), onClose());
+      if (e.key === "Escape") (e.preventDefault(), dismiss());
       // Tab stays inside the dialog.
       if (e.key === "Tab" && dialog.current) {
         const items = [...dialog.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
@@ -57,23 +65,23 @@ export function Modal({ title, onBack, onClose, width = "max-w-lg", hidden = fal
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, hidden]);
+  }, [dismiss, hidden]);
 
   return createPortal(
     <div hidden={hidden} className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6">
-      <div className="absolute inset-0 animate-fade-in bg-black/40 backdrop-blur-[2px]" onClick={onClose} aria-hidden="true" />
+      <div className={`absolute inset-0 bg-black/40 backdrop-blur-[2px] ${closing ? "animate-fade-out" : "animate-fade-in"}`} onClick={dismiss} aria-hidden="true" />
       <div
         ref={dialog}
         role={hidden ? undefined : "dialog"}
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={`relative flex max-h-[calc(92dvh/var(--zoom))] w-full animate-rise flex-col overflow-hidden rounded-t-2xl outline-none border border-line bg-raised shadow-lift sm:rounded-2xl ${width}`}
+        className={`relative flex max-h-[calc(92dvh/var(--zoom))] w-full flex-col ${closing ? "pointer-events-none animate-sheet-out sm:animate-dialog-out" : "animate-sheet sm:animate-dialog"} overflow-hidden rounded-t-2xl outline-none border border-line bg-raised shadow-lift sm:rounded-2xl ${width}`}
       >
         <header className="flex items-start gap-3 px-6 pt-5 pb-1">
           {onBack && <IconButton icon="chevronLeft" label="Back" onClick={onBack} className="-mt-1 -ml-2" />}
           <h2 className="min-w-0 flex-1 text-[17px] font-semibold tracking-tight">{title}</h2>
-          <IconButton icon="close" label="Close" onClick={onClose} className="-mt-1 -mr-2" />
+          <IconButton icon="close" label="Close" onClick={dismiss} className="-mt-1 -mr-2" />
         </header>
         <div className={`min-h-0 flex-1 ${flush ? "flex" : "overflow-y-auto px-6 pt-4 pb-6"}`}>{children}</div>
       </div>

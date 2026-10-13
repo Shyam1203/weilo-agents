@@ -35,14 +35,56 @@
   --shadow-pop: 0 1px 2px light-dark(rgb(0 0 0 / 0.04), rgb(0 0 0 / 0.4)), 0 8px 24px -6px light-dark(rgb(0 0 0 / 0.14), rgb(0 0 0 / 0.6));
   --shadow-lift: 0 1px 2px light-dark(rgb(0 0 0 / 0.05), rgb(0 0 0 / 0.4)), 0 24px 48px -12px light-dark(rgb(0 0 0 / 0.22), rgb(0 0 0 / 0.7));
 
+  /* Motion, after transitions.dev (https://transitions.dev): things open in 250ms and close faster, in 150ms, on one
+     smooth ease-out. A menu grows from its trigger (set its transform-origin), a dialog scales up from the middle, and on
+     a phone a dialog is a sheet that slides up. lib/useExit.ts keeps a closing thing on screen while it animates out. */
+  --ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
   --animate-fade-in: fade-in 160ms ease-out both;
+  --animate-fade-out: fade-out 150ms ease-out both;
   --animate-rise: rise 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-pop: pop 250ms var(--ease-smooth) both;
+  --animate-pop-out: pop-out 150ms var(--ease-smooth) both;
+  --animate-dialog: dialog 250ms var(--ease-smooth) both;
+  --animate-dialog-out: dialog-out 150ms var(--ease-smooth) both;
+  --animate-sheet: sheet 400ms var(--ease-smooth) both;
+  --animate-sheet-out: sheet-out 250ms var(--ease-smooth) both;
+  --animate-swap: swap 250ms ease-in-out both;
+  --animate-text-swap: text-swap 150ms ease-in-out both;
 
   @keyframes fade-in {
     from { opacity: 0; }
   }
+  @keyframes fade-out {
+    to { opacity: 0; }
+  }
   @keyframes rise {
     from { opacity: 0; transform: translateY(6px) scale(0.99); }
+  }
+  @keyframes pop {
+    from { opacity: 0; transform: scale(0.97); }
+  }
+  @keyframes pop-out {
+    to { opacity: 0; transform: scale(0.99); }
+  }
+  @keyframes dialog {
+    from { opacity: 0; transform: scale(0.96); }
+  }
+  @keyframes dialog-out {
+    to { opacity: 0; transform: scale(0.96); }
+  }
+  @keyframes sheet {
+    from { opacity: 0; transform: translateY(100px); filter: blur(2px); }
+  }
+  @keyframes sheet-out {
+    to { opacity: 0; transform: translateY(100px); filter: blur(2px); }
+  }
+  /* An icon that takes another's place. */
+  @keyframes swap {
+    from { opacity: 0; transform: scale(0.25); filter: blur(2px); }
+  }
+  /* A line of text that takes another's place. */
+  @keyframes text-swap {
+    from { opacity: 0; transform: translateY(4px); filter: blur(2px); }
   }
 }
 
