@@ -38,6 +38,9 @@ export async function setCurator({ model } = {}) {
   return getCurator();
 }
 
+// What `pi -p` says when the model's answer was cut off at its output limit.
+const TRUNCATED = /^Response was truncated/m;
+
 // pi once, with file tools in the vault: the prompt on stdin, its answer ignored (the work is in the files).
 const askPi = (model, prompt) =>
   new Promise((resolve, reject) => {
@@ -52,8 +55,9 @@ const askPi = (model, prompt) =>
     child.on("error", (e) => (clearTimeout(timer), reject(e)));
     child.on("close", (code) => {
       clearTimeout(timer);
-      // A run that was killed (the timeout) has no exit code: it did not finish.
-      code === 0 ? resolve() : reject(new Error(err.trim().split("\n").at(-1) || `pi did not finish (${code ?? "timeout"})`));
+      // A run that was killed (the timeout) has no exit code: it did not finish. One whose last answer hit the model's
+      // output limit exits 1 (pi 1.2.0), but its work is in the pages it wrote: reading the piece again would only hit it again.
+      code === 0 || TRUNCATED.test(err) ? resolve() : reject(new Error(err.trim().split("\n").at(-1) || `pi did not finish (${code ?? "timeout"})`));
     });
     child.stdin.end(prompt);
   });
