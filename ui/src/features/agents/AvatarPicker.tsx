@@ -1,11 +1,12 @@
 import { Avatar, COLOR_NAMES, COLORS, SHAPES, type AvatarSpec } from "../../components/ui/Avatar";
 
+// The shapes and the colors in even rows, four a row on a phone and eight on a computer, each color under a shape.
 export function AvatarPicker({ value, onChange }: { value: AvatarSpec; onChange: (avatar: AvatarSpec) => void }) {
   return (
     <div className="flex items-center gap-4">
       <Avatar spec={value} size={64} />
       <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <div role="radiogroup" aria-label="Avatar shape" className="flex flex-wrap gap-0.5">
+        <div role="radiogroup" aria-label="Avatar shape" className="grid w-max grid-cols-4 gap-0.5 sm:grid-cols-8">
           {Object.keys(SHAPES).map((shape) => (
             <button
               key={shape}
@@ -21,7 +22,7 @@ export function AvatarPicker({ value, onChange }: { value: AvatarSpec; onChange:
             </button>
           ))}
         </div>
-        <div role="radiogroup" aria-label="Avatar color" className="flex flex-wrap gap-2 px-1">
+        <div role="radiogroup" aria-label="Avatar color" className="grid w-max grid-cols-4 gap-x-4 gap-y-2 px-[7px] sm:grid-cols-8">
           {COLORS.map((color) => (
             <button
               key={color}

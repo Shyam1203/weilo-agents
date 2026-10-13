@@ -93,14 +93,14 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
       <form onSubmit={save} className="flex flex-col gap-4">
         <AvatarPicker value={draft.avatar} onChange={(avatar) => change({ avatar })} />
         <Field label="Name">
-          <input autoFocus value={draft.name} onChange={(e) => change({ name: e.target.value })} placeholder="Research assistant" className="input" />
+          <input autoFocus value={draft.name} onChange={(e) => change({ name: e.target.value })} placeholder="For example: Research assistant" className="input" />
         </Field>
         <Field label="Instructions">
           <textarea
             value={draft.instructions}
             onChange={(e) => change({ instructions: e.target.value })}
             rows={5}
-            placeholder="You are my research assistant. Find primary sources. Summarize them in plain language. Always cite links."
+            placeholder="For example: You are my research assistant. Find primary sources. Summarize them in plain language. Always cite links."
             className="input resize-y leading-relaxed"
           />
         </Field>
