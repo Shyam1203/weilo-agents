@@ -31,10 +31,10 @@ const clean = ({ name, model, thinking = "", skills = [], plugins = [], extensio
 
 const save = (id, agent) => updateJson(profilePath(id), () => agent);
 
-// Fields the app no longer has (`access`, or a switched-off extension that is not bundled any more) are dropped when read.
+// A switched-off extension that is not bundled any more is dropped when read.
 export async function getAgent(id) {
   try {
-    const { access: _gone, ...saved } = JSON.parse(await readFile(profilePath(id), "utf8"));
+    const saved = JSON.parse(await readFile(profilePath(id), "utf8"));
     const agent = { id, thinking: "", skills: [], plugins: [], extensions: [], disabled: [], instructions: "", ...saved };
     return { ...agent, disabled: Array.isArray(agent.disabled) ? agent.disabled.filter((name) => Object.hasOwn(BUNDLED, name)) : [] };
   } catch (err) {
