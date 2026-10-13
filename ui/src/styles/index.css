@@ -310,9 +310,15 @@
   padding: 4px 8px;
   overflow-wrap: normal;
   min-width: 6em;
+  /* A short cell sits at the top of its row, beside a long one, so a row reads as one line across. */
+  vertical-align: top;
 }
+/* A shaded header row, read left to right like the cells (a column set in Markdown keeps its own alignment). */
 .prose-chat th {
   white-space: nowrap;
+  text-align: left;
+  font-weight: 600;
+  background: var(--color-select);
 }
 /* A code block under its Copy bar (features/chat/AgentText.tsx): the frame goes around both. */
 .prose-chat .code-block {

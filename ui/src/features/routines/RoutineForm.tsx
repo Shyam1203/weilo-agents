@@ -80,9 +80,9 @@ export function RoutineForm({ agentId, agentName, routine, onClose, onDone }: Pr
         </Field>
         <div className="flex flex-col gap-1.5">
           <span className="label">How often</span>
-          <Choice label="How often" value={every} onChange={setEvery} options={EVERY} columns={4} />
+          <Choice label="How often" value={every} onChange={setEvery} options={EVERY} row />
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           {every === "once" && (
             <Field label="Date">
               <input type="date" value={date} min={dayOf()} onChange={(e) => setDate(e.target.value)} className="input" />
