@@ -8,7 +8,6 @@ import { Button, IconButton } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
 import { Notice } from "../../components/ui/Notice";
 import { TopBar } from "../../components/ui/TopBar";
-import { Loading } from "../../components/ui/List";
 import { useFollowBottom } from "../../lib/useFollowBottom";
 import { useMedia } from "../../lib/useMedia";
 import { read, write, KEYS } from "../../lib/storage";
@@ -17,7 +16,7 @@ import { Composer } from "./Composer";
 import type { Shortcut } from "./CommandMenu";
 import { ContextMeter } from "./ContextMeter";
 import { FindBar } from "./FindBar";
-import { MessageList } from "./MessageList";
+import { LoadingChat, MessageList } from "./MessageList";
 import { useFind } from "./useFind";
 import { useChat } from "./useChat";
 import { BrowserPanel } from "../browser/BrowserPanel";
@@ -141,7 +140,7 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
           <div ref={scroller.box} style={{ paddingBottom: room }} className="h-full overflow-y-auto">
             <div className="mx-auto w-full max-w-3xl px-4 py-5">
               {chat.more && <p className="flex items-center justify-center gap-2 pb-4 text-xs text-ink-3">{chat.loadingEarlier ? <><Icon name="spinner" size={12} /> Loading earlier messages…</> : <button type="button" onClick={() => void chat.loadEarlier()} className="underline">Load earlier messages</button>}</p>}
-              {chat.ready ? <MessageList messages={chat.messages} busy={chat.busy} asking={chat.asking} onAnswer={chat.answer} onReply={reply} queued={chat.queued} note={chat.note} /> : <Loading />}
+              {chat.ready ? <MessageList messages={chat.messages} busy={chat.busy} asking={chat.asking} onAnswer={chat.answer} onReply={reply} queued={chat.queued} note={chat.note} /> : <LoadingChat />}
             </div>
           </div>
           <div ref={dock} className="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-page from-55% to-transparent pt-8">

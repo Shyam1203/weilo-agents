@@ -11,8 +11,12 @@ import { DAYS, EVERY, dateIn, nextRun, timeIn, validZone } from "./schedule.mjs"
 // of the browser that last opened the routines.
 
 const MISSED = "Missed: Weilo Agents was not running at that time";
-// Tells the agent how to treat the message. The chat shows only the routine's name.
-const NOTE = "This is a scheduled routine, not a message from the user. Do the task now and reply with the result only. Do not mention the schedule.";
+// Tells the agent how to treat the message. The chat shows only the routine's name. The user is away while it runs, so a
+// question would hold the whole run until they come back: what needs them waits for the end instead.
+const NOTE = `This is a scheduled routine, not a message from the user. The user is away and will read your reply later. Do the task now:
+- Do the steps the task clearly covers.
+- When a step needs the user (their approval, a sign-in, a code, a CAPTCHA, or a choice the task does not settle), do not wait for them: leave that step undone, carry on with the rest, and list it at the end with what you need from them.
+- End with the result only, in a few lines: what was done, and what waits for the user. Do not mention the schedule.`;
 
 let state;
 let loading;

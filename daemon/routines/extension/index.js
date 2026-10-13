@@ -7,6 +7,7 @@ import { call, note, object, str } from "../../tool.mjs";
 const list = (items) => ({ type: "array", items });
 
 const ROUTINE = `Schedule work for yourself, or change it. At each time the task arrives in this chat as a message and you do it. Use it when the user asks for something later or regularly ("in an hour", "tomorrow at 9", "every morning", "each Monday"). Times are the user's local time.
+The user is away when it runs, so write the task to stand alone: what to do, and the choices the user already made. What needs them then is left for the end of the run.
 - create: needs title, task and every. For once: give in_minutes (from now), or date (today, tomorrow or YYYY-MM-DD) and times. Otherwise give times: one or more HH:MM (hour needs only one, for its minutes); week also needs day.
 - list: shows your routines with their ids.
 - update: needs id; give only what changes. A new schedule needs every and its times.

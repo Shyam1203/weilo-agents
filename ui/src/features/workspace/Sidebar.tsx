@@ -87,10 +87,11 @@ export function Sidebar({ agents, unread, selected, update, onSelect, onFound, o
         </ul>
       )}
       <div className="flex flex-col border-t border-line p-2">
-        <Button variant="ghost" icon="sparkle" onClick={onSkills} className="w-full justify-start">
+        {/* On a computer Settings lists these beside its pages; a phone keeps the shortcut. */}
+        <Button variant="ghost" icon="sparkle" onClick={onSkills} className="w-full justify-start md:hidden">
           Skills
         </Button>
-        <Button variant="ghost" icon="puzzle" onClick={onPlugins} className="w-full justify-start">
+        <Button variant="ghost" icon="puzzle" onClick={onPlugins} className="w-full justify-start md:hidden">
           Plugins
         </Button>
         {update?.available && (

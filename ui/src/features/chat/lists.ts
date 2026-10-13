@@ -17,6 +17,3 @@ export function continueList(text: string, caret: number): { text: string; caret
   const insert = `\n${indent}${marker} `;
   return { text: text.slice(0, caret) + insert + text.slice(caret), caret: caret + insert.length };
 }
-
-/** `text` with the start of a list added on a line of its own. */
-export const withList = (text: string, marker: "- " | "1. ") => (text && !text.endsWith("\n") ? `${text}\n` : text) + marker;
