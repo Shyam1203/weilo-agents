@@ -7,7 +7,7 @@ RUN npm run build
 
 FROM node:22-bookworm-slim
 
-ARG PI_VERSION=1.1.0
+ARG PI_VERSION=1.2.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl git openssh-client jq less unzip procps \
