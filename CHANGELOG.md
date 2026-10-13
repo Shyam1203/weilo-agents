@@ -4,6 +4,10 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 ## Unreleased
 
+- New routine: How often is a row of short buttons (three and two on a phone, not five tall cards), and the time field shows the whole time on a phone ("08:00 AM" was cut off).
+- On a phone, the browser and routines panel lines up with its title, so the browser view is wider. A routine's name shows on two lines instead of being cut short.
+- Tables in replies have a shaded header read left to right, and each cell starts at the top of its row, so a short cell no longer floats beside a long one.
+- New agent: the avatar shapes and colors sit in even rows, each color under a shape. The grey example text in Name and Instructions starts with "For example:", so it does not look filled in.
 - On a phone, the chat list ends with Settings alone, as on a computer. Skills and Plugins are still in Settings.
 - Dropdowns (model and provider pickers) close when you tap outside them on a phone, as menus already do.
 - Smoother motion, after transitions.dev: menus grow from their button and fade back when closed; dialogs scale in on a computer and slide up as a sheet on a phone, and animate out when closed; the send, stop and voice button grows its new icon in; the working chip changes its text softly. Less motion when the system asks for it.
