@@ -176,14 +176,17 @@ export async function skillCommands(id) {
   return commands.filter((c) => c.source === "skill").map((c) => ({ name: c.name.replace(/^skill:/, ""), description: c.description ?? "" }));
 }
 
-// How full the agent's context is, against the point where pi summarizes it: { tokens, window, point }. `tokens` is null just
-// after a summary, until the next reply tells. The chat's ring fills as tokens reach `point`, so full means pi summarizes next.
-const usageOf = async (id, tokens, window) => ({ tokens, window, point: await pointOf((await getAgent(id)).model, window) });
-
-export async function contextOf(id) {
-  const { contextUsage } = await (await open(id)).pi.send("get_session_stats").catch(refused);
-  return contextUsage?.contextWindow ? usageOf(id, contextUsage.tokens, contextUsage.contextWindow) : null;
+// How full the agent's context is, against the point where pi summarizes it: { tokens, window, point }, or null when pi does not
+// know the model's window. `tokens` is null just after a summary, until the next reply tells (`after` overrides pi's count).
+// The chat's ring fills as tokens reach `point`, so full means pi summarizes next.
+async function usageOf(run, after) {
+  const { contextUsage } = await run.pi.send("get_session_stats").catch(refused);
+  if (!contextUsage?.contextWindow) return null;
+  const window = contextUsage.contextWindow;
+  return { tokens: after === undefined ? contextUsage.tokens : after, window, point: await pointOf((await getAgent(run.id)).model, window) };
 }
+
+export const contextOf = async (id) => usageOf(await open(id));
 
 // Summarizes the conversation now, as pi's /compact does; `instructions` say what the summary should keep. Returns the context after it.
 export async function compact(id, instructions) {
@@ -191,8 +194,7 @@ export async function compact(id, instructions) {
   const run = await open(id);
   if (run.busy) throw fail(409, "Wait for the agent to finish, or stop it, then compact");
   const { estimatedTokensAfter } = await run.pi.send("compact", instructions?.trim() ? { customInstructions: instructions.trim() } : {}).catch(refused);
-  const { contextUsage } = await run.pi.send("get_session_stats").catch(refused);
-  return contextUsage?.contextWindow ? usageOf(id, estimatedTokensAfter ?? null, contextUsage.contextWindow) : null;
+  return usageOf(run, estimatedTokensAfter ?? null);
 }
 
 // The tool the agent is using now ("" between tools); null when it is not in the middle of a run.

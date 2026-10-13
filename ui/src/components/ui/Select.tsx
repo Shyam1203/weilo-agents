@@ -45,7 +45,7 @@ export function Select({ label, value, options, onChange, placeholder = "", disa
     if (!open) return;
     const close = () => setPlace(null);
     const outside = (e: Event) => !list.current?.contains(e.target as Node) && !trigger.current?.contains(e.target as Node);
-    const onDown = (e: MouseEvent) => outside(e) && close();
+    const onDown = (e: PointerEvent) => outside(e) && close();
     const onScroll = (e: Event) => outside(e) && close();
     // Capture, so a dialog around the list does not also close on this Escape.
     const onKey = (e: globalThis.KeyboardEvent) => {
@@ -54,13 +54,13 @@ export function Select({ label, value, options, onChange, placeholder = "", disa
       close();
       trigger.current?.focus();
     };
-    document.addEventListener("mousedown", onDown);
+    document.addEventListener("pointerdown", onDown);
     window.addEventListener("keydown", onKey, true);
     window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", close);
     list.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus();
     return () => {
-      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("pointerdown", onDown);
       window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", close);

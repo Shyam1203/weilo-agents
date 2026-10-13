@@ -204,7 +204,7 @@ export interface Note {
 }
 
 /** Where pi summarized the conversation: the messages above it are only a summary to the agent now. */
-export interface Summary {
+interface Summary {
   kind: "summary";
   id: string;
   role: "agent";
@@ -213,7 +213,7 @@ export interface Summary {
 }
 
 /** What the agent did between its words (tools it used, what it said while using them), folded into one line in the chat. */
-export interface Steps {
+interface Steps {
   kind: "steps";
   id: string;
   role: "agent";
