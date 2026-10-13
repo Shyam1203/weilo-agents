@@ -22,15 +22,13 @@ interface Props {
   /** Saves the list's new order (an agent was dragged to another place). */
   onReorder: (ids: string[]) => Promise<unknown>;
   onNew: () => void;
-  onSkills: () => void;
-  onPlugins: () => void;
   onSettings: () => void;
   /** Opens Settings > About, where the update is. */
   onAbout: () => void;
   onContact: () => void;
 }
 
-export function Sidebar({ agents, unread, selected, update, onSelect, onFound, onReorder, onNew, onSkills, onPlugins, onSettings, onAbout, onContact }: Props) {
+export function Sidebar({ agents, unread, selected, update, onSelect, onFound, onReorder, onNew, onSettings, onAbout, onContact }: Props) {
   const { order, dragging, itemProps, wasDrag } = useDragOrder(
     agents.map((a) => a.id),
     onReorder,
@@ -87,13 +85,6 @@ export function Sidebar({ agents, unread, selected, update, onSelect, onFound, o
         </ul>
       )}
       <div className="flex flex-col border-t border-line p-2">
-        {/* On a computer Settings lists these beside its pages; a phone keeps the shortcut. */}
-        <Button variant="ghost" icon="sparkle" onClick={onSkills} className="w-full justify-start md:hidden">
-          Skills
-        </Button>
-        <Button variant="ghost" icon="puzzle" onClick={onPlugins} className="w-full justify-start md:hidden">
-          Plugins
-        </Button>
         {update?.available && (
           <Button variant="ghost" icon="download" onClick={onAbout} className="w-full justify-start text-ink">
             Update {update.latest} is available

@@ -108,8 +108,6 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
           onFound={(id, query, at) => (setFind({ query, at }), select(id))}
           onReorder={(ids) => reorderAgents(ids).then(reloadAgents, () => {})}
           onNew={() => (setSettings(null), setForm("new"))}
-          onSkills={() => openSettings("skills")}
-          onPlugins={() => openSettings("plugins")}
           onSettings={() => openSettings("menu")}
           onAbout={() => openSettings("about")}
           onContact={() => setContact(true)}
