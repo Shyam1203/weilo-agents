@@ -4,7 +4,7 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 ## Unreleased
 
-- Runs on pi 1.2.0. With an OpenRouter key, the model list shows only the models that key can use, with their real context sizes; OpenRouter router models no longer show a cost of -$1,000,000; a failing upstream provider is retried. Memory keeps what it filed when the model's answer is cut off at its output limit, instead of reading the same chat again.
+- Runs on pi 1.2.0. With an OpenRouter key, the model list shows only the models that key can use, with their real context sizes, and an "upstream provider" error is retried. Memory keeps what it filed when the model's answer is cut off at its output limit, instead of reading the same chat again.
 
 - The browser: a pop-up window (Sign in with Google, say) and a dialog have a frame with a close button. They had none, so a pop-up could not be closed.
 - Routines no longer stop to wait for you: you are away when one runs, so the agent does what the task covers, leaves any step that needs you (an approval, a sign-in, a code, a choice the task does not settle) for the end, and reports what it did and what waits for you.
