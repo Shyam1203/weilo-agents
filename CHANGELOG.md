@@ -6,7 +6,7 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 - The browser: a pop-up window (Sign in with Google, say) and a dialog have a frame with a close button. They had none, so a pop-up could not be closed.
 - Routines no longer stop to wait for you: you are away when one runs, so the agent does what the task covers, leaves any step that needs you (an approval, a sign-in, a code, a choice the task does not settle) for the end, and reports what it did and what waits for you.
-- The + in the message box has Files and photos and Skills and commands. Camera and the two list buttons are gone: a phone's file picker takes photos, and typing "- " or "1. " starts a list.
+- The + in the message box has Files and photos, Camera, and Skills and commands. The two list buttons are gone: typing "- " or "1. " starts a list.
 - A file an agent names by its path in the workspace ("notes/plan.md") opens the preview, like a full path did. A long path outside it shows its file name; tap it for all of it.
 - A quote in an agent's reply (a draft to paste somewhere) has Copy text under it.
 - Settings > Memory shows the notes about you one by one: tap one to change it, × to forget it, or add one. Edit as text shows the file as before. The curator's model menu takes the full width on a phone.
