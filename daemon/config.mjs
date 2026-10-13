@@ -43,7 +43,7 @@ export const PUSH_BODY_CHARS = 180;
 export const PI_TOOLS = ["read", "bash", "edit", "write"];
 // The tools every agent has: the chat's own (weilo.mjs) and memory's (memory/extension.mjs).
 export const CORE_TOOLS = ["show", "ask", "memory", "fetch_knowledge"];
-// Pi's built-in extensions (pi 1.1.0, `builtin:<name>`). An agent's pi loads these, ours (weilo.mjs, memory/extension.mjs), the extensions that
+// Pi's built-in extensions (pi 1.2.0, `builtin:<name>`). An agent's pi loads these, ours (weilo.mjs, memory/extension.mjs), the extensions that
 // come with the app (extension/ in browser/ and routines/) unless the agent turned them off, and the ones it turned on (settings/extensions.mjs),
 // and nothing else it finds in `agent/extensions/` or `settings.json`.
 // Add a new built-in here when pi gets one, or agents lose it.
