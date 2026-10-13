@@ -64,9 +64,9 @@ export function RoutinesPanel({ agentId, agentName, off, changed }: Props) {
               {list.map((r) => (
                 <li key={r.id}>
                   <button type="button" onClick={() => setForm(r)} className="flex w-full flex-col gap-1 rounded-xl bg-panel px-3 py-2.5 text-left ring-1 ring-line transition-colors hover:ring-line-strong">
-                    <span className="flex items-center gap-2">
-                      <Icon name="clock" size={14} className="shrink-0 text-ink-3" />
-                      <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{r.title}</span>
+                    <span className="flex items-start gap-2">
+                      <Icon name="clock" size={14} className="mt-[3px] shrink-0 text-ink-3" />
+                      <span className="min-w-0 flex-1 line-clamp-2 text-[13.5px] font-medium">{r.title}</span>
                       {r.nextRunAt && <Countdown at={r.nextRunAt} />}
                     </span>
                     <span className="text-xs leading-relaxed text-ink-2">{describeSchedule(r)}</span>
@@ -86,5 +86,5 @@ export function RoutinesPanel({ agentId, agentName, off, changed }: Props) {
 // "in 5 min" for a routine that runs within a day, orange when it runs within the hour.
 function Countdown({ at }: { at: number }) {
   const text = inHowLong(at);
-  return text && <span className={`shrink-0 text-xs font-medium ${at - Date.now() < 3_600_000 ? "text-working" : "text-ink-3"}`}>{text}</span>;
+  return text && <span className={`mt-px shrink-0 text-xs font-medium ${at - Date.now() < 3_600_000 ? "text-working" : "text-ink-3"}`}>{text}</span>;
 }

@@ -193,7 +193,10 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
       )}
       {sideOpen && !wide && (
         <Modal title={agent.name} onClose={() => setSheet(false)} width="max-w-md">
-          <Side agent={agent} routinesChanged={routinesChanged} onTaken={onActivity} />
+          {/* The panels have their own padding: they line up with the title instead of adding to the dialog's. */}
+          <div className="-mx-4 -mt-4 -mb-2">
+            <Side agent={agent} routinesChanged={routinesChanged} onTaken={onActivity} />
+          </div>
         </Modal>
       )}
     </div>
