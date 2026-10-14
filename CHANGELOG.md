@@ -4,6 +4,12 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 ## Unreleased
 
+- A file preview for a file that was moved or deleted says so plainly, without Open in a new tab and Download buttons that could not work.
+- The chat list keeps a heading or a list line apart from the next in its preview ("Draft ready · Here is a first draft", not "Draft ready Here is").
+- Settings says each title once: no "Settings" heading over the first group, and on a phone no page heading under the bar that already names the page.
+- Settings > About has one row for updates, with the switch and what the last check found, instead of two rows that said the same.
+- On a computer, the provider, model and thinking pickers (and the memory curator's) are wide enough for a model's name ("DeepSeek V4.1 Fla…" was cut).
+
 - New routine: How often is a row of short buttons (three and two on a phone, not five tall cards), and the time field shows the whole time on a phone ("08:00 AM" was cut off).
 - On a phone, the browser and routines panel lines up with its title, so the browser view is wider. A routine's name shows on two lines instead of being cut short.
 - Tables in replies have a shaded header read left to right, and each cell starts at the top of its row, so a short cell no longer floats beside a long one.

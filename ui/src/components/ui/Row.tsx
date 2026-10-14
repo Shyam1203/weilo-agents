@@ -25,13 +25,14 @@ export function Row({ icon, tile, title, description, children, below }: { icon?
   );
 }
 
-/** A page of Settings: its heading, what it is for, and an action at the right. */
+/** A page of Settings: its heading, what it is for, and an action at the right.
+ *  On a phone the bar above already names the page, so the heading is left out there. */
 export function Page({ title, description, action, children }: { title: string; description?: ReactNode; action?: ReactNode; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-4">
-      <div className="flex items-start gap-3">
+      <div className={`flex items-start gap-3 ${description || action ? "" : "max-md:hidden"}`}>
         <div className="min-w-0 flex-1">
-          <h3 className="text-[15px] font-semibold tracking-tight">{title}</h3>
+          <h3 className="text-[15px] font-semibold tracking-tight max-md:hidden">{title}</h3>
           {description && <p className="mt-0.5 text-[13px] leading-relaxed text-ink-2">{description}</p>}
         </div>
         {action}

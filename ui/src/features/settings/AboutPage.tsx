@@ -29,28 +29,32 @@ export function AboutPage() {
         <Row title="Build">{value(build ? build.commit.slice(0, 7) : undefined)}</Row>
         <Row title="Pi coding agent">{value(build?.pi)}</Row>
       </Card>
+      {/* Whether it checks and what it found, in one row; a new version gets a row of its own. */}
       <Card>
+        {update?.available && (
+          <Row
+            title={`Version ${update.latest} is available`}
+            description="Run update.cmd (Windows) or update.sh in your Weilo Agents folder. Without them, download the new zip once and unzip it over the folder. Your chats and settings stay in ~/.weilo-agents."
+          >
+            {update.url && (
+              <a href={update.url} target="_blank" rel="noreferrer noopener">
+                <Button size="sm" variant="primary" icon="external">
+                  Get it
+                </Button>
+              </a>
+            )}
+          </Row>
+        )}
         <Row
-          title={update?.available ? `Version ${update.latest} is available` : "Updates"}
+          title="Check for updates"
           description={
-            update?.available
-              ? "Run update.cmd (Windows) or update.sh in your Weilo Agents folder. Without them, download the new zip once and unzip it over the folder. Your chats and settings stay in ~/.weilo-agents."
-              : update?.enabled === false
-                ? "Checking for updates is off."
-                : update?.latest
-                  ? "You have the newest version."
-                  : "Checks GitHub for a newer version now and then."
+            update?.enabled === false
+              ? "Off. Nothing is sent to GitHub."
+              : update?.latest && !update.available
+                ? "You have the newest version. Asks GitHub now and then; nothing else is sent."
+                : "Asks GitHub for a newer version now and then. Nothing else is sent."
           }
         >
-          {update?.available && update.url && (
-            <a href={update.url} target="_blank" rel="noreferrer noopener">
-              <Button size="sm" variant="primary" icon="external">
-                Get it
-              </Button>
-            </a>
-          )}
-        </Row>
-        <Row title="Check for updates" description="Asks GitHub for the newest version. Nothing else is sent.">
           <Switch checked={update?.enabled ?? true} onChange={(on) => void toggle(on)} label="Check for updates" />
         </Row>
       </Card>

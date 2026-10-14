@@ -38,12 +38,14 @@ export function inHowLong(ms: number) {
   return `in ${Math.floor(minutes / 60)} h${minutes % 60 ? ` ${minutes % 60} min` : ""}`;
 }
 
-/** Markdown as plain text on one line, for a preview: no heading, list, bold or code marks; a link as its text. */
+/** Markdown as plain text on one line, for a preview: no heading, list, bold or code marks; a link as its text.
+ *  A line that ends without a stop (a heading, a list item) is kept apart from the next by a dot. */
 export const plainText = (markdown: string) =>
   markdown
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+/gm, "")
     .replace(/\*\*|__|~~|`/g, "")
+    .replace(/([^\s.,:;!?…])[ \t]*\n\s*(?=\S)/g, "$1 · ")
     .replace(/\s+/g, " ")
     .trim();
 

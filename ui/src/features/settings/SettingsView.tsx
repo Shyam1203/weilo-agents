@@ -26,9 +26,10 @@ import { ProvidersPage } from "./ProvidersPage";
 
 export type SettingsPage = "providers" | "notifications" | "you" | "memory" | "browser" | "appearance" | "about" | "skills" | "plugins" | "extensions";
 
+// The first group has no heading: the page is already called Settings.
 const MENU: { group: string; pages: { value: SettingsPage; label: string; icon: IconName }[] }[] = [
   {
-    group: "Settings",
+    group: "",
     pages: [
       { value: "providers", label: "Providers", icon: "key" },
       { value: "notifications", label: "Notifications", icon: "bell" },
@@ -109,7 +110,7 @@ export function SettingsView({ page: first, agents, providers, skills, plugins, 
           <nav aria-label="Settings" className={`flex shrink-0 flex-col gap-4 overflow-y-auto p-2 md:w-56 md:border-r md:border-line md:bg-panel ${list ? "flex-1" : ""}`}>
             {MENU.map(({ group, pages }) => (
               <div key={group} className="flex flex-col gap-1">
-                <p className="px-2.5 pt-2 pb-1 text-[11px] font-medium tracking-wide text-ink-3 uppercase">{group}</p>
+                {group && <p className="px-2.5 pt-2 pb-1 text-[11px] font-medium tracking-wide text-ink-3 uppercase">{group}</p>}
                 {pages.map((p) => (
                   <button
                     key={p.value}

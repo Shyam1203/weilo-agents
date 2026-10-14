@@ -14,6 +14,9 @@ import { kindOf, parseTable, type Kind } from "./kinds";
 const MAX_TEXT = 1_000_000;
 const MAX_ROWS = 300;
 
+/** Shown for a file that was moved or deleted after the reply named it. */
+const GONE = "This file is no longer there. The agent may have moved or deleted it.";
+
 const TEXT_KINDS: Kind[] = ["markdown", "csv", "json", "html", "text"];
 
 export function FilePreview({ path, name, onClose }: { path: string; name: string; onClose: () => void }) {
@@ -26,7 +29,7 @@ export function FilePreview({ path, name, onClose }: { path: string; name: strin
     if (!TEXT_KINDS.includes(kind)) return;
     let current = true;
     fetch(url).then(
-      async (res) => (res.ok ? startOf(res) : Promise.reject(new Error("This file is no longer there."))),
+      async (res) => (res.ok ? startOf(res) : Promise.reject(new Error(GONE))),
     ).then(
       (t) => current && setText(t),
       (err) => current && setError(messageOf(err)),
@@ -42,24 +45,27 @@ export function FilePreview({ path, name, onClose }: { path: string; name: strin
   return (
     <Modal title={name} onClose={onClose} width="max-w-4xl">
       <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-end gap-2">
-          {kind !== "other" && (
-            <a href={url} target="_blank" rel="noreferrer noopener">
-              <Button size="sm" icon="external">
-                Open in a new tab
+        {/* A file that is gone cannot be opened or downloaded either: only the message shows. */}
+        {!error && (
+          <div className="flex items-center justify-end gap-2">
+            {kind !== "other" && (
+              <a href={url} target="_blank" rel="noreferrer noopener">
+                <Button size="sm" icon="external">
+                  Open in a new tab
+                </Button>
+              </a>
+            )}
+            <a href={fileUrl(path)} download={name}>
+              <Button size="sm" icon="download">
+                Download
               </Button>
             </a>
-          )}
-          <a href={fileUrl(path)} download={name}>
-            <Button size="sm" icon="download">
-              Download
-            </Button>
-          </a>
-        </div>
+          </div>
+        )}
         {error ? (
-          <p role="alert" className="rounded-lg bg-bad-soft px-3 py-2 text-[13px] text-bad">{error}</p>
+          <p role="alert" className="rounded-lg bg-card px-3 py-2.5 text-[13.5px] text-ink-2">{error}</p>
         ) : kind === "image" ? (
-          <img src={fileUrl(path)} alt={name} className="mx-auto max-h-[calc(70dvh/var(--zoom))] max-w-full rounded-lg object-contain" />
+          <img src={fileUrl(path)} alt={name} onError={() => setError(GONE)} className="mx-auto max-h-[calc(70dvh/var(--zoom))] max-w-full rounded-lg object-contain" />
         ) : kind === "pdf" ? (
           <object data={url} type="application/pdf" className="h-[calc(70dvh/var(--zoom))] w-full rounded-lg border border-line">
             <p className="p-4 text-[13.5px] text-ink-2">This browser cannot show a PDF here. Open it in a new tab, or download it.</p>
