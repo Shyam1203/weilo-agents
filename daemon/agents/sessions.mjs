@@ -23,7 +23,8 @@ export async function chatFiles(id) {
 }
 
 // The newest user or assistant text of an agent's conversation, for the agent list (`shown`: it only showed
-// something, so there is no text). Only the end of the newest chat file is read.
+// something, so there is no text). Only the end of the newest chat file is read. Line breaks stay, so the list
+// can tell a heading or a list item from what follows it.
 export async function lastMessage(id) {
   const files = await chatFiles(id);
   if (!files.length) return null;
@@ -47,7 +48,7 @@ export async function lastMessage(id) {
       const { role, content, timestamp } = asTyped(entry.message) ?? {};
       // An answer that is only something shown (a table, say) or a question still counts as a reply.
       const card = Array.isArray(content) ? content.find((b) => b.type === "toolCall" && (b.name === "show" || b.name === "ask")) : null;
-      const text = (textOf(content) || (card?.name === "ask" ? (card.arguments?.question ?? "") : "")).replace(/\s+/g, " ").trim();
+      const text = (textOf(content) || (card?.name === "ask" ? (card.arguments?.question ?? "") : "")).replace(/[^\S\n]+/g, " ").trim();
       if ((role === "user" || role === "assistant") && (text || card)) {
         return { role, text: text.slice(0, PREVIEW_CHARS), shown: !text, at: Math.floor((timestamp ?? Date.parse(entry.timestamp)) / 1000) };
       }
