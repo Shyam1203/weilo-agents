@@ -187,7 +187,7 @@ const Section = ({ title, children }: { title: string; children: ReactNode }) =>
 
 // The control of a row: a dropdown of a fixed width.
 // On a phone the control takes the row's full width, so a long model name shows whole.
-const Pick = ({ children }: { children: ReactNode }) => <div className="pick w-full min-w-0 sm:w-44">{children}</div>;
+const Pick = ({ children }: { children: ReactNode }) => <div className="pick w-full min-w-0 sm:w-56">{children}</div>;
 
 // The skills, plugins or extensions an agent can have: what is on, and a list to change it (or to add the first one).
 function AddOn({ title, on, none, open, onToggle, children }: { title: string; on: string[]; none: boolean; open: boolean; onToggle: () => void; children: ReactNode }) {

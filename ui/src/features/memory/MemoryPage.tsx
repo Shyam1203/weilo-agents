@@ -91,7 +91,7 @@ export function MemoryPage({ providers, models }: Props) {
     <Page title="Memory" description="All agents share one memory. The notes about you are read when a chat starts; the knowledge vault is searched when an agent needs it.">
       <Card>
         <Row title="Knowledge curator" description={model ? "Curated Knowledge from our conversations." : "Off. Choose a model to build the knowledge vault from your chats."}>
-          <div className="pick w-full min-w-0 sm:w-44">
+          <div className="pick w-full min-w-0 sm:w-56">
             <Select label="Knowledge curator model" value={model} disabled={!models || busy === "model"} onChange={(v) => void pick(v)} options={options} />
           </div>
         </Row>
