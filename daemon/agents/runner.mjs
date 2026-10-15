@@ -3,7 +3,7 @@ import { basename, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EXTENSIONS, fail } from "../common.mjs";
 import { agentKey, dropAgentKey } from "../http/access.mjs";
-import { BIN, CORE_TOOLS, IDLE_MS, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
+import { BIN, CORE_TOOLS, IDLE_MS, MAX_APPROVAL, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
 import { askBefore } from "../browser/rule.mjs";
 import { memoryFlags } from "../memory/memory.mjs";
 import { pointOf } from "../settings/compaction.mjs";
@@ -266,8 +266,10 @@ export async function answer(id, { request, value }) {
 
 // The daemon asks the user, in the agent's chat, as the agent's `ask` would (a choice of `options`): for what the agent may not
 // decide alone. Only the user answers it (POST /api/agents/:id/answer is not the agent's). Resolves with the option chosen,
-// or undefined when the question ends unanswered (skipped, the run stopped, the pi closed).
+// or undefined when the question ends unanswered (skipped, the run stopped, the pi closed). The user approves what they
+// read, so the question holds the whole request: one too long to read is refused, never cut.
 export async function askUser(id, title, options) {
+  if (title.length > MAX_APPROVAL) throw fail(400, `This request is too long to show the user in full (${title.length} characters; at most ${MAX_APPROVAL}). Make it shorter.`);
   const run = await current(id);
   if (!run?.busy) throw fail(409, "The agent is not in a run");
   endAsk(run);

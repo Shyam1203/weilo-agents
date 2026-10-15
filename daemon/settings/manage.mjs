@@ -1,7 +1,7 @@
 import { getAgent, profiles } from "../agents/agents.mjs";
 import { askUser, restartAll } from "../agents/runner.mjs";
 import { fail, readJson, SETTINGS, updateJson } from "../common.mjs";
-import { MAX_APPROVAL, MIN_RESERVE } from "../config.mjs";
+import { MIN_RESERVE } from "../config.mjs";
 import { getCurator } from "../memory/curator.mjs";
 import { reserveFor } from "./compaction.mjs";
 import { availableModels, setEnabledModels, syncCompaction } from "./providers.mjs";
@@ -87,7 +87,6 @@ export async function manageSettings(id, { action, ...request }) {
   if (action !== "change") throw fail(400, "Use list or change.");
   const plan = planSettings(request, now);
   const question = `${(await getAgent(id)).name} asks to change the app's settings:\n${plan.lines.join("\n")}`;
-  if (question.length > MAX_APPROVAL) throw fail(400, `This request is too long to show the user in full (at most ${MAX_APPROVAL} characters). Ask for less at once.`);
   if ((await askUser(id, question, [APPROVE, "Don't"])) !== APPROVE) return { text: "The user did not approve it: nothing was changed." };
   if (Object.keys(plan.compaction).length) {
     await updateJson(SETTINGS, (settings) => {

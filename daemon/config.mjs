@@ -101,7 +101,7 @@ export const PREVIEW_TAIL = 64 * 1024;
 export const PREVIEW_CHARS = 140;
 // A chat shows what pi holds; what it summarized away is read from the chat file, this many messages at a time.
 export const EARLIER_PAGE = 60;
-// The longest request an agent may ask the user to approve (agents/manage.mjs), in characters: the user reads all of it,
+// The longest request an agent may ask the user to approve (agents/runner.mjs `askUser`), in characters: the user reads all of it,
 // so a longer one is refused, never cut.
 export const MAX_APPROVAL = 20_000;
 // Searching the chats (agents/search.mjs): the longest search, in characters (UI), and the most results.

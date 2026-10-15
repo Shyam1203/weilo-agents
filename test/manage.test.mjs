@@ -2,6 +2,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { allowedAlways, extensionsIn, more, refusal } from "../daemon/agents/manage.mjs";
+import { askUser } from "../daemon/agents/runner.mjs";
+import { MAX_APPROVAL } from "../daemon/config.mjs";
 
 const agent = (fields) => ({ model: "anthropic/claude", plugins: [], skills: [], extensions: [], disabled: [], isolated: false, trusted: false, ...fields });
 const coder = agent({ id: "coder", name: "Coder" });
@@ -62,4 +64,10 @@ test("the question warns of a provider, plugins, extensions the asker lacks, and
   assert.doesNotMatch(more(coder, writer), /browser/, "a new agent with the browser the asker has");
   assert.match(more({ ...coder, disabled: ["browser"] }, writer), /browser/, "a new agent with the browser the asker lacks");
   assert.match(more(coder, writer, { ...writer, disabled: ["browser"] }), /browser/, "an agent that gets the browser");
+});
+
+test("a question too long to read in full is refused before it is asked, never cut", async () => {
+  // Checked first: no agent or run is needed to refuse it.
+  await assert.rejects(askUser("nobody", "x".repeat(MAX_APPROVAL + 1), ["Yes", "No"]), (err) => err.status === 400 && /too long/.test(err.message));
+  await assert.rejects(askUser("nobody", "x".repeat(MAX_APPROVAL), ["Yes", "No"]), (err) => err.status === 409);
 });

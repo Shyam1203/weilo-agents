@@ -1,5 +1,4 @@
 import { BUNDLED, fail } from "../common.mjs";
-import { MAX_APPROVAL } from "../config.mjs";
 import { checkAgent, createAgent, getAgent, isIsolated, profiles, updateAgent } from "./agents.mjs";
 import { listExtensions } from "../settings/extensions.mjs";
 import { listPlugins } from "../settings/plugins.mjs";
@@ -80,12 +79,6 @@ export function more(asker, agent, before) {
 const describe = (agent) =>
   [`Model: ${agent.model}`, `Plugins: ${list(agent.plugins)}`, `Skills: ${list(agent.skills)}`, `Extensions: ${list(extensionsIn(agent))}`, ...(agent.instructions ? [`Instructions: ${agent.instructions}`] : [])].join("\n");
 
-// The user approves what they read, so the question holds the whole change; one too long to read is refused, not cut.
-const question = (text) => {
-  if (text.length > MAX_APPROVAL) throw fail(400, `This request is too long to show the user in full (${text.length} characters; at most ${MAX_APPROVAL}). Make it shorter.`);
-  return text;
-};
-
 // An agent by its id or its name.
 async function find(which) {
   const all = await profiles();
@@ -120,7 +113,7 @@ export async function manageAgents(id, { action, agent: which, ...body }) {
     await known(request);
     const input = { model: asker.model, ...asProfile(request) };
     const agent = await checkAgent(input);
-    const answer = await askUser(id, question(`${asker.name} asks to create an agent: ${agent.name}\n${describe(agent)}${more(asker, agent)}`), [APPROVE.create, DECLINE]);
+    const answer = await askUser(id, `${asker.name} asks to create an agent: ${agent.name}\n${describe(agent)}${more(asker, agent)}`, [APPROVE.create, DECLINE]);
     if (answer !== APPROVE.create) return { text: "The user did not approve it: no agent was made." };
     const made = await createAgent(input);
     return { text: `Made the agent ${made.name} (id ${made.id}). It shows in the user's agent list.` };
@@ -140,7 +133,7 @@ export async function manageAgents(id, { action, agent: which, ...body }) {
     const changes = Object.keys(request).map((f) => `${f[0].toUpperCase()}${f.slice(1)}: ${Array.isArray(shown(f)) ? list(shown(f)) : String(shown(f))}`).join("\n");
     const always = allowedAlways(asker, target, request);
     if (!always) {
-      const answer = await askUser(id, question(`${asker.name} asks to change ${self ? "itself" : target.name}:\n${changes}${more(asker, after, target)}`), [APPROVE.update, DECLINE]);
+      const answer = await askUser(id, `${asker.name} asks to change ${self ? "itself" : target.name}:\n${changes}${more(asker, after, target)}`, [APPROVE.update, DECLINE]);
       if (answer !== APPROVE.update) return { text: "The user did not approve it: nothing was changed." };
     }
     await updateAgent(target.id, patch);
