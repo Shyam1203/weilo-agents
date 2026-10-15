@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { BUNDLED, fail, HOMES, ORDER, PROFILES, readJson, RUN, SESSIONS, slug, updateJson, WORKSPACE } from "../common.mjs";
+import { APP, BUNDLED, fail, HOMES, ORDER, PROFILES, readJson, RUN, SESSIONS, slug, updateJson, WORKSPACE } from "../common.mjs";
 import { AGENTS_GID, FIRST_AGENT_UID } from "../config.mjs";
 import { folder as ownFolder, setOwner, tree } from "../users.mjs";
 import { extensionsOf } from "../settings/extensions.mjs";
@@ -40,8 +40,12 @@ async function save(id, agent) {
   await setOwner(profilePath(id), 0, agent.uid, 0o640);
 }
 
-// A user for a new agent: the next one after every agent's.
-export const newUid = (taken) => Math.max(FIRST_AGENT_UID - 1, ...taken.filter(Number.isInteger)) + 1;
+// A user for a new agent: one no agent ever had, so a new agent never gets the files a deleted one left (in the workspace,
+// the skills, the installed tools). weilo.json keeps the highest given (`lastUid`; migrate.mjs set it once from the files).
+export const newUid = async () => (await updateJson(APP, (data) => ({ ...data, lastUid: Math.max(FIRST_AGENT_UID, (data.lastUid ?? 0) + 1) }))).lastUid;
+
+// The Linux user an agent's pi runs as (users.mjs).
+export const userOf = ({ uid }) => ({ uid, gid: uid, groups: [AGENTS_GID] });
 
 // A name for a new home folder: the agent's name, unless the workspace or another agent already has it.
 export async function newFolder(name, taken = []) {
@@ -109,7 +113,7 @@ export async function createAgent(input) {
   const agent = await checkAgent(input);
   const id = `${slug(agent.name, 24) || "agent"}-${randomBytes(3).toString("hex")}`;
   const others = await profiles();
-  const made = { ...agent, folder: await newFolder(agent.name, others.map((a) => a.folder)), uid: newUid(others.map((a) => a.uid)) };
+  const made = { ...agent, folder: await newFolder(agent.name, others.map((a) => a.folder)), uid: await newUid() };
   await ownFolder(folder(id), 0, made.uid, 0o750);
   await save(id, made);
   await makeHome({ id, ...made });
@@ -131,7 +135,8 @@ export async function removeProfile(id) {
 }
 
 // What a deleted agent leaves: its HOME and pi settings go; its chat and its workspace folder go too, unless the user keeps
-// them. What is kept is handed to root (the chat) and the group (the folder): a new agent may get the same user later.
+// them. What is kept is handed to root (the chat) and the group (the folder). Its user is never given again (newUid), so
+// files it left elsewhere are no new agent's.
 export async function removeFiles(agent, { keepChat, keepFiles }) {
   const remove = (path) => rm(path, { recursive: true, force: true });
   await Promise.all([remove(userHomeOf(agent)), remove(join(RUN, "pi", agent.id))]);

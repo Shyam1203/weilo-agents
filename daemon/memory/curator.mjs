@@ -4,7 +4,7 @@ import { piDirOf, writePiDir } from "../agents/pidir.mjs";
 import { activityOf } from "../agents/runner.mjs";
 import { chatFiles, messagesOf } from "../agents/sessions.mjs";
 import { CURATOR, fail, KNOWLEDGE, readJson, updateJson } from "../common.mjs";
-import { CURATOR_EVERY_MS, CURATOR_MAX_FAILURES, CURATOR_MAX_GAP_MS, CURATOR_MAX_INPUT, CURATOR_MAX_MESSAGE, CURATOR_MAX_PIECES, CURATOR_QUIET_MS, CURATOR_TIMEOUT_MS } from "../config.mjs";
+import { BIN, CURATOR_EVERY_MS, CURATOR_MAX_FAILURES, CURATOR_MAX_GAP_MS, CURATOR_MAX_INPUT, CURATOR_MAX_MESSAGE, CURATOR_MAX_PIECES, CURATOR_QUIET_MS, CURATOR_TIMEOUT_MS } from "../config.mjs";
 import { agentKey, dropAgentKey } from "../http/access.mjs";
 import { CURATOR as CURATOR_USER, spawnAs } from "../users.mjs";
 import { ensureVault, scrub } from "./vault.mjs";
@@ -62,7 +62,7 @@ async function askPi(model, prompt) {
 const runPi = (model, prompt, env) =>
   new Promise((resolve, reject) => {
     const args = ["-p", "--no-session", "--no-extensions", "--no-skills", "--no-mcp", "--no-context-files", "--tools", "read,write,edit,grep,find,ls", "--thinking", "off", "--model", model, "--system-prompt", INSTRUCTIONS];
-    const child = spawnAs(CURATOR_USER, "pi", args, { cwd: KNOWLEDGE, env });
+    const child = spawnAs(CURATOR_USER, BIN.pi, args, { cwd: KNOWLEDGE, env });
     let err = "";
     const timer = setTimeout(() => child.kill(), CURATOR_TIMEOUT_MS);
     child.stderr.on("data", (d) => (err = (err + d).slice(-4000)));

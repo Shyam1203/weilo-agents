@@ -2,7 +2,7 @@ import { request as http } from "node:http";
 import { request as https } from "node:https";
 import { MCP, readJson, RUN } from "../common.mjs";
 import { PORT } from "../config.mjs";
-import { PLUGINS, spawnAs } from "../users.mjs";
+import { PLUGINS, sharedTools, spawnAs } from "../users.mjs";
 
 // The plugins' secrets stay here too. An agent's pi gets only the plugins its agent uses (pidir.mjs), each pointing here:
 // - one on the web: this daemon's address and the agent's key; the daemon swaps the key for the plugin's token.
@@ -52,7 +52,7 @@ export async function proxyPlugin(req, res, { plugin, rest, search }) {
 // A pipe from an agent's pi to a plugin that runs as a program (`cwd`: the agent's folder). The socket is the upgraded
 // connection; the program lives as long as it does.
 export function pipePlugin(socket, plugin, cwd) {
-  const child = spawnAs(PLUGINS, plugin.command, plugin.args ?? [], { cwd, env: { PATH: process.env.PATH, HOME: `${RUN}/pi/plugins`, ...plugin.env }, stdio: ["pipe", "pipe", "ignore"] });
+  const child = spawnAs(PLUGINS, plugin.command, plugin.args ?? [], { cwd, env: { ...sharedTools, HOME: `${RUN}/pi/plugins`, ...plugin.env }, stdio: ["pipe", "pipe", "ignore"] });
   socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: weilo-pipe\r\nConnection: Upgrade\r\n\r\n");
   const end = () => (child.kill(), socket.destroy());
   child.on("error", end);

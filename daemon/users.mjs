@@ -3,7 +3,7 @@ import { chmod, chown, mkdir, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { AGENT_DIR, HOMES, KNOWLEDGE, ROOT, RUN, SCRATCH, TOOLS, WORKSPACE } from "./common.mjs";
-import { AGENTS_GID, BROWSER_UID, CURATOR_UID, PLUGINS_UID } from "./config.mjs";
+import { AGENTS_GID, BIN, BROWSER_UID, CURATOR_UID, PLUGINS_UID, SYSTEM_PATH } from "./config.mjs";
 
 // Who runs what, and who may read what. The daemon is root and keeps the keys (agent/: provider keys, plugin secrets,
 // paired devices) where no one else can read them. Everything else it starts runs as a user of its own, without root's
@@ -20,13 +20,18 @@ export const BROWSER = { uid: BROWSER_UID, gid: BROWSER_UID, groups: [] };
 export const CURATOR = { uid: CURATOR_UID, gid: CURATOR_UID, groups: [] };
 // A plugin that runs as a program reads and writes the workspace, as the agent that uses it would.
 export const PLUGINS = { uid: PLUGINS_UID, gid: PLUGINS_UID, groups: [AGENTS_GID] };
-export const agentUser = ({ uid }) => ({ uid, gid: uid, groups: [AGENTS_GID] });
+
+// What the programs a user starts find by name: root's folders, then the tools the agents install (shared with their group)
+// or, for an isolated agent, its own (in its HOME). Never before root's: a `node` an agent put there would run in every
+// other agent's pi.
+export const sharedTools = { PATH: `${SYSTEM_PATH}:${TOOLS}/bin`, npm_config_prefix: TOOLS, PYTHONUSERBASE: TOOLS };
+export const ownTools = (home) => ({ PATH: `${SYSTEM_PATH}:${home}/.local/bin`, npm_config_prefix: `${home}/.local`, PYTHONUSERBASE: `${home}/.local` });
 
 // `spawn`, as `user`: setpriv changes user and drops every capability, for good, before the program starts.
 export function spawnAs(user, command, args, options) {
   if (!isRoot) return spawn(command, args, options);
   const groups = user.groups.length ? `--groups=${user.groups.join(",")}` : "--clear-groups";
-  return spawn("setpriv", [`--reuid=${user.uid}`, `--regid=${user.gid}`, groups, "--inh-caps=-all", "--bounding-set=-all", "--no-new-privs", "--", command, ...args], options);
+  return spawn(BIN.setpriv, [`--reuid=${user.uid}`, `--regid=${user.gid}`, groups, "--inh-caps=-all", "--bounding-set=-all", "--no-new-privs", "--", command, ...args], options);
 }
 
 // A folder, made if missing, with this owner and mode (a mode with 0o2000 keeps the folder's group on what is made in it).
@@ -47,9 +52,9 @@ export const shareWithAgents = (path) => setOwner(path, 0, AGENTS_GID, 0o640);
 // on what is made in them.
 export async function tree(path, uid, gid, mode) {
   if (!isRoot) return;
-  await run("chown", ["-R", `${uid}:${gid}`, path]).catch(() => {});
-  await run("chmod", ["-R", mode, path]).catch(() => {});
-  await run("find", [path, "-type", "d", "-exec", "chmod", "g+s", "{}", "+"]).catch(() => {});
+  await run(BIN.chown, ["-R", `${uid}:${gid}`, path]).catch(() => {});
+  await run(BIN.chmod, ["-R", mode, path]).catch(() => {});
+  await run(BIN.find, [path, "-type", "d", "-exec", BIN.chmod, "g+s", "{}", "+"]).catch(() => {});
 }
 
 // Owners and modes of what the app keeps, set at every start (the data folder may come from an older app, which ran as one

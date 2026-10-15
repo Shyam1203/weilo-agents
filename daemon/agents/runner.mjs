@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fail, SESSIONS } from "../common.mjs";
 import { agentKey, dropAgentKey } from "../http/access.mjs";
-import { CORE_TOOLS, IDLE_MS, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
+import { BIN, CORE_TOOLS, IDLE_MS, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
 import { askBefore } from "../browser/rule.mjs";
 import { memoryFlags } from "../memory/memory.mjs";
 import { pointOf } from "../settings/compaction.mjs";
@@ -12,8 +12,8 @@ import { pluginTools } from "../settings/plugins.mjs";
 import { skillPaths } from "../settings/skills.mjs";
 import { userFlags } from "../settings/user.mjs";
 import { notify } from "../push.mjs";
-import { agentUser } from "../users.mjs";
-import { getAgent, homeOf, makeHome, profilePath, userHomeOf } from "./agents.mjs";
+import { sharedTools } from "../users.mjs";
+import { getAgent, homeOf, makeHome, profilePath, userHomeOf, userOf } from "./agents.mjs";
 import { piDirOf, writePiDir } from "./pidir.mjs";
 import { spawnPi } from "./pi.mjs";
 import { asTyped } from "./sessions.mjs";
@@ -69,7 +69,7 @@ const toolsFlags = (plugins, extensions) => {
 const argvOf = (agent, skills, plugins, extensions, about) => {
   const { id, model, thinking } = agent;
   return [
-    "pi", "--mode", "rpc",
+    BIN.pi, "--mode", "rpc",
     ...(model ? ["--model", model] : []),
     ...(thinking ? ["--thinking", thinking] : []),
     "--append-system-prompt", profilePath(id),
@@ -104,14 +104,14 @@ async function start(run) {
   // The key its tools and its pi call the daemon with (tool.mjs, gateway/): the daemon knows the agent by it.
   run.key = agentKey(run.id);
   // Its pi settings: its model's provider and its plugins, through the daemon (no key of theirs).
-  await writePiDir(piDirOf(run.id), agentUser(agent), { model: agent.model, plugins: agent.plugins, key: run.key, agent: run.id });
+  await writePiDir(piDirOf(run.id), userOf(agent), { model: agent.model, plugins: agent.plugins, key: run.key, agent: run.id });
   run.done = new Promise((resolve) => {
     // As the agent's own user, at home in its folder.
     run.pi = spawnPi(argv, {
-      user: agentUser(agent),
+      user: userOf(agent),
       cwd: homeOf(agent),
       env: {
-        PI_CODING_AGENT_DIR: piDirOf(run.id), HOME: userHomeOf(agent),
+        ...sharedTools, PI_CODING_AGENT_DIR: piDirOf(run.id), HOME: userHomeOf(agent),
         WEILO_AGENT: run.id, WEILO_API: `http://127.0.0.1:${PORT}/api`, WEILO_KEY: run.key, WEILO_ASK_BEFORE: ask, WEILO_SCRATCH: scratchOf(run.id),
       },
       onEvent(event) {

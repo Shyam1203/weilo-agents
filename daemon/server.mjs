@@ -12,7 +12,7 @@ import { closeBrowser, giveBack, hasWindow, isTaken, showBrowser, takeOver, useB
 import { getRule, saveRule } from "./browser/rule.mjs";
 import { cdpUpgrade, isCdpPath, startScreen, viewUpgrade } from "./browser/screen.mjs";
 import { fail } from "./common.mjs";
-import { ADMIN_SOCKET, PORT } from "./config.mjs";
+import { ADMIN_SOCKET, PORT, SYSTEM_PATH } from "./config.mjs";
 import { sendContact } from "./contact.mjs";
 import { accessToken, providerOf, proxyModel } from "./gateway/models.mjs";
 import { pipePlugin, pluginOf, proxyPlugin } from "./gateway/plugins.mjs";
@@ -40,6 +40,11 @@ import { BUILD } from "./version.mjs";
 // What the daemon makes is its own and its group's, never everyone's: in the workspace (whose group is the agents') the
 // agents share it; elsewhere its group is root's (users.mjs).
 process.umask(0o007);
+// What the daemon starts finds programs in root's folders only, not first in the tools agents install, as the image has it
+// (config.mjs). An agent's pi gets those tools back, after root's (users.mjs).
+process.env.PATH = SYSTEM_PATH;
+delete process.env.npm_config_prefix;
+delete process.env.PYTHONUSERBASE;
 
 // JSON API. A handler gets the request as { id, rid (the path's ids), body, query, headers, who } and returns the reply; no
 // reply means 204. Paired devices may use every route; an agent's pi (`who.agent`) only the routes of its own tools

@@ -58,6 +58,22 @@ export const CURATOR_UID = 1100;
 export const PLUGINS_UID = 1200;
 export const AGENTS_GID = 2000;
 export const FIRST_AGENT_UID = 2001;
+// The PATH of everything the daemon starts, and the programs it starts itself, by their full path: folders only root can
+// change. The image's PATH starts with the tools agents install (~/.local/bin, which their group can change), so a program
+// found there by name could be an agent's, run as root. (A test checks no program is started by its bare name.)
+export const SYSTEM_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+export const BIN = {
+  setpriv: "/usr/bin/setpriv",
+  chown: "/bin/chown",
+  chmod: "/bin/chmod",
+  find: "/usr/bin/find",
+  unzip: "/usr/bin/unzip",
+  zipinfo: "/usr/bin/zipinfo",
+  pi: "/usr/local/bin/pi",
+  Xvnc: "/usr/bin/Xvnc",
+  openbox: "/usr/bin/openbox",
+  chromium: "/usr/bin/chromium",
+};
 
 // --- Agents (agents/) ------------------------------------------------------------------------
 

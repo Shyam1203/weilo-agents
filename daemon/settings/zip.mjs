@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { fail } from "../common.mjs";
-import { MAX_UNZIPPED } from "../config.mjs";
+import { BIN, MAX_UNZIPPED } from "../config.mjs";
 
 const run = promisify(execFile);
 
@@ -16,12 +16,12 @@ export async function unzip(dir, data, what) {
   const invalid = () => {
     throw fail(400, "The file is not a valid .zip file");
   };
-  const { stdout } = await run("zipinfo", [zip]).catch(invalid);
+  const { stdout } = await run(BIN.zipinfo, [zip]).catch(invalid);
   // A link in the archive could reach any file on this computer.
   if (/^l/m.test(stdout)) throw fail(400, `This ${what} cannot contain links`);
   // A small zip can hold a huge amount of data.
   if (Number(/(\d+) bytes uncompressed/.exec(stdout)?.[1]) > MAX_UNZIPPED) throw fail(400, `The ${what} is too large (${MAX_UNZIPPED / 1e6} MB at most)`);
   await mkdir(files);
-  await run("unzip", ["-q", zip, "-d", files]).catch(invalid);
+  await run(BIN.unzip, ["-q", zip, "-d", files]).catch(invalid);
   return files;
 }

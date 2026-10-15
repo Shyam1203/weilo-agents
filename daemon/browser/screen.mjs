@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { join } from "node:path";
-import { MAX_VIEW_MESSAGE, SCREEN, SCREEN_RESTART_MS } from "../config.mjs";
+import { BIN, MAX_VIEW_MESSAGE, SCREEN, SCREEN_RESTART_MS } from "../config.mjs";
 import { accept, frame, readMessages } from "../http/websocket.mjs";
 import { BROWSER, folder, setOwner, spawnAs } from "../users.mjs";
 
@@ -38,7 +38,7 @@ function keep(name, command, args, { delay = 0, stdio = "ignore", started } = {}
   setTimeout(run, delay).unref();
 }
 
-export const hasScreen = () => existsSync("/usr/bin/Xvnc") && existsSync("/usr/bin/chromium");
+export const hasScreen = () => existsSync(BIN.Xvnc) && existsSync(BIN.chromium);
 
 // An Xauthority file with one cookie for any host's display 1 (FamilyWild).
 function xauthority(cookie) {
@@ -57,11 +57,11 @@ export async function startScreen() {
   writeFileSync(XAUTHORITY, xauthority(randomBytes(16)), { mode: 0o600 });
   await setOwner(XAUTHORITY, BROWSER.uid, BROWSER.gid, 0o600);
 
-  keep("display", "Xvnc", [DISPLAY, "-auth", XAUTHORITY, "-geometry", `${SCREEN.width}x${SCREEN.height}`, "-depth", "24", "-SecurityTypes", "None", "-rfbunixpath", SOCKET, "-rfbport", "-1", "-nolisten", "tcp"]);
-  keep("windows", "openbox", [], { delay: 1000 });
+  keep("display", BIN.Xvnc, [DISPLAY, "-auth", XAUTHORITY, "-geometry", `${SCREEN.width}x${SCREEN.height}`, "-depth", "24", "-SecurityTypes", "None", "-rfbunixpath", SOCKET, "-rfbport", "-1", "-nolisten", "tcp"]);
+  keep("windows", BIN.openbox, [], { delay: 1000 });
   keep(
     "browser",
-    "chromium",
+    BIN.chromium,
     [
       "--no-first-run", "--no-default-browser-check", "--disable-gpu", "--hide-crash-restore-bubble",
       // A window behind another keeps working: agents use their own windows at the same time.

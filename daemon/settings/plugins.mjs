@@ -2,8 +2,8 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { piDirOf } from "../agents/pidir.mjs";
 import { fail, MCP, readJson, updateJson, WORKSPACE } from "../common.mjs";
-import { PLUGIN_STATUS_TIMEOUT_MS } from "../config.mjs";
-import { folder, PLUGINS, setOwner, spawnAs } from "../users.mjs";
+import { BIN, PLUGIN_STATUS_TIMEOUT_MS } from "../config.mjs";
+import { folder, PLUGINS, setOwner, sharedTools, spawnAs } from "../users.mjs";
 
 // Plugins are MCP servers, pi's own: agent/mcp.json { "mcpServers": { "<name>": { command, args, env } or { url, headers } } }.
 // Which agent uses which is the agent's profile; this only keeps the list. Secrets (env, token)
@@ -57,7 +57,7 @@ async function report() {
   await writeFile(join(dir, "mcp.json"), JSON.stringify(await readJson(MCP)), { mode: 0o600 });
   await setOwner(join(dir, "mcp.json"), PLUGINS.uid, PLUGINS.gid, 0o600);
   return new Promise((resolve) => {
-    const child = spawnAs(PLUGINS, "pi", ["mcp", "list", "--json"], { cwd: WORKSPACE, env: { ...process.env, PI_CODING_AGENT_DIR: dir, HOME: dir }, stdio: ["ignore", "pipe", "ignore"] });
+    const child = spawnAs(PLUGINS, BIN.pi, ["mcp", "list", "--json"], { cwd: WORKSPACE, env: { ...process.env, ...sharedTools, PI_CODING_AGENT_DIR: dir, HOME: dir }, stdio: ["ignore", "pipe", "ignore"] });
     let stdout = "";
     const timer = setTimeout(() => child.kill(), PLUGIN_STATUS_TIMEOUT_MS);
     child.stdout.setEncoding("utf8").on("data", (d) => (stdout += d));

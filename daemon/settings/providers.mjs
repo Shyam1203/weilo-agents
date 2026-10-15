@@ -1,6 +1,6 @@
 import { spawnPi } from "../agents/pi.mjs";
-import { AUTH, fail, PI_ENV, readJson, SETTINGS, updateJson, WORKSPACE } from "../common.mjs";
-import { MODELS_TIMEOUT_MS, PROVIDERS } from "../config.mjs";
+import { AGENT_DIR, AUTH, fail, PI_ENV, readJson, SETTINGS, updateJson } from "../common.mjs";
+import { BIN, MODELS_TIMEOUT_MS, PROVIDERS } from "../config.mjs";
 import { setReserves } from "./compaction.mjs";
 
 // Provider keys are pi's own: agent/auth.json, { "<provider>": { "type": "api_key", "key": … } } (or "oauth" and tokens: login.mjs).
@@ -32,9 +32,10 @@ export async function removeKey(id) {
   await updateJson(AUTH, ({ [id]: _removed, ...rest }) => rest);
 }
 
-// The models the saved keys can use, from a short-lived pi. A pi that does not answer is stopped.
+// The models the saved keys can use, from a short-lived pi. A pi that does not answer is stopped. It runs as root, which
+// holds the keys: in root's own folder, not in the workspace, where agents write.
 async function availableModels() {
-  const pi = spawnPi(["pi", "--mode", "rpc", "--no-session", "--no-mcp", "--no-skills", "--no-extensions", "--no-context-files"], { cwd: WORKSPACE, env: PI_ENV });
+  const pi = spawnPi([BIN.pi, "--mode", "rpc", "--no-session", "--no-mcp", "--no-skills", "--no-extensions", "--no-context-files"], { cwd: AGENT_DIR, env: PI_ENV });
   let timer;
   const late = new Promise((_, reject) => (timer = setTimeout(() => reject(fail(504, "Pi did not list the models in time")), MODELS_TIMEOUT_MS)));
   try {
