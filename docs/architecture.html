@@ -366,7 +366,7 @@
 <section class="card" id="versions">
 <h2>Versions, updates and data</h2>
 <ul>
-<li><strong>Version.</strong> One <code>VERSION</code> file (SemVer). The image keeps it as <code>WEILO_VERSION</code>, with <code>WEILO_COMMIT</code> and pi's version from its package; <code>GET /api/version</code> and Settings &gt; About show them. A build without the arguments is <code>dev</code>. A <code>v*</code> tag runs the release workflow (<a href="RELEASING.md">RELEASING.md</a>).</li>
+<li><strong>Version.</strong> One <code>VERSION</code> file (SemVer). The image keeps it as <code>WEILO_VERSION</code>, with <code>WEILO_COMMIT</code> and pi's version from its package; <code>GET /api/version</code> and Settings &gt; General show them. A build without the arguments is <code>dev</code>. A <code>v*</code> tag runs the release workflow (<a href="RELEASING.md">RELEASING.md</a>).</li>
 <li><strong>Update check.</strong> <code>update.mjs</code> asks GitHub for the newest release at most every 6 hours, only if <code>checkUpdates</code> in <code>weilo.json</code> is not false, and never for a <code>dev</code> build. The app does not update itself: <code>update.sh</code> or <code>update.cmd</code> download the newest release zip over the folder and run the start script (<a href="operating.html#update">Update</a>).</li>
 <li><strong>Data version.</strong> <code>weilo.json</code> holds <code>{dataVersion, version, lastUid}</code>. At start, <code>migrate()</code> runs the steps from the folder's version up to <code>DATA_VERSION</code> (5 in this version), saving the version after each one. A folder from a newer app stops the start with a message instead of being touched. Steps: <a href="data-and-permissions.html#migrations">Migrations</a>.</li>
 </ul>

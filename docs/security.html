@@ -39,7 +39,7 @@
 <li><a href="#approvals">Approvals</a></li>
 <li><a href="#trusted">Trusted agents ("always allow")</a></li>
 <li><a href="#budgets">Daily token limits</a></li>
-<li><a href="#audit">The audit log and Settings &gt; Security</a></li>
+<li><a href="#audit">The audit log and Settings &gt; Security &amp; devices</a></li>
 <li><a href="#matrix">Who can read and write what</a></li>
 <li><a href="#attackers">What each attacker can and cannot do</a></li>
 <li><a href="#content">Agent-written content in the app</a></li>
@@ -54,7 +54,7 @@
 <h2>Threat model</h2>
 <div class="cols">
 <div class="tile"><h3>What we protect</h3><ul>
-<li>Provider keys and sign-in tokens (<code>agent/auth.json</code>), plugin secrets (<code>agent/mcp.json</code>).</li>
+<li>Provider keys and account sign-ins' tokens (<code>agent/auth.json</code>), plugin secrets (<code>agent/mcp.json</code>).</li>
 <li>Who may use the app: paired devices (<code>agent/devices.json</code>).</li>
 <li>Your decisions: only you approve an agent's request.</li>
 <li>Each agent's chat and HOME from other agents; isolated agents' reach.</li>
@@ -193,7 +193,7 @@
 <text class="tm" x="126" y="88" text-anchor="middle">node /app/pair.mjs</text>
 <rect class="box b-grey" x="16" y="128" width="220" height="92" rx="10"/>
 <text class="tb" x="126" y="154" text-anchor="middle">More devices</text>
-<text class="ts" x="126" y="176" text-anchor="middle">Settings &gt; Devices &gt; Add</text>
+<text class="ts" x="126" y="176" text-anchor="middle">Security &amp; devices &gt; Add</text>
 <text class="tm" x="126" y="200" text-anchor="middle">POST /api/devices/code</text>
 <rect class="box b-red" x="276" y="16" width="220" height="92" rx="10"/>
 <text class="tb" x="386" y="42" text-anchor="middle">admin socket</text>
@@ -235,7 +235,7 @@
 <li>Codes use 32 letters and digits that cannot be confused (no I, O, 0 or 1) and are shown as <code>ABCD-EFGH</code>.</li>
 <li><code>POST /api/pair</code> is the only API call that needs no cookie. Every other call without one gets <code>401 {pair: true}</code>, and the app shows its pairing screen. The static UI itself is public.</li>
 <li>The device key never leaves the daemon in plain form after pairing: only its hash is stored. A device's last use is written at most once an hour.</li>
-<li>Settings &gt; Devices lists devices and removes them; a removed device needs a new code.</li>
+<li>Settings &gt; Security &amp; devices lists devices and removes them; a removed device needs a new code.</li>
 <li>Only root in the container can open the admin socket, so an agent cannot make itself a code.</li>
 </ul>
 </section>
@@ -245,7 +245,7 @@
 <p>Each pi gets a fresh random key when it starts (<code>agentKey</code>, 32 bytes), in <code>WEILO_KEY</code> and in its pi folder. Any older key of that agent is dropped, and the key is dropped when the pi stops. The curator's pi gets one too, owned by the name <code>curator</code>.</p>
 <p>A request with <code>Authorization: Bearer &lt;key&gt;</code> is the agent's. In the route loop of <code>server.mjs</code>:</p>
 <ol>
-<li>An agent may only call a route registered with <code>agentRoute</code> (one that names a tool), and only with its own id in the path. Anything else is 403. These routes are <code>browser</code>, <code>model-key</code>, <code>skill</code>, <code>manage_agents</code>, <code>manage_settings</code>, <code>ask_agent</code>, <code>memory</code>, <code>fetch_knowledge</code> and <code>routines</code>.</li>
+<li>An agent may only call a route registered with <code>agentRoute</code> (one that names a tool), and only with its own id in the path. Anything else is 403. These routes are <code>browser</code>, <code>skill</code>, <code>manage_agents</code>, <code>manage_settings</code>, <code>ask_agent</code>, <code>memory</code>, <code>fetch_knowledge</code> and <code>routines</code>.</li>
 <li>Then <code>mayCall(agent, tool)</code>: a regular agent may call them all; an isolated agent may not call <code>skill</code>, <code>memory</code>, <code>fetch_knowledge</code>, <code>manage_settings</code> or <code>ask_agent</code>, nor <code>browser</code> or <code>routines</code> while its profile has that bundled extension off.</li>
 <li>The event stream and file downloads check for a device explicitly (<code>who.device</code>): an agent cannot read chats through the API.</li>
 </ol>
@@ -255,12 +255,12 @@
 
 <section class="card" id="gateway">
 <h2>The key gateway</h2>
-<p>No provider key or plugin secret is in reach of any pi. Each pi's folder (<code>/var/lib/weilo/pi/&lt;id&gt;/</code>, outside the data folder, made again at every start) holds only <code>settings.json</code>, a <code>models.json</code> with just its model's provider, and an <code>mcp.json</code> with just its plugins, all pointing back at the daemon.</p>
+<p>No provider key, account token or plugin secret is in reach of any pi. Each pi's folder (<code>/var/lib/weilo/pi/&lt;id&gt;/</code>, outside the data folder, made again at every start) holds only <code>settings.json</code>, a <code>models.json</code> with just its model's provider, and an <code>mcp.json</code> with just its plugins, all pointing back at the daemon. Its <code>settings.json</code> sets <code>transport: "sse"</code>, so pi opens no WebSocket that would go around the gateway.</p>
 <figure>
 <div class="fig">
 <svg viewBox="0 0 760 470" role="img" aria-labelledby="kg-t kg-d">
 <title id="kg-t">Key gateway flow</title>
-<desc id="kg-d">An agent's pi sends its model request to /api/model-proxy/provider with its own key. The daemon finds the agent by the key, checks the provider is its model's, swaps the real key in wherever pi put its own, picks the provider address by API path and streams the request. For an account sign-in, pi runs key.mjs which fetches a short-lived access token. Plugins on the web go through plugin-proxy with the plugin's own headers; plugin programs go through pipe.mjs and the daemon starts them with their secrets.</desc>
+<desc id="kg-d">An agent's pi sends its model request to /api/model-proxy/provider with its own key. The daemon finds the agent by the key, checks the provider is its model's, swaps the real key in for the token that holds its own, picks the provider address by API path and streams the request. For an account sign-in, pi's apiKey is a placeholder of the token's shape built around the agent's key, and the daemon swaps in the real access token, renewed when it has less than 5 minutes left. Plugins on the web go through plugin-proxy with the plugin's own headers; plugin programs go through pipe.mjs and the daemon starts them with their secrets.</desc>
 <defs><marker id="kg-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L10 5L0 10z"/></marker></defs>
 <rect class="box b-green" x="16" y="16" width="230" height="140" rx="10"/>
 <text class="tb" x="131" y="42" text-anchor="middle">agent's pi</text>
@@ -274,8 +274,8 @@
 <text class="ts" x="302" y="88">x-goog-api-key, api-key or ?key=</text>
 <text class="ts" x="302" y="112">2. provider must be its model's</text>
 <text class="ts" x="302" y="132">(else 403)</text>
-<text class="ts" x="302" y="156">3. replace its key with the real</text>
-<text class="ts" x="302" y="176">one in headers and ?key</text>
+<text class="ts" x="302" y="156">3. replace the token holding its key</text>
+<text class="ts" x="302" y="176">with the real one (headers, ?key)</text>
 <text class="ts" x="302" y="200">4. pick the address by API path</text>
 <rect class="box b-blue" x="576" y="16" width="168" height="92" rx="10"/>
 <text class="tb" x="660" y="44" text-anchor="middle">provider</text>
@@ -289,8 +289,8 @@
 <text class="ts" x="660" y="200" text-anchor="middle">pi's registry in-daemon</text>
 <path class="ar-d" d="M574 176 H538" marker-end="url(#kg-a)"/>
 <rect class="box b-teal" x="16" y="244" width="728" height="70" rx="10"/>
-<text class="tb" x="32" y="270">Account sign-in (OAuth): pi must hold the token to shape requests</text>
-<text class="tm" x="32" y="296">apiKey "!node /app/gateway/key.mjs &lt;p&gt;" → GET …/model-key/&lt;p&gt; → access token</text>
+<text class="tb" x="32" y="270">Account sign-in (OAuth): the token never reaches pi</text>
+<text class="tm" x="32" y="296">apiKey = placeholder around its key (sk-ant-oat01-&lt;key&gt;, JWT, tid=…) → real token</text>
 <rect class="box b-violet" x="16" y="334" width="356" height="120" rx="10"/>
 <text class="tb" x="32" y="360">Plugin on the web</text>
 <text class="tm" x="32" y="384">url …/plugin-proxy/&lt;name&gt;</text>
@@ -303,12 +303,12 @@
 <text class="ts" x="404" y="430">starts it with its env, never as an agent</text>
 </svg>
 </div>
-<figcaption>From <code>daemon/gateway/models.mjs</code>, <code>gateway/plugins.mjs</code>, <code>gateway/key.mjs</code>, <code>gateway/pipe.mjs</code> and the proxy branch of <code>server.mjs</code>.</figcaption>
+<figcaption>From <code>daemon/gateway/models.mjs</code>, <code>gateway/plugins.mjs</code>, <code>gateway/pipe.mjs</code> and the proxy branch of <code>server.mjs</code>.</figcaption>
 </figure>
 <ul>
 <li>Pi sends all of a provider's models to one address. Some providers have two (OpenRouter's Anthropic-style models under <code>/api</code>, the others under <code>/api/v1</code>), so the daemon picks the base address by the API the path names (<code>API_PATHS</code>), else the address most of its models use.</li>
 <li>The user's own settings for that provider in <code>models.json</code> (a custom endpoint, its models) are kept, without their key and headers.</li>
-<li>Account sign-in: the daemon returns the access token only, renewed when it has less than 5 minutes left. The refresh token stays in <code>auth.json</code>. The agent can therefore read a short-lived token of the provider its own model uses (<a href="#limits">Known limits</a>).</li>
+<li>Account sign-in: pi reads parts of the token to shape its requests, so its <code>apiKey</code> is a placeholder of the same shape around the agent's key (<code>placeholderFor</code>): Anthropic <code>sk-ant-oat01-&lt;key&gt;</code>; ChatGPT an unsigned JWT that carries only the real <code>chatgpt_account_id</code>, with the agent's key as its signature part; GitHub Copilot <code>tid=weilo;proxy-ep=…;weilo=&lt;key&gt;</code>. The daemon finds the key inside it and swaps the whole token for the real access token (<code>swapKey</code>), renewed when it has less than 5 minutes left. Neither the access token nor the refresh token leaves <code>auth.json</code> and the daemon.</li>
 <li>Plugins: an agent reaches only the plugins its profile names (<code>allowedPlugin</code>); the curator reaches none. A plugin program holds its secrets in its environment, so it never runs as an agent (who could read them) and never starts in a folder an agent writes (a planted <code>.npmrc</code> or module would load there): a regular agent's runs as 1200 in an empty folder of root's (<code>/var/lib/weilo/pi/plugins-cwd</code>), an isolated agent's in the sandbox as a user of its own (uid + 100000) in that agent's group, with only that agent's folder. The agent's folder is in <code>WEILO_FOLDER</code>.</li>
 <li>The curator's pi gets the same gateway, for the curator's model.</li>
 </ul>
@@ -344,7 +344,7 @@
 <li><strong>Asked by the app only.</strong> The app sends a spec over <code>/run/weilo-sandbox/ctl.sock</code> (a volume both containers mount, root's alone). <code>sandbox/spec.mjs</code> refuses root or any uid under 2001, a place outside those folders, any place that is a link, and files outside <code>/var/lib/weilo</code>.</li>
 <li><strong>Namespaces for each program.</strong> Each pi, and each plugin program of an isolated agent, starts with <code>unshare</code> in new pid, mount, ipc and uts namespaces, under <code>tini</code>. <code>sandbox/enter.mjs</code>, as root inside them, covers the data folder, <code>/var/lib/weilo</code>, the sandbox's socket, <code>/tmp</code> and <code>/dev/shm</code> with empty folders, mounts back only that program's places (skills and extensions read only, nothing setuid), writes its pi folder, and starts it with <code>setpriv</code> as its user with no capability and <code>no-new-privs</code>. So it sees its own processes only, its own <code>/tmp</code>, and only its own folder, chat and HOME.</li>
 <li><strong>Ended with the app.</strong> When the app hangs up, the program's stdin ends; 5 seconds later it is killed, and with it everything in its namespace.</li>
-<li><strong>Fail closed.</strong> If the sandbox cannot make namespaces it starts nothing, and Settings &gt; Security says so. If it is not running, isolated agents do not start.</li>
+<li><strong>Fail closed.</strong> If the sandbox cannot make namespaces it starts nothing, and Settings &gt; Security &amp; devices says so. If it is not running, isolated agents do not start.</li>
 </ul>
 <p>Making namespaces needs <code>SYS_ADMIN</code> in the sandbox container, and on hosts with AppArmor <code>apparmor:unconfined</code> (Docker's profile forbids mounts). The container drops every other capability, and the programs it starts have none. The kernel is still the host's: for a kernel of its own, install <a href="https://gvisor.dev">gVisor</a> and set <code>WEILO_SANDBOX_RUNTIME=runsc</code> before starting.</p>
 </section>
@@ -402,6 +402,7 @@
 <li>It warns when the agent would get something the asking agent does not have: another provider, plugins, extensions, or the browser "with the sign-ins of every site you are signed in to there".</li>
 <li>The tools call the daemon with <code>node:http</code>, which waits as long as you take; <code>fetch</code> would give up after five minutes.</li>
 <li><code>manage_settings</code> uses the same question for its exact change (<a href="agents.html#manage-settings">details</a>).</li>
+<li>Saving a skill with the <code>skill</code> tool asks too: the name, the description, the instructions up to their first 2000 characters, and whether it changes an existing skill. Nothing is written until you choose Save it.</li>
 </ul>
 </section>
 
@@ -418,13 +419,13 @@
 
 <section class="card" id="budgets">
 <h2>Daily token limits</h2>
-<p>An agent may have a daily token limit (Edit agent &gt; Model). The runner counts each answer's input, output and cache-write tokens (context read again from the cache is not counted) in <code>agent/usage.json</code>, for the day in your time zone. At the limit its run is stopped and you are notified; a message or a routine is refused until the next day. It bounds what a looping or misled agent can spend.</p>
+<p>An agent may have a daily token limit (Edit agent &gt; Model). The runner counts each answer's input, output and cache-write tokens (context read again from the cache is not counted) in <code>agent/usage.json</code>, per day in your time zone, with pi's cost estimate, for 31 days (Settings &gt; Usage shows 14). At the limit its run is stopped and you are notified; a message or a routine is refused until the next day. It bounds what a looping or misled agent can spend.</p>
 </section>
 
 <section class="card" id="audit">
-<h2>The audit log and Settings &gt; Security</h2>
+<h2>The audit log and Settings &gt; Security &amp; devices</h2>
 <p><code>agent/audit.jsonl</code> (root's, 0600; a second file at 5 MB) records every change made through the API (method, route, ids, and who: a device or an agent; never a request's body), each pairing and refused pairing code, and every question an agent asked you with your answer. A chat's own traffic (messages, answers, browser steps, searches) is left out.</p>
-<p>Settings &gt; Security shows the latest 50 entries and checks the install: whether the sandbox runs and can make namespaces, which isolated agents hold an account's access token or the browser, devices not used for 90 days, and whether a newer version is out.</p>
+<p>Settings &gt; Security &amp; devices shows the latest 50 entries and checks the install: whether the sandbox runs and can make namespaces, which isolated agents have the browser, devices not used for 90 days, and whether a newer version is out.</p>
 </section>
 
 <section class="card" id="matrix">
@@ -463,7 +464,7 @@
 <thead><tr><th>Attacker</th><th>Can</th><th>Cannot</th></tr></thead>
 <tbody>
 <tr><td>A misled regular agent</td><td>Read and change the workspace, the skill library and the shared tools; read isolated agents' folders; read <code>USER.md</code> and <code>MEMORY.md</code>; search every chat and the vault with <code>fetch_knowledge</code>; use the browser with your logins; reach the internet and your network; spend on its provider; ask you for changes.</td><td>Read keys, plugin secrets or devices; read another agent's chat files, HOME or pi folder; approve its own request; make a pairing code; call any route but its own tools'.</td></tr>
-<tr><td>A misled isolated agent</td><td>Read and change its own folder (and write in <code>shared/</code> what the curator files, marked as its report); use its plugins and its provider; reach the internet; use the browser only if you turned it on; ask for skills, plugins and extensions for itself; read the access token of a provider you signed in to with an account, if its model uses one.</td><td>Open the workspace, <code>agent/</code>, other folders or chats, or see the app's or other agents' processes; reach the app but through its tools; use memory, the vault, the skill library, settings or <code>ask_agent</code>; change another agent.</td></tr>
+<tr><td>A misled isolated agent</td><td>Read and change its own folder (and write in <code>shared/</code> what the curator files, marked as its report); use its plugins and its provider; reach the internet; use the browser only if you turned it on; ask for skills, plugins and extensions for itself.</td><td>Open the workspace, <code>agent/</code>, other folders or chats, or see the app's or other agents' processes; reach the app but through its tools; use memory, the vault, the skill library, settings or <code>ask_agent</code>; change another agent.</td></tr>
 <tr><td>An added extension or skill</td><td>An extension runs inside the pi of every agent that uses it, with that agent's rights (the app says so before adding one). A skill is text in the prompts of agents that use it.</td><td>Load into an agent that does not list it (<code>-ne</code>); declare a tool name the app reserves.</td></tr>
 <tr><td>A plugin program</td><td>For a regular agent it runs as 1200 with the workspace in reach (isolated folders read only); for an isolated agent it runs in the sandbox with only that agent's folder. It has its own secrets.</td><td>Read <code>agent/</code> or other plugins' secrets; be given its secrets' agent's uid (the agent cannot read them).</td></tr>
 <tr><td>A web page in the agents' browser</td><td>Put instructions in front of an agent (the tool tells agents a page is information, not instructions).</td><td>Open the app's port (Chromium policy and the tool); reach the debugging pipe.</td></tr>
@@ -488,7 +489,7 @@
 <h2>What leaves the computer</h2>
 <ul>
 <li>Requests to your model provider (and to plugins on the web), through the gateway.</li>
-<li>An update check to the GitHub API, at most every 6 hours, unless turned off in Settings &gt; About.</li>
+<li>An update check to the GitHub API, at most every 6 hours, unless turned off in Settings &gt; General.</li>
 <li>Contact us, only when you send it: your name, email, message and the app version, to <code>api.weilo.xyz</code>.</li>
 <li>Notifications, if you turn them on: encrypted for your device, through its browser's push service. They hold the agent's name and the start of what it said.</li>
 <li>Whatever agents do: they have network access, and so does the browser.</li>
@@ -506,7 +507,7 @@
 <li><strong>Isolated folders are readable by regular agents, by design.</strong> Regular agents (and their plugin programs) read isolated agents' folders and search their chats with <code>fetch_knowledge</code>: what an isolated agent learns about you is yours. They cannot change them. What comes from an isolated agent may come from untrusted pages, so it is always labelled as its report.</li>
 <li><strong>Upload race.</strong> Uploads are written by root into the agent's folder, which agents can change. The last step of the path is never followed if it is a link, but the folders above it are resolved normally: an agent that swaps a parent folder for a link at the right moment could make an upload land elsewhere, owned by the uploading agent.</li>
 <li><strong>The browser shares logins.</strong> Every agent with the browser uses the same profile and every site you signed in to. "Ask me first" is a request in the tool description, not a lock. It is off for an agent that becomes isolated; a request to turn it on says so.</li>
-<li><strong>Account sign-ins.</strong> For a provider signed in with an account, pi must hold the access token (it shapes those requests from it), so any agent whose model uses that provider can fetch a short-lived token, an isolated one too. The refresh token stays with the daemon. Settings &gt; Security names the isolated agents this applies to; give them a provider with an API key. Sign-in with an account has not been tested end to end against every provider.</li>
+<li><strong>Account sign-ins.</strong> The placeholders follow the token shapes pi reads today (Anthropic, ChatGPT, GitHub Copilot); a pi update that reads more of a token could break such a provider until the placeholder follows. Sign-in with an account has not been tested end to end against every provider.</li>
 <li><strong>Bundled switches for regular agents.</strong> Switching off the browser or routines for a regular agent removes the tool, but its routes stay callable with that agent's key.</li>
 <li><strong>The curator's file tools are not fenced by pi.</strong> They are confined by its Linux user (1100), which owns only the vault. It is told to write only there, and every page it touched is scrubbed of lines that look like secrets.</li>
 <li><strong>A real Linux filesystem is assumed.</strong> The whole permission model rests on <code>chown</code> and <code>chmod</code> working on the data folder. On Docker Desktop for Windows and macOS the folder is a bind mount through a file-sharing layer that may not keep owners and modes. Verify it there before relying on it (<a href="operating.html#release-check">release checklist</a>).</li>
