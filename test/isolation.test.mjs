@@ -1,7 +1,7 @@
 // Isolated agents: where their files are, and which of the agents' routes they may call (agents/agents.mjs).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { chatDirOf, filesOf, homeOf, isIsolated, mayCall, userHomeOf, userOf } from "../daemon/agents/agents.mjs";
+import { chatDirOf, filesOf, homeGroupOf, homeOf, isIsolated, isolatedGroups, mayCall, userHomeOf, userOf } from "../daemon/agents/agents.mjs";
 import { ISOLATED, ISOLATED_SESSIONS, SESSIONS, WORKSPACE, HOMES } from "../daemon/common.mjs";
 import { AGENTS_GID, CORE_TOOLS } from "../daemon/config.mjs";
 
@@ -26,6 +26,20 @@ test("an isolated agent's folders are outside the workspace and agent/", () => {
 test("an isolated agent's user is in no group", () => {
   assert.deepEqual(userOf(regular).groups, [AGENTS_GID]);
   assert.deepEqual(userOf(isolated), { uid: 2002, gid: 2002, groups: [] });
+});
+
+test("a regular agent is in every isolated agent's group; an isolated one only in its own", () => {
+  const other = { ...isolated, id: "other-a0a0a0", folder: "other", uid: 2005 };
+  const all = [regular, isolated, other, { ...regular, id: "two-b1b1b1", uid: 2003 }];
+  assert.deepEqual(isolatedGroups(all), [2002, 2005]);
+  assert.deepEqual(userOf(regular, all), { uid: 2001, gid: 2001, groups: [AGENTS_GID, 2002, 2005] });
+  assert.deepEqual(userOf(isolated, all), { uid: 2002, gid: 2002, groups: [] });
+  assert.deepEqual(userOf(regular, [regular]).groups, [AGENTS_GID]);
+});
+
+test("an isolated agent's home is in its own group; a regular agent's in the agents group", () => {
+  assert.equal(homeGroupOf(isolated), 2002);
+  assert.equal(homeGroupOf(regular), AGENTS_GID);
 });
 
 test("an isolated agent's chat shows only its own files; a regular agent's, the workspace's and isolated agents'", () => {

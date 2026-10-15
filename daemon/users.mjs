@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { chmod, chown, mkdir, open, readdir, stat } from "node:fs/promises";
+import { chmod, chown, lstat, mkdir, open, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { AGENT_DIR, EXTENSIONS, HOMES, ISOLATED, ISOLATED_SESSIONS, KNOWLEDGE, PROFILES, ROOT, RUN, SCRATCH, SESSIONS, SKILLS, TOOLS, WORKSPACE } from "./common.mjs";
@@ -10,8 +10,9 @@ import { AGENTS_GID, BIN, BROWSER_UID, CURATOR_UID, PLUGINS_UID, SYSTEM_PATH } f
 // paired devices) where no one else can read them. Everything else it starts runs as a user of its own, without root's
 // powers: the browser as the image's user, the knowledge curator and the plugins as theirs, and each agent as its own
 // user, in the `agents` group. The group shares the workspace, the installed tools and the skills; an agent's chat, home,
-// scratch and pi settings are its own. An isolated agent's user is in no group: it has only its own folder (which the group
-// shares too: the other agents may read and change it), chat, home, scratch and pi settings (agents/agents.mjs). Pi runs
+// scratch and pi settings are its own. An isolated agent's user is in no group but its own: it has only its own folder,
+// chat, home, scratch and pi settings (agents/agents.mjs). Its folder is in its group, which every regular agent is in too:
+// they may read and change it, and it may read and change what they leave there. Pi runs
 // with only what its agent may use (agents/pidir.mjs); a model's key and a plugin's secrets stay with the daemon, which
 // adds them on the way out (gateway/).
 // Outside a root daemon (a dev run) everything runs as the daemon, and nothing is changed hands.
@@ -107,6 +108,15 @@ export async function secure(agents) {
   // Their chats: no one but root may look in; each agent passes through to its own.
   await folder(ISOLATED, 0, AGENTS_GID, 0o751);
   await folder(ISOLATED_SESSIONS, 0, 0, 0o711);
+  // Each isolated agent's folder: its user's and its group's (setgid). One still in another group (made before isolated
+  // agents had a group of their own) has what is in it handed to the agent, in its group, once.
+  for (const agent of agents.filter((a) => a.isolated === true && /^[a-z0-9-]+$/.test(a.folder ?? ""))) {
+    const home = join(ISOLATED, agent.folder);
+    const info = await lstat(home).catch(() => null);
+    if (!info?.isDirectory()) continue;
+    if (info.gid !== agent.uid) await tree(home, agent.uid, agent.uid, "ug+rwX,o-rwx");
+    await folder(home, agent.uid, agent.uid, 0o2770).catch(() => {});
+  }
   await folder(HOMES, 0, AGENTS_GID, 0o751);
   await folder(KNOWLEDGE, CURATOR_UID, CURATOR_UID, 0o700);
   await folder(SCRATCH, 0, AGENTS_GID, 0o751);

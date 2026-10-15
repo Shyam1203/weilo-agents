@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { createServer as createSocketServer } from "node:net";
 import { dirname } from "node:path";
 import { createAgent, filesOf, getAgent, isIsolated, mayCall, profiles, listAgents, removeFiles, removeProfile, setOrder, updateAgent } from "./agents/agents.mjs";
-import { abort, activityOf, answer, compact, contextOf, holding, prompt, restart, restartAll, skillCommands, stop, stopAll } from "./agents/runner.mjs";
+import { abort, activityOf, answer, compact, contextOf, holding, prompt, restart, restartAll, restartRegular, skillCommands, stop, stopAll } from "./agents/runner.mjs";
 import { manageAgents } from "./agents/manage.mjs";
 import { searchChats } from "./agents/search.mjs";
 import { earlierOf } from "./agents/sessions.mjs";
@@ -110,13 +110,20 @@ route("GET", "/api/agents", async ({ query }) => {
   if (query.has("seen")) markSeen();
   return (await listAgents()).map((agent) => ({ ...agent, working: activityOf(agent.id) !== null, doing: activityOf(agent.id), taken: isTaken(agent.id) }));
 });
-route("POST", "/api/agents", ({ body }) => createAgent(body));
+// Regular agents are in every isolated agent's group (agents.mjs `userOf`): making, deleting or switching an isolated agent
+// starts their pis anew (each running one once its reply ends).
+route("POST", "/api/agents", async ({ body }) => {
+  const agent = await createAgent(body);
+  if (isIsolated(agent)) await restartRegular();
+  return agent;
+});
 route("PUT", "/api/agents", ({ body }) => setOrder(body.order));
 // An agent that becomes isolated, or regular again, moves its folders: its pi stops first, and starts once they moved.
 route("PUT", "/api/agents/:id", async ({ id, body }) => {
   const moves = typeof body.isolated === "boolean" && body.isolated !== isIsolated(await getAgent(id));
   const agent = moves ? await holding(id, () => updateAgent(id, body)) : await updateAgent(id, body);
   await restart(id);
+  if (moves) await restartRegular();
   return agent;
 });
 // Deleting an agent: its profile and routines go first, so nothing starts its pi again; then pi stops, a running
@@ -128,6 +135,7 @@ route("DELETE", "/api/agents/:id", async ({ id, body }) => {
   await stop(id);
   await closeBrowser(id);
   await removeFiles(agent, { keepChat: body.keepChat === true, keepFiles: body.keepFiles === true });
+  if (isIsolated(agent)) await restartRegular();
 });
 route("POST", "/api/agents/:id/message", ({ id, body }) => prompt(id, body));
 route("POST", "/api/agents/:id/abort", ({ id }) => abort(id));
@@ -241,7 +249,7 @@ server.on("upgrade", async (req, socket, head) => {
     const caller = pipe && keyIn(req, url.searchParams);
     if (caller) {
       const plugin = await allowedPlugin(caller.agent, pipe[1]);
-      if (plugin.command) return pipePlugin(socket, plugin, await getAgent(caller.agent));
+      if (plugin.command) return await pipePlugin(socket, plugin, await getAgent(caller.agent));
     }
   } catch {}
   socket.destroy();

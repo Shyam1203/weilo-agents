@@ -13,7 +13,7 @@ import { skillPaths } from "../settings/skills.mjs";
 import { userFlags } from "../settings/user.mjs";
 import { notify } from "../push.mjs";
 import { ownTools, sharedTools } from "../users.mjs";
-import { chatDirOf, getAgent, homeOf, isIsolated, makeHome, mayCall, profilePath, userHomeOf, userOf } from "./agents.mjs";
+import { chatDirOf, getAgent, homeOf, isIsolated, makeHome, mayCall, profilePath, profiles, userHomeOf, userOf } from "./agents.mjs";
 import { piDirOf, writePiDir } from "./pidir.mjs";
 import { spawnPi } from "./pi.mjs";
 import { asTyped } from "./sessions.mjs";
@@ -124,17 +124,18 @@ async function start(run) {
   await holds.get(run.id);
   const agent = await getAgent(run.id);
   const dir = piDirOf(run.id);
-  const [ask, plugins, kind] = await Promise.all([askBefore(), pluginTools(agent.plugins), kindOf(agent, dir)]);
+  const [ask, plugins, kind, agents] = await Promise.all([askBefore(), pluginTools(agent.plugins), kindOf(agent, dir), profiles()]);
   const argv = argvOf(agent, kind, plugins);
+  const user = userOf(agent, agents);
   await Promise.all([makeScratch(agent), makeHome(agent)]);
   // The key its tools and its pi call the daemon with (tool.mjs, gateway/): the daemon knows the agent by it.
   run.key = agentKey(run.id);
   // Its pi settings: its model's provider and its plugins, through the daemon (no key of theirs), and the copies it reads.
-  await writePiDir(dir, userOf(agent), { model: agent.model, plugins: agent.plugins, key: run.key, agent: run.id, copies: kind.copies });
+  await writePiDir(dir, user, { model: agent.model, plugins: agent.plugins, key: run.key, agent: run.id, copies: kind.copies });
   run.done = new Promise((resolve) => {
     // As the agent's own user, at home in its folder.
     run.pi = spawnPi(argv, {
-      user: userOf(agent),
+      user,
       cwd: homeOf(agent),
       env: {
         ...kind.env, PI_CODING_AGENT_DIR: dir, HOME: userHomeOf(agent),
@@ -308,5 +309,13 @@ export async function holding(id, job) {
 }
 
 export const restartAll = () => Promise.all([...runs.keys()].map(restart));
+
+// Restarts the regular agents' pis (as `restart`): an isolated agent was made, deleted, or switched to or from isolated, so
+// the isolated agents' groups they must be in changed (agents.mjs `userOf`).
+export const restartRegular = () =>
+  Promise.all([...runs.keys()].map(async (id) => {
+    const agent = await getAgent(id).catch(() => null);
+    if (agent && !isIsolated(agent)) await restart(id);
+  }));
 
 export const stopAll = () => Promise.all([...runs.keys()].map(stop));

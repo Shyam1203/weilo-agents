@@ -58,8 +58,16 @@ export const mayCall = (agent, tool) => !isIsolated(agent) || (!SHARED_TOOLS.inc
 // the skills, the installed tools). weilo.json keeps the highest given (`lastUid`; migrate.mjs set it once from the files).
 export const newUid = async () => (await updateJson(APP, (data) => ({ ...data, lastUid: Math.max(FIRST_AGENT_UID, (data.lastUid ?? 0) + 1) }))).lastUid;
 
-// The Linux user an agent's pi (and an isolated agent's plugins) run as (users.mjs): an isolated agent's is in no group.
-export const userOf = (agent) => ({ uid: agent.uid, gid: agent.uid, groups: isIsolated(agent) ? [] : [AGENTS_GID] });
+// Each isolated agent's group: its home's (its gid, which is its uid). Regular agents are in all of them, so they read and
+// change what is in isolated homes, and the isolated agent reads and changes what they leave there.
+export const isolatedGroups = (agents) => agents.filter(isIsolated).map((agent) => agent.uid);
+
+// The Linux user an agent's pi (and an isolated agent's plugins) run as (users.mjs), given every agent (`agents`): a regular
+// agent's is in the `agents` group and every isolated agent's group; an isolated agent's is in none but its own.
+export const userOf = (agent, agents = []) => ({ uid: agent.uid, gid: agent.uid, groups: isIsolated(agent) ? [] : [AGENTS_GID, ...isolatedGroups(agents)] });
+
+// The group of the agent's home: the `agents` group, or an isolated agent's own.
+export const homeGroupOf = (agent) => (isIsolated(agent) ? agent.uid : AGENTS_GID);
 
 // A name for a new home folder: the agent's name, unless the workspace, the isolated agents or another agent already has it.
 export async function newFolder(name, taken = []) {
@@ -86,14 +94,14 @@ export const userHomeOf = (agent) => join(HOMES, agent.folder);
 // isolated agent's files (it can read them), an isolated agent's only its own.
 export const filesOf = (agent) => (isIsolated(agent) ? { folders: [homeOf(agent)], roots: [homeOf(agent)] } : { folders: [homeOf(agent), WORKSPACE], roots: [WORKSPACE, ISOLATED] });
 
-// The agent's folders, ready for use (the user may have removed one): its home, shared with the group (an isolated agent is
-// not in the group: it has its folder as its owner); its chat folder and HOME, its own.
+// The agent's folders, ready for use (the user may have removed one): its home, shared with its group (`homeGroupOf`;
+// setgid, so what is made in it keeps that group); its chat folder and HOME, its own.
 export const makeHome = (agent) =>
-  Promise.all([ownFolder(homeOf(agent), agent.uid, AGENTS_GID, 0o2770), ownFolder(chatDirOf(agent), agent.uid, agent.uid, 0o700), ownFolder(userHomeOf(agent), agent.uid, agent.uid, 0o700)]);
+  Promise.all([ownFolder(homeOf(agent), agent.uid, homeGroupOf(agent), 0o2770), ownFolder(chatDirOf(agent), agent.uid, agent.uid, 0o700), ownFolder(userHomeOf(agent), agent.uid, agent.uid, 0o700)]);
 
 // An agent that becomes isolated, or regular again: its home and its chat move to the other kind's places. What is in its
-// home becomes the agent's (shared with the group, as before): an isolated agent, not in the group, could not open what
-// others made there. Its pi must not run meanwhile (runner.mjs `holding`). A folder of that name already there is not
+// home becomes the agent's, in its home's group (`homeGroupOf`): an isolated agent, not in the `agents` group, could not
+// open what others made there. Who is in which group changes: the regular agents' pis start anew (server.mjs). Its pi must not run meanwhile (runner.mjs `holding`). A folder of that name already there is not
 // overwritten: the user renames one first.
 async function move(before, after) {
   const pairs = [[homeOf(before), homeOf(after)], [chatDirOf(before), chatDirOf(after)]];
@@ -101,7 +109,7 @@ async function move(before, after) {
     if (await access(to).then(() => true, () => false)) throw fail(409, `${to} already exists. Rename or remove it, then save again.`);
   }
   for (const [from, to] of pairs) await rename(from, to).catch((err) => err.code === "ENOENT" || Promise.reject(err));
-  await tree(homeOf(after), after.uid, AGENTS_GID, "ug+rwX,o-rwx");
+  await tree(homeOf(after), after.uid, homeGroupOf(after), "ug+rwX,o-rwx");
 }
 
 // An agent that becomes isolated starts without the browser (its logins are everyone's); the user may turn it on again.
