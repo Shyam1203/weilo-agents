@@ -1,14 +1,12 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { piDirOf } from "../agents/pidir.mjs";
-import { fail, MCP, readJson, updateJson, WORKSPACE } from "../common.mjs";
+import { fail, MCP, PLUGINS_HOME, readJson, updateJson } from "../common.mjs";
+import { servers } from "../gateway/plugins.mjs";
 import { BIN, PLUGIN_STATUS_TIMEOUT_MS } from "../config.mjs";
 import { folder, PLUGINS, setOwner, sharedTools, spawnAs } from "../users.mjs";
 
 const NAME = /^[\w-]+$/;
 const ENV_KEY = /^[A-Za-z_]\w*$/;
-
-const servers = async () => (await readJson(MCP)).mcpServers ?? {};
 
 const words = (line) => [...line.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)].map((m) => m[1] ?? m[2] ?? m[3]);
 
@@ -38,18 +36,18 @@ export async function addPlugin({ name, command, url, env = {}, token }) {
 export async function removePlugin(name) {
   if (!NAME.test(name)) throw fail(404, "This plugin does not exist");
   await updateJson(MCP, ({ mcpServers = {}, ...rest }) => {
-    const { [name]: _removed, ...others } = mcpServers;
+    const others = { ...mcpServers };
+    delete others[name];
     return { ...rest, mcpServers: others };
   });
 }
 
 async function report() {
-  const dir = piDirOf("plugins");
-  await folder(dir, PLUGINS.uid, PLUGINS.gid, 0o700);
-  await writeFile(join(dir, "mcp.json"), JSON.stringify(await readJson(MCP)), { mode: 0o600 });
-  await setOwner(join(dir, "mcp.json"), PLUGINS.uid, PLUGINS.gid, 0o600);
+  await folder(PLUGINS_HOME, PLUGINS.uid, PLUGINS.gid, 0o700);
+  await writeFile(join(PLUGINS_HOME, "mcp.json"), JSON.stringify(await readJson(MCP)), { mode: 0o600 });
+  await setOwner(join(PLUGINS_HOME, "mcp.json"), PLUGINS.uid, PLUGINS.gid, 0o600);
   return new Promise((resolve) => {
-    const child = spawnAs(PLUGINS, BIN.pi, ["mcp", "list", "--json"], { cwd: WORKSPACE, env: { ...process.env, ...sharedTools, PI_CODING_AGENT_DIR: dir, HOME: dir }, stdio: ["ignore", "pipe", "ignore"] });
+    const child = spawnAs(PLUGINS, BIN.pi, ["mcp", "list", "--json"], { cwd: PLUGINS_HOME, env: { ...process.env, ...sharedTools, PI_CODING_AGENT_DIR: PLUGINS_HOME, HOME: PLUGINS_HOME }, stdio: ["ignore", "pipe", "ignore"] });
     let stdout = "";
     const timer = setTimeout(() => child.kill(), PLUGIN_STATUS_TIMEOUT_MS);
     child.stdout.setEncoding("utf8").on("data", (d) => (stdout += d));

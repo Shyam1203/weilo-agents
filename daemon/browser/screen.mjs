@@ -15,7 +15,7 @@ const ENV = { ...process.env, DISPLAY, XAUTHORITY, HOME: "/home/node" };
 
 const log = (...args) => console.log("[screen]", ...args);
 
-function keep(name, command, args, { delay = 0, stdio = "ignore", started } = {}) {
+function keep(name, command, args, { delay = 0, stdio = "ignore", started } = /** @type {{ delay?: number, stdio?: any, started?: (child: any) => void }} */ ({})) {
   const run = () => {
     const child = spawnAs(BROWSER, command, args, { stdio, env: ENV });
     child.on("error", () => log(`${name} cannot start`));

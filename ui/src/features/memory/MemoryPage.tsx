@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { messageOf } from "../../api/http";
-import { getMemory, saveMemory, setCurator } from "../../api/memory";
+import { getMemory, saveMemory, setMemorySettings, type MemorySettings } from "../../api/memory";
 import { choosableOf, shortName, type Model, type Provider } from "../../api/providers";
 import { Button, IconButton } from "../../components/ui/Button";
 import { ErrorText } from "../../components/ui/Field";
 import { Loading } from "../../components/ui/List";
 import { Card, Page, Row } from "../../components/ui/Row";
 import { Select } from "../../components/ui/Select";
+import { Switch } from "../../components/ui/Switch";
 import { useAction } from "../../lib/useAction";
 
 interface Props {
@@ -22,7 +23,7 @@ const monthOf = (when?: string) => {
 };
 
 export function MemoryPage({ providers, models }: Props) {
-  const [model, setModel] = useState<string | null>(null);
+  const [settings, setSettings] = useState<MemorySettings | null>(null);
   const [text, setText] = useState("");
   const [saved, setSaved] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -34,19 +35,20 @@ export function MemoryPage({ providers, models }: Props) {
   useEffect(
     () =>
       void getMemory().then(
-        (m) => (setModel(m.model), setText(m.text), setSaved(m.text)),
+        (m) => (setSettings(m), setText(m.text), setSaved(m.text)),
         (e) => setLoadError(messageOf(e)),
       ),
     [],
   );
-  if (model === null) return loadError ? <ErrorText>{loadError}</ErrorText> : <Loading />;
+  if (settings === null) return loadError ? <ErrorText>{loadError}</ErrorText> : <Loading />;
+  const { model } = settings;
 
   const options = [
     { value: OFF, label: "Off" },
     ...(model && !(models ?? []).some((m) => m.id === model) ? [{ value: model, label: model }] : []),
     ...providers.filter((p) => p.connected).flatMap((p) => choosableOf(models ?? [], p.id).map((m) => ({ value: m.id, label: shortName(m.name) }))),
   ];
-  const pick = (next: string) => run("model", async () => setModel((await setCurator(next)).model));
+  const change = (next: Partial<MemorySettings>) => run("settings", async () => setSettings(await setMemorySettings(next)));
 
   const lines = text.split("\n");
   const notes = lines.flatMap((line, i) => {
@@ -85,8 +87,11 @@ export function MemoryPage({ providers, models }: Props) {
       <Card>
         <Row title="Knowledge curator" description={model ? "Curated Knowledge from our conversations." : "Off. Choose a model to build the knowledge vault from your chats."}>
           <div className="pick w-full min-w-0 sm:w-56">
-            <Select label="Knowledge curator model" value={model} disabled={!models || busy === "model"} onChange={(v) => void pick(v)} options={options} />
+            <Select label="Knowledge curator model" value={model} disabled={!models || busy === "settings"} onChange={(v) => void change({ model: v })} options={options} />
           </div>
+        </Row>
+        <Row title="Ask before saving" description="An agent asks you in its chat before it saves or forgets a note about you.">
+          <Switch label="Ask before saving" checked={settings.ask} onChange={(ask) => void change({ ask })} />
         </Row>
         <Row
           title="Notes about you"

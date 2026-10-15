@@ -154,7 +154,7 @@ async function step(agent, args) {
   let state = await live(agent);
   if (action === "tabs") return state ? tabList(state) : "No tabs open.";
   if (state) await restore(state.w).catch(() => {});
-  else state = { w: await openWindow(agent) };
+  else state = { w: await openWindow(agent), tabs: [] };
   const { w } = state;
   const { tab } = w;
   switch (action) {

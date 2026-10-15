@@ -10,7 +10,7 @@ const text = (value, max, what) => {
   return one;
 };
 
-export async function sendContact({ name, email, message, topic } = {}) {
+export async function sendContact({ name, email, message, topic }) {
   const from = text(email, MAX_CONTACT_EMAIL, "email");
   if (!/^\S+@\S+\.\S+$/.test(from)) throw fail(400, "Type your email, so we can answer you.");
   const body = text(message, MAX_CONTACT_MESSAGE, "message");

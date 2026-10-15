@@ -1,8 +1,12 @@
 # Weilo Agents
 
-A private AI assistant that runs on your own computer. Chat with agents. The agents work in an
-isolated Docker container and use the pi coding agent (`@earendil-works/pi-coding-agent`). Your
-data stays in one folder, `~/.weilo-agents`.
+A private AI assistant that runs on your own computer. Chat with agents. The agents work in
+Docker containers and use the pi coding agent (`@earendil-works/pi-coding-agent`). Your data stays
+in one folder, `~/.weilo-agents`.
+
+Regular agents share your workspace and what they learn about you. Isolated agents run in a sandbox
+container, each with only its own folder, its own processes and no keys; your regular agents can
+read (not change) what they do and learn from it. See [SECURITY.md](SECURITY.md).
 
 ## Run
 
@@ -24,12 +28,13 @@ Besides your provider's API (the model you pick), the app asks GitHub now and th
 ## Develop
 
 ```sh
+npm install && npm run check && npm test   # the daemon: type check and tests
 cd ui && npm install
 npm run dev     # UI on http://localhost:5173, uses the API of the container on :3210
 npm run build   # type-check and build
 ```
 
-After you change the daemon or the UI, build the container again: `docker compose up -d --build`.
+After you change the daemon or the UI, build the containers again: `docker compose up -d --build`. CI runs the checks, the tests and both builds on every pull request.
 
 ## Documentation
 

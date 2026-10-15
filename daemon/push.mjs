@@ -26,7 +26,7 @@ export async function pushStatus() {
   return { publicKey, devices: devices.map(({ id, label, added }) => ({ id, label, added })), muted };
 }
 
-export async function addDevice({ subscription, label } = {}) {
+export async function addDevice({ subscription, label }) {
   const { endpoint, keys } = subscription ?? {};
   if (typeof endpoint !== "string" || !PUSH_SERVICE.test(endpoint) || typeof keys?.p256dh !== "string" || typeof keys?.auth !== "string") throw fail(400, "This browser's notification address is not valid");
   const id = randomUUID();
@@ -47,15 +47,15 @@ export async function setMuted(muted) {
 let seen = 0;
 export const markSeen = () => (seen = Date.now());
 
-function encrypt(text, { p256dh, auth }) {
+export function encrypt(text, { p256dh, auth }) {
   const browserKey = Buffer.from(p256dh, "base64url");
   const ecdh = createECDH("prime256v1");
   const ownKey = ecdh.generateKeys();
   const secret = ecdh.computeSecret(browserKey);
   const ikm = hkdfSync("sha256", secret, Buffer.from(auth, "base64url"), Buffer.concat([Buffer.from("WebPush: info\0"), browserKey, ownKey]), 32);
   const salt = randomBytes(16);
-  const key = Buffer.from(hkdfSync("sha256", ikm, salt, Buffer.from("Content-Encoding: aes128gcm\0"), 16));
-  const nonce = Buffer.from(hkdfSync("sha256", ikm, salt, Buffer.from("Content-Encoding: nonce\0"), 12));
+  const key = Buffer.from(hkdfSync("sha256", Buffer.from(ikm), salt, Buffer.from("Content-Encoding: aes128gcm\0"), 16));
+  const nonce = Buffer.from(hkdfSync("sha256", Buffer.from(ikm), salt, Buffer.from("Content-Encoding: nonce\0"), 12));
   const cipher = createCipheriv("aes-128-gcm", key, nonce);
   const body = Buffer.concat([cipher.update(Buffer.concat([Buffer.from(text), Buffer.from([2])])), cipher.final(), cipher.getAuthTag()]);
   const header = Buffer.alloc(21);

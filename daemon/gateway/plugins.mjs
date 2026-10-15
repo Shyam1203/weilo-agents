@@ -1,11 +1,11 @@
-import { request as http } from "node:http";
-import { request as https } from "node:https";
-import { MCP, readJson, RUN } from "../common.mjs";
-import { PORT } from "../config.mjs";
-import { homeOf, isIsolated, isolatedGroups, profiles, userOf } from "../agents/agents.mjs";
-import { ownTools, PLUGINS, sharedTools, spawnAs } from "../users.mjs";
+import { MCP, PLUGINS_CWD, PLUGINS_HOME, readJson } from "../common.mjs";
+import { PLUGIN_UID_OFFSET, PORT, SYSTEM_PATH } from "../config.mjs";
+import { homeOf, isIsolated } from "../agents/agents.mjs";
+import { spawnSandboxed } from "../sandbox/client.mjs";
+import { PLUGINS, sharedTools, spawnAs } from "../users.mjs";
+import { forward, headersOf } from "./forward.mjs";
 
-const servers = async () => (await readJson(MCP)).mcpServers ?? {};
+export const servers = async () => (await readJson(MCP)).mcpServers ?? {};
 
 export async function piPlugins(names, key, agent) {
   const all = await servers();
@@ -21,31 +21,24 @@ export async function piPlugins(names, key, agent) {
 
 export const pluginOf = async (name) => (await servers())[name];
 
-const HOP = new Set(["host", "connection", "keep-alive", "transfer-encoding", "upgrade", "proxy-connection", "te", "trailer", "cookie", "authorization"]);
-
 export async function proxyPlugin(req, res, { plugin, rest, search }) {
   const target = new URL(plugin.url.replace(/\/$/, "") + rest + search);
-  const headers = {};
-  for (const [name, value] of Object.entries(req.headers)) if (!HOP.has(name)) headers[name] = value;
-  Object.assign(headers, plugin.headers ?? {});
-  await new Promise((resolve, reject) => {
-    const upstream = (target.protocol === "https:" ? https : http)(target, { method: req.method, headers }, (answer) => {
-      res.writeHead(answer.statusCode, Object.fromEntries(Object.entries(answer.headers).filter(([name]) => !HOP.has(name))));
-      answer.pipe(res);
-      answer.on("end", resolve);
-      answer.on("error", reject);
-    });
-    upstream.on("error", reject);
-    res.on("close", () => upstream.destroy());
-    req.pipe(upstream);
-  });
+  await forward(req, res, target, { ...headersOf(req, ["authorization"]), ...plugin.headers });
 }
 
-export async function pipePlugin(socket, plugin, agent) {
-  const cwd = homeOf(agent);
-  const plugins = { ...PLUGINS, groups: [...PLUGINS.groups, ...isolatedGroups(await profiles())] };
-  const [user, env] = isIsolated(agent) ? [userOf(agent), { ...ownTools(cwd), HOME: cwd }] : [plugins, { ...sharedTools, HOME: `${RUN}/pi/plugins` }];
-  const child = spawnAs(user, plugin.command, plugin.args ?? [], { cwd, env: { ...env, ...plugin.env }, stdio: ["pipe", "pipe", "ignore"] });
+
+function startPlugin(plugin, agent) {
+  const argv = [plugin.command, ...(plugin.args ?? [])];
+  if (!isIsolated(agent)) {
+    return spawnAs(PLUGINS, argv[0], argv.slice(1), { cwd: PLUGINS_CWD, env: { ...sharedTools, HOME: PLUGINS_HOME, WEILO_FOLDER: homeOf(agent), ...plugin.env }, stdio: ["pipe", "pipe", "ignore"] });
+  }
+  const uid = agent.uid + PLUGIN_UID_OFFSET;
+  const env = { PATH: SYSTEM_PATH, HOME: "/tmp", WEILO_FOLDER: homeOf(agent), ...plugin.env };
+  return spawnSandboxed({ user: { uid, gid: uid, groups: [agent.uid] }, argv, cwd: "/tmp", env, umask: 0o002, binds: [{ path: homeOf(agent) }], files: {} });
+}
+
+export function pipePlugin(socket, plugin, agent) {
+  const child = startPlugin(plugin, agent);
   socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: weilo-pipe\r\nConnection: Upgrade\r\n\r\n");
   const end = () => (child.kill(), socket.destroy());
   child.on("error", end);
@@ -54,4 +47,5 @@ export async function pipePlugin(socket, plugin, agent) {
   socket.on("close", end);
   socket.pipe(child.stdin).on("error", () => {});
   child.stdout.pipe(socket);
+  child.stderr?.resume();
 }

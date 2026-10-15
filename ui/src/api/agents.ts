@@ -15,15 +15,17 @@ export interface Agent {
   folder: string;
   isolated: boolean;
   trusted: boolean;
+  dailyTokens: number;
+  used?: number;
   last?: { role: "user" | "assistant"; text: string; shown?: boolean; at: number } | null;
   working?: boolean;
   doing?: string | null;
   taken?: boolean;
 }
 
-export type AgentInput = Omit<Agent, "id" | "folder" | "last" | "working" | "doing" | "taken">;
+export type AgentInput = Omit<Agent, "id" | "folder" | "used" | "last" | "working" | "doing" | "taken">;
 
-const DOING: Record<string, string> = { read: "Reading files", bash: "Running a command", edit: "Editing files", write: "Editing files", grep: "Searching files", find: "Searching files", ls: "Searching files", show: "Preparing what to show", routine: "Setting up a routine", browser: "Using the browser", memory: "Saving to memory", fetch_knowledge: "Searching knowledge", ask: "Waiting for your answer", skill: "Saving a skill", manage_agents: "Setting up an agent", manage_settings: "Changing settings" };
+const DOING: Record<string, string> = { read: "Reading files", bash: "Running a command", edit: "Editing files", write: "Editing files", grep: "Searching files", find: "Searching files", ls: "Searching files", show: "Preparing what to show", routine: "Setting up a routine", browser: "Using the browser", memory: "Saving to memory", fetch_knowledge: "Searching knowledge", ask: "Waiting for your answer", skill: "Saving a skill", manage_agents: "Setting up an agent", manage_settings: "Changing settings", ask_agent: "Asking another agent" };
 
 export const doingText = (tool?: string | null) => (tool ? (DOING[tool] ?? "Using an add-on") : "Working");
 

@@ -68,7 +68,7 @@ export async function addSkills({ name, data }) {
   }
 }
 
-export async function saveSkill({ name, description, instructions } = {}) {
+export async function saveSkill({ name, description, instructions }) {
   const id = typeof name === "string" ? slug(name, 48) : "";
   if (!id) throw fail(400, "Give the skill a name");
   const about = typeof description === "string" ? description.replace(/\s+/g, " ").trim() : "";

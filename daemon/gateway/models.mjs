@@ -1,8 +1,7 @@
-import { request as http } from "node:http";
-import { request as https } from "node:https";
 import { join } from "node:path";
 import { AGENT_DIR, AUTH, fail, MODELS, readJson } from "../common.mjs";
 import { PI_SDK, PORT } from "../config.mjs";
+import { forward, headersOf } from "./forward.mjs";
 
 let runtime;
 let made = 0;
@@ -16,6 +15,8 @@ async function registry() {
 }
 
 export const providerOf = (model) => model.split("/")[0];
+
+export const usesSignIn = async (model) => (await registry()).isUsingOAuth(providerOf(model));
 
 export async function piModels(model, key) {
   const provider = providerOf(model);
@@ -33,6 +34,7 @@ export async function accessToken(provider) {
   return found.auth.apiKey;
 }
 
+/** @type {[string, RegExp][]} */
 const API_PATHS = [
   ["anthropic-messages", /^\/v1\/messages/],
   ["openai-responses", /\/responses(\/|$)/],
@@ -49,8 +51,6 @@ function baseFor(models, path) {
   return [...count].sort((a, b) => b[1] - a[1])[0]?.[0];
 }
 
-const HOP = new Set(["host", "connection", "keep-alive", "transfer-encoding", "upgrade", "proxy-connection", "te", "trailer", "cookie"]);
-
 export async function proxyModel(req, res, { key, provider, rest, search }) {
   const models = await registry();
   const found = await models.getAuth(provider);
@@ -59,19 +59,6 @@ export async function proxyModel(req, res, { key, provider, rest, search }) {
   const base = baseFor(models.getAllModels(provider), rest);
   if (!base) throw fail(502, `Unknown provider ${provider}`);
   const target = new URL(base.replace(/\/$/, "") + rest + search);
-  const headers = {};
-  for (const [name, value] of Object.entries(req.headers)) if (!HOP.has(name)) headers[name] = String(value).replaceAll(key, real);
-  Object.assign(headers, found.auth.headers ?? {});
   if (target.searchParams.has("key")) target.searchParams.set("key", target.searchParams.get("key").replaceAll(key, real));
-  await new Promise((resolve, reject) => {
-    const upstream = (target.protocol === "https:" ? https : http)(target, { method: req.method, headers }, (answer) => {
-      res.writeHead(answer.statusCode, Object.fromEntries(Object.entries(answer.headers).filter(([name]) => !HOP.has(name))));
-      answer.pipe(res);
-      answer.on("end", resolve);
-      answer.on("error", reject);
-    });
-    upstream.on("error", reject);
-    res.on("close", () => upstream.destroy());
-    req.pipe(upstream);
-  });
+  await forward(req, res, target, { ...headersOf(req, [], (value) => value.replaceAll(key, real)), ...found.auth.headers });
 }

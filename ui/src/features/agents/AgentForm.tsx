@@ -49,7 +49,7 @@ interface Props {
 
 export function AgentForm({ agent, providers, skills, plugins, extensions, models, onAddProvider, onOpenSettings, hidden, onClose, onSaved, onDeleted }: Props) {
   const [draft, setDraft] = useState<Draft>(() =>
-    agent ? { name: agent.name, model: agent.model, thinking: agent.thinking, skills: agent.skills, plugins: agent.plugins, extensions: agent.extensions, disabled: agent.disabled, instructions: agent.instructions, avatar: avatarOf(agent), isolated: agent.isolated, trusted: agent.trusted } : { name: "", model: "", thinking: "", skills: [], plugins: [], extensions: [], disabled: [], instructions: "", avatar: randomAvatar(), isolated: false, trusted: false },
+    agent ? { name: agent.name, model: agent.model, thinking: agent.thinking, skills: agent.skills, plugins: agent.plugins, extensions: agent.extensions, disabled: agent.disabled, instructions: agent.instructions, avatar: avatarOf(agent), isolated: agent.isolated, trusted: agent.trusted, dailyTokens: agent.dailyTokens } : { name: "", model: "", thinking: "", skills: [], plugins: [], extensions: [], disabled: [], instructions: "", avatar: randomAvatar(), isolated: false, trusted: false, dailyTokens: 0 },
   );
   const [choosing, setChoosing] = useState<"skills" | "plugins" | "extensions" | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -109,6 +109,11 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
               <Select label="Thinking" value={draft.thinking} onChange={(thinking) => change({ thinking })} options={THINKING} />
             </Pick>
           </Row>
+          <Row title="Daily token limit" description={`Tokens it may use a day (read and written; context read again from the cache is free). 0 is no limit.${agent ? ` Today: ${(agent.used ?? 0).toLocaleString()}.` : ""}`}>
+            <Pick>
+              <input aria-label="Daily token limit" type="number" min={0} step={10000} value={draft.dailyTokens} onChange={(e) => change({ dailyTokens: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} className="input" />
+            </Pick>
+          </Row>
         </Section>
         <Section title="Built-in extensions">
           {builtIn.map((x) => (
@@ -151,7 +156,7 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
             title="Isolated"
             description={
               <>
-                Only its own folder: no workspace, memory, skill library or settings, and no browser unless you turn it on. Other agents can still read and change its folder and search its chat.
+                Runs in a sandbox with only its own folder: no workspace, memory, skill library, settings or keys, and no browser unless you turn it on. Your other agents can read (not change) its folder, search its chat, and learn from what it puts in shared/.
                 {agent && draft.isolated !== agent.isolated && " Saving moves its folder and restarts it."}
               </>
             }

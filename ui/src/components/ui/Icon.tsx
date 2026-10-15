@@ -1,6 +1,6 @@
 import {
   ArrowDown, ArrowUp, Bell, Bot, Brain, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Download, ExternalLink, FileText, Globe, Info, Key, List, LoaderCircle, Mail, Mic, MonitorSmartphone, MousePointer2,
-  PanelRight, Paperclip, Plug, Plus, Puzzle, RotateCcw, Search, Settings, Share, Sparkles, Square, Sun, TriangleAlert, User, X,
+  PanelRight, Paperclip, Plug, Plus, Puzzle, RotateCcw, Search, Settings, Share, ShieldCheck, Sparkles, Square, Sun, TriangleAlert, User, X,
 } from "lucide-react";
 
 const ICONS = {
@@ -41,6 +41,7 @@ const ICONS = {
   share: Share,
   retry: RotateCcw,
   devices: MonitorSmartphone,
+  shield: ShieldCheck,
 } as const;
 
 export type IconName = keyof typeof ICONS | "spinner" | "stop";

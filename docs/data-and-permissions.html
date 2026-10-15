@@ -46,13 +46,14 @@
 <tr><td>0</td><td>The daemon (and the short-lived model-listing pi)</td><td>root's</td></tr>
 <tr><td>1000 (<code>node</code>)</td><td>Xvnc, openbox, Chromium</td><td>none</td></tr>
 <tr><td>1100</td><td>The curator's pi</td><td>none</td></tr>
-<tr><td>1200</td><td>Plugin programs of regular agents; <code>pi mcp list</code></td><td>2000 and every isolated agent's gid (the status check: 2000 only)</td></tr>
+<tr><td>1200</td><td>Plugin programs of regular agents; <code>pi mcp list</code></td><td>2000</td></tr>
 <tr><td>gid 2000 <code>agents</code></td><td>The group that shares the workspace, the skills, the extensions and the installed tools</td><td>-</td></tr>
-<tr><td>2001 and up</td><td>One per agent (<code>uid</code> in its profile); its gid is the same number</td><td>Regular: 2000 and every isolated agent's gid. Isolated: none.</td></tr>
+<tr><td>2001 and up</td><td>One per agent (<code>uid</code> in its profile); its gid is the same number</td><td>Regular: 2000. Isolated: none.</td></tr>
+<tr><td>102001 and up</td><td>An isolated agent's plugin programs, in the sandbox: the agent's uid + 100000</td><td>The agent's gid</td></tr>
 </tbody></table></div>
 <h3 id="groups">How a regular agent's groups are computed</h3>
-<p><code>userOf(agent, agents)</code> in <code>agents.mjs</code> returns <code>{uid, gid: uid, groups}</code> where <code>groups</code> is <code>[2000, ...isolatedGroups(agents)]</code> for a regular agent and <code>[]</code> for an isolated one. <code>isolatedGroups</code> is the uid of every isolated agent, read from all profiles when the pi starts. A process's groups are fixed when it starts, so whenever the set of isolated agents changes (one made, deleted, or switched either way) the daemon calls <code>restartRegular()</code>: every running regular pi starts anew, idle ones now and busy ones when their reply ends.</p>
-<p>Why regular agents are in every isolated agent's group: an isolated agent's folder is its user's and its own group's with mode 2770. Being in that group lets regular agents read and change it. Because the folder is setgid and everything runs with umask 007, what they make there is in the isolated agent's group with group write (0660 files, 2770 folders), so the isolated agent can read, change and delete it. Another isolated agent is in neither group and cannot open it.</p>
+<p><code>userOf(agent)</code> in <code>agents.mjs</code> returns <code>{uid, gid: uid, groups}</code> where <code>groups</code> is <code>[2000]</code> for a regular agent and <code>[]</code> for an isolated one.</p>
+<p>How regular agents read an isolated agent's folder without changing it: the folder is its user's and its own group's with mode 2775, setgid, and the isolated pi runs with umask 002, so what it makes is 0664 or 2775 in its group. The agent and its plugin programs (in its group) write there; everyone else may only read, and "everyone else" can only be someone who passes through <code>isolated/</code>, which is <code>root:agents</code> 0750: the regular agents and their plugins. An isolated agent is in the sandbox and sees no other isolated folder at all.</p>
 </section>
 
 <section class="card" id="tree">
@@ -75,7 +76,7 @@
 <li><div class="row"><span class="name">auth.json mcp.json devices.json push.json settings.json …</span><span class="tag root">root</span><span class="meta">root:root 0600</span><span class="what">Every file at the top of <code>agent/</code> except the two below: keys and sign-ins, plugin secrets, paired devices, notification keys, pi's settings, <code>models.json</code>, <code>curator.json</code>, <code>routines.json</code>, <code>browser.json</code>, <code>install.json</code>, <code>order.json</code>. Set at every start.</span></div></li>
 <li><div class="row"><span class="name">USER.md MEMORY.md</span><span class="tag grp">group read</span><span class="meta">root:agents 0640</span><span class="what">Read by every regular agent's pi; written only by the daemon.</span></div></li>
 <li><div class="row"><span class="name">profiles/</span><span class="tag grp">group</span><span class="meta">root:agents 0750</span></div>
-<ul><li><div class="row"><span class="name">&lt;id&gt;/agent.json</span><span class="tag own">agent read</span><span class="meta">folder root:&lt;uid&gt; 0750, file root:&lt;uid&gt; 0640</span><span class="what">The agent reads its own profile; only root writes it. Regular agents can also read isolated agents' profiles, being in their groups.</span></div></li></ul></li>
+<ul><li><div class="row"><span class="name">&lt;id&gt;/agent.json</span><span class="tag own">agent read</span><span class="meta">folder root:&lt;uid&gt; 0750, file root:&lt;uid&gt; 0640</span><span class="what">The agent reads its own profile; only root writes it.</span></div></li></ul></li>
 <li><div class="row"><span class="name">sessions/</span><span class="tag grp">group</span><span class="meta">root:agents 0750</span></div>
 <ul><li><div class="row"><span class="name">&lt;id&gt;/*.jsonl</span><span class="tag own">own</span><span class="meta">&lt;uid&gt;:&lt;uid&gt; 0700</span><span class="what">A regular agent's chat, written by its pi. A deleted agent's kept chat: <code>root:root</code>, <code>go-rwx</code>.</span></div></li></ul></li>
 <li><div class="row"><span class="name">skills/</span><span class="tag grp">group write</span><span class="meta">root:agents 2770</span><span class="what">The shared skill library: regular agents read and write it.</span></div></li>
@@ -85,12 +86,14 @@
 <li><div class="row"><span class="name">workspace/</span><span class="tag grp">group</span><span class="meta">root:agents 2770</span><span class="what">The shared files you browse. setgid: what is made in it stays in <code>agents</code>.</span></div>
 <ul><li><div class="row"><span class="name">&lt;folder&gt;/</span><span class="tag grp">group</span><span class="meta">&lt;uid&gt;:agents 2770</span><span class="what">A regular agent's home and cwd. Kept after deletion: <code>root:agents</code>.</span></div>
 <ul><li><div class="row"><span class="name">uploads/</span><span class="tag grp">group</span><span class="meta">&lt;uid&gt;:agents 2770, files &lt;uid&gt;:agents 0660</span><span class="what">Attachments, written by the daemon.</span></div></li></ul></li></ul></li>
-<li><div class="row"><span class="name">isolated/</span><span class="tag grp">group</span><span class="meta">root:agents 0751</span><span class="what">The group may look in; an isolated agent only passes through to its own folder.</span></div>
-<ul><li><div class="row"><span class="name">&lt;folder&gt;/</span><span class="tag iso">isolated</span><span class="meta">&lt;uid&gt;:&lt;uid&gt; 2770</span><span class="what">An isolated agent's home and cwd. Regular agents and their plugin programs are in its group. Its <code>uploads/</code> are made as in the workspace (group <code>agents</code>).</span></div></li></ul></li>
+<li><div class="row"><span class="name">isolated/</span><span class="tag grp">group</span><span class="meta">root:agents 0750</span><span class="what">Regular agents look in. Mounted into the sandbox, where each isolated agent sees only its own folder.</span></div>
+<ul><li><div class="row"><span class="name">&lt;folder&gt;/</span><span class="tag iso">isolated</span><span class="meta">&lt;uid&gt;:&lt;uid&gt; 2775</span><span class="what">An isolated agent's home and cwd: it and its plugins write, regular agents read. Its <code>uploads/</code> are 2775, files 0664. <code>shared/</code> in it is what the curator files for your other agents.</span></div></li></ul></li>
 <li><div class="row"><span class="name">isolated-sessions/</span><span class="tag root">root</span><span class="meta">root:root 0711</span><span class="what">No one but root may list it; each isolated agent passes through to its own.</span></div>
 <ul><li><div class="row"><span class="name">&lt;id&gt;/*.jsonl</span><span class="tag own">own</span><span class="meta">&lt;uid&gt;:&lt;uid&gt; 0700</span><span class="what">An isolated agent's chat. The daemon still reads it for search, <code>fetch_knowledge</code> and the curator.</span></div></li></ul></li>
 <li><div class="row"><span class="name">homes/</span><span class="tag grp">group</span><span class="meta">root:agents 0751</span></div>
-<ul><li><div class="row"><span class="name">&lt;folder&gt;/</span><span class="tag own">own</span><span class="meta">&lt;uid&gt;:&lt;uid&gt; 0700</span><span class="what">The agent's <code>HOME</code>: its tools' settings and sign-ins; an isolated agent's own installs in <code>.local/</code>.</span></div></li></ul></li>
+<ul><li><div class="row"><span class="name">&lt;folder&gt;/</span><span class="tag own">own</span><span class="meta">&lt;uid&gt;:&lt;uid&gt; 0700</span><span class="what">A regular agent's <code>HOME</code>: its tools' settings and sign-ins.</span></div></li></ul></li>
+<li><div class="row"><span class="name">isolated-homes/</span><span class="tag root">root</span><span class="meta">root:root 0711</span><span class="what">Mounted into the sandbox.</span></div>
+<ul><li><div class="row"><span class="name">&lt;folder&gt;/</span><span class="tag own">own</span><span class="meta">&lt;uid&gt;:&lt;uid&gt; 0700</span><span class="what">An isolated agent's <code>HOME</code>, with its own installs in <code>.local/</code>.</span></div></li></ul></li>
 <li><div class="row"><span class="name">knowledge/</span><span class="tag cur">curator</span><span class="meta">1100:1100 0700</span><span class="what">The vault. Agents reach it only through <code>fetch_knowledge</code>.</span></div></li>
 </ul></li>
 </ul>
@@ -99,15 +102,18 @@
 <li><div class="row"><span class="name">/var/lib/weilo/</span><span class="tag tmp">container</span><span class="meta">root:agents 0751</span><span class="what">Not kept across container rebuilds; made again at start.</span></div>
 <ul><li><div class="row"><span class="name">pi/</span><span class="meta">root:agents 0751</span></div>
 <ul>
-<li><div class="row"><span class="name">&lt;id&gt;/</span><span class="tag own">own</span><span class="meta">&lt;uid&gt;:&lt;uid&gt; 0700, files 0600</span><span class="what">A pi's settings, models and plugins; root's 0700 while being written. An isolated agent's copies of its profile, skills and extensions in it are <code>root:root</code>, readable, not writable.</span></div></li>
-<li><div class="row"><span class="name">plugins/</span><span class="tag cur">1200</span><span class="meta">1200:1200 0700</span><span class="what"><code>mcp.json</code> with secrets for <code>pi mcp list</code>; HOME of regular agents' plugin programs.</span></div></li>
+<li><div class="row"><span class="name">&lt;id&gt;/</span><span class="tag own">own</span><span class="meta">&lt;uid&gt;:&lt;uid&gt; 0700, files 0600</span><span class="what">A regular pi's settings, models and plugins; root's 0700 while being written. An isolated agent's is written by the sandbox, inside its own namespaces, with a copy of its profile.</span></div></li>
+<li><div class="row"><span class="name">plugins/</span><span class="tag cur">1200</span><span class="meta">1200:1200 0700</span><span class="what"><code>mcp.json</code> with secrets for <code>pi mcp list</code>; HOME and working folder of regular agents' plugin programs.</span></div></li>
+<li><div class="row"><span class="name">plugins-cwd/</span><span class="tag root">root</span><span class="meta">root:root 0755</span><span class="what">Empty: the working folder of regular agents' plugin programs, so none starts where an agent writes.</span></div></li>
 <li><div class="row"><span class="name">curator/</span><span class="tag cur">1100</span><span class="meta">1100:1100 0700</span><span class="what">The curator's pi folder and HOME.</span></div></li>
 </ul></li></ul></li>
 <li><div class="row"><span class="name">/tmp/weilo/</span><span class="tag tmp">temporary</span><span class="meta">root:agents 0751</span></div>
 <ul><li><div class="row"><span class="name">&lt;id&gt;/</span><span class="tag own">own</span><span class="meta">&lt;uid&gt;:&lt;uid&gt; 0700</span><span class="what">Scratch, emptied when the agent goes idle and at every start.</span></div></li></ul></li>
+<li><div class="row"><span class="name">/var/lib/weilo/chats.db</span><span class="tag root">root</span><span class="meta">root 0600</span><span class="what">The chat index, made again from the chat files after a restart.</span></div></li>
+<li><div class="row"><span class="name">/run/weilo-sandbox/</span><span class="tag root">root</span><span class="meta">root 0700, volume <code>sandbox</code></span><span class="what"><code>ctl.sock</code> (the sandbox listens: start a program) and <code>api.sock</code> (the app listens: isolated agents' calls).</span></div></li>
 <li><div class="row"><span class="name">/tmp/weilo-admin/</span><span class="tag root">root</span><span class="meta">root 0700</span><span class="what"><code>admin.sock</code>: a pairing code for whoever opens it.</span></div></li>
 <li><div class="row"><span class="name">/tmp/weilo-screen/</span><span class="tag cur">1000</span><span class="meta">1000:1000 0700</span><span class="what">VNC socket and Xauthority cookie (0600).</span></div></li>
-<li><div class="row"><span class="name">/home/node/.local/</span><span class="tag grp">group write</span><span class="meta">root:agents g+rwX,o+rX</span><span class="what">Volume <code>tools</code>: what regular agents install. Given to the group (recursively) at start when it is not yet in it. Isolated agents can read it.</span></div></li>
+<li><div class="row"><span class="name">/home/node/.local/</span><span class="tag grp">group write</span><span class="meta">root:agents g+rwX,o+rX</span><span class="what">Volume <code>tools</code>: what regular agents install. Given to the group (recursively) at start when it is not yet in it. Not in the sandbox.</span></div></li>
 <li><div class="row"><span class="name">/home/node/.browser/</span><span class="tag cur">1000</span><span class="meta">node:node 0700</span><span class="what">Volume <code>browser</code>: Chromium's profile, logins and cookies.</span></div></li>
 <li><div class="row"><span class="name">/app/</span><span class="meta">image files</span><span class="what">The daemon, the bundled extensions and the built UI.</span></div></li>
 </ul>
@@ -117,10 +123,10 @@
 <h2>How owners and modes are kept right</h2>
 <ul>
 <li><strong>At every start</strong> <code>secure()</code> sets the top of each place shown above, and each agent's profile. It does not walk whole trees, except two one-time repairs: the tools volume when its group is not <code>agents</code>, and an isolated folder whose group is not its agent's (made before isolated agents had a group of their own), whose contents are handed to the agent once.</li>
-<li><strong>When made</strong> the folders of an agent are set by <code>makeHome</code> (home 2770 in its home group, chat 0700, HOME 0700) every time its pi starts, in case you removed one.</li>
+<li><strong>When made</strong> the folders of an agent are set by <code>makeHome</code> (home 2770 in <code>agents</code>, or 2775 in its own group when isolated; chat 0700; HOME 0700) every time its pi starts, in case you removed one.</li>
 <li><strong>umask 007</strong> in the daemon and setgid folders mean new files are never readable by everyone and keep the folder's group.</li>
 <li><strong>Through the folder itself</strong>: owners are set on an open handle with <code>O_NOFOLLOW</code>, never through a link an agent may have put in place (<a href="security.html#users">link-safe setup</a>).</li>
-<li><strong>Moves</strong> (to or from isolated) hand the whole home to the agent in its new group: <code>ug+rwX,o-rwx</code>, setgid on every folder.</li>
+<li><strong>Moves</strong> (to or from isolated) hand the whole home to the agent in its new group, setgid on every folder: <code>ug+rwX,o+rX,o-w</code> when isolated, <code>ug+rwX,o-rwx</code> when regular. Its chat and HOME move with it.</li>
 <li><strong>Not on Linux</strong>: when the daemon is not root (a development run), none of this happens and everything runs as the daemon's user.</li>
 </ul>
 <h3>Browsing the folder from the host</h3>
@@ -129,13 +135,14 @@
 
 <section class="card" id="migrations">
 <h2>Migrations</h2>
-<p><code>daemon/migrate.mjs</code>, run at every start before anything reads the folder. A folder without <code>weilo.json</code> counts as data version 1. Each step runs once and the version is saved after it; this version's <code>DATA_VERSION</code> is 4. A folder with a higher version stops the start: "The data folder was made by a newer Weilo Agents … Update the app, or restore the folder from a backup."</p>
+<p><code>daemon/migrate.mjs</code>, run at every start before anything reads the folder. A folder without <code>weilo.json</code> counts as data version 1. Each step runs once and the version is saved after it; this version's <code>DATA_VERSION</code> is 5. A folder with a higher version stops the start: "The data folder was made by a newer Weilo Agents … Update the app, or restore the folder from a backup."</p>
 <div class="table wide"><table>
 <thead><tr><th>Step</th><th>What it does</th></tr></thead>
 <tbody>
 <tr><td>1 &rarr; 2</td><td>Each agent without a <code>folder</code> gets one (its name as a slug, made unique) and a home in the workspace. Older files stay at the top of the workspace, shared.</td></tr>
 <tr><td>2 &rarr; 3</td><td>Each agent gets a <code>uid</code>. The workspace and skills go to <code>root:agents</code> with group write; the extensions to the group, read only; the vault to the curator; the chats folder to root; each home to its agent in <code>agents</code>; each chat to its agent alone.</td></tr>
 <tr><td>3 &rarr; 4</td><td>Every profile gets explicit <code>isolated: false</code>, <code>trusted: false</code> (unless already true). <code>lastUid</code> is set to the highest of the profiles' uids and of every file owner from 2001 up found in the data folder and the tools volume, so no uid is ever given twice.</td></tr>
+<tr><td>4 &rarr; 5</td><td>Each isolated agent's HOME moves from <code>homes/</code> to <code>isolated-homes/</code> (the sandbox mounts only the latter), and its folder becomes readable, not writable, for the regular agents (<code>ug+rwX,o+rX,o-w</code>; <code>secure()</code> sets the folder itself to 2775).</td></tr>
 </tbody></table></div>
 <p>Adding a step: raise <code>DATA_VERSION</code> and add <code>STEPS[n]</code> that turns a version-<code>n</code> folder into version <code>n + 1</code>, in the same release (<a href="RELEASING.md">RELEASING.md</a>, <a href="development.html#invariants">invariants</a>).</p>
 </section>

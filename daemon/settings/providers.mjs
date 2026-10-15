@@ -1,6 +1,7 @@
-import { spawnPi } from "../agents/pi.mjs";
+import { spawn } from "node:child_process";
+import { piRpc } from "../agents/pi.mjs";
 import { AGENT_DIR, AUTH, fail, PI_ENV, readJson, SETTINGS, updateJson } from "../common.mjs";
-import { BIN, MODELS_TIMEOUT_MS, PROVIDERS } from "../config.mjs";
+import { BIN, MODELS_FOR_MS, MODELS_TIMEOUT_MS, PROVIDERS } from "../config.mjs";
 import { setReserves } from "./compaction.mjs";
 
 const check = (id) => {
@@ -20,16 +21,26 @@ export async function saveKey(id, key) {
   check(id);
   if (typeof key !== "string" || !key.trim()) throw fail(400, "Type a key");
   await updateJson(AUTH, (auth) => ({ ...auth, [id]: { type: "api_key", key: key.trim() } }));
+  forgetModels();
   void syncCompaction();
 }
 
 export async function removeKey(id) {
   check(id);
   await updateJson(AUTH, ({ [id]: _removed, ...rest }) => rest);
+  forgetModels();
 }
 
-export async function availableModels() {
-  const pi = spawnPi([BIN.pi, "--mode", "rpc", "--no-session", "--no-mcp", "--no-skills", "--no-extensions", "--no-context-files"], { cwd: AGENT_DIR, env: PI_ENV });
+let cache = null;
+export const forgetModels = () => (cache = null);
+
+export function availableModels() {
+  if (!cache || Date.now() - cache.at > MODELS_FOR_MS) cache = { at: Date.now(), list: askModels().catch((err) => ((cache = null), Promise.reject(err))) };
+  return cache.list;
+}
+
+async function askModels() {
+  const pi = piRpc(spawn(BIN.pi, ["--mode", "rpc", "--no-session", "--no-mcp", "--no-skills", "--no-extensions", "--no-context-files"], { cwd: AGENT_DIR, env: { ...process.env, ...PI_ENV } }));
   let timer;
   const late = new Promise((_, reject) => (timer = setTimeout(() => reject(fail(504, "Pi did not list the models in time")), MODELS_TIMEOUT_MS)));
   try {
@@ -57,5 +68,6 @@ export async function syncCompaction() {
 export async function setEnabledModels(ids) {
   if (!Array.isArray(ids) || !ids.every((id) => typeof id === "string")) throw fail(400, "The model list is not valid");
   await updateJson(SETTINGS, (settings) => ({ ...settings, enabledModels: ids }));
+  forgetModels();
   void syncCompaction();
 }

@@ -1,14 +1,14 @@
 import { execFile } from "node:child_process";
-import { mkdir } from "node:fs/promises";
+import { mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { homeOf, newFolder, newUid, profilePath, profiles } from "./agents/agents.mjs";
-import { AGENT_DIR, APP, KNOWLEDGE, readJson, ROOT, SESSIONS, TOOLS, updateJson, WORKSPACE } from "./common.mjs";
+import { homeKindOf, homeOf, isIsolated, newFolder, newUid, profilePath, profiles, userHomeOf } from "./agents/agents.mjs";
+import { AGENT_DIR, APP, HOMES, ISOLATED_HOMES, KNOWLEDGE, readJson, ROOT, SESSIONS, TOOLS, updateJson, WORKSPACE } from "./common.mjs";
 import { AGENTS_GID, BIN, CURATOR_UID, FIRST_AGENT_UID } from "./config.mjs";
 import { tree } from "./users.mjs";
 import { BUILD } from "./version.mjs";
 
-export const DATA_VERSION = 4;
+export const DATA_VERSION = 5;
 const STEPS = {
   async 1() {
     const taken = [];
@@ -41,6 +41,13 @@ const STEPS = {
     const owners = (stdout ?? "").split("\n").filter(Boolean).map(Number);
     const uids = [...owners, ...(await profiles()).map((a) => a.uid)].filter(Number.isInteger);
     await updateJson(APP, (data) => ({ ...data, lastUid: Math.max(data.lastUid ?? 0, ...uids) }));
+  },
+  async 4() {
+    await mkdir(ISOLATED_HOMES, { recursive: true });
+    for (const agent of (await profiles()).filter(isIsolated)) {
+      await rename(join(HOMES, agent.folder), userHomeOf(agent)).catch((err) => err.code === "ENOENT" || Promise.reject(err));
+      await tree(homeOf(agent), agent.uid, agent.uid, homeKindOf(agent).tree);
+    }
   },
 };
 

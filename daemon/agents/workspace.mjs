@@ -13,7 +13,7 @@ export const makeScratch = (agent) => clearing.then(() => folder(SCRATCH, 0, AGE
 
 export const clearScratch = (id) => (clearing = clearing.then(() => rm(id ? scratchOf(id) : SCRATCH, { recursive: true, force: true }).catch(() => {})));
 
-export const rulesOf = (agent) => (isIsolated(agent) ? isolatedRules(homeOf(agent), scratchOf(agent.id)) : workspaceRules(agent.folder, scratchOf(agent.id)));
+export const rulesOf = (agent) => (isIsolated(agent) ? isolatedRules(homeOf(agent)) : workspaceRules(agent.folder, scratchOf(agent.id)));
 
 const workspaceRules = (folder, scratch) => `## Your folder and the workspace
 
@@ -27,13 +27,14 @@ Your current folder is your home: ${folder}/ in the workspace, ${WORKSPACE}. The
 - Never delete, move or rename files you did not make unless the user asks.
 - When you name a file for the user, give its path from your folder (\`notes/plan.md\`) or in full; the chat makes it a link.`;
 
-const isolatedRules = (home, scratch) => `## Your folder
+const isolatedRules = (home) => `## Your folder
 
-Your current folder, ${home}, is the only one you have: you have no access to the user's workspace, the other agents' folders or the shared memory. The user looks through your folder, and the other agents may read and change it too.
+Your current folder, ${home}, is the only one you have: you have no access to the user's workspace, the other agents' folders or the shared memory, and you run in a sandbox of your own. The user looks through your folder, and the user's other agents may read it (not change it).
 
 - Save your work here: results, documents, code for a project. Put a task's files together in a folder with a clear name, and continue in the same folder when you come back to the task. Files the user attaches are in \`uploads/\` here.
 - Keep your own notes as files here (for example \`notes.md\`): what the user told you, decisions, what you learned. Read them when you start on a task; nothing else is kept for you between chats.
-- Scratch work goes in ${scratch}: downloaded or saved web pages, raw search results, one-off scripts, logs, intermediate data. It is emptied after you finish, so keep nothing there that the user needs.
+- What the user's other agents should know about the user from your work (preferences, facts, decisions, results), write as short Markdown in \`shared/\` here (for example \`shared/notes.md\`). It is filed into the user's shared knowledge. Never put secrets there.
+- Scratch work goes in /tmp: downloaded or saved web pages, raw search results, one-off scripts, logs, intermediate data. It is emptied when you stop, so keep nothing there that the user needs.
 - To get a skill, a plugin or an extension, ask for it with manage_agents; the user decides.
 - Name files for what they are, update a file instead of saving new copies of it, and delete temporary files before you finish.
 - When you name a file for the user, give its path from your folder (\`notes/plan.md\`) or in full; the chat makes it a link.`;

@@ -2,14 +2,14 @@
 
 A release is a Git tag. The workflow `.github/workflows/release.yml` does the rest.
 
-1. Pick the version (SemVer; `0.x` while things still change). Put it in `VERSION` and describe the changes in `CHANGELOG.md`.
+1. Pick the version (SemVer; `0.x` while things still change). Put it in `VERSION` and describe the changes in `CHANGELOG.md`. CI is green, and the [manual check](operating.html#release-check) is done.
 2. Commit and merge that to the default branch.
 3. Tag the commit and push the tag:
    ```sh
    git tag v0.1.0
    git push origin v0.1.0
    ```
-4. The workflow checks the tag equals `VERSION`, builds the image for amd64 and arm64, pushes `ghcr.io/shyam1203/weilo-agents:0.1.0` (and `latest` for a version without a `-` suffix), and publishes a GitHub release with `weilo-agents-0.1.0.zip` (`compose.yaml`, the start and update scripts, `VERSION`, `README.md`). `update.cmd` and `update.sh` read the newest release from the GitHub API, so a release is all an update needs.
+4. The workflow checks the tag equals `VERSION`, type-checks and tests the daemon, builds the image for amd64 and arm64 with provenance and an SBOM, pushes `ghcr.io/shyam1203/weilo-agents:0.1.0` (and `latest` for a version without a `-` suffix; the app and the sandbox both run it), and publishes a GitHub release with `weilo-agents-0.1.0.zip` (`compose.yaml`, the start and update scripts, `VERSION`, `README.md`, `SECURITY.md`). `update.cmd` and `update.sh` read the newest release from the GitHub API, so a release is all an update needs.
 
 The first time, the package on ghcr.io is private: open it under the repository's Packages, Package settings, and make it public, or users cannot pull it.
 

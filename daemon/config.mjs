@@ -8,6 +8,10 @@ export const PAIR_WRONG_CODES = 10;
 export const DEVICE_COOKIE_S = 400 * 24 * 60 * 60;
 export const DEVICE_SEEN_MS = 60 * MINUTE;
 export const ADMIN_SOCKET = "/tmp/weilo-admin/admin.sock";
+export const SANDBOX_DIR = "/run/weilo-sandbox";
+export const SANDBOX_CTL = `${SANDBOX_DIR}/ctl.sock`;
+export const SANDBOX_API = `${SANDBOX_DIR}/api.sock`;
+export const MAX_SPEC = 1 << 20;
 
 export const CONTACT_URL = "https://api.weilo.xyz/public/contact";
 export const CONTACT_TIMEOUT_MS = 15_000;
@@ -24,11 +28,16 @@ export const PUSH_TTL_S = 24 * 60 * 60;
 export const PUSH_TIMEOUT_MS = 10_000;
 export const PUSH_BODY_CHARS = 180;
 
+export const STALE_DEVICE_DAYS = 90;
+
 export const BROWSER_UID = 1000;
 export const CURATOR_UID = 1100;
 export const PLUGINS_UID = 1200;
 export const AGENTS_GID = 2000;
 export const FIRST_AGENT_UID = 2001;
+export const PLUGIN_UID_OFFSET = 100_000;
+export const REGULAR_HOME = { mode: 0o2770, tree: "ug+rwX,o-rwx", file: 0o660 };
+export const ISOLATED_HOME = { mode: 0o2775, tree: "ug+rwX,o+rX,o-w", file: 0o664 };
 export const SYSTEM_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 export const BIN = {
   setpriv: "/usr/bin/setpriv",
@@ -41,10 +50,13 @@ export const BIN = {
   Xvnc: "/usr/bin/Xvnc",
   openbox: "/usr/bin/openbox",
   chromium: "/usr/bin/chromium",
+  unshare: "/usr/bin/unshare",
+  mount: "/usr/bin/mount",
+  tini: "/usr/bin/tini",
 };
 
 export const PI_TOOLS = ["read", "bash", "edit", "write"];
-export const SHARED_TOOLS = ["skill", "memory", "fetch_knowledge", "manage_settings"];
+export const SHARED_TOOLS = ["skill", "memory", "fetch_knowledge", "manage_settings", "ask_agent"];
 export const CORE_TOOLS = ["show", "ask", "manage_agents", ...SHARED_TOOLS];
 export const PI_BUILTINS = ["mcp", "codemode", "tool-search", "llama.cpp"];
 export const RESERVED_TOOLS = [...new Set([...PI_TOOLS, ...CORE_TOOLS, "codemode"])];
@@ -64,11 +76,13 @@ export const PROVIDERS = [
   { id: "openrouter", name: "OpenRouter", keyUrl: "https://openrouter.ai/keys", signIn: "OpenRouter" },
   { id: "google", name: "Google Gemini", keyUrl: "https://aistudio.google.com/apikey" },
 ];
-export const PI_SDK = "/usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/index.js";
+export const PI_PACKAGE = "/opt/pi/node_modules/@earendil-works/pi-coding-agent";
+export const PI_SDK = `${PI_PACKAGE}/dist/index.js`;
 export const SIGN_IN_AS = "Weilo Agents";
 export const SIGN_IN_TIMEOUT_MS = 15 * MINUTE;
 export const SIGN_IN_STEP_MS = 8000;
 export const MODELS_TIMEOUT_MS = 90_000;
+export const MODELS_FOR_MS = 10 * MINUTE;
 export const COMPACT_AT = (window) => (window >= 1e6 ? 0.4 : window >= 5e5 ? 0.8 : 0.9);
 export const MIN_RESERVE = 16384;
 export const PLUGIN_STATUS_TIMEOUT_MS = 90_000;
@@ -88,6 +102,7 @@ export const FETCH_TOP = 5;
 export const FETCH_EXCERPT = 480;
 export const FETCH_MAX_CHARS = 1800;
 export const CHAT_TAIL = 32e6;
+export const CHAT_CHUNK = 1 << 20;
 
 export const CURATOR_EVERY_MS = 5 * MINUTE;
 export const CURATOR_QUIET_MS = 10 * MINUTE;

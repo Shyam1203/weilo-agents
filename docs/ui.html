@@ -182,10 +182,10 @@
 </figure>
 <ul>
 <li>Avatar, name (with the folder it works in: <code>&lt;folder&gt;/</code> in the workspace, or <code>isolated/&lt;folder&gt;/</code>), instructions.</li>
-<li><strong>Model</strong>: a provider (only connected ones, plus "+ Add provider"), then one of its enabled models (all, when none is enabled), and thinking.</li>
+<li><strong>Model</strong>: a provider (only connected ones, plus "+ Add provider"), then one of its enabled models (all, when none is enabled), thinking, and a daily token limit (0 is none; an existing agent shows today's count).</li>
 <li><strong>Built-in extensions</strong>: a switch for each bundled extension (Browser, Routines).</li>
 <li><strong>Add-ons</strong>: Skills, Plugins and Extensions, each a row that says what is on and opens a list of switches, or "Add" that opens Settings when there are none.</li>
-<li><strong>Access</strong>: <em>Isolated</em> ("Only its own folder: no workspace, memory, skill library or settings, and no browser unless you turn it on. Other agents can still read and change its folder and search its chat."; when changed on an existing agent: "Saving moves its folder and restarts it."). Turning it on also switches the browser off in the form. <em>Always allow its own changes</em> ("Changes it asks for to its own instructions, thinking or skills apply without asking you; the chat shows each one. Anything else still asks.").</li>
+<li><strong>Access</strong>: <em>Isolated</em> ("Runs in a sandbox with only its own folder: no workspace, memory, skill library, settings or keys, and no browser unless you turn it on. Your other agents can read (not change) its folder, search its chat, and learn from what it puts in shared/."; when changed on an existing agent: "Saving moves its folder and restarts it."). Turning it on also switches the browser off in the form. <em>Always allow its own changes</em> ("Changes it asks for to its own instructions, thinking or skills apply without asking you; the chat shows each one. Anything else still asks.").</li>
 <li>Delete opens a dialog that can keep the chat and the files.</li>
 </ul>
 </section>
@@ -203,9 +203,10 @@
 <tbody>
 <tr><td>Providers</td><td>Connected providers first (In use), then the rest; key field or sign-in with an account; Models switches; Remove</td><td><code>/api/providers</code>, <code>…/sign-in</code>, <code>/api/models</code></td></tr>
 <tr><td>Devices</td><td>Paired devices with dates, Remove, Add a device (code, link, minutes left)</td><td><code>/api/devices</code>, <code>/api/devices/code</code></td></tr>
+<tr><td>Security</td><td>Checks (sandbox, account sign-ins and the browser for isolated agents, unused devices, version) and the latest 50 changes from the audit log, in plain words</td><td><code>/api/security</code></td></tr>
 <tr><td>Notifications</td><td>This device on or off, the other devices, mute per agent</td><td><code>/api/push</code>, <code>/api/push/devices</code>, <code>/api/push/muted</code></td></tr>
 <tr><td>About you</td><td>Name and text for <code>USER.md</code></td><td><code>/api/user</code></td></tr>
-<tr><td>Memory</td><td>Curator model; notes one by one, or as text</td><td><code>/api/memory</code>, <code>/api/memory/curator</code></td></tr>
+<tr><td>Memory</td><td>Curator model; Ask before saving; notes one by one, or as text</td><td><code>/api/memory</code>, <code>/api/memory/curator</code></td></tr>
 <tr><td>Browser</td><td>"Ask me first" and the rule; says it is a request, not a lock</td><td><code>/api/browser/rule</code></td></tr>
 <tr><td>Appearance</td><td>System, Light, Dark or Weilo Theme (<code>data-theme</code> on <code>&lt;html&gt;</code>)</td><td>none (stored in the browser)</td></tr>
 <tr><td>About</td><td>Version, build, pi version, update notice, the update check switch</td><td><code>/api/version</code>, <code>/api/update</code></td></tr>

@@ -3,16 +3,17 @@ import { createServer } from "node:http";
 import { createServer as createSocketServer } from "node:net";
 import { dirname } from "node:path";
 import { createAgent, filesOf, getAgent, isIsolated, mayCall, profiles, listAgents, removeFiles, removeProfile, setOrder, updateAgent } from "./agents/agents.mjs";
-import { abort, activityOf, answer, compact, contextOf, holding, prompt, restart, restartAll, restartRegular, skillCommands, stop, stopAll } from "./agents/runner.mjs";
-import { manageAgents } from "./agents/manage.mjs";
+import { abort, activityOf, answer, askUser, compact, contextOf, holding, prompt, restart, restartAll, skillCommands, stop, stopAll } from "./agents/runner.mjs";
+import { askAgent, manageAgents } from "./agents/manage.mjs";
 import { searchChats } from "./agents/search.mjs";
+import { usageToday } from "./agents/usage.mjs";
 import { earlierOf } from "./agents/sessions.mjs";
 import { clearScratch } from "./agents/workspace.mjs";
 import { closeBrowser, giveBack, hasWindow, isTaken, showBrowser, takeOver, useBrowser } from "./browser/browser.mjs";
 import { getRule, saveRule } from "./browser/rule.mjs";
 import { cdpUpgrade, isCdpPath, startScreen, viewUpgrade } from "./browser/screen.mjs";
 import { fail } from "./common.mjs";
-import { ADMIN_SOCKET, PORT, SYSTEM_PATH } from "./config.mjs";
+import { ADMIN_SOCKET, PORT, SANDBOX_API, SANDBOX_DIR, SYSTEM_PATH } from "./config.mjs";
 import { sendContact } from "./contact.mjs";
 import { accessToken, providerOf, proxyModel } from "./gateway/models.mjs";
 import { pipePlugin, pluginOf, proxyPlugin } from "./gateway/plugins.mjs";
@@ -35,6 +36,8 @@ import { addSkills, listSkills, removeSkill, saveSkill } from "./settings/skills
 import { manageSettings } from "./settings/manage.mjs";
 import { getUser, saveUser } from "./settings/user.mjs";
 import { setUpdateCheck, updateStatus } from "./update.mjs";
+import { audit } from "./audit.mjs";
+import { securityReport } from "./security.mjs";
 import { secure } from "./users.mjs";
 import { BUILD } from "./version.mjs";
 
@@ -44,9 +47,10 @@ delete process.env.npm_config_prefix;
 delete process.env.PYTHONUSERBASE;
 
 const routes = [];
-const route = (method, path, handler, { tool = null } = {}) =>
-  routes.push({ method, handler, tool, scoped: path.startsWith("/api/agents/:id"), pattern: new RegExp(`^${path.replace(":id", "([^/]+)").replace(":rid", "([^/]+)")}$`) });
-const agentRoute = (method, path, tool, handler) => route(method, path, handler, { tool });
+const route = (method, path, handler, { tool = null, audited = method !== "GET" } = {}) =>
+  routes.push({ method, path, handler, tool, audited, scoped: path.startsWith("/api/agents/:id"), pattern: new RegExp(`^${path.replace(":id", "([^/]+)").replace(":rid", "([^/]+)")}$`) });
+const agentRoute = (method, path, tool, handler, options = {}) => route(method, path, handler, { tool, ...options });
+const quiet = { audited: false };
 
 const forAll = (change) => async (req) => {
   const result = await change(req);
@@ -55,6 +59,7 @@ const forAll = (change) => async (req) => {
 };
 
 route("GET", "/api/version", () => BUILD);
+route("GET", "/api/security", () => securityReport());
 route("GET", "/api/devices", ({ who }) => pairedDevices(who.device));
 route("POST", "/api/devices/code", () => newCode());
 route("DELETE", "/api/devices/:id", ({ id }) => unpair(id));
@@ -97,19 +102,15 @@ route("PUT", "/api/browser/rule", forAll(({ body }) => saveRule(body)));
 route("GET", "/api/search", ({ query }) => searchChats(query.get("q")));
 route("GET", "/api/agents", async ({ query }) => {
   if (query.has("seen")) markSeen();
-  return (await listAgents()).map((agent) => ({ ...agent, working: activityOf(agent.id) !== null, doing: activityOf(agent.id), taken: isTaken(agent.id) }));
+  const [agents, used] = await Promise.all([listAgents(), usageToday()]);
+  return agents.map((agent) => ({ ...agent, used: used[agent.id] ?? 0, working: activityOf(agent.id) !== null, doing: activityOf(agent.id), taken: isTaken(agent.id) }));
 });
-route("POST", "/api/agents", async ({ body }) => {
-  const agent = await createAgent(body);
-  if (isIsolated(agent)) await restartRegular();
-  return agent;
-});
-route("PUT", "/api/agents", ({ body }) => setOrder(body.order));
+route("POST", "/api/agents", ({ body }) => createAgent(body));
+route("PUT", "/api/agents", ({ body }) => setOrder(body.order), quiet);
 route("PUT", "/api/agents/:id", async ({ id, body }) => {
   const moves = typeof body.isolated === "boolean" && body.isolated !== isIsolated(await getAgent(id));
   const agent = moves ? await holding(id, () => updateAgent(id, body)) : await updateAgent(id, body);
   await restart(id);
-  if (moves) await restartRegular();
   return agent;
 });
 route("DELETE", "/api/agents/:id", async ({ id, body }) => {
@@ -119,21 +120,20 @@ route("DELETE", "/api/agents/:id", async ({ id, body }) => {
   await stop(id);
   await closeBrowser(id);
   await removeFiles(agent, { keepChat: body.keepChat === true, keepFiles: body.keepFiles === true });
-  if (isIsolated(agent)) await restartRegular();
 });
-route("POST", "/api/agents/:id/message", ({ id, body }) => prompt(id, body));
-route("POST", "/api/agents/:id/abort", ({ id }) => abort(id));
-route("POST", "/api/agents/:id/answer", ({ id, body }) => answer(id, body));
+route("POST", "/api/agents/:id/message", ({ id, body }) => prompt(id, body), quiet);
+route("POST", "/api/agents/:id/abort", ({ id }) => abort(id), quiet);
+route("POST", "/api/agents/:id/answer", ({ id, body }) => answer(id, body), quiet);
 route("GET", "/api/agents/:id/commands", ({ id }) => skillCommands(id));
 route("GET", "/api/agents/:id/context", ({ id }) => contextOf(id));
 route("GET", "/api/agents/:id/earlier", ({ id, query }) => earlierOf(id, Math.max(0, Number(query.get("skip")) || 0)));
-route("POST", "/api/agents/:id/reload", ({ id }) => restart(id));
-route("POST", "/api/agents/:id/compact", ({ id, body }) => compact(id, body.instructions));
-agentRoute("POST", "/api/agents/:id/browser", "browser", async ({ id, body }) => ({ text: await useBrowser(id, body) }));
+route("POST", "/api/agents/:id/reload", ({ id }) => restart(id), quiet);
+route("POST", "/api/agents/:id/compact", ({ id, body }) => compact(id, body.instructions), quiet);
+agentRoute("POST", "/api/agents/:id/browser", "browser", async ({ id, body }) => ({ text: await useBrowser(id, body) }), quiet);
 route("GET", "/api/agents/:id/browser", async ({ id }) => ({ taken: isTaken(id), hasWindow: await hasWindow(id) }));
-route("POST", "/api/agents/:id/browser/show", ({ id }) => showBrowser(id));
-route("POST", "/api/agents/:id/browser/take-over", ({ id }) => takeOver(id));
-route("POST", "/api/agents/:id/browser/give-back", ({ id }) => giveBack(id));
+route("POST", "/api/agents/:id/browser/show", ({ id }) => showBrowser(id), quiet);
+route("POST", "/api/agents/:id/browser/take-over", ({ id }) => takeOver(id), quiet);
+route("POST", "/api/agents/:id/browser/give-back", ({ id }) => giveBack(id), quiet);
 agentRoute("GET", "/api/agents/:id/model-key/:rid", "model", async ({ id, rid }) => {
   if (providerOf((await getAgent(id)).model) !== rid) throw fail(403, "Not permitted");
   return { key: await accessToken(rid) };
@@ -146,23 +146,35 @@ agentRoute("POST", "/api/agents/:id/skill", "skill", async ({ id, body }) => {
   return { text: `Saved the skill "${skill}" in ${folder}/ (put any scripts or other files it needs there). It is on for you and loads when this reply ends. It shows under Skills in Settings.` };
 });
 agentRoute("POST", "/api/agents/:id/manage_agents", "manage_agents", ({ id, body }) => manageAgents(id, body));
+agentRoute("POST", "/api/agents/:id/ask_agent", "ask_agent", ({ id, body }) => askAgent(id, body));
 agentRoute("POST", "/api/agents/:id/manage_settings", "manage_settings", ({ id, body }) => manageSettings(id, body));
-agentRoute("POST", "/api/agents/:id/memory", "memory", async ({ body }) => ({ text: await useMemory(body) }));
-agentRoute("POST", "/api/agents/:id/fetch_knowledge", "fetch_knowledge", async ({ body }) => ({ text: await fetchKnowledge(body) }));
+agentRoute("POST", "/api/agents/:id/memory", "memory", async ({ id, body }) => {
+  const confirm = (await getCurator()).ask && (async (what) => (await askUser(id, `${(await getAgent(id)).name} asks to ${what}`, ["Save it", "Don't"])) === "Save it");
+  return { text: await useMemory(body, confirm) };
+});
+agentRoute("POST", "/api/agents/:id/fetch_knowledge", "fetch_knowledge", async ({ body }) => ({ text: await fetchKnowledge(body) }), quiet);
 agentRoute("GET", "/api/agents/:id/routines", "routines", async ({ id, headers }) => (await noteZone(headers["x-timezone"]), listRoutines(id)));
 agentRoute("POST", "/api/agents/:id/routines", "routines", ({ id, body, headers }) => addRoutine(id, body, headers["x-timezone"]));
 agentRoute("PUT", "/api/agents/:id/routines/:rid", "routines", ({ id, rid, body }) => updateRoutine(id, rid, body));
 agentRoute("DELETE", "/api/agents/:id/routines/:rid", "routines", ({ id, rid }) => removeRoutine(id, rid));
 
-const server = createServer(async (req, res) => {
+async function checkPlace(agent, sandboxed) {
+  const isolated = agent !== CURATOR_KEY && isIsolated(await getAgent(agent));
+  if (isolated !== sandboxed) throw fail(403, "Not permitted");
+}
+
+async function handle(req, res, sandboxed) {
   try {
     const url = new URL(req.url, "http://localhost");
     const path = url.pathname;
     guard(req, path);
-    if (!path.startsWith("/api/")) return await serveUi(req, res);
+    const caller = keyIn(req, url.searchParams);
+    if (caller) await checkPlace(caller.agent, sandboxed);
+    else if (sandboxed) throw fail(403, "Not permitted");
+    if (!sandboxed && path === "/api/health") return reply(res, 200, { ok: true });
+    if (!sandboxed && !path.startsWith("/api/")) return await serveUi(req, res);
     const proxied = path.match(/^\/api\/(model|plugin)-proxy\/([\w.-]+)(\/.*)?$/);
     if (proxied) {
-      const caller = keyIn(req, url.searchParams);
       if (!caller) throw fail(401, "Not permitted");
       const [, kind, name, rest = ""] = proxied;
       if (kind === "model") {
@@ -173,8 +185,12 @@ const server = createServer(async (req, res) => {
       if (!plugin.url) throw fail(404, "Not found");
       return await proxyPlugin(req, res, { plugin, rest, search: url.search });
     }
-    if (path === "/api/pair" && req.method === "POST") {
-      const token = await pair((await bodyOf(req)).code, req.headers["user-agent"]);
+    if (path === "/api/pair" && req.method === "POST" && !sandboxed) {
+      const token = await pair((await bodyOf(req)).code, req.headers["user-agent"]).catch((err) => {
+        audit("pairing refused", { reason: err.message });
+        throw err;
+      });
+      audit("device paired", { name: req.headers["user-agent"]?.slice(0, 200) });
       res.setHeader("Set-Cookie", cookieFor(token, req.headers.host));
       return reply(res, 204);
     }
@@ -184,7 +200,7 @@ const server = createServer(async (req, res) => {
     if (file && req.method === "GET" && who.device) return await serveFile(res, filesOf(await getAgent(file[1])), file[2], url.searchParams.has("view"));
     const stream = path.match(/^\/api\/agents\/([^/]+)\/events$/);
     if (stream && req.method === "GET" && who.device) return await events(req, res, stream[1]);
-    for (const { method, pattern, handler, scoped, tool } of routes) {
+    for (const { method, path: name, pattern, handler, scoped, tool, audited } of routes) {
       const match = req.method === method && path.match(pattern);
       if (!match) continue;
       const [, id, rid] = match;
@@ -192,6 +208,7 @@ const server = createServer(async (req, res) => {
       const agent = scoped && (await getAgent(id));
       if (who.agent && !mayCall(agent, tool)) throw fail(403, "An isolated agent cannot use this. The user can change what it may use in its settings.");
       const result = await handler({ id, rid, body: await bodyOf(req), query: url.searchParams, headers: req.headers, who });
+      if (audited) audit(`${method} ${name}`, { by: who.device ? `device ${who.device}` : `agent ${who.agent}`, ...(id && { id }), ...(rid && { rid }) });
       return result === undefined ? reply(res, 204) : reply(res, 200, result);
     }
     throw fail(404, "Not found");
@@ -200,7 +217,7 @@ const server = createServer(async (req, res) => {
     if (res.headersSent) return res.destroy();
     reply(res, err.status ?? 500, { error: err.status ? err.message : "An error occurred" });
   }
-});
+}
 
 async function allowedProvider(agent) {
   return providerOf(agent === CURATOR_KEY ? (await getCurator()).model : (await getAgent(agent)).model);
@@ -212,21 +229,26 @@ async function allowedPlugin(agent, name) {
   return plugin;
 }
 
-server.on("upgrade", async (req, socket, head) => {
+async function upgrade(req, socket, head, sandboxed) {
   try {
     const url = new URL(req.url, "http://localhost");
     guard(req, url.pathname);
-    if (url.pathname === "/api/browser/view" && (await identify(req))?.device && viewUpgrade(req, socket, head)) return;
-    if (isCdpPath(url.pathname) && cdpUpgrade(req, socket, head)) return;
+    const caller = keyIn(req, url.searchParams);
+    if (caller) await checkPlace(caller.agent, sandboxed);
+    else if (sandboxed) throw fail(403, "Not permitted");
+    if (!sandboxed && url.pathname === "/api/browser/view" && (await identify(req))?.device && viewUpgrade(req, socket, head)) return;
+    if (!sandboxed && isCdpPath(url.pathname) && cdpUpgrade(req, socket, head)) return;
     const pipe = url.pathname.match(/^\/api\/plugin-pipe\/([\w-]+)$/);
-    const caller = pipe && keyIn(req, url.searchParams);
-    if (caller) {
+    if (pipe && caller) {
       const plugin = await allowedPlugin(caller.agent, pipe[1]);
-      if (plugin.command) return await pipePlugin(socket, plugin, await getAgent(caller.agent));
+      if (plugin.command) return pipePlugin(socket, plugin, await getAgent(caller.agent));
     }
   } catch {}
   socket.destroy();
-});
+}
+
+const server = createServer((req, res) => handle(req, res, false)).on("upgrade", (req, socket, head) => upgrade(req, socket, head, false));
+const sandbox = createServer((req, res) => handle(req, res, true)).on("upgrade", (req, socket, head) => upgrade(req, socket, head, true));
 
 rmSync(dirname(ADMIN_SOCKET), { recursive: true, force: true });
 mkdirSync(dirname(ADMIN_SOCKET), { recursive: true, mode: 0o700 });
@@ -242,6 +264,9 @@ try {
 }
 
 server.listen(PORT, "0.0.0.0", () => console.log(`weilo-core listening on :${PORT}`));
+mkdirSync(SANDBOX_DIR, { recursive: true, mode: 0o700 });
+rmSync(SANDBOX_API, { force: true });
+sandbox.listen(SANDBOX_API);
 
 void syncCompaction();
 void clearScratch();

@@ -3,8 +3,8 @@ import { constants } from "node:fs";
 import { chmod, chown, lstat, mkdir, open, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { AGENT_DIR, EXTENSIONS, HOMES, ISOLATED, ISOLATED_SESSIONS, KNOWLEDGE, PROFILES, ROOT, RUN, SCRATCH, SESSIONS, SKILLS, TOOLS, WORKSPACE } from "./common.mjs";
-import { AGENTS_GID, BIN, BROWSER_UID, CURATOR_UID, PLUGINS_UID, SYSTEM_PATH } from "./config.mjs";
+import { AGENT_DIR, EXTENSIONS, HOMES, ISOLATED, ISOLATED_HOMES, ISOLATED_SESSIONS, PLUGINS_CWD, PLUGINS_HOME, KNOWLEDGE, PROFILES, ROOT, RUN, SCRATCH, SESSIONS, SKILLS, TOOLS, WORKSPACE } from "./common.mjs";
+import { AGENTS_GID, BIN, BROWSER_UID, CURATOR_UID, ISOLATED_HOME, PLUGINS_UID, SYSTEM_PATH } from "./config.mjs";
 
 const run = promisify(execFile);
 export const isRoot = process.getuid?.() === 0;
@@ -16,11 +16,9 @@ export const PLUGINS = { uid: PLUGINS_UID, gid: PLUGINS_UID, groups: [AGENTS_GID
 export const sharedTools = { PATH: `${SYSTEM_PATH}:${TOOLS}/bin`, npm_config_prefix: TOOLS, PYTHONUSERBASE: TOOLS };
 export const ownTools = (home) => ({ PATH: `${SYSTEM_PATH}:${home}/.local/bin`, npm_config_prefix: `${home}/.local`, PYTHONUSERBASE: `${home}/.local` });
 
-export function spawnAs(user, command, args, options) {
-  if (!isRoot) return spawn(command, args, options);
-  const groups = user.groups.length ? `--groups=${user.groups.join(",")}` : "--clear-groups";
-  return spawn(BIN.setpriv, [`--reuid=${user.uid}`, `--regid=${user.gid}`, groups, "--inh-caps=-all", "--bounding-set=-all", "--no-new-privs", "--", command, ...args], options);
-}
+export const asUser = (user) => [`--reuid=${user.uid}`, `--regid=${user.gid}`, user.groups.length ? `--groups=${user.groups.join(",")}` : "--clear-groups", "--inh-caps=-all", "--bounding-set=-all", "--no-new-privs", "--"];
+
+export const spawnAs = (user, command, args, options) => (isRoot ? spawn(BIN.setpriv, [...asUser(user), command, ...args], options) : spawn(command, args, options));
 
 export async function folder(path, uid, gid, mode) {
   await mkdir(path, { recursive: true });
@@ -75,21 +73,23 @@ export async function secure(agents) {
     await setOwner(join(PROFILES, agent.id, "agent.json"), 0, agent.uid, 0o640);
   }
   await folder(WORKSPACE, 0, AGENTS_GID, 0o2770);
-  await folder(ISOLATED, 0, AGENTS_GID, 0o751);
+  await folder(ISOLATED, 0, AGENTS_GID, 0o750);
   await folder(ISOLATED_SESSIONS, 0, 0, 0o711);
+  await folder(ISOLATED_HOMES, 0, 0, 0o711);
   for (const agent of agents.filter((a) => a.isolated === true && /^[a-z0-9-]+$/.test(a.folder ?? ""))) {
     const home = join(ISOLATED, agent.folder);
     const info = await lstat(home).catch(() => null);
     if (!info?.isDirectory()) continue;
-    if (info.gid !== agent.uid) await tree(home, agent.uid, agent.uid, "ug+rwX,o-rwx");
-    await folder(home, agent.uid, agent.uid, 0o2770).catch(() => {});
+    if (info.gid !== agent.uid) await tree(home, agent.uid, agent.uid, ISOLATED_HOME.tree);
+    await folder(home, agent.uid, agent.uid, ISOLATED_HOME.mode).catch(() => {});
   }
   await folder(HOMES, 0, AGENTS_GID, 0o751);
   await folder(KNOWLEDGE, CURATOR_UID, CURATOR_UID, 0o700);
   await folder(SCRATCH, 0, AGENTS_GID, 0o751);
   await folder(RUN, 0, AGENTS_GID, 0o751);
   await folder(join(RUN, "pi"), 0, AGENTS_GID, 0o751);
-  await folder(join(RUN, "pi", "plugins"), PLUGINS_UID, PLUGINS_UID, 0o700);
+  await folder(PLUGINS_HOME, PLUGINS_UID, PLUGINS_UID, 0o700);
+  await folder(PLUGINS_CWD, 0, 0, 0o755);
   const tools = await stat(TOOLS).catch(() => null);
   if (tools && tools.gid !== AGENTS_GID) await tree(TOOLS, 0, AGENTS_GID, "g+rwX,o+rX");
 }

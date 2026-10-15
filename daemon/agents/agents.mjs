@@ -1,13 +1,13 @@
 import { randomBytes } from "node:crypto";
 import { access, readdir, readFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { APP, BUNDLED, fail, HOMES, ISOLATED, ISOLATED_SESSIONS, ORDER, PROFILES, readJson, RUN, SESSIONS, slug, updateJson, WORKSPACE } from "../common.mjs";
-import { AGENTS_GID, FIRST_AGENT_UID, SHARED_TOOLS } from "../config.mjs";
+import { APP, BUNDLED, fail, HOMES, ISOLATED, ISOLATED_HOMES, ISOLATED_SESSIONS, ORDER, PROFILES, readJson, RUN, SESSIONS, slug, updateJson, WORKSPACE } from "../common.mjs";
+import { AGENTS_GID, FIRST_AGENT_UID, ISOLATED_HOME, REGULAR_HOME, SHARED_TOOLS } from "../config.mjs";
 import { folder as ownFolder, setOwner, tree } from "../users.mjs";
 import { extensionsOf } from "../settings/extensions.mjs";
 import { lastMessage } from "./sessions.mjs";
 
-export const isAgentId = (id) => /^[a-z0-9-]+$/.test(id);
+const isAgentId = (id) => /^[a-z0-9-]+$/.test(id);
 const folder = (id) => {
   if (!isAgentId(id)) throw fail(404, "This agent does not exist");
   return join(PROFILES, id);
@@ -17,12 +17,12 @@ const THINKING = ["", "off", "minimal", "low", "medium", "high", "xhigh", "max"]
 
 const ids = (list) => Array.isArray(list) && list.every((id) => typeof id === "string");
 
-const clean = ({ name, model, thinking = "", skills = [], plugins = [], extensions = [], disabled = [], instructions = "", avatar, isolated = false, trusted = false }) => {
+const clean = ({ name, model, thinking = "", skills = [], plugins = [], extensions = [], disabled = [], instructions = "", avatar, isolated = false, trusted = false, dailyTokens = 0 }) => {
   if (typeof name !== "string" || !name.trim()) throw fail(400, "Type a name");
   if (typeof model !== "string" || !model.trim()) throw fail(400, "Choose a model");
-  if (typeof instructions !== "string" || !THINKING.includes(thinking) || !ids(skills) || !ids(plugins) || !ids(extensions) || !ids(disabled) || typeof isolated !== "boolean" || typeof trusted !== "boolean") throw fail(400, "The agent settings are not valid");
+  if (typeof instructions !== "string" || !THINKING.includes(thinking) || !ids(skills) || !ids(plugins) || !ids(extensions) || !ids(disabled) || typeof isolated !== "boolean" || typeof trusted !== "boolean" || !Number.isSafeInteger(dailyTokens) || dailyTokens < 0) throw fail(400, "The agent settings are not valid");
   const { shape, color } = avatar ?? {};
-  return { name: name.trim(), model: model.trim(), thinking, skills, plugins, extensions, disabled, instructions, ...(typeof shape === "string" && typeof color === "string" && { avatar: { shape, color } }), isolated, trusted };
+  return { name: name.trim(), model: model.trim(), thinking, skills, plugins, extensions, disabled, instructions, ...(typeof shape === "string" && typeof color === "string" && { avatar: { shape, color } }), isolated, trusted, dailyTokens };
 };
 
 async function save(id, agent) {
@@ -36,11 +36,10 @@ export const mayCall = (agent, tool) => !isIsolated(agent) || (!SHARED_TOOLS.inc
 
 export const newUid = async () => (await updateJson(APP, (data) => ({ ...data, lastUid: Math.max(FIRST_AGENT_UID, (data.lastUid ?? 0) + 1) }))).lastUid;
 
-export const isolatedGroups = (agents) => agents.filter(isIsolated).map((agent) => agent.uid);
-
-export const userOf = (agent, agents = []) => ({ uid: agent.uid, gid: agent.uid, groups: isIsolated(agent) ? [] : [AGENTS_GID, ...isolatedGroups(agents)] });
+export const userOf = (agent) => ({ uid: agent.uid, gid: agent.uid, groups: isIsolated(agent) ? [] : [AGENTS_GID] });
 
 export const homeGroupOf = (agent) => (isIsolated(agent) ? agent.uid : AGENTS_GID);
+export const homeKindOf = (agent) => (isIsolated(agent) ? ISOLATED_HOME : REGULAR_HOME);
 
 export async function newFolder(name, taken = []) {
   const used = new Set([...(await readdir(WORKSPACE).catch(() => [])), ...(await readdir(ISOLATED).catch(() => [])), ...taken]);
@@ -55,20 +54,22 @@ export const homeOf = (agent) => {
   return join(isIsolated(agent) ? ISOLATED : WORKSPACE, agent.folder);
 };
 export const chatDirOf = (agent) => join(isIsolated(agent) ? ISOLATED_SESSIONS : SESSIONS, agent.id);
-export const userHomeOf = (agent) => join(HOMES, agent.folder);
+export const userHomeOf = (agent) => join(isIsolated(agent) ? ISOLATED_HOMES : HOMES, agent.folder);
+export const placesOf = (agent) => [homeOf, chatDirOf, userHomeOf].map((place) => place(agent));
 
 export const filesOf = (agent) => (isIsolated(agent) ? { folders: [homeOf(agent)], roots: [homeOf(agent)] } : { folders: [homeOf(agent), WORKSPACE], roots: [WORKSPACE, ISOLATED] });
 
 export const makeHome = (agent) =>
-  Promise.all([ownFolder(homeOf(agent), agent.uid, homeGroupOf(agent), 0o2770), ownFolder(chatDirOf(agent), agent.uid, agent.uid, 0o700), ownFolder(userHomeOf(agent), agent.uid, agent.uid, 0o700)]);
+  Promise.all([ownFolder(homeOf(agent), agent.uid, homeGroupOf(agent), homeKindOf(agent).mode), ownFolder(chatDirOf(agent), agent.uid, agent.uid, 0o700), ownFolder(userHomeOf(agent), agent.uid, agent.uid, 0o700)]);
 
 async function move(before, after) {
-  const pairs = [[homeOf(before), homeOf(after)], [chatDirOf(before), chatDirOf(after)]];
+  const [from, to] = [placesOf(before), placesOf(after)];
+  const pairs = from.map((path, i) => [path, to[i]]);
   for (const [, to] of pairs) {
     if (await access(to).then(() => true, () => false)) throw fail(409, `${to} already exists. Rename or remove it, then save again.`);
   }
   for (const [from, to] of pairs) await rename(from, to).catch((err) => err.code === "ENOENT" || Promise.reject(err));
-  await tree(homeOf(after), after.uid, homeGroupOf(after), "ug+rwX,o-rwx");
+  await tree(homeOf(after), after.uid, homeGroupOf(after), homeKindOf(after).tree);
 }
 
 const withoutBrowser = (agent, before) => (agent.isolated && !before?.isolated ? { ...agent, disabled: [...new Set([...agent.disabled, "browser"])] } : agent);
@@ -76,7 +77,7 @@ const withoutBrowser = (agent, before) => (agent.isolated && !before?.isolated ?
 export async function getAgent(id) {
   try {
     const saved = JSON.parse(await readFile(profilePath(id), "utf8"));
-    const agent = { id, thinking: "", skills: [], plugins: [], extensions: [], disabled: [], instructions: "", isolated: false, trusted: false, ...saved };
+    const agent = { id, thinking: "", skills: [], plugins: [], extensions: [], disabled: [], instructions: "", isolated: false, trusted: false, dailyTokens: 0, ...saved };
     return { ...agent, disabled: Array.isArray(agent.disabled) ? agent.disabled.filter((name) => Object.hasOwn(BUNDLED, name)) : [] };
   } catch (err) {
     throw err.code === "ENOENT" ? fail(404, "This agent does not exist") : err;

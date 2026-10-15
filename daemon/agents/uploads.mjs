@@ -1,9 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { basename, join } from "node:path";
 import { fail } from "../common.mjs";
-import { AGENTS_GID } from "../config.mjs";
 import { folder, newFile } from "../users.mjs";
-import { homeOf } from "./agents.mjs";
+import { homeGroupOf, homeKindOf, homeOf } from "./agents.mjs";
 
 const IMAGE = /^data:(image\/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+/=]+)$/;
 
@@ -25,12 +24,13 @@ export async function saveFiles(agent, files = []) {
   }
   if (!files.length) return [];
   const home = homeOf(agent);
-  await folder(join(home, "uploads"), agent.uid, AGENTS_GID, 0o2770);
+  const [group, kind] = [homeGroupOf(agent), homeKindOf(agent)];
+  await folder(join(home, "uploads"), agent.uid, group, kind.mode);
   return Promise.all(
     files.map(async ({ name, data }) => {
       const safe = basename(name).replace(/[^\w.\- ]/g, "_").slice(-100) || "file";
       const path = `uploads/${randomBytes(4).toString("hex")}-${safe}`;
-      await newFile(join(home, path), Buffer.from(data, "base64"), agent.uid, AGENTS_GID, 0o660);
+      await newFile(join(home, path), Buffer.from(data, "base64"), agent.uid, group, kind.file);
       return path;
     }),
   );
