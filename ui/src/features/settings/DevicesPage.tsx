@@ -11,7 +11,7 @@ import { useCopy } from "../../lib/useCopy";
 
 const day = (iso: string) => new Date(iso).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
 
-export function DevicesPage() {
+export function DevicesPage({ section }: { section?: boolean }) {
   const [devices, setDevices] = useState<PairedDevice[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [code, setCode] = useState<{ code: string; expires: string } | null>(null);
@@ -23,6 +23,7 @@ export function DevicesPage() {
   const remove = (d: PairedDevice) => run(d.id, async () => (await unpairDevice(d.id), d.current ? location.reload() : await load()));
   return (
     <Page
+      section={section}
       title="Devices"
       description="The phones and computers that can open Weilo Agents. A new one is paired once, with a code from here."
       action={

@@ -15,7 +15,7 @@ import { cdpUpgrade, isCdpPath, startScreen, viewUpgrade } from "./browser/scree
 import { fail } from "./common.mjs";
 import { ADMIN_SOCKET, PORT, SANDBOX_API, SANDBOX_DIR, SYSTEM_PATH } from "./config.mjs";
 import { sendContact } from "./contact.mjs";
-import { accessToken, providerOf, proxyModel } from "./gateway/models.mjs";
+import { providerOf, proxyModel } from "./gateway/models.mjs";
 import { pipePlugin, pluginOf, proxyPlugin } from "./gateway/plugins.mjs";
 import { cookieFor, identify, keyIn, newCode, pair, pairedDevices, unpair } from "./http/access.mjs";
 import { events } from "./http/events.mjs";
@@ -134,10 +134,6 @@ route("GET", "/api/agents/:id/browser", async ({ id }) => ({ taken: isTaken(id),
 route("POST", "/api/agents/:id/browser/show", ({ id }) => showBrowser(id), quiet);
 route("POST", "/api/agents/:id/browser/take-over", ({ id }) => takeOver(id), quiet);
 route("POST", "/api/agents/:id/browser/give-back", ({ id }) => giveBack(id), quiet);
-agentRoute("GET", "/api/agents/:id/model-key/:rid", "model", async ({ id, rid }) => {
-  if (providerOf((await getAgent(id)).model) !== rid) throw fail(403, "Not permitted");
-  return { key: await accessToken(rid) };
-});
 agentRoute("POST", "/api/agents/:id/skill", "skill", async ({ id, body }) => {
   const { id: skill, folder } = await saveSkill(body);
   const agent = await getAgent(id);

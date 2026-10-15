@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Agent } from "../../api/agents";
 import type { Extension } from "../../api/extensions";
 import type { Plugin } from "../../api/plugins";
@@ -8,7 +8,6 @@ import type { User } from "../../api/user";
 import { IconButton } from "../../components/ui/Button";
 import { Icon, type IconName } from "../../components/ui/Icon";
 import { Page } from "../../components/ui/Row";
-import { thisDevice } from "../../lib/push";
 import { getTheme } from "../../lib/theme";
 import { useMedia } from "../../lib/useMedia";
 import { BrowserSettings } from "../browser/BrowserSettings";
@@ -24,29 +23,34 @@ import { Appearance } from "./Appearance";
 import { ProvidersPage } from "./ProvidersPage";
 import { SecurityPage } from "./SecurityPage";
 
-export type SettingsPage = "providers" | "devices" | "security" | "notifications" | "you" | "memory" | "browser" | "appearance" | "about" | "skills" | "plugins" | "extensions";
+export type SettingsPage = "you" | "memory" | "providers" | "skills" | "plugins" | "extensions" | "browser" | "security" | "general";
 
 const MENU: { group: string; pages: { value: SettingsPage; label: string; icon: IconName }[] }[] = [
   {
-    group: "",
+    group: "You",
     pages: [
-      { value: "providers", label: "Providers", icon: "key" },
-      { value: "devices", label: "Devices", icon: "devices" },
-      { value: "security", label: "Security", icon: "shield" },
-      { value: "notifications", label: "Notifications", icon: "bell" },
       { value: "you", label: "About you", icon: "user" },
       { value: "memory", label: "Memory", icon: "brain" },
-      { value: "browser", label: "Browser", icon: "globe" },
-      { value: "appearance", label: "Appearance", icon: "sun" },
-      { value: "about", label: "About", icon: "info" },
     ],
   },
   {
-    group: "Add-ons",
+    group: "Models",
+    pages: [{ value: "providers", label: "Providers", icon: "key" }],
+  },
+  {
+    group: "What agents can use",
     pages: [
       { value: "skills", label: "Skills", icon: "sparkle" },
       { value: "plugins", label: "Plugins", icon: "puzzle" },
       { value: "extensions", label: "Extensions", icon: "plug" },
+      { value: "browser", label: "Browser", icon: "globe" },
+    ],
+  },
+  {
+    group: "App",
+    pages: [
+      { value: "security", label: "Security & devices", icon: "shield" },
+      { value: "general", label: "General", icon: "settings" },
     ],
   },
 ];
@@ -71,7 +75,7 @@ export function SettingsView({ page: first, agents, providers, skills, plugins, 
   const wide = useMedia("(min-width: 768px)");
   const [chosen, setChosen] = useState<SettingsPage | null>(first === "menu" ? null : first);
   useEffect(() => setChosen(first === "menu" ? null : first), [first]);
-  const page = chosen ?? "providers";
+  const page = chosen ?? "you";
   const list = !wide && chosen === null;
   const back = wide || list ? onClose : () => setChosen(null);
 
@@ -79,9 +83,8 @@ export function SettingsView({ page: first, agents, providers, skills, plugins, 
   const theme = getTheme();
   const hints: Partial<Record<SettingsPage, string>> = {
     providers: count(providers.filter((p) => p.connected).length, "connected", "connected"),
-    notifications: thisDevice() ? "On" : "Off",
     you: user.name || undefined,
-    appearance: theme === "weilo" ? "Weilo" : theme === "system" ? "System" : theme === "dark" ? "Dark" : "Light",
+    general: theme === "weilo" ? "Weilo" : theme === "system" ? "System" : theme === "dark" ? "Dark" : "Light",
     skills: count(skills.length, "skill"),
     plugins: count(plugins.length, "plugin"),
     extensions: count(extensions.length, "extension"),
@@ -130,12 +133,17 @@ export function SettingsView({ page: first, agents, providers, skills, plugins, 
             <div className="mx-auto w-full max-w-2xl">
               {page === "providers" ? (
                 <ProvidersPage providers={providers} models={models} onChange={onChange} onModels={onModels} />
-              ) : page === "devices" ? (
-                <DevicesPage />
               ) : page === "security" ? (
-                <SecurityPage agents={agents} />
-              ) : page === "notifications" ? (
-                <NotificationsPage agents={agents} />
+                <Sections>
+                  <DevicesPage section />
+                  <SecurityPage agents={agents} section />
+                </Sections>
+              ) : page === "general" ? (
+                <Sections>
+                  <Appearance section />
+                  <NotificationsPage agents={agents} section />
+                  <AboutPage section />
+                </Sections>
               ) : page === "you" ? (
                 <Page title="About you" description="Agents use this to talk to you.">
                   <AboutYouForm user={user} onSaved={onChange} />
@@ -144,10 +152,6 @@ export function SettingsView({ page: first, agents, providers, skills, plugins, 
                 <MemoryPage providers={providers} models={models} />
               ) : page === "browser" ? (
                 <BrowserSettings />
-              ) : page === "appearance" ? (
-                <Appearance />
-              ) : page === "about" ? (
-                <AboutPage />
               ) : page === "skills" ? (
                 <SkillsPage skills={skills} agents={agents} onChange={onChange} />
               ) : page === "plugins" ? (
@@ -162,3 +166,5 @@ export function SettingsView({ page: first, agents, providers, skills, plugins, 
     </div>
   );
 }
+
+const Sections = ({ children }: { children: ReactNode }) => <div className="flex flex-col gap-10">{children}</div>;

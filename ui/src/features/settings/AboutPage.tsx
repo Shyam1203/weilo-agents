@@ -7,7 +7,7 @@ import { ErrorText } from "../../components/ui/Field";
 import { Card, Page, Row } from "../../components/ui/Row";
 import { Switch } from "../../components/ui/Switch";
 
-export function AboutPage() {
+export function AboutPage({ section }: { section?: boolean }) {
   const [build, setBuild] = useState<Build | null>(null);
   const [update, setUpdate] = useState<Update | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +23,7 @@ export function AboutPage() {
     );
 
   return (
-    <Page title="About" description="Include the version when you ask for help.">
+    <Page section={section} title="About" description="Include the version when you ask for help.">
       <Card>
         <Row title="Weilo Agents">{value(build?.version)}</Row>
         <Row title="Build">{value(build ? build.commit.slice(0, 7) : undefined)}</Row>

@@ -97,7 +97,7 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
           onReorder={(ids) => reorderAgents(ids).then(reloadAgents, () => {})}
           onNew={() => (setSettings(null), setForm("new"))}
           onSettings={() => openSettings("menu")}
-          onAbout={() => openSettings("about")}
+          onAbout={() => openSettings("general")}
           onContact={() => setContact(true)}
         />
       </div>
