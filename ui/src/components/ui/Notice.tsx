@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { Icon } from "./Icon";
 
-/** An inline status note: neutral info, or an alert. */
 export function Notice({ tone = "info", title, children, action }: { tone?: "info" | "alert"; title?: string; children?: ReactNode; action?: ReactNode }) {
   return (
     <div role={tone === "alert" ? "alert" : "status"} className="flex items-center gap-2.5 rounded-xl bg-card px-3.5 py-3 text-[13px] text-ink-2 ring-1 ring-line ring-inset">

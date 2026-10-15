@@ -1,6 +1,3 @@
-// A pi extension: `browser`, the agent's own window in the browser. The tool calls the daemon's API, which drives it.
-// It uses nothing else of the daemon (tool.mjs only calls the API), so another extension that adds a tool with this name can replace it.
-
 import { daemonTool, note, str } from "../../tool.mjs";
 
 const BROWSER = `Use a web browser. You have your own window with as many tabs as you need; no other agent can use them. The browser keeps the user's logins, so you can use sites they are signed in to. Every step returns the page as text. Elements have refs, like e13: give a ref to click or type.

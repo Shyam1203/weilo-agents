@@ -1,5 +1,3 @@
-// One file preview for the whole chat: anything in it (a file block, a path in the agent's text) opens it with `usePreview()`.
-// Paths are the agent's, so the chat's agent is here too, for `useFileUrl()`.
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { fileUrl } from "../../api/chat";
 import { FilePreview } from "./FilePreview";
@@ -9,9 +7,7 @@ type Url = (path: string, view?: boolean) => string;
 
 const PreviewContext = createContext<{ open: Open; url: Url }>({ open: () => {}, url: () => "" });
 
-/** Opens the preview of a file the agent named (its path from the agent's folder, or from the top of the workspace). */
 export const usePreview = () => useContext(PreviewContext).open;
-/** Where a file the agent named downloads, or shows with `view`. */
 export const useFileUrl = () => useContext(PreviewContext).url;
 
 export function PreviewProvider({ agent, children }: { agent: string; children: ReactNode }) {

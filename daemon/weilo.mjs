@@ -1,10 +1,3 @@
-// The pi extension every agent gets: the chat's own tools. Browser and routines are extensions of their own (extension/ in browser/ and routines/); memory's tools come from memory/extension.mjs.
-// `show`: the agent hands the chat a list of blocks (a table, cards, a chart, buttons, a file, a page
-// of its own) and the UI draws them from the tool call itself, live and again from the saved
-// conversation. The tool only checks the call.
-// `ask`: the agent asks the user a question and waits. Pi's own dialogs carry it: the daemon passes
-// the request to the chat and the answer back.
-
 import { daemonTool } from "./tool.mjs";
 
 const object = (properties, required) => ({ type: "object", properties, required });
@@ -49,8 +42,55 @@ const SKILL = `Save a skill: instructions for a kind of task that you or the use
 - instructions: the skill itself, in Markdown: the steps, what to check, what goes wrong. Never put secrets in it.
 The skill is saved in the skill library and switched on for you. Use only this tool to make or change a skill: do not write skill files yourself or save them in .agents or anywhere else, because only the library is read.`;
 
+const MANAGE = `List the agents, or make or change one: another agent, or yourself. Use this when the user asks you to set up an agent or change one (its instructions, model, skills, plugins, extensions); never edit agent files yourself.
+- action list: every agent, with its model, plugins, skills and extensions, and the skills, plugins and extensions there are.
+- action create: a new agent. Give a name and its instructions (who it is and what it does, in the second person); the model, thinking level, skills, plugins and extensions are optional (a new agent gets your model unless you name another). Take model, skill, plugin and extension names from the list.
+- action update: change the agent named in "agent" (a name or id; yourself too). Give only what changes; a list you give replaces the old one. An isolated agent's settings are the user's alone.
+Nothing is made or changed until the user approves it: the user sees what you ask for in this chat and chooses (some changes to yourself the user allows always; the chat shows them). If they do not, accept it and do not ask again unless they ask you to. A change to yourself applies from the next message.`;
+
+const SETTINGS = `See or change a few of the app's settings, for all agents: which models are on (the ones agents can choose), and when a model's conversations are summarized. Use this only when the user asks for such a change.
+- action list: every model the keys can use, whether it is on, its context window, the tokens kept free before a summary, and who uses it.
+- action change: enable (models to turn on), disable (models to turn off; not one an agent uses), compaction ({ "provider/model": tokens to keep free, or null for the app's own value }).
+Nothing changes until the user approves it in this chat. If they do not, accept it.`;
+
+const MANAGE_ISOLATED = `Ask for a skill, a plugin or an extension (such as the browser), or to drop one. Use this when you need one for your work, or the user asks; never edit agent files yourself.
+- action list: your settings, and the skills, plugins and extensions there are.
+- action update: give the whole new list of skills, plugins or extensions you want (it replaces the old one); only those three.
+Nothing changes until the user approves it in this chat. If they do not, accept it and do not ask again unless they ask you to. A change applies from your next message.`;
+
 export default function (pi) {
   daemonTool(pi, "skill", "Skill", SKILL, { name: note("Short, lowercase, with hyphens."), description: note("When to use the skill."), instructions: note("The skill, in Markdown.") }, ["name", "description", "instructions"]);
+  daemonTool(
+    pi,
+    "manage_agents",
+    "Agents",
+    process.env.WEILO_ISOLATED ? MANAGE_ISOLATED : MANAGE,
+    {
+      action: { type: "string", enum: process.env.WEILO_ISOLATED ? ["list", "update"] : ["list", "create", "update"] },
+      agent: note("update: the agent to change, by name or id."),
+      name: str,
+      instructions: note("Who the agent is and what it does."),
+      model: note("provider/model, as in the list."),
+      thinking: { type: "string", enum: ["", "off", "minimal", "low", "medium", "high", "xhigh", "max"] },
+      skills: { ...list(str), description: "Skill ids." },
+      plugins: { ...list(str), description: "Plugin names." },
+      extensions: { ...list(str), description: "Extension ids: every extension the agent should have, as in the list." },
+    },
+    ["action"],
+  );
+  daemonTool(
+    pi,
+    "manage_settings",
+    "Settings",
+    SETTINGS,
+    {
+      action: { type: "string", enum: ["list", "change"] },
+      enable: { ...list(str), description: "Models to turn on, provider/model." },
+      disable: { ...list(str), description: "Models to turn off, provider/model." },
+      compaction: { type: "object", additionalProperties: { anyOf: [{ type: "integer" }, { type: "null" }] }, description: "provider/model: tokens to keep free, or null." },
+    },
+    ["action"],
+  );
   pi.registerTool({
     name: "show",
     label: "Show",

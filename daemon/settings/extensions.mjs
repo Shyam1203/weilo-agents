@@ -2,16 +2,9 @@ import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { extname, join, relative, resolve } from "node:path";
 import { BUNDLED, EXTENSIONS, fail } from "../common.mjs";
-import { RESERVED_TOOLS } from "../config.mjs";
+import { AGENTS_GID, RESERVED_TOOLS } from "../config.mjs";
+import { tree } from "../users.mjs";
 import { unzip } from "./zip.mjs";
-
-// Extensions are pi extensions: a folder with a weilo.json { apiVersion: 1, name, title, description, entry, tools }.
-// `entry` is the file pi loads; `tools` are the tools it adds (pi's allowlist hides any tool not named).
-// Two kinds: the ones that come with the app (the extension/ folder of browser/ and routines/ in the daemon), which an agent has
-// unless its profile's `disabled` list names them, and the ones people add by uploading a .zip, kept in agent/extensions/<name>/,
-// which an agent has only if its profile's `extensions` list names them. This file keeps the library and says which
-// extensions an agent loads. The code of an added one is not checked: it runs with the agent's rights, which is why adding
-// one asks first (UI).
 
 const ID = /^[a-z0-9-]+$/;
 const TOOL = /^[\w-]+$/;
@@ -19,7 +12,6 @@ const text = (value) => typeof value === "string" && value.trim();
 
 const manifestOf = (folder) => readFile(join(folder, "weilo.json"), "utf8").then(JSON.parse);
 
-// The manifest of the extension in `folder` (its id is `id`), or null if it is gone or not valid.
 const read = async (folder, id, builtin) => {
   if (!ID.test(id)) return null;
   const m = await manifestOf(folder).catch(() => null);
@@ -34,9 +26,6 @@ export async function listExtensions() {
   return [...own, ...added.filter((x) => !own.some((o) => o.id === x.id))].map(({ entry, ...shown }) => shown);
 }
 
-// The extensions an agent loads, with their entry files and tools: the bundled ones it has not turned off, then the added
-// ones it has turned on that exist (one that declares a tool name the app reserves is left out: it could not load beside it).
-// Two that add the same tool cannot both load.
 export async function extensionsOf({ disabled, extensions }) {
   const own = (await bundled()).filter((x) => !disabled.includes(x.id));
   const added = (await Promise.all(extensions.filter((id) => !own.some((o) => o.id === id)).map((id) => read(join(EXTENSIONS, id), id, false))))
@@ -48,7 +37,6 @@ export async function extensionsOf({ disabled, extensions }) {
   return all;
 }
 
-// The folder of an unpacked zip that holds weilo.json: the top, or the one folder the zip is wrapped in.
 async function manifestFolder(top) {
   const has = (dir) => stat(join(dir, "weilo.json")).then(() => true, () => false);
   if (await has(top)) return top;
@@ -57,7 +45,6 @@ async function manifestFolder(top) {
   throw fail(400, "The file does not contain a weilo.json");
 }
 
-// Checks the manifest and the files it names. Returns the extension's name.
 async function check(folder) {
   const m = await manifestOf(folder).catch(() => {
     throw fail(400, "The weilo.json is not valid JSON");
@@ -71,14 +58,12 @@ async function check(folder) {
   if (!Array.isArray(tools) || !tools.every((t) => typeof t === "string" && TOOL.test(t))) throw fail(400, "The tools in weilo.json are not valid");
   const taken = tools.find((t) => RESERVED_TOOLS.includes(t));
   if (taken) throw fail(400, `The tool name "${taken}" is already in use`);
-  // The entry stays inside the folder and is a file.
   const entry = typeof m.entry === "string" && resolve(folder, m.entry);
   if (!entry || relative(folder, entry).startsWith("..") || !(await stat(entry).then((s) => s.isFile(), () => false))) throw fail(400, "The entry in weilo.json is not a file in the extension");
   if (![".js", ".mjs", ".ts"].includes(extname(entry))) throw fail(400, "The entry in weilo.json must be a .js, .mjs or .ts file");
   return m.name;
 }
 
-// Adds the extension in an uploaded .zip (base64), replacing one with the same name.
 export async function addExtension({ name, data }) {
   if (typeof name !== "string" || typeof data !== "string") throw fail(400, "The file is not valid");
   if (extname(name).toLowerCase() !== ".zip") throw fail(400, "Add a .zip file");
@@ -89,6 +74,7 @@ export async function addExtension({ name, data }) {
     await mkdir(EXTENSIONS, { recursive: true });
     await rm(join(EXTENSIONS, id), { recursive: true, force: true });
     await cp(folder, join(EXTENSIONS, id), { recursive: true });
+    await tree(join(EXTENSIONS, id), 0, AGENTS_GID, "g+rX,g-w,o-rwx");
   } finally {
     await rm(work, { recursive: true, force: true });
   }

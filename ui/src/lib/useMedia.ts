@@ -1,6 +1,5 @@
 import { useSyncExternalStore } from "react";
 
-/** Whether a CSS media query matches now, and again when it changes. */
 export const useMedia = (query: string) =>
   useSyncExternalStore(
     (notify) => {

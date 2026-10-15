@@ -1,15 +1,9 @@
 import { readdir } from "node:fs/promises";
 import { getAgent, isAgentId } from "../agents/agents.mjs";
 import { messagesOf } from "../agents/sessions.mjs";
-import { fail, SESSIONS } from "../common.mjs";
+import { CHATS, fail } from "../common.mjs";
 import { FETCH_EXCERPT, FETCH_MAX_CHARS, FETCH_TOP } from "../config.mjs";
 import { pagesOf } from "./vault.mjs";
-
-// The `fetch_knowledge` tool: look through the knowledge vault and what was said before. Keywords are scored over the vault's
-// pages and the chats of all agents (also agents since deleted, whose chat was kept); with only an agent, its newest messages;
-// with a `source` (<agent id>@<date>, as a page lists them) the passages of that chat on that day. Only what the user and the
-// agents wrote is searched: not tool results, thinking or the prompts pi saves at its start. The agent never gives a path:
-// the folders come from the sessions folder and the vault, and a link is not followed.
 
 const STOP_WORDS = new Set(
   "a about an and are as at be been but by can did do does for from had has have how i in into is it me my of on or our should that the their this to was we were what when where which who why with would you your".split(" "),
@@ -39,7 +33,6 @@ function score(query, tokens, { title = "", body, speaker }) {
   return total && speaker === "you" ? total + 2 : total;
 }
 
-// The part of the text around the first word that matched.
 function excerpt(text, tokens) {
   const one = text.replace(/\s+/g, " ").trim();
   if (one.length <= FETCH_EXCERPT) return one;
@@ -49,7 +42,7 @@ function excerpt(text, tokens) {
 }
 
 const folders = async () => {
-  const dirs = (await readdir(SESSIONS, { withFileTypes: true }).catch(() => [])).filter((d) => d.isDirectory() && isAgentId(d.name));
+  const dirs = (await Promise.all(CHATS.map((top) => readdir(top, { withFileTypes: true }).catch(() => [])))).flat().filter((d) => d.isDirectory() && isAgentId(d.name));
   return Promise.all(dirs.map(async ({ name: id }) => ({ id, name: (await getAgent(id).catch(() => null))?.name ?? `deleted agent (${id})` })));
 };
 
@@ -71,7 +64,6 @@ function render(blocks) {
 
 const label = (m) => `${m.agent}, ${m.date}, ${m.speaker === "you" ? "the user" : m.speaker}: `;
 
-// The best results: highest score, then newest, then the first found.
 const better = (a, b) => b.score - a.score || b.at.localeCompare(a.at) || a.n - b.n;
 
 export async function fetchKnowledge({ query, agent, source } = {}) {
@@ -81,7 +73,6 @@ export async function fetchKnowledge({ query, agent, source } = {}) {
   if (!who && !words && !from) throw fail(400, "Give a query, a source or an agent.");
   const all = await folders();
 
-  // A source from a page: that agent's chat on that day (the best passages for the query, or the first ones).
   if (from) {
     const [id, date] = from.split("@");
     const folder = all.find((f) => f.id === id);
@@ -102,7 +93,6 @@ export async function fetchKnowledge({ query, agent, source } = {}) {
     return render(newest.map((m) => `${label(m)}${excerpt(m.body, [])}`));
   }
 
-  // Only the best FETCH_TOP are kept as the chats are read; their text is made at the end.
   const tokens = tokensOf(words);
   const top = [];
   let n = 0;

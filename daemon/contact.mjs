@@ -2,9 +2,6 @@ import { fail } from "./common.mjs";
 import { CONTACT_TIMEOUT_MS, CONTACT_URL, MAX_CONTACT_EMAIL, MAX_CONTACT_MESSAGE, MAX_CONTACT_NAME } from "./config.mjs";
 import { BUILD } from "./version.mjs";
 
-// "Contact us": the user's message goes to Weilo through weilo-api's contact form. What is sent is what the user typed (name,
-// email, message) and the app's version, so a report says which build it is about; nothing else leaves the computer.
-// Must match TOPICS in ui/src/api/app.ts.
 const TOPICS = ["Problem", "Idea", "Question", "Other"];
 
 const text = (value, max, what) => {

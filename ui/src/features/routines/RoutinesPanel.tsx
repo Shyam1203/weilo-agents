@@ -1,5 +1,3 @@
-// The chat's right-hand panel: the agent's routines, the next to run first. An agent can add its own,
-// so the list is read again now and then, and when `changed` does.
 import { useCallback, useEffect, useState } from "react";
 import { describeSchedule, listRoutines, type Routine } from "../../api/routines";
 import { IconButton } from "../../components/ui/Button";
@@ -11,7 +9,6 @@ import { RoutineForm } from "./RoutineForm";
 
 const POLL_MS = 15_000;
 
-// The routines in groups by when they run next (they come soonest first); one with no next run, a one-time routine that did not run, goes last.
 function sections(routines: Routine[]) {
   const groups = new Map<string, Routine[]>();
   for (const r of routines) {
@@ -24,16 +21,13 @@ function sections(routines: Routine[]) {
 interface Props {
   agentId: string;
   agentName: string;
-  /** Routines are turned off for this agent: no new ones; those already set still run. */
   off: boolean;
-  /** Changes when the chat shows a routine ran, or the agent changed one. */
   changed: number;
 }
 
 export function RoutinesPanel({ agentId, agentName, off, changed }: Props) {
   const [routines, setRoutines] = useState<Routine[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // A routine being changed, or `null` for a new one; undefined shows no form.
   const [form, setForm] = useState<Routine | null | undefined>(undefined);
 
   const refresh = useCallback(() => listRoutines(agentId).then((list) => (setRoutines(list), setError(null)), (err) => setError(err.message)), [agentId]);
@@ -83,7 +77,6 @@ export function RoutinesPanel({ agentId, agentName, off, changed }: Props) {
   );
 }
 
-// "in 5 min" for a routine that runs within a day, orange when it runs within the hour.
 function Countdown({ at }: { at: number }) {
   const text = inHowLong(at);
   return text && <span className={`mt-px shrink-0 text-xs font-medium ${at - Date.now() < 3_600_000 ? "text-working" : "text-ink-3"}`}>{text}</span>;

@@ -1,7 +1,9 @@
-import { join } from "node:path";
+import { randomBytes } from "node:crypto";
+import { basename, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { fail, PI_ENV, SESSIONS } from "../common.mjs";
-import { CORE_TOOLS, IDLE_MS, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
+import { EXTENSIONS, fail } from "../common.mjs";
+import { agentKey, dropAgentKey } from "../http/access.mjs";
+import { BIN, CORE_TOOLS, IDLE_MS, MAX_APPROVAL, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
 import { askBefore } from "../browser/rule.mjs";
 import { memoryFlags } from "../memory/memory.mjs";
 import { pointOf } from "../settings/compaction.mjs";
@@ -10,73 +12,80 @@ import { pluginTools } from "../settings/plugins.mjs";
 import { skillPaths } from "../settings/skills.mjs";
 import { userFlags } from "../settings/user.mjs";
 import { notify } from "../push.mjs";
-import { getAgent, homeOf, makeHome, profilePath } from "./agents.mjs";
+import { ownTools, sharedTools } from "../users.mjs";
+import { chatDirOf, getAgent, homeOf, isIsolated, makeHome, mayCall, profilePath, profiles, userHomeOf, userOf } from "./agents.mjs";
+import { piDirOf, writePiDir } from "./pidir.mjs";
 import { spawnPi } from "./pi.mjs";
 import { asTyped } from "./sessions.mjs";
 import { saveFiles, toImages } from "./uploads.mjs";
-import { clearScratch, makeScratch, scratchOf, workspaceRules } from "./workspace.mjs";
+import { clearScratch, makeScratch, rulesOf, scratchOf } from "./workspace.mjs";
 
-// One pi per agent that is open. It starts on first use and stops after IDLE_MS with nobody
-// watching and no run in progress.
-// agent id -> run: { id, ready: Promise<run>, pi, listeners, busy, doing, asking, reply, stale, timer, done }
-// `reply` is the run's newest message from the agent, for the notification when the run ends.
-// `asking` is the question the agent waits on, as pi sent it (`extension_ui_request`).
 const runs = new Map();
 
 const emit = (run, event) => run.listeners.forEach((send) => send(event));
 
-// The agent's question is over (answered, or the run went on without it).
 const endAsk = (run) => {
   if (!run.asking) return;
-  const { id } = run.asking;
+  const { id, resolve } = run.asking;
   run.asking = null;
+  resolve?.(undefined);
   emit(run, { type: "ask_end", id });
 };
 
-// A closing run leaves `runs` at once, so the next viewer or message starts a new pi.
 const close = (run) => {
   if (runs.get(run.id) === run) runs.delete(run.id);
   clearTimeout(run.timer);
   run.pi?.close();
+  if (run.key) dropAgentKey(run.key);
 };
 
 const touch = (run) => {
   clearTimeout(run.timer);
-  // A run that closed already needs no timer (a viewer can leave after it closed).
   if (run.busy || run.listeners.size || runs.get(run.id) !== run) return;
-  // An agent that goes idle is done with its scratch files.
   run.timer = setTimeout(() => (close(run), void clearScratch(run.id)), IDLE_MS).unref();
 };
 
-// Our extensions, which give every agent the chat's tools and memory.
-const CORE_EXTENSIONS = ["../weilo.mjs", "../memory/extension.mjs"].map((path) => fileURLToPath(new URL(path, import.meta.url)));
+const [WEILO, MEMORY] = ["../weilo.mjs", "../memory/extension.mjs"].map((path) => fileURLToPath(new URL(path, import.meta.url)));
 
-// The tools an agent may call, as pi's allowlist: pi's built-in ones, our tools, its extensions' and its plugins'. With no plugin, MCP is off.
-const toolsFlags = (plugins, extensions) => {
-  const tools = [...PI_TOOLS, ...CORE_TOOLS, ...extensions.flatMap((e) => e.tools)];
+const toolsFlags = (agent, plugins, extensions) => {
+  const tools = [...PI_TOOLS, ...CORE_TOOLS.filter((t) => mayCall(agent, t)), ...extensions.flatMap((e) => e.tools)];
   return plugins.length ? ["--tools", [...tools, "codemode", ...plugins].join(",")] : ["--no-mcp", "--tools", tools.join(",")];
 };
 
-// pi's command line for an agent: its profile (which holds its instructions), the house rules for its folder and the shared workspace, what it knows about you and remembers, model, thinking level, the extensions it loads (pi's built-in ones, the app's that it has not turned off, and the ones it uses), skills and plugins, and its one conversation.
-const argvOf = (agent, skills, plugins, extensions, about) => {
+async function kindOf(agent, dir) {
+  const [skills, extensions] = await Promise.all([skillPaths(agent.skills), extensionsOf(agent)]);
+  if (!isIsolated(agent)) {
+    const about = (await Promise.all([userFlags(), memoryFlags()])).flat();
+    return { profile: profilePath(agent.id), skills, extensions, ours: [WEILO, MEMORY], about, copies: {}, env: sharedTools };
+  }
+  const copies = { "agent.json": profilePath(agent.id) };
+  for (const path of skills) copies[`skills/${basename(path)}`] = path;
+  const own = extensions.map((x) => {
+    if (x.builtin) return x;
+    copies[`extensions/${x.id}`] = join(EXTENSIONS, x.id);
+    return { ...x, entry: join(dir, "extensions", x.id, relative(join(EXTENSIONS, x.id), x.entry)) };
+  });
+  return { profile: join(dir, "agent.json"), skills: skills.map((path) => join(dir, "skills", basename(path))), extensions: own, ours: [WEILO], about: ["--no-context-files"], copies, env: ownTools(userHomeOf(agent)) };
+}
+
+const argvOf = (agent, kind, plugins) => {
   const { id, model, thinking } = agent;
   return [
-    "pi", "--mode", "rpc",
+    BIN.pi, "--mode", "rpc",
     ...(model ? ["--model", model] : []),
     ...(thinking ? ["--thinking", thinking] : []),
-    "--append-system-prompt", profilePath(id),
-    "--append-system-prompt", workspaceRules(agent.folder, scratchOf(id)),
-    ...about,
+    "--append-system-prompt", kind.profile,
+    "--append-system-prompt", rulesOf(agent),
+    ...kind.about,
     "-ne", ...PI_BUILTINS.flatMap((name) => ["-e", `builtin:${name}`]),
-    ...CORE_EXTENSIONS.flatMap((path) => ["-e", path]), ...extensions.flatMap((e) => ["-e", e.entry]),
-    "--no-skills", ...skills.flatMap((path) => ["--skill", path]),
-    ...toolsFlags(plugins, extensions),
-    "--session-dir", join(SESSIONS, id),
+    ...kind.ours.flatMap((path) => ["-e", path]), ...kind.extensions.flatMap((e) => ["-e", e.entry]),
+    "--no-skills", ...kind.skills.flatMap((path) => ["--skill", path]),
+    ...toolsFlags(agent, plugins, kind.extensions),
+    "--session-dir", chatDirOf(agent),
     "--session-id", id,
   ];
 };
 
-// A notification on your devices (push.mjs) when a run ends: its answer, or its error. A run you stopped sends none.
 const notifyAbout = (id, kind, text) => getAgent(id).then((agent) => notify(agent, kind, text)).catch(() => {});
 function tell(run) {
   const { reply } = run;
@@ -89,14 +98,24 @@ function tell(run) {
 }
 
 async function start(run) {
+  await holds.get(run.id);
   const agent = await getAgent(run.id);
-  const [ask, skills, plugins, extensions, user, memory] = await Promise.all([askBefore(), skillPaths(agent.skills), pluginTools(agent.plugins), extensionsOf(agent), userFlags(), memoryFlags()]);
-  const argv = argvOf(agent, skills, plugins, extensions, [...user, ...memory]);
-  await Promise.all([makeScratch(run.id), makeHome(agent)]);
+  const dir = piDirOf(run.id);
+  const [ask, plugins, kind, agents] = await Promise.all([askBefore(), pluginTools(agent.plugins), kindOf(agent, dir), profiles()]);
+  const argv = argvOf(agent, kind, plugins);
+  const user = userOf(agent, agents);
+  await Promise.all([makeScratch(agent), makeHome(agent)]);
+  run.key = agentKey(run.id);
+  await writePiDir(dir, user, { model: agent.model, plugins: agent.plugins, key: run.key, agent: run.id, copies: kind.copies });
   run.done = new Promise((resolve) => {
     run.pi = spawnPi(argv, {
+      user,
       cwd: homeOf(agent),
-      env: { ...PI_ENV, WEILO_AGENT: run.id, WEILO_API: `http://127.0.0.1:${PORT}/api`, WEILO_ASK_BEFORE: ask, WEILO_SCRATCH: scratchOf(run.id) },
+      env: {
+        ...kind.env, PI_CODING_AGENT_DIR: dir, HOME: userHomeOf(agent),
+        WEILO_AGENT: run.id, WEILO_API: `http://127.0.0.1:${PORT}/api`, WEILO_KEY: run.key, WEILO_ASK_BEFORE: ask, WEILO_SCRATCH: scratchOf(run.id),
+        ...(isIsolated(agent) && { WEILO_ISOLATED: "1" }),
+      },
       onEvent(event) {
         if (event.type === "agent_start") (run.busy = true), (run.reply = null);
         if (event.type === "message_end" && event.message?.role === "assistant") run.reply = event.message;
@@ -104,11 +123,10 @@ async function start(run) {
         if (event.type === "tool_execution_start") run.doing = event.toolName;
         if (event.type === "tool_execution_end" || !run.busy) run.doing = "";
         if (event.type === "extension_ui_request") {
-          // Only the agent's own questions (`ask`: a choice or a line of text) reach the user; pi may ask others.
-          if (event.method === "select" || event.method === "input") (run.asking = event), void notifyAbout(run.id, "ask", event.title);
+          if (event.method === "select" || event.method === "input") endAsk(run), (run.asking = event), void notifyAbout(run.id, "ask", event.title);
           else if (event.method === "confirm" || event.method === "editor") run.pi.reply({ type: "extension_ui_response", id: event.id, cancelled: true });
         }
-        if (event.type === "tool_execution_end" || !run.busy) endAsk(run);
+        if ((event.type === "tool_execution_end" && !run.asking?.resolve) || !run.busy) endAsk(run);
         emit(run, event.message ? { ...event, message: asTyped(event.message) } : event);
         if (run.stale && !run.busy) close(run);
         else touch(run);
@@ -124,6 +142,8 @@ async function start(run) {
   return run;
 }
 
+const holds = new Map();
+
 const open = (id) => {
   if (!runs.has(id)) {
     const run = { id, listeners: new Set(), busy: false, stale: false, timer: null };
@@ -138,10 +158,8 @@ const open = (id) => {
 
 const current = (id) => runs.get(id)?.ready.catch(() => null);
 
-// Calls send(event) with the conversation so far, then every new event. Returns unsubscribe.
 export async function subscribe(id, send) {
   const run = await open(id);
-  // History and listener in one step, so no event falls between them.
   await run.pi.send("get_messages", {}, ({ messages }) => {
     send({ type: "history", messages: messages.map(asTyped), busy: run.busy, asking: run.asking });
     run.listeners.add(send);
@@ -153,32 +171,25 @@ export async function subscribe(id, send) {
   };
 }
 
-// Pi's own refusal (no model, pi gone) is shown to the user as it is.
 const refused = (err) => {
   throw fail(409, err.message);
 };
 
-// A message: text, images and files. While a run is going, `steer` queues it into the run.
 export async function prompt(id, { text = "", images = [], files = [] }) {
   if (typeof text !== "string") throw fail(400, "The message is not valid");
   const blocks = toImages(images);
-  // Open first: no files are saved for an agent that does not exist.
   const { pi } = await open(id);
-  const paths = await saveFiles(homeOf(await getAgent(id)), files);
+  const paths = await saveFiles(await getAgent(id), files);
   const message = [text.trim(), ...paths.map((path) => `[Attached file: ${path}]`)].filter(Boolean).join("\n\n");
   if (!message && !blocks.length) throw fail(400, "The message is empty");
   return pi.send("prompt", { message, images: blocks, streamingBehavior: "steer" }).catch(refused);
 }
 
-// What the agent's skills offer to run as /commands, from its own pi: [{ name, description }].
 export async function skillCommands(id) {
   const { commands } = await (await open(id)).pi.send("get_commands").catch(refused);
   return commands.filter((c) => c.source === "skill").map((c) => ({ name: c.name.replace(/^skill:/, ""), description: c.description ?? "" }));
 }
 
-// How full the agent's context is, against the point where pi summarizes it: { tokens, window, point }, or null when pi does not
-// know the model's window. `tokens` is null just after a summary, until the next reply tells (`after` overrides pi's count).
-// The chat's ring fills as tokens reach `point`, so full means pi summarizes next.
 async function usageOf(run, after) {
   const { contextUsage } = await run.pi.send("get_session_stats").catch(refused);
   if (!contextUsage?.contextWindow) return null;
@@ -188,7 +199,6 @@ async function usageOf(run, after) {
 
 export const contextOf = async (id) => usageOf(await open(id));
 
-// Summarizes the conversation now, as pi's /compact does; `instructions` say what the summary should keep. Returns the context after it.
 export async function compact(id, instructions) {
   if (instructions !== undefined && typeof instructions !== "string") throw fail(400, "The instructions are not valid");
   const run = await open(id);
@@ -197,18 +207,32 @@ export async function compact(id, instructions) {
   return usageOf(run, estimatedTokensAfter ?? null);
 }
 
-// The tool the agent is using now ("" between tools); null when it is not in the middle of a run.
 export const activityOf = (id) => {
   const run = runs.get(id);
   return run?.busy ? (run.doing ?? "") : null;
 };
 
-// The user's answer to the question the agent waits on; no `value` means the user skipped it.
 export async function answer(id, { request, value }) {
   const run = await current(id);
   if (!run?.asking || run.asking.id !== request || (value !== undefined && typeof value !== "string")) throw fail(409, "This question is closed");
-  run.pi.reply({ type: "extension_ui_response", id: request, ...(value === undefined ? { cancelled: true } : { value }) });
+  const { resolve } = run.asking;
+  if (resolve) {
+    run.asking = { ...run.asking, resolve: null };
+    resolve(value);
+  } else run.pi.reply({ type: "extension_ui_response", id: request, ...(value === undefined ? { cancelled: true } : { value }) });
   endAsk(run);
+}
+
+export async function askUser(id, title, options) {
+  if (title.length > MAX_APPROVAL) throw fail(400, `This request is too long to show the user in full (${title.length} characters; at most ${MAX_APPROVAL}). Make it shorter.`);
+  const run = await current(id);
+  if (!run?.busy) throw fail(409, "The agent is not in a run");
+  endAsk(run);
+  return new Promise((resolve) => {
+    run.asking = { type: "extension_ui_request", id: `weilo-${randomBytes(6).toString("hex")}`, method: "select", title, options, resolve };
+    emit(run, run.asking);
+    void notifyAbout(id, "ask", title);
+  });
 }
 
 export const abort = async (id) => (await current(id))?.pi.send("abort").catch(refused);
@@ -220,13 +244,28 @@ export async function stop(id) {
   await run.done;
 }
 
-// Applies a changed agent, skill or plugin, or reads the agent's files again (/reload), by starting its pi anew: now if the agent is idle, else when its run ends.
 export async function restart(id) {
   const run = await current(id);
   if (run?.busy) run.stale = true;
   else await stop(id);
 }
 
+export async function holding(id, job) {
+  const done = stop(id).then(job);
+  holds.set(id, done.catch(() => {}));
+  try {
+    return await done;
+  } finally {
+    holds.delete(id);
+  }
+}
+
 export const restartAll = () => Promise.all([...runs.keys()].map(restart));
+
+export const restartRegular = () =>
+  Promise.all([...runs.keys()].map(async (id) => {
+    const agent = await getAgent(id).catch(() => null);
+    if (agent && !isIsolated(agent)) await restart(id);
+  }));
 
 export const stopAll = () => Promise.all([...runs.keys()].map(stop));

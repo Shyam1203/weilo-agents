@@ -1,5 +1,3 @@
-// Signing in to a provider with an account instead of a key: the steps pi's sign-in asks for, one at a time.
-// The sign-in runs on the computer with the app (settings/login.mjs in the daemon); this shows where it is.
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { answerSignIn, signInStatus, startSignIn, stopSignIn, type Provider, type SignIn as Step } from "../../api/providers";
 import { messageOf } from "../../api/http";
@@ -8,11 +6,8 @@ import { ErrorText } from "../../components/ui/Field";
 import { Icon } from "../../components/ui/Icon";
 import { useCopy } from "../../lib/useCopy";
 
-/** How often (ms) the sign-in is checked while it waits for the provider. */
 const POLL_MS = 2000;
 
-// What to do with a pasted answer: a provider that sends the browser back to this computer's address (which a phone,
-// or this browser, cannot open) needs that address; the others show a code.
 const pasteHint = (placeholder = "") =>
   /^https?:/.test(placeholder)
     ? "When you have signed in, the browser goes to a page that does not open. That is expected: copy that page's address from the address bar and paste it here."
@@ -35,7 +30,6 @@ export function SignIn({ provider, onDone, onCancel }: { provider: Provider; onD
 
   useEffect(() => {
     void startSignIn(provider.id).then(take, fail);
-    // Leaving the panel before the end stops the sign-in.
     return () => void stopSignIn(provider.id).catch(() => {});
   }, [provider.id]);
 

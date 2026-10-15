@@ -10,9 +10,9 @@ You need Docker.
 
 Download `weilo-agents-<version>.zip` from the [releases](https://github.com/Shyam1203/weilo-agents/releases), unzip it,
 and run `start.cmd` (Windows) or `./start.sh` (macOS, Linux). The script pulls the released image for the version in
-`VERSION`, starts the app, then opens http://localhost:3210. In Settings, sign in to a provider (Claude Pro or Max, ChatGPT Plus or Pro, GitHub Copilot, OpenRouter) or add its API key. Then create an agent.
+`VERSION`, starts the app, then opens it in your browser with a link that pairs that browser: only paired phones and computers can use the app (add more in Settings > Devices). In Settings, sign in to a provider (Claude Pro or Max, ChatGPT Plus or Pro, GitHub Copilot, OpenRouter) or add its API key. Then create an agent.
 
-To update, run `update.cmd` (Windows) or `./update.sh` in the same folder: it downloads the newest release, replaces the scripts, and starts it. (A folder from before 0.1.2 has no update script: download the newest zip once and unzip it over the folder.) With a checkout, `git pull` and run the start script. Your data stays in `~/.weilo-agents`.
+To update, run `update.cmd` (Windows) or `./update.sh` in the same folder: it downloads the newest release, replaces the scripts, and starts it. (A folder from before 0.1.2 has no update script: download the newest zip once and unzip it over the folder.) With a checkout, `git pull` and run the start script. Your data stays in `~/.weilo-agents`. (On Linux its files belong to the app's own users, one per agent, in the group 2000: to browse the workspace, add yourself to that group, or use `sudo`.)
 The version is shown in Settings > About. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 To build the image from a checkout instead: `docker compose up -d --build`.
@@ -31,4 +31,6 @@ npm run build   # type-check and build
 
 After you change the daemon or the UI, build the container again: `docker compose up -d --build`.
 
-How it works and the design decisions: [DESIGN.md](docs/DESIGN.md). How a release is made: [RELEASING.md](docs/RELEASING.md).
+## Documentation
+
+Start at [docs/index.html](docs/index.html) (open it in a browser from a checkout or the source zip): architecture, security model, agents, memory, data and permissions, the UI, operating and development, with diagrams. Dense reference tables: [DESIGN.md](docs/DESIGN.md). How a release is made: [RELEASING.md](docs/RELEASING.md).

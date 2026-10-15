@@ -1,4 +1,3 @@
-// Searching from the agent list: the box, the agents whose name holds the words, then the messages that do, newest first.
 import { useEffect, useState } from "react";
 import type { Agent } from "../../api/agents";
 import { messageOf } from "../../api/http";
@@ -9,10 +8,8 @@ import { shortWhen } from "../../lib/format";
 import { MAX_SEARCH } from "../../lib/limits";
 import { avatarOf } from "../agents/avatars";
 
-/** How long (ms) typing pauses before the search runs. */
 const PAUSE_MS = 250;
 
-/** The search box. */
 export function SearchBox({ query, onQuery }: { query: string; onQuery: (query: string) => void }) {
   return (
     <div className="relative mx-3 mb-1.5">
@@ -32,7 +29,6 @@ export function SearchBox({ query, onQuery }: { query: string; onQuery: (query: 
   );
 }
 
-// The snippet with the words marked.
 function Snippet({ text, query }: { text: string; query: string }) {
   const at = text.toLowerCase().indexOf(query.toLowerCase());
   if (at < 0) return <>{text}</>;
@@ -45,7 +41,6 @@ function Snippet({ text, query }: { text: string; query: string }) {
   );
 }
 
-/** The results for `query`: choosing an agent opens its chat; choosing a message opens that chat at that message. */
 export function SearchResults({ query, agents, onAgent, onOpen }: { query: string; agents: Agent[]; onAgent: (agent: string) => void; onOpen: (agent: string, at: number) => void }) {
   const [found, setFound] = useState<Found[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +52,6 @@ export function SearchResults({ query, agents, onAgent, onOpen }: { query: strin
     return () => clearTimeout(timer);
   }, [words]);
 
-  // Agents match at once, by name; messages once the search answers.
   const named = agents.filter((a) => a.name.toLowerCase().includes(words.toLowerCase()));
   const note = error ? <p className="px-3 py-2 text-xs text-bad">{error}</p> : !found ? <p className="px-3 py-2 text-xs text-ink-3">Searching messages…</p> : null;
   if (found && !found.length && !named.length) return <p className="px-5 py-3 text-xs text-ink-3">No agents or messages with “{words}”.</p>;

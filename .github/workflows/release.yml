@@ -1,5 +1,3 @@
-# A tag like v0.1.0 releases that version: the image goes to ghcr.io (amd64 and arm64) and the GitHub release carries a zip
-# with what a user needs to run it (compose.yaml, the start scripts, VERSION). The tag must match the VERSION file.
 name: Release
 
 on:

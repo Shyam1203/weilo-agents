@@ -7,6 +7,7 @@ import { Avatar } from "../../components/ui/Avatar";
 import { Button, IconButton } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
 import { Notice } from "../../components/ui/Notice";
+import { Tag } from "../../components/ui/Tag";
 import { TopBar } from "../../components/ui/TopBar";
 import { useFollowBottom } from "../../lib/useFollowBottom";
 import { useMedia } from "../../lib/useMedia";
@@ -27,39 +28,30 @@ import { PreviewProvider } from "../files/PreviewContext";
 interface Props {
   agent: Agent;
   models?: Model[];
-  /** A provider is connected, so there is a model to talk to. */
   hasProvider: boolean;
   onBack: () => void;
-  /** Words to find as the chat opens, near the message at `at` (s). */
   find?: { query: string; at: number } | null;
   onEdit: () => void;
-  /** A run started, moved on or ended: the agent list shows what it is doing, and its newest message. */
   onActivity: () => void;
-  /** What the agent is doing, live from the chat: the agent list shows the same, in step with it. Null again when the chat closes. */
   onLive: (live: { busy: boolean; doing: string | null } | null) => void;
   onOpenSettings: () => void;
 }
 
-/** How near the top (px) the reader must scroll for earlier messages to load. */
 const TOP_PX = 400;
 
-/** One agent's chat. Give it a `key` of the agent's id. */
 export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onActivity, onLive, onOpenSettings }: Props) {
   const chat = useChat(agent.id, onActivity);
   useEffect(() => onLive({ busy: chat.busy, doing: chat.doing }), [chat.busy, chat.doing]);
   useEffect(() => () => onLive(null), []);
-  // The browser and the routines: beside the chat on a wide screen (you can hide them), over it on a narrow one.
   const wide = useMedia("(min-width: 1024px)");
   const [sidebar, setSidebar] = useState(() => read(KEYS.sidebar) !== "0");
   const [sheet, setSheet] = useState(false);
   const sideOpen = wide ? sidebar : sheet;
   const toggleSide = () => (wide ? (write(KEYS.sidebar, sidebar ? "0" : "1"), setSidebar(!sidebar)) : setSheet(!sheet));
   const routinesChanged = chat.messages.filter((m) => m.kind === "note").length;
-  // Only what pi sends moves the view down: earlier messages load above without counting as new.
   const scroller = useFollowBottom([chat.live, chat.asking]);
   const { away, unseen, toBottom } = scroller;
 
-  // Messages pi summarized away load as the reader nears the top (or at once, when the chat does not fill the view).
   const load = useRef(chat.loadEarlier);
   load.current = chat.loadEarlier;
   useEffect(() => {
@@ -70,7 +62,6 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
     el.addEventListener("scroll", check, { passive: true });
     return () => el.removeEventListener("scroll", check);
   }, [chat.more, chat.loadingEarlier, chat.ready]);
-  // They load above what is on screen, which stays where it is: the distance from the bottom is kept.
   const fromBottom = useRef(0);
   const earliest = chat.messages[0]?.id;
   const before = useRef(earliest);
@@ -84,13 +75,11 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
     before.current = earliest;
     fromBottom.current = 0;
   }, [earliest]);
-  // Finding words in this chat: open with a search's words, or from the header's button.
   const [finding, setFinding] = useState(!!find);
   const [query, setQuery] = useState(find?.query ?? "");
   useEffect(() => {
     if (find) (setFinding(true), setQuery(find.query));
   }, [find]);
-  // A search result older than what is loaded: earlier messages load until it is there, then the view goes to it.
   const first = chat.messages.find((m) => m.at !== null)?.at ?? 0;
   const loadingFor = !!find && chat.more && first > find.at;
   useEffect(() => {
@@ -99,12 +88,10 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
   const found = useFind(scroller.box, finding ? query : "", [chat.messages, chat.ready], loadingFor ? null : find);
   const closeFind = () => (setFinding(false), setQuery(""));
 
-  // A message sent from the message box shows its own error. A reply from a button, card or page has no box: its error shows above it.
   const [replyError, setReplyError] = useState<string | null>(null);
   const send = (message: Outgoing) => (setReplyError(null), chat.send(message));
   const reply = (text: string) => void send({ text, images: [], files: [] }).catch((err) => setReplyError(messageOf(err)));
 
-  // The message box floats over the chat; the chat leaves room for it, whatever its height.
   const dock = useRef<HTMLDivElement>(null);
   const [room, setRoom] = useState(0);
   useEffect(() => {
@@ -113,7 +100,6 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
     return () => observer.disconnect();
   }, []);
 
-  // What typing "/" offers: the agent's skills (pi's own commands, asked of its pi) and its plugins.
   const [skills, setSkills] = useState<Shortcut[]>([]);
   useEffect(() => {
     listCommands(agent.id).then(
@@ -131,7 +117,7 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
           onBack={onBack}
           leading={<Avatar spec={avatarOf(agent)} size={32} working={chat.busy} doing={chat.doing} />}
           title={agent.name}
-          subtitle={agent.model ? shortName(models?.find((m) => m.id === agent.model)?.name ?? agent.model) : "Choose a model"}
+          subtitle={<>{agent.isolated && <Tag>Isolated</Tag>}{agent.model ? shortName(models?.find((m) => m.id === agent.model)?.name ?? agent.model) : "Choose a model"}</>}
           onTitle={onEdit}
           actions={<><IconButton icon="search" label="Find in this chat" aria-pressed={finding} className={finding ? "bg-select text-ink" : ""} onClick={() => (finding ? closeFind() : setFinding(true))} /><IconButton icon="panel" label={sideOpen ? "Hide browser and routines" : "Show browser and routines"} aria-pressed={sideOpen} className={sideOpen ? "bg-select text-ink" : ""} onClick={toggleSide} /></>}
         />
@@ -145,7 +131,6 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
           </div>
           <div ref={dock} className="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-page from-55% to-transparent pt-8">
             <div className="pointer-events-auto mx-auto flex w-full max-w-3xl flex-col gap-2 px-3 pb-[max(0.75rem,var(--safe-bottom))] sm:px-4 sm:pb-[max(1rem,var(--safe-bottom))]">
-              {/* Scrolled up: a way back down to the newest, which says when something new came meanwhile. */}
               {away && (
                 <button
                   type="button"
@@ -193,7 +178,6 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
       )}
       {sideOpen && !wide && (
         <Modal title={agent.name} onClose={() => setSheet(false)} width="max-w-md">
-          {/* The panels have their own padding: they line up with the title instead of adding to the dialog's. */}
           <div className="-mx-4 -mt-4 -mb-2">
             <Side agent={agent} routinesChanged={routinesChanged} onTaken={onActivity} />
           </div>
@@ -204,7 +188,6 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
   );
 }
 
-// The browser and the routines of one agent. `onTaken`: you took the browser over or gave it back.
 const Side = ({ agent, routinesChanged, onTaken }: { agent: Agent; routinesChanged: number; onTaken: () => void }) => (
   <>
     <BrowserPanel agentId={agent.id} agentName={agent.name} off={agent.disabled.includes("browser")} onTaken={onTaken} />

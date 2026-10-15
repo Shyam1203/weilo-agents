@@ -29,7 +29,6 @@ export function AboutPage() {
         <Row title="Build">{value(build ? build.commit.slice(0, 7) : undefined)}</Row>
         <Row title="Pi coding agent">{value(build?.pi)}</Row>
       </Card>
-      {/* Whether it checks and what it found, in one row; a new version gets a row of its own. */}
       <Card>
         {update?.available && (
           <Row

@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Repository layout, conventions, extending the app, and invariants.">
+<title>Development Guide</title>
+<link rel="stylesheet" href="assets/docs.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="top">
+<div class="top-in">
+<a class="brand" href="index.html">Weilo Agents docs</a>
+<nav aria-label="Documentation pages"><ul>
+<li><a class="nav" href="index.html">Overview</a></li>
+<li><a class="nav" href="architecture.html">Architecture</a></li>
+<li><a class="nav" href="security.html">Security</a></li>
+<li><a class="nav" href="agents.html">Agents</a></li>
+<li><a class="nav" href="memory-and-knowledge.html">Memory</a></li>
+<li><a class="nav" href="data-and-permissions.html">Data</a></li>
+<li><a class="nav" href="ui.html">UI</a></li>
+<li><a class="nav" href="operating.html">Operating</a></li>
+<li><a class="nav" href="development.html" aria-current="page">Development</a></li>
+</ul></nav>
+</div>
+</header>
+<main id="main">
+<div class="layout has-toc">
+<nav class="toc" aria-label="On this page"><h2>On this page</h2><ol>
+<li><a href="#layout">Repository layout</a></li>
+<li><a href="#conventions">Conventions</a></li>
+<li><a href="#dev">Running it while you work</a></li>
+<li><a href="#add-route">Adding a route</a></li>
+<li><a href="#add-tool">Adding a tool</a></li>
+<li><a href="#add-extension">Adding a bundled extension</a></li>
+<li><a href="#add-setting">Adding a setting</a></li>
+<li><a href="#add-field">Adding an agent field</a></li>
+<li><a href="#invariants">Invariants that must not be broken</a></li>
+</ol></nav>
+<div class="content">
+<h1>Development</h1>
+<p class="lede">How the repository is laid out, the conventions it follows, how to run it while you work, how to extend it without opening a hole, and the invariants that hold the security model together.</p>
+
+<section class="card" id="layout">
+<h2>Repository layout</h2>
+<div class="table mid"><table>
+<thead><tr><th>Path</th><th>What it is</th></tr></thead>
+<tbody>
+<tr><td><code>daemon/</code></td><td>The daemon, copied to <code>/app</code> in the image. Node built-ins only, plain relative imports.</td></tr>
+<tr><td><code>ui/</code></td><td>The React app (<code>src/</code>), its static files (<code>public/</code>: service worker, icons, manifest), Vite and TypeScript config.</td></tr>
+<tr><td><code>image/</code></td><td><code>Dockerfile</code> and <code>chromium-policy.json</code>.</td></tr>
+<tr><td><code>docs/</code></td><td>These pages (<code>*.html</code>, <code>assets/docs.css</code>), <code>DESIGN.md</code> and <code>RELEASING.md</code>.</td></tr>
+<tr><td><code>.github/workflows/release.yml</code></td><td>Builds and publishes a release from a <code>v*</code> tag.</td></tr>
+<tr><td><code>compose.yaml</code></td><td>The one service, its port, volumes and hardening.</td></tr>
+<tr><td><code>start.sh</code>, <code>start.cmd</code>, <code>update.sh</code>, <code>update.cmd</code></td><td>The user's launch and update scripts (shipped in the release zip).</td></tr>
+<tr><td><code>VERSION</code>, <code>CHANGELOG.md</code>, <code>README.md</code></td><td>The version (SemVer), the changes, the short introduction.</td></tr>
+<tr><td><code>.gitattributes</code></td><td>LF everywhere (files go into a Linux image), CRLF for <code>.cmd</code>.</td></tr>
+</tbody></table></div>
+<h3>daemon/</h3>
+<div class="table wide"><table>
+<thead><tr><th>Module</th><th>Job</th></tr></thead>
+<tbody>
+<tr><td><code>server.mjs</code></td><td>Entry: every API route, the HTTP server and upgrades, the admin socket, start order.</td></tr>
+<tr><td><code>config.mjs</code></td><td>Every value to tune (port, limits, timeouts, users, <code>BIN</code>, <code>SYSTEM_PATH</code>, tool lists). Plain constants.</td></tr>
+<tr><td><code>common.mjs</code></td><td>Data paths, <code>fail()</code>, <code>readJson</code>/<code>updateJson</code>/<code>writePrivate</code>, the <code>SECRET</code> pattern, <code>slug</code>.</td></tr>
+<tr><td><code>users.mjs</code></td><td><code>spawnAs</code>, the helper users, PATHs for agents, <code>folder</code>/<code>newFile</code>/<code>tree</code>, <code>secure()</code>.</td></tr>
+<tr><td><code>weilo.mjs</code></td><td>The pi extension every agent loads: <code>show</code>, <code>ask</code>, <code>skill</code>, <code>manage_agents</code>, <code>manage_settings</code>.</td></tr>
+<tr><td><code>tool.mjs</code></td><td>What extensions share: <code>call()</code> to the API with <code>WEILO_KEY</code>, <code>daemonTool()</code>.</td></tr>
+<tr><td><code>migrate.mjs</code>, <code>version.mjs</code>, <code>update.mjs</code></td><td>Data version steps; the build's version; the release check.</td></tr>
+<tr><td><code>pair.mjs</code>, <code>push.mjs</code>, <code>contact.mjs</code></td><td>Pairing link from the admin socket; Web Push; Contact us.</td></tr>
+<tr><td><code>agents/agents.mjs</code></td><td>Profiles, ids, uids, every path of an agent, <code>mayCall</code>, <code>userOf</code>, moves.</td></tr>
+<tr><td><code>agents/runner.mjs</code></td><td>One pi per agent: start, argv, events, questions (<code>askUser</code>), restarts.</td></tr>
+<tr><td><code>agents/pi.mjs</code>, <code>agents/pidir.mjs</code></td><td>Spawning pi and its RPC framing; the pi folder it gets.</td></tr>
+<tr><td><code>agents/manage.mjs</code></td><td><code>manage_agents</code>: rules, the question, trusted changes.</td></tr>
+<tr><td><code>agents/sessions.mjs</code>, <code>search.mjs</code>, <code>uploads.mjs</code>, <code>workspace.mjs</code></td><td>Chat files; app search; attachments; house rules and scratch folders.</td></tr>
+<tr><td><code>gateway/models.mjs</code>, <code>plugins.mjs</code></td><td>The model and plugin proxies, the pipe, what a pi's <code>models.json</code>/<code>mcp.json</code> hold.</td></tr>
+<tr><td><code>gateway/key.mjs</code>, <code>pipe.mjs</code></td><td>Scripts an agent's pi runs: fetch an access token; pipe to a plugin program.</td></tr>
+<tr><td><code>http/request.mjs</code>, <code>access.mjs</code></td><td>Host/Origin guard, JSON body and reply; devices, codes, agent keys.</td></tr>
+<tr><td><code>http/static.mjs</code>, <code>files.mjs</code>, <code>events.mjs</code>, <code>websocket.mjs</code></td><td>The UI files; files chats name; SSE; a minimal WebSocket server.</td></tr>
+<tr><td><code>memory/memory.mjs</code>, <code>vault.mjs</code>, <code>fetch.mjs</code>, <code>curator.mjs</code>, <code>extension.mjs</code></td><td>Notes; vault pages and scrubbing; search; the curator; the memory tools' extension.</td></tr>
+<tr><td><code>routines/routines.mjs</code>, <code>schedule.mjs</code>, <code>extension/</code></td><td>Store and runs; time math; the bundled <code>routine</code> tool.</td></tr>
+<tr><td><code>browser/screen.mjs</code>, <code>browser.mjs</code>, <code>rule.mjs</code>, <code>extension/</code></td><td>Xvnc, openbox, Chromium and the live view; the browser tool and take over; ask first; the bundled <code>browser</code> tool.</td></tr>
+<tr><td><code>settings/providers.mjs</code>, <code>login.mjs</code>, <code>compaction.mjs</code>, <code>manage.mjs</code></td><td>Keys and models; account sign-in; when pi summarizes; <code>manage_settings</code>.</td></tr>
+<tr><td><code>settings/skills.mjs</code>, <code>plugins.mjs</code>, <code>extensions.mjs</code>, <code>zip.mjs</code>, <code>user.mjs</code></td><td>The libraries; the shared unzip checks; About you.</td></tr>
+</tbody></table></div>
+<h3>ui/src/</h3>
+<p><code>App.tsx</code>, <code>main.tsx</code>; <code>api/</code> (one client module per area); <code>features/</code> (<code>workspace</code>, <code>chat</code>, <code>agents</code>, <code>settings</code>, <code>skills</code>, <code>plugins</code>, <code>extensions</code>, <code>memory</code>, <code>browser</code>, <code>routines</code>, <code>files</code>, <code>devices</code>, <code>user</code>, <code>support</code>); <code>components/</code> (the UI kit); <code>lib/</code> (hooks and helpers, including <code>limits.ts</code>); <code>styles/index.css</code>. Details: <a href="ui.html#structure">The app UI</a>.</p>
+</section>
+
+<section class="card" id="conventions">
+<h2>Conventions</h2>
+<ul>
+<li><strong>No comments in code.</strong> The code is kept short and named plainly; the reasons behind it live in these pages and in <code>DESIGN.md</code>. A change that alters behavior, a boundary or a limit updates the page that describes it in the same commit. If a page and the code disagree, the code is right and the page is the bug.</li>
+<li><strong>No tests in the repository.</strong> The checks are the maintainers' manual run before each release (<a href="operating.html#release-check">the checklist</a>), plus <code>npm run build</code>, which type-checks the UI. When you change a boundary, add the probe for it to the checklist.</li>
+<li><strong>The daemon has no npm dependencies.</strong> Node built-ins only; the two packages it uses at run time (pi's SDK and <code>playwright-core</code>) are installed globally in the image and loaded by path or through <code>NODE_PATH</code>.</li>
+<li><strong>One place for numbers.</strong> Limits and timeouts live in <code>config.mjs</code>. The UI repeats a few in <code>ui/src/lib/limits.ts</code>: change both together. Tool descriptions are built from the same constants.</li>
+<li><strong>Errors</strong> are <code>fail(status, message)</code>; the message is shown to the user or the agent as is, in plain words. Unexpected errors are logged and answered as "An error occurred".</li>
+<li><strong>Files</strong> are written whole (<code>writePrivate</code>) and one change at a time (<code>updateJson</code>). A corrupt JSON file throws and is never overwritten.</li>
+<li><strong>Words</strong>: user-facing text is short, plain English; the UI says "agent", "folder", "add-on", never internal names.</li>
+<li><strong>Releases</strong>: <code>VERSION</code> and <code>CHANGELOG.md</code> change together; see <a href="RELEASING.md">RELEASING.md</a>.</li>
+</ul>
+</section>
+
+<section class="card" id="dev">
+<h2>Running it while you work</h2>
+<pre><code>docker compose up -d --build      # build and run the container from this checkout
+cd ui &amp;&amp; npm install
+npm run dev                        # UI on http://localhost:5173, /api proxied to :3210
+npm run build                      # type-check and build the UI</code></pre>
+<ul>
+<li>The dev UI talks to the container's daemon, so you need a running container and a paired browser. Cookies are not tied to a port, so a browser paired at <code>localhost:3210</code> is paired at <code>localhost:5173</code> too; otherwise open <code>http://localhost:5173/?pair=&lt;code&gt;</code> with a code from <code>docker exec weilo-core node /app/pair.mjs</code>.</li>
+<li>After changing the daemon, rebuild: <code>docker compose up -d --build</code>. Logs: <code>docker logs -f weilo-core</code>.</li>
+<li>The daemon's paths are fixed to the container (<code>/home/node/.pi</code>, <code>/var/lib/weilo</code>, <code>/app</code>). Running it directly on a host ("host mode") is not in this version. When it does not run as root it changes no owners and starts everything as itself, which is only good for experiments.</li>
+<li>A build from a checkout is version <code>dev</code>: no update check.</li>
+</ul>
+</section>
+
+<section class="card" id="add-route">
+<h2>Adding a route</h2>
+<p>Routes are registered in <code>server.mjs</code>. Pick the right kind first:</p>
+<div class="table mid"><table>
+<thead><tr><th>Kind</th><th>Register with</th><th>Who can call</th></tr></thead>
+<tbody>
+<tr><td>For you (the app)</td><td><code>route(method, path, handler)</code></td><td>Paired devices only. An agent key gets 403.</td></tr>
+<tr><td>For an agent's tool</td><td><code>agentRoute(method, "/api/agents/:id/…", tool, handler)</code></td><td>Devices, and the agent whose id is in the path, if <code>mayCall(agent, tool)</code> allows.</td></tr>
+</tbody></table></div>
+<ul>
+<li>A handler gets <code>{id, rid, body, query, headers, who}</code> and returns the reply object, or nothing for 204. A path under <code>/api/agents/:id</code> loads the agent first, so a missing id is 404.</li>
+<li>Streams and file downloads are matched before the loop and check <code>who.device</code> themselves; do the same for anything that returns chat contents or files.</li>
+<li>If pis read what the route changes when they start, wrap it in <code>forAll</code> so every pi starts anew; if it changes isolated agents, call <code>restartRegular</code>.</li>
+<li>Never return a secret: keys, plugin env or tokens, device keys.</li>
+</ul>
+</section>
+
+<section class="card" id="add-tool">
+<h2>Adding a tool</h2>
+<ol>
+<li>Write the daemon side as a function in the feature's module, then an <code>agentRoute</code> named after the tool.</li>
+<li>Declare the tool in pi: in <code>weilo.mjs</code> with <code>daemonTool(pi, name, label, description, parameters, required)</code> for a chat tool, or in a feature's extension. The description is what the model reads: build any limit in it from <code>config.mjs</code>.</li>
+<li>Add the name to <code>CORE_TOOLS</code> in <code>config.mjs</code> if it is one of ours that every agent loads, so it reaches <code>--tools</code> and <code>RESERVED_TOOLS</code>. If it reaches anything all agents share (the library, memory, settings), add it to <code>SHARED_TOOLS</code>: <code>mayCall</code> then keeps it from isolated agents, both in <code>--tools</code> and on the route.</li>
+<li>If the tool changes something you should approve, ask with <code>askUser(id, title, options)</code> and act only on the exact approved option. Show the whole change; do not cut it.</li>
+<li>In the UI, give it a label in <code>DOING</code> (<code>ui/src/api/agents.ts</code>) and in <code>StepsLine.tsx</code>.</li>
+<li>Update <a href="agents.html#tools">the tools table</a> and add a probe to the checklist.</li>
+</ol>
+</section>
+
+<section class="card" id="add-extension">
+<h2>Adding a bundled extension</h2>
+<ol>
+<li>Make <code>daemon/&lt;feature&gt;/extension/</code> with a <code>weilo.json</code> (<code>apiVersion</code> 1, <code>name</code> equal to the feature id, <code>title</code>, <code>description</code>, <code>entry</code>, <code>tools</code>) and an <code>index.js</code> that only calls the daemon's API through <code>tool.mjs</code>. It may import plain constants from the daemon, nothing that runs.</li>
+<li>Add the id to <code>BUNDLED</code> in <code>common.mjs</code>. It is then on for every agent unless its <code>disabled</code> list names it, and the Edit agent form shows a switch.</li>
+<li>Register its routes with <code>agentRoute</code> using the <strong>extension id</strong> as the tool name, so <code>mayCall</code> refuses an isolated agent that has it off.</li>
+<li>If it gives access beyond the agent's own folder (like the browser's shared logins), decide whether a new isolated agent should start with it off (<code>withoutBrowser</code> in <code>agents.mjs</code>) and whether <code>more()</code> in <code>manage.mjs</code> should warn about it.</li>
+</ol>
+<p>An added (uploaded) extension needs no code change; its checks are in <code>settings/extensions.mjs</code>.</p>
+</section>
+
+<section class="card" id="add-setting">
+<h2>Adding a setting</h2>
+<ol>
+<li>Keep it in a root-owned file in <code>agent/</code> (0600, set by <code>secure()</code>), through <code>readJson</code>/<code>updateJson</code>, with a path constant in <code>common.mjs</code>.</li>
+<li>Add device routes (<code>route</code>) to read and change it; validate types and lengths, and put limits in <code>config.mjs</code> (and <code>limits.ts</code> if the UI enforces them).</li>
+<li>If pis need it at start, pass it in argv or env in <code>runner.mjs</code> and wrap the save in <code>forAll</code>.</li>
+<li>Add a page or a row to <code>SettingsView.tsx</code> (<code>MENU</code> and the page switch).</li>
+<li>Only if agents should ask for it, extend <code>manage_settings</code>: a field in <code>FIELDS</code>, its rules and its question lines in <code>planSettings</code>. Never anything that loads code, names a path or an address, or touches keys or devices.</li>
+</ol>
+</section>
+
+<section class="card" id="add-field">
+<h2>Adding an agent field</h2>
+<ol>
+<li>Validate it in <code>clean()</code> and give it a default in <code>getAgent</code> (<code>agents/agents.mjs</code>).</li>
+<li>Decide who may set it in <code>agents/manage.mjs</code>: requestable (<code>FIELDS</code>), for isolated agents too (<code>ISOLATED_FIELDS</code>), allowed always for trusted agents (<code>TRUSTED_FIELDS</code>, only if it gives no more reach), or the user's alone (<code>USER_ONLY</code>).</li>
+<li>Use it where the pi starts (<code>argvOf</code>, <code>kindOf</code> in <code>runner.mjs</code>), or wherever it acts.</li>
+<li>Add it to the <code>Agent</code> type in <code>ui/src/api/agents.ts</code> and to <code>AgentForm.tsx</code>.</li>
+<li>If old profiles need a value written, raise <code>DATA_VERSION</code> with a step in <code>migrate.mjs</code>.</li>
+<li>Update <a href="agents.html#profile">the profile table</a> and the profile line in <code>DESIGN.md</code>.</li>
+</ol>
+</section>
+
+<section class="card" id="invariants">
+<h2>Invariants that must not be broken</h2>
+<ol class="check">
+<li>The daemon is the only root process. Everything else is started with <code>spawnAs</code> (setpriv, no capabilities), except the model-listing pi, which runs in <code>agent/</code> with every loader switched off.</li>
+<li>Root starts programs only by full path (<code>BIN</code>), with <code>PATH = SYSTEM_PATH</code>. Agents' tool folders come after root's folders, never before.</li>
+<li>No provider key, sign-in refresh token or plugin secret is ever written where a pi can read it. Pis get the gateway's address and a key of their own.</li>
+<li>An agent key reaches only <code>agentRoute</code> routes, for its own id, and only what <code>mayCall</code> allows. <code>--tools</code> is built from the same <code>mayCall</code>.</li>
+<li>Events, files, answers, agents, devices and settings routes are for paired devices only.</li>
+<li>Questions that approve something are the daemon's (<code>askUser</code>), show the whole change, are refused rather than cut over <code>MAX_APPROVAL</code>, and are answered only through the device route.</li>
+<li><code>isolated</code> and <code>trusted</code> are set only by the user. Trusted applies only to the agent's own instructions, thinking and skills.</li>
+<li>Root sets owners only through <code>folder()</code> / <code>newFile()</code> (<code>O_NOFOLLOW</code>), keeps a pi folder its own until written, and copies no links.</li>
+<li>A uid is never given twice (<code>newUid</code>, <code>lastUid</code>).</li>
+<li>Any change to which agents are isolated restarts the regular pis (<code>restartRegular</code>); a folder move runs with the pi stopped (<code>holding</code>).</li>
+<li>The daemon runs with umask 007: nothing it makes is readable by everyone.</li>
+<li>Ids and folder names match <code>^[a-z0-9-]+$</code> before they become paths. Generated agent ids always end in <code>-</code> and 6 hex characters, so they never collide with the pi folders <code>curator</code> and <code>plugins</code>.</li>
+<li>A change to the data folder's shape raises <code>DATA_VERSION</code> with a step, in the same release.</li>
+<li><code>-ne</code> stays, and <code>PI_BUILTINS</code> names every pi built-in extension when pi is updated.</li>
+<li>Pi's RPC lines are split on LF only.</li>
+<li><code>fetch_knowledge</code> never takes a path; its results stay wrapped as background.</li>
+<li>Agent-written HTML runs only in the sandboxed frame; downloads keep <code>Content-Security-Policy: sandbox</code>; the app keeps <code>frame-ancestors 'none'</code>.</li>
+<li>Chromium never gets a debugging port; the screen's socket and cookie stay user 1000's.</li>
+<li>The port stays published on <code>127.0.0.1</code>; the Host check stays.</li>
+</ol>
+</section>
+</div>
+</div>
+</main>
+<footer class="foot">
+<div class="pager"><a href="operating.html">&larr; Operating</a><span></span></div>
+<p>Written from the code of this version of Weilo Agents. When the code and a page disagree, the code is right and the page needs fixing. Project: <a href="https://github.com/Shyam1203/weilo-agents">github.com/Shyam1203/weilo-agents</a>.</p>
+</footer>
+</body>
+</html>

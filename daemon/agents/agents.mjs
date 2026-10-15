@@ -1,74 +1,93 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { access, readdir, readFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { BUNDLED, fail, ORDER, PROFILES, readJson, SESSIONS, slug, updateJson, WORKSPACE } from "../common.mjs";
+import { APP, BUNDLED, fail, HOMES, ISOLATED, ISOLATED_SESSIONS, ORDER, PROFILES, readJson, RUN, SESSIONS, slug, updateJson, WORKSPACE } from "../common.mjs";
+import { AGENTS_GID, FIRST_AGENT_UID, SHARED_TOOLS } from "../config.mjs";
+import { folder as ownFolder, setOwner, tree } from "../users.mjs";
 import { extensionsOf } from "../settings/extensions.mjs";
 import { lastMessage } from "./sessions.mjs";
 
-// An agent is a folder: agent/profiles/<id>/agent.json { name, model, thinking, skills, plugins, extensions, disabled, instructions, avatar, folder }.
-// `extensions`: the ids of the added extensions it uses; `disabled`: the ids of the bundled ones it does not use.
-// Its one conversation is the pi session with the same id, in agent/sessions/<id>/.
-// `folder`: its home in the shared workspace (workspace/<folder>/), where it works and its uploads go. Named after the agent
-// when it is made, and kept when it is renamed, so paths in its chat still lead to their files.
-
-// Ids are made here; checking them keeps every path inside the agents folder.
 export const isAgentId = (id) => /^[a-z0-9-]+$/.test(id);
 const folder = (id) => {
   if (!isAgentId(id)) throw fail(404, "This agent does not exist");
   return join(PROFILES, id);
 };
 
-// Pi's thinking levels; empty leaves it to the model.
 const THINKING = ["", "off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 const ids = (list) => Array.isArray(list) && list.every((id) => typeof id === "string");
 
-const clean = ({ name, model, thinking = "", skills = [], plugins = [], extensions = [], disabled = [], instructions = "", avatar }) => {
+const clean = ({ name, model, thinking = "", skills = [], plugins = [], extensions = [], disabled = [], instructions = "", avatar, isolated = false, trusted = false }) => {
   if (typeof name !== "string" || !name.trim()) throw fail(400, "Type a name");
   if (typeof model !== "string" || !model.trim()) throw fail(400, "Choose a model");
-  if (typeof instructions !== "string" || !THINKING.includes(thinking) || !ids(skills) || !ids(plugins) || !ids(extensions) || !ids(disabled)) throw fail(400, "The agent settings are not valid");
+  if (typeof instructions !== "string" || !THINKING.includes(thinking) || !ids(skills) || !ids(plugins) || !ids(extensions) || !ids(disabled) || typeof isolated !== "boolean" || typeof trusted !== "boolean") throw fail(400, "The agent settings are not valid");
   const { shape, color } = avatar ?? {};
-  return { name: name.trim(), model: model.trim(), thinking, skills, plugins, extensions, disabled, instructions, ...(typeof shape === "string" && typeof color === "string" && { avatar: { shape, color } }) };
+  return { name: name.trim(), model: model.trim(), thinking, skills, plugins, extensions, disabled, instructions, ...(typeof shape === "string" && typeof color === "string" && { avatar: { shape, color } }), isolated, trusted };
 };
 
-const save = (id, agent) => updateJson(profilePath(id), () => agent);
+async function save(id, agent) {
+  await updateJson(profilePath(id), () => agent);
+  await setOwner(profilePath(id), 0, agent.uid, 0o640);
+}
 
-// A name for a new home folder: the agent's name, unless the workspace or another agent already has it.
+export const isIsolated = (agent) => agent.isolated === true;
+
+export const mayCall = (agent, tool) => !isIsolated(agent) || (!SHARED_TOOLS.includes(tool) && !(Object.hasOwn(BUNDLED, tool) && agent.disabled.includes(tool)));
+
+export const newUid = async () => (await updateJson(APP, (data) => ({ ...data, lastUid: Math.max(FIRST_AGENT_UID, (data.lastUid ?? 0) + 1) }))).lastUid;
+
+export const isolatedGroups = (agents) => agents.filter(isIsolated).map((agent) => agent.uid);
+
+export const userOf = (agent, agents = []) => ({ uid: agent.uid, gid: agent.uid, groups: isIsolated(agent) ? [] : [AGENTS_GID, ...isolatedGroups(agents)] });
+
+export const homeGroupOf = (agent) => (isIsolated(agent) ? agent.uid : AGENTS_GID);
+
 export async function newFolder(name, taken = []) {
-  const used = new Set([...(await readdir(WORKSPACE).catch(() => [])), ...taken]);
+  const used = new Set([...(await readdir(WORKSPACE).catch(() => [])), ...(await readdir(ISOLATED).catch(() => [])), ...taken]);
   const base = slug(name, 24) || "agent";
   let folder = base;
   for (let n = 2; used.has(folder); n++) folder = `${base}-${n}`;
   return folder;
 }
 
-// The agent's home folder, on disk, ready for use (the user may have removed it).
-// A folder name is checked like an id, so a home is never the workspace itself or outside it.
-export const homeOf = ({ folder }) => {
-  if (typeof folder !== "string" || !isAgentId(folder)) throw fail(500, "This agent has no folder");
-  return join(WORKSPACE, folder);
+export const homeOf = (agent) => {
+  if (typeof agent.folder !== "string" || !isAgentId(agent.folder)) throw fail(500, "This agent has no folder");
+  return join(isIsolated(agent) ? ISOLATED : WORKSPACE, agent.folder);
 };
-export const makeHome = (agent) => mkdir(homeOf(agent), { recursive: true });
+export const chatDirOf = (agent) => join(isIsolated(agent) ? ISOLATED_SESSIONS : SESSIONS, agent.id);
+export const userHomeOf = (agent) => join(HOMES, agent.folder);
 
-// A switched-off extension that is not bundled any more is dropped when read.
+export const filesOf = (agent) => (isIsolated(agent) ? { folders: [homeOf(agent)], roots: [homeOf(agent)] } : { folders: [homeOf(agent), WORKSPACE], roots: [WORKSPACE, ISOLATED] });
+
+export const makeHome = (agent) =>
+  Promise.all([ownFolder(homeOf(agent), agent.uid, homeGroupOf(agent), 0o2770), ownFolder(chatDirOf(agent), agent.uid, agent.uid, 0o700), ownFolder(userHomeOf(agent), agent.uid, agent.uid, 0o700)]);
+
+async function move(before, after) {
+  const pairs = [[homeOf(before), homeOf(after)], [chatDirOf(before), chatDirOf(after)]];
+  for (const [, to] of pairs) {
+    if (await access(to).then(() => true, () => false)) throw fail(409, `${to} already exists. Rename or remove it, then save again.`);
+  }
+  for (const [from, to] of pairs) await rename(from, to).catch((err) => err.code === "ENOENT" || Promise.reject(err));
+  await tree(homeOf(after), after.uid, homeGroupOf(after), "ug+rwX,o-rwx");
+}
+
+const withoutBrowser = (agent, before) => (agent.isolated && !before?.isolated ? { ...agent, disabled: [...new Set([...agent.disabled, "browser"])] } : agent);
+
 export async function getAgent(id) {
   try {
     const saved = JSON.parse(await readFile(profilePath(id), "utf8"));
-    const agent = { id, thinking: "", skills: [], plugins: [], extensions: [], disabled: [], instructions: "", ...saved };
+    const agent = { id, thinking: "", skills: [], plugins: [], extensions: [], disabled: [], instructions: "", isolated: false, trusted: false, ...saved };
     return { ...agent, disabled: Array.isArray(agent.disabled) ? agent.disabled.filter((name) => Object.hasOwn(BUNDLED, name)) : [] };
   } catch (err) {
     throw err.code === "ENOENT" ? fail(404, "This agent does not exist") : err;
   }
 }
 
-// Every agent's profile; one that cannot be read is left out.
 export async function profiles() {
   const ids = await readdir(PROFILES).catch(() => []);
   return (await Promise.all(ids.map((id) => getAgent(id).catch(() => null)))).filter(Boolean);
 }
 
-// The profiles with the newest message of each chat, for the agent list, in the order the user dragged them to
-// (order.json { agents: [ids] }). Agents not in it (made since) come after, in folder order.
 export async function listAgents() {
   const { agents } = await readJson(ORDER);
   const order = Array.isArray(agents) ? agents : [];
@@ -82,22 +101,29 @@ export async function setOrder(order) {
   await updateJson(ORDER, (data) => ({ ...data, agents: order.filter(isAgentId) }));
 }
 
-export async function createAgent(input) {
+export async function checkAgent(input) {
   const agent = clean(input);
   await extensionsOf(agent);
+  return agent;
+}
+
+export async function createAgent(input) {
+  const agent = withoutBrowser(await checkAgent(input));
   const id = `${slug(agent.name, 24) || "agent"}-${randomBytes(3).toString("hex")}`;
-  const folder = await newFolder(agent.name, (await profiles()).map((a) => a.folder));
-  await save(id, { ...agent, folder });
-  await makeHome({ folder });
+  const others = await profiles();
+  const made = { ...agent, folder: await newFolder(agent.name, others.map((a) => a.folder)), uid: await newUid() };
+  await ownFolder(folder(id), 0, made.uid, 0o750);
+  await save(id, made);
+  await makeHome({ id, ...made });
   return getAgent(id);
 }
 
 export async function updateAgent(id, patch) {
   const saved = await getAgent(id);
-  const agent = clean({ ...saved, ...patch });
-  // Refused now, not when the agent starts: two of its extensions add the same tool.
+  const agent = withoutBrowser(clean({ ...saved, ...patch }), saved);
   await extensionsOf(agent);
-  await save(id, { ...agent, folder: saved.folder });
+  if (agent.isolated !== saved.isolated) await move(saved, { ...saved, isolated: agent.isolated });
+  await save(id, { ...agent, folder: saved.folder, uid: saved.uid });
   return getAgent(id);
 }
 
@@ -106,9 +132,11 @@ export async function removeProfile(id) {
   await rm(folder(id), { recursive: true, force: true });
 }
 
-export const removeChat = (id) => rm(join(SESSIONS, id), { recursive: true, force: true });
+export async function removeFiles(agent, { keepChat, keepFiles }) {
+  const remove = (path) => rm(path, { recursive: true, force: true });
+  await Promise.all([remove(userHomeOf(agent)), remove(join(RUN, "pi", agent.id))]);
+  await (keepChat ? tree(chatDirOf(agent), 0, 0, "go-rwx") : remove(chatDirOf(agent)));
+  await (keepFiles ? tree(homeOf(agent), 0, AGENTS_GID, "g+rwX,o-rwx") : remove(homeOf(agent)));
+}
 
-export const removeHome = (agent) => rm(homeOf(agent), { recursive: true, force: true });
-
-// Where the agent's profile is, for pi's command line: pi adds it to its system prompt.
 export const profilePath = (id) => join(folder(id), "agent.json");

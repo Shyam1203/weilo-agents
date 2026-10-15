@@ -11,7 +11,6 @@ import { matches, Search } from "../../components/ui/Search";
 import { useAction } from "../../lib/useAction";
 import { avatarOf } from "../agents/avatars";
 
-/** How long Delete waits for the second tap. */
 const CONFIRM_MS = 4000;
 
 interface Props {
@@ -20,11 +19,9 @@ interface Props {
   onChange: () => void;
 }
 
-/** The skills, each with the agents that use it; a skill can be turned on for another agent here. */
 export function SkillsPage({ skills, agents, onChange }: Props) {
   const picker = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
-  // Delete asks for a second tap: the skill goes for every agent that uses it.
   const [confirm, setConfirm] = useState<string | null>(null);
   const { busy, error, run } = useAction();
   const change = (name: string, action: () => Promise<unknown>) =>

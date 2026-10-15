@@ -7,13 +7,10 @@ import { useAction } from "../../lib/useAction";
 
 interface Props {
   user: User;
-  /** Runs after the details are saved. */
   onSaved: () => void;
-  /** Adds a button that leaves the form without saving. */
   onSkip?: () => void;
 }
 
-/** What your agents should call you, and anything else they should know about you. */
 export function AboutYouForm({ user, onSaved, onSkip }: Props) {
   const [draft, setDraft] = useState(user);
   const { busy, error, run } = useAction();

@@ -1,7 +1,6 @@
 @import "tailwindcss";
 
 @theme {
-  /* Corners: less round than Tailwind's defaults (every rounded-lg, -xl and -2xl follows). */
   --radius-lg: 0.625rem;
   --radius-xl: 0.75rem;
   --radius-2xl: 1rem;
@@ -9,14 +8,12 @@
   --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "Geist Mono Variable", ui-monospace, "Cascadia Code", Consolas, monospace;
 
-  /* Neutral surfaces; red only for errors, green only for "connected".
-     Each is light-dark(light, dark): the theme picks by color-scheme (below). */
-  --color-page: light-dark(#ffffff, #212121); /* the main pane */
-  --color-panel: light-dark(#f7f7f8, #181818); /* the sidebar */
-  --color-card: light-dark(#efeff1, #2a2a2a); /* fields, quiet tiles */
-  --color-raised: light-dark(#ffffff, #262626); /* menus and dialogs, above everything else */
-  --color-bubble: light-dark(#f0f0f2, #2f2f2f); /* the agent's messages */
-  --color-bubble-me: light-dark(#1f1f22, #ececec); /* yours */
+  --color-page: light-dark(#ffffff, #212121);
+  --color-panel: light-dark(#f7f7f8, #181818);
+  --color-card: light-dark(#efeff1, #2a2a2a);
+  --color-raised: light-dark(#ffffff, #262626);
+  --color-bubble: light-dark(#f0f0f2, #2f2f2f);
+  --color-bubble-me: light-dark(#1f1f22, #ececec);
   --color-on-bubble-me: light-dark(#f5f5f5, #141414);
   --color-line: light-dark(rgb(0 0 0 / 0.07), rgb(255 255 255 / 0.07));
   --color-line-strong: light-dark(rgb(0 0 0 / 0.13), rgb(255 255 255 / 0.13));
@@ -26,18 +23,15 @@
   --color-select: light-dark(rgb(0 0 0 / 0.05), rgb(255 255 255 / 0.065));
   --color-bad: light-dark(#c4320a, #f97066);
   --color-bad-soft: light-dark(#fdecea, #3a1714);
-  --color-good: light-dark(#0f8a4f, #34c77b); /* a provider that is connected */
-  --color-screen: #121826; /* the browser's desktop, behind its live view */
-  --color-live: #ef4444; /* the ring around a screen you have taken over */
-  --color-working: var(--color-ink-2); /* the "Working…" text */
-  --color-unread: light-dark(#007aff, #0a84ff); /* an agent with a reply you have not seen */
+  --color-good: light-dark(#0f8a4f, #34c77b);
+  --color-screen: #121826;
+  --color-live: #ef4444;
+  --color-working: var(--color-ink-2);
+  --color-unread: light-dark(#007aff, #0a84ff);
 
   --shadow-pop: 0 1px 2px light-dark(rgb(0 0 0 / 0.04), rgb(0 0 0 / 0.4)), 0 8px 24px -6px light-dark(rgb(0 0 0 / 0.14), rgb(0 0 0 / 0.6));
   --shadow-lift: 0 1px 2px light-dark(rgb(0 0 0 / 0.05), rgb(0 0 0 / 0.4)), 0 24px 48px -12px light-dark(rgb(0 0 0 / 0.22), rgb(0 0 0 / 0.7));
 
-  /* Motion, after transitions.dev (https://transitions.dev): things open in 250ms and close faster, in 150ms, on one
-     smooth ease-out. A menu grows from its trigger (set its transform-origin), a dialog scales up from the middle, and on
-     a phone a dialog is a sheet that slides up. lib/useExit.ts keeps a closing thing on screen while it animates out. */
   --ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
   --animate-fade-in: fade-in 160ms ease-out both;
   --animate-fade-out: fade-out 150ms ease-out both;
@@ -78,17 +72,14 @@
   @keyframes sheet-out {
     to { opacity: 0; transform: translateY(100px); filter: blur(2px); }
   }
-  /* An icon that takes another's place. */
   @keyframes swap {
     from { opacity: 0; transform: scale(0.25); filter: blur(2px); }
   }
-  /* A line of text that takes another's place. */
   @keyframes text-swap {
     from { opacity: 0; transform: translateY(4px); filter: blur(2px); }
   }
 }
 
-/* Theme: the system setting unless Settings picks one (data-theme on <html>). */
 @layer base {
   :root {
     color-scheme: light dark;
@@ -99,8 +90,6 @@
   :root[data-theme="dark"] {
     color-scheme: dark;
   }
-  /* Weilo: the brand's warm ember palette (weilo-brainweave) and its fire orange, light or dark
-     by system setting. */
   :root[data-theme="weilo"] {
     --color-page: light-dark(#fffaf5, #0f0b09);
     --color-panel: light-dark(#f7efe6, #080605);
@@ -121,18 +110,12 @@
     --color-unread: light-dark(#d45f00, #ff7a00);
   }
 
-  /* The page itself never scrolls (the chat and the lists inside it do), so on a phone dragging the message box or the
-     edges does not move the whole app. dvh follows the phone's address bar. */
   html,
   body,
   #root {
     height: 100%;
     height: calc(100dvh / var(--zoom));
   }
-  /* The app is drawn larger than the browser's own size: 10% on a computer, where text and controls read better at a desk,
-     and 15% on a touch screen, where they are read at arm's length and tapped with a finger. A height in dvh and the
-     screen's safe areas are drawn larger too, so they are divided back (`--zoom`, `--safe-*`; lib/zoom.ts for sizes
-     measured on screen). */
   :root {
     --zoom: 1;
     --safe-top: calc(env(safe-area-inset-top) / var(--zoom));
@@ -157,7 +140,6 @@
     overflow: hidden;
     overscroll-behavior: none;
   }
-  /* An installed app draws under the status bar and the notch: the edges are kept clear (the bottom edge by what sits there). */
   #root {
     padding: var(--safe-top) var(--safe-right) 0 var(--safe-left);
   }
@@ -177,7 +159,6 @@
     outline: 2px solid color-mix(in srgb, var(--color-ink) 45%, transparent);
     outline-offset: 2px;
   }
-  /* Slim scrollbars, as on the Weilo site: a thin rounded thumb, ember on hover. */
   ::-webkit-scrollbar {
     width: 5px;
     height: 5px;
@@ -204,7 +185,6 @@
   .input {
     @apply w-full rounded-xl border border-line-strong bg-page px-3 py-2 text-[14px] text-ink transition-colors outline-none placeholder:text-ink-3 focus:border-ink-3 focus-visible:outline-none;
   }
-  /* One height for every one-line field, so a text box and a dropdown line up. */
   input.input {
     @apply h-10;
   }
@@ -216,8 +196,6 @@
   }
 }
 
-/* Phones zoom in on a field whose text is smaller than 16px and leave the page zoomed, which cuts off its edges. (Unlayered, so
-   it beats the sizes set above.) */
 @media (pointer: coarse) {
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
   textarea,
@@ -226,7 +204,6 @@
   }
 }
 
-/* Words found in a chat (features/chat/useFind.ts), and the current one. */
 ::highlight(find) {
   background-color: color-mix(in srgb, var(--color-unread) 28%, transparent);
 }
@@ -235,7 +212,6 @@
   color: white;
 }
 
-/* Markdown in a message bubble. */
 .prose-chat {
   font-size: 14.5px;
   line-height: 1.6;
@@ -296,7 +272,6 @@
   padding-left: 0.8em;
   color: var(--color-ink-2);
 }
-/* A table wider than the bubble scrolls sideways: its words are never broken. */
 .prose-chat table {
   border-collapse: collapse;
   font-size: 13.5px;
@@ -310,17 +285,14 @@
   padding: 4px 8px;
   overflow-wrap: normal;
   min-width: 6em;
-  /* A short cell sits at the top of its row, beside a long one, so a row reads as one line across. */
   vertical-align: top;
 }
-/* A shaded header row, read left to right like the cells (a column set in Markdown keeps its own alignment). */
 .prose-chat th {
   white-space: nowrap;
   text-align: left;
   font-weight: 600;
   background: var(--color-select);
 }
-/* A code block under its Copy bar (features/chat/AgentText.tsx): the frame goes around both. */
 .prose-chat .code-block {
   border: 1px solid var(--color-line);
   border-radius: 10px;
@@ -331,8 +303,6 @@
   border-radius: 0;
 }
 
-/* Avatars (components/ui/Avatar.tsx): hovering one squishes it and it blinks; a working one bobs
-   and looks around. */
 .avatar .avatar-body,
 .avatar .avatar-eyes {
   transform-box: fill-box;
@@ -341,7 +311,6 @@
 .avatar .avatar-eyes { transform-origin: center; }
 .avatar:hover .avatar-body { animation: avatar-squish 0.55s cubic-bezier(0.3, 1.5, 0.5, 1); }
 .avatar:hover .avatar-eyes { animation: avatar-blink 0.45s ease 0.1s; }
-/* Working scenes (Avatar.tsx): the page of the book turns, the magnifying glass sweeps across, lines of code appear. */
 .avatar .avatar-page { transform-box: fill-box; transform-origin: 0% 50%; animation: avatar-page 1.8s ease-in-out infinite; }
 @keyframes avatar-page {
   0%, 15% { transform: scaleX(1); }
@@ -379,7 +348,6 @@
   50%, 90% { transform: translateX(5px); }
 }
 
-/* The working indicator above the composer: its dots pulse one after another. */
 .working-dots span { animation: dot 1.2s infinite; }
 .working-dots span:nth-child(2) { animation-delay: 0.2s; }
 .working-dots span:nth-child(3) { animation-delay: 0.4s; }

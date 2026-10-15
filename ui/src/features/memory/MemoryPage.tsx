@@ -15,23 +15,18 @@ interface Props {
 }
 
 const OFF = "";
-// A note in MEMORY.md: "- [m1 2026-10] Prefers short answers", or "- text" written by hand (the daemon numbers it when
-// it saves). Other lines (the heading) are not notes.
 const NOTE = /^- (?:\[(m\d+)(?: ([\d-]+))?\] )?(.+)$/;
 const monthOf = (when?: string) => {
   const date = new Date(`${when}-01T00:00:00`);
   return when && !Number.isNaN(date.getTime()) ? date.toLocaleDateString([], { month: "short", year: "numeric" }) : "Not saved yet";
 };
 
-/** What all agents remember: the curator that keeps the knowledge vault, and the notes in MEMORY.md, one by one (or the
- *  file's text, to change it all at once). */
 export function MemoryPage({ providers, models }: Props) {
   const [model, setModel] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [saved, setSaved] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [raw, setRaw] = useState(false);
-  // The note being changed: its line, and what it says so far.
   const [editing, setEditing] = useState<{ i: number; note: string } | null>(null);
   const [adding, setAdding] = useState("");
   const { busy, error, run } = useAction();
@@ -58,7 +53,6 @@ export function MemoryPage({ providers, models }: Props) {
     const m = NOTE.exec(line);
     return m ? [{ i, when: m[2], note: m[3] }] : [];
   });
-  /** Changes line `i` (null removes it). From the newest text: leaving a note and forgetting another come in one tap. */
   const setLine = (i: number, change: (line: string) => string | null) =>
     setText((current) =>
       current
@@ -66,7 +60,6 @@ export function MemoryPage({ providers, models }: Props) {
         .flatMap((line, j) => (j !== i ? [line] : (change(line) ?? [])))
         .join("\n"),
     );
-  // A note is one line, and keeps its id and date; one left empty is gone.
   const finish = () => {
     if (!editing) return;
     const { i, note } = editing;

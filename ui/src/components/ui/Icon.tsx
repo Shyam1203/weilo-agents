@@ -1,6 +1,5 @@
-// Lucide, the Weilo icon set, by our own short names.
 import {
-  ArrowDown, ArrowUp, Bell, Bot, Brain, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Download, ExternalLink, FileText, Globe, Info, Key, List, LoaderCircle, Mail, Mic, MousePointer2,
+  ArrowDown, ArrowUp, Bell, Bot, Brain, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Download, ExternalLink, FileText, Globe, Info, Key, List, LoaderCircle, Mail, Mic, MonitorSmartphone, MousePointer2,
   PanelRight, Paperclip, Plug, Plus, Puzzle, RotateCcw, Search, Settings, Share, Sparkles, Square, Sun, TriangleAlert, User, X,
 } from "lucide-react";
 
@@ -41,13 +40,13 @@ const ICONS = {
   copy: Copy,
   share: Share,
   retry: RotateCcw,
+  devices: MonitorSmartphone,
 } as const;
 
 export type IconName = keyof typeof ICONS | "spinner" | "stop";
 
 export function Icon({ name, size = 16, className = "" }: { name: IconName; size?: number; className?: string }) {
   if (name === "spinner") return <LoaderCircle size={size} className={`animate-spin ${className}`} aria-hidden="true" />;
-  // Stop is a solid square, like a media stop button.
   if (name === "stop") return <Square size={size} fill="currentColor" className={className} aria-hidden="true" />;
   const Shape = ICONS[name];
   return <Shape size={size} className={className} aria-hidden="true" />;

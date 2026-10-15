@@ -1,5 +1,3 @@
-// A question the agent asks with the `ask` tool: a choice, or a line of text. Open, it waits for
-// your answer; answered, it stays in the chat with the answer marked.
 import { useState } from "react";
 import { Button } from "../../components/ui/Button";
 import { ErrorText } from "../../components/ui/Field";
@@ -9,9 +7,7 @@ import { PickButton } from "./PickButton";
 interface Props {
   question: string;
   options?: string[];
-  /** Your answer, once given. */
   answer?: string;
-  /** Sends the answer; no value skips the question. Absent when the card is not open. */
   onAnswer?: (value?: string) => Promise<void>;
 }
 
@@ -22,7 +18,7 @@ export function AskCard({ question, options, answer, onAnswer }: Props) {
 
   return (
     <section className="w-full max-w-md rounded-2xl border border-line bg-page px-3.5 py-3">
-      <p className="text-[14.5px] font-medium [overflow-wrap:anywhere]">{question}</p>
+      <p className="max-h-80 overflow-y-auto text-[14.5px] font-medium whitespace-pre-wrap [overflow-wrap:anywhere]">{question}</p>
       {options?.length ? (
         <>
           <div className="mt-2.5 flex flex-wrap gap-2">
@@ -30,7 +26,6 @@ export function AskCard({ question, options, answer, onAnswer }: Props) {
               <PickButton key={o} label={o} picked={answer === o} onPick={onAnswer && !busy ? () => void send(o) : undefined} />
             ))}
           </div>
-          {/* An answer typed in the message box, not one of the choices. */}
           {answer !== undefined && !options.includes(answer) && <p className="mt-2 rounded-xl bg-card px-3 py-2 text-[14px] whitespace-pre-wrap [overflow-wrap:anywhere]">{answer}</p>}
         </>
       ) : answer !== undefined ? (

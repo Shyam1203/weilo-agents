@@ -5,12 +5,8 @@ import { fail, SKILLS, slug } from "../common.mjs";
 import { MAX_SKILL_DESCRIPTION, MAX_SKILL_TEXT, SKILL_DEPTH } from "../config.mjs";
 import { unzip } from "./zip.mjs";
 
-// Skills are pi's own: a folder in agent/skills/ with a SKILL.md. Which agent uses which is the
-// agent's profile; this only keeps the library.
-
 const ID = /^[\w-]+$/;
 
-// A value from SKILL.md's front matter.
 const field = (text, key) => {
   const value = (text.split(/^---\s*$/m)[1] ?? "").match(new RegExp(`^${key}:[ \\t]*(.+)$`, "m"))?.[1].trim();
   if (value?.startsWith('"')) {
@@ -32,7 +28,6 @@ export async function listSkills() {
   return skills.filter(Boolean);
 }
 
-// The folders at or under `dir` that hold a SKILL.md.
 async function skillFolders(dir, depth = 0) {
   if (await access(join(dir, "SKILL.md")).then(() => true, () => false)) return [dir];
   if (depth === SKILL_DEPTH) return [];
@@ -41,7 +36,6 @@ async function skillFolders(dir, depth = 0) {
   return nested.flat();
 }
 
-// Adds the skills in an uploaded .zip or SKILL.md (base64), replacing any with the same name.
 export async function addSkills({ name, data }) {
   if (typeof name !== "string" || typeof data !== "string") throw fail(400, "The file is not valid");
   const kind = extname(name).toLowerCase();
@@ -55,7 +49,6 @@ export async function addSkills({ name, data }) {
     } else files = await unzip(work, data, "skill");
     const folders = await skillFolders(files);
     if (!folders.length) throw fail(400, "The file does not contain a SKILL.md");
-    // Check every skill before adding any.
     const found = await Promise.all(
       folders.map(async (folder) => {
         const text = await readFile(join(folder, "SKILL.md"), "utf8");
@@ -75,8 +68,6 @@ export async function addSkills({ name, data }) {
   }
 }
 
-// A skill an agent makes (its `skill` tool): the folder is the library's, so Settings lists it. SKILL.md is written whole; other files
-// in the folder (an earlier version's scripts) stay. Returns the skill's id and folder, for the agent to add files to.
 export async function saveSkill({ name, description, instructions } = {}) {
   const id = typeof name === "string" ? slug(name, 48) : "";
   if (!id) throw fail(400, "Give the skill a name");
@@ -87,7 +78,6 @@ export async function saveSkill({ name, description, instructions } = {}) {
   if (instructions.length > MAX_SKILL_TEXT) throw fail(400, `The instructions are too long. Use ${MAX_SKILL_TEXT} characters at most.`);
   const folder = join(SKILLS, id);
   await mkdir(folder, { recursive: true });
-  // Quoted when plain YAML would misread it (a colon and a space, a leading symbol).
   const line = /: |\s#|^[-?&*!|>%@`'"[\]{}]/.test(about) ? JSON.stringify(about) : about;
   await writeFile(join(folder, "SKILL.md"), `---\nname: ${id}\ndescription: ${line}\n---\n\n${instructions.trim()}\n`);
   return { id, folder };
@@ -98,7 +88,6 @@ export async function removeSkill(id) {
   await rm(join(SKILLS, id), { recursive: true, force: true });
 }
 
-// The folders of these skills that exist, for pi's command line.
 export async function skillPaths(ids) {
   const have = new Set(await readdir(SKILLS).catch(() => []));
   return ids.filter((id) => have.has(id)).map((id) => join(SKILLS, id));

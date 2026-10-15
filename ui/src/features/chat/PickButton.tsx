@@ -2,14 +2,11 @@ import { Icon } from "../../components/ui/Icon";
 
 interface Props {
   label: string;
-  /** What it says once picked. */
   done?: string;
   picked?: boolean;
-  /** Absent when it can no longer be picked. */
   onPick?: () => void;
 }
 
-/** A round choice button; the one picked stays marked with an outline and a check. */
 export function PickButton({ label, done = label, picked = false, onPick }: Props) {
   return (
     <button

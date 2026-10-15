@@ -18,28 +18,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ARG PLAYWRIGHT_VERSION=1.64.0
 
-# Pi, and the library the daemon drives the browser with (it downloads no browser: Chromium comes from apt).
-# NODE_PATH lets the daemon and the extension find these global packages.
 ENV NODE_PATH=/usr/local/lib/node_modules
 RUN npm install -g --ignore-scripts --omit=dev @earendil-works/pi-coding-agent@${PI_VERSION} playwright-core@${PLAYWRIGHT_VERSION} \
  && npm cache clean --force
 
-# The agent's own installs (npm -g, pip --user) go to ~/.local, a volume. Debian blocks pip
-# outside a venv; --user installs do not touch the system's packages.
-RUN mkdir -p /home/node/.local /home/node/.browser && chown node:node /home/node/.local /home/node/.browser
+RUN mkdir -p /home/node/.local /home/node/.browser && chown node:node /home/node/.browser && chmod 700 /home/node/.browser \
+ && groupadd -g 2000 agents
 ENV npm_config_prefix=/home/node/.local \
+    PYTHONUSERBASE=/home/node/.local \
     PIP_BREAK_SYSTEM_PACKAGES=1 \
     PATH=/home/node/.local/bin:$PATH
 
-# The window manager draws no frame and maximizes windows: the browser fills the whole screen. A pop-up (a "Sign in
-# with Google" window) and a dialog have no tab strip, so no close button of their own: they keep a frame with one, at
-# their own size. Openbox applies the rules in order, so the later ones win.
 RUN sed -i 's|<applications>|&<application class="*"><decor>no</decor><maximized>yes</maximized></application><application role="pop-up"><decor>yes</decor><maximized>no</maximized></application><application type="dialog"><decor>yes</decor><maximized>no</maximized></application>|' /etc/xdg/openbox/rc.xml
 
-# Pages in the browser cannot open this app or the browser's debugging port.
 COPY image/chromium-policy.json /etc/chromium/policies/managed/weilo.json
 
-# What this build is (GET /api/version). Set late, so a new version keeps the layers above in the cache.
 ARG VERSION=dev
 ARG COMMIT=unknown
 ENV WEILO_VERSION=${VERSION} WEILO_COMMIT=${COMMIT} WEILO_PI=${PI_VERSION}
@@ -48,7 +41,4 @@ LABEL org.opencontainers.image.title="Weilo Agents"       org.opencontainers.ima
 COPY daemon /app
 COPY --from=ui /ui/dist /app/ui
 
-USER node
-
-# No WORKDIR: on a fresh mount Docker would create it as root.
-CMD ["sh", "-c", "mkdir -p /home/node/.pi/workspace && exec node /app/server.mjs"]
+CMD ["node", "/app/server.mjs"]

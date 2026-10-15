@@ -1,16 +1,10 @@
 import { useEffect, useState } from "react";
 
-// Avatars: a colored character with a face. An avatar is a spec (shape + color): add a shape to
-// SHAPES or a color to COLORS, and the picker and every place that shows avatars can show it.
-
 export interface AvatarSpec {
-  /** A key of SHAPES. */
   shape: string;
-  /** A #rrggbb color. */
   color: string;
 }
 
-/** Each shape: its outline in a 100×100 box, and the height of its eyes. */
 export const SHAPES: Record<string, { path: string; eyes: number }> = {
   blob: { path: "M50 10C78 10 94 30 94 56C94 80 76 94 50 94C24 94 6 80 6 56C6 30 22 10 50 10Z", eyes: 62 },
   ghost: { path: "M14 54C14 28 30 12 50 12C70 12 86 28 86 54V90C79 84 72 84 65 90C58 96 54 84 50 84C46 84 42 96 35 90C28 84 21 84 14 90Z", eyes: 58 },
@@ -28,18 +22,14 @@ export const SHAPES: Record<string, { path: string; eyes: number }> = {
   sprout: { path: "M50 30C50 30 46 16 34 10C34 10 46 6 52 18C56 8 68 6 70 8C64 12 56 18 53 30C76 32 94 46 94 64C94 82 74 94 50 94C26 94 6 82 6 64C6 46 26 32 50 30Z", eyes: 68 },
 };
 
-/** The colors a default avatar gets. */
 export const COLORS = ["#D85A30", "#7F77DD", "#1D9E75", "#D4537E", "#378ADD", "#5DCAA5", "#BA7517", "#639922"];
 
-/** What the picker calls each color. */
 export const COLOR_NAMES: Record<string, string> = { "#D85A30": "Orange", "#7F77DD": "Purple", "#1D9E75": "Green", "#D4537E": "Pink", "#378ADD": "Blue", "#5DCAA5": "Mint", "#BA7517": "Gold", "#639922": "Olive" };
 
 const INK = "#2C2C2A";
 
-/** What a working avatar acts out, by the tool it is using: reading with glasses and a book, searching with a magnifying glass, typing at a laptop. Anything else (thinking, other tools) just bobs and looks around. */
 type Scene = "read" | "search" | "type" | null;
 const SCENES: Record<string, Scene> = { read: "read", grep: "search", find: "search", ls: "search", fetch_knowledge: "search", memory: "search", bash: "type", edit: "type", write: "type", browser: "type" };
-// A tool's scene stays up at least this long (ms) after the tool is gone: many tools finish in a blink, and the list's copy is polled.
 const SCENE_MIN_MS = 1500;
 function useLingering(doing?: string | null) {
   const [shown, setShown] = useState(doing);
@@ -52,11 +42,7 @@ function useLingering(doing?: string | null) {
 }
 const sceneOf = (doing?: string | null): Scene => (doing ? (SCENES[doing] ?? null) : null);
 
-/**
- * An avatar. Below 24px only the eyes show (blush and mouth would be smudges). `working`: it bobs
- * and looks around. Hovering it squishes it and it blinks (index.css, `.avatar`).
- */
-export function Avatar({ spec, size = 36, working = false, doing }: { spec: AvatarSpec; size?: number; working?: boolean; /** The tool it is using; a working avatar acts it out. */ doing?: string | null }) {
+export function Avatar({ spec, size = 36, working = false, doing }: { spec: AvatarSpec; size?: number; working?: boolean; doing?: string | null }) {
   const shape = SHAPES[spec.shape] ?? SHAPES.blob;
   const y = shape.eyes;
   const detailed = size >= 24;
@@ -93,7 +79,6 @@ export function Avatar({ spec, size = 36, working = false, doing }: { spec: Avat
         )}
         {scene === "read" && (
           <>
-            {/* Glasses on the eyes, and an open book whose page turns. */}
             <g fill="#fff" fillOpacity={0.3} stroke={INK} strokeWidth={3}>
               <circle cx={37} cy={y} r={12} />
               <circle cx={63} cy={y} r={12} />
@@ -114,7 +99,6 @@ export function Avatar({ spec, size = 36, working = false, doing }: { spec: Avat
         )}
         {scene === "type" && (
           <g>
-            {/* A laptop at the bottom with lines of code that appear. */}
             <rect x={22} y={70} width={56} height={28} rx={3} fill={INK} />
             <g stroke="#fff" strokeWidth={2.4} strokeLinecap="round">
               <path className="avatar-type-line" d="M29 77H50" />

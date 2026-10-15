@@ -1,18 +1,14 @@
 import { request } from "./http";
 
-/** A browser that gets notifications. */
 export interface Device {
   id: string;
   label: string;
-  /** When it was turned on, in ms. */
   added: number;
 }
 
 export interface PushStatus {
-  /** The app's key, which a browser needs to subscribe. */
   publicKey: string;
   devices: Device[];
-  /** The agents that send no notifications. */
   muted: string[];
 }
 

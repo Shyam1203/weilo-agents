@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="How the container, the daemon and each agent&#x27;s pi work together.">
+<title>Weilo Agents Architecture</title>
+<link rel="stylesheet" href="assets/docs.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="top">
+<div class="top-in">
+<a class="brand" href="index.html">Weilo Agents docs</a>
+<nav aria-label="Documentation pages"><ul>
+<li><a class="nav" href="index.html">Overview</a></li>
+<li><a class="nav" href="architecture.html" aria-current="page">Architecture</a></li>
+<li><a class="nav" href="security.html">Security</a></li>
+<li><a class="nav" href="agents.html">Agents</a></li>
+<li><a class="nav" href="memory-and-knowledge.html">Memory</a></li>
+<li><a class="nav" href="data-and-permissions.html">Data</a></li>
+<li><a class="nav" href="ui.html">UI</a></li>
+<li><a class="nav" href="operating.html">Operating</a></li>
+<li><a class="nav" href="development.html">Development</a></li>
+</ul></nav>
+</div>
+</header>
+<main id="main">
+<div class="layout has-toc">
+<nav class="toc" aria-label="On this page"><h2>On this page</h2><ol>
+<li><a href="#container">The container</a></li>
+<li><a href="#system">Processes and their users</a></li>
+<li><a href="#daemon">What the daemon does</a></li>
+<li><a href="#pi-start">How an agent's pi starts</a></li>
+<li><a href="#restarts">When pis stop and start anew</a></li>
+<li><a href="#turn">A chat turn, end to end</a></li>
+<li><a href="#events">Events and chat files</a></li>
+<li><a href="#routines">Routines</a></li>
+<li><a href="#push">Notifications</a></li>
+<li><a href="#browser">The browser</a></li>
+<li><a href="#versions">Versions, updates and data</a></li>
+</ol></nav>
+<div class="content">
+<h1>Architecture</h1>
+<p class="lede">One container, one root daemon, and a set of processes that each run as a Linux user of their own. This page follows the code: <code>compose.yaml</code>, <code>image/Dockerfile</code>, <code>daemon/server.mjs</code> and <code>daemon/agents/runner.mjs</code> above all.</p>
+
+<section class="card" id="container">
+<h2>The container</h2>
+<p><code>compose.yaml</code> defines one service, <code>core</code>, in the stack <code>weilo-agents</code>, with the container name <code>weilo-core</code>.</p>
+<div class="table"><table>
+<thead><tr><th>Setting</th><th>Value</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Image</td><td><code>ghcr.io/shyam1203/weilo-agents:${WEILO_VERSION:-latest}</code>, or built from <code>image/Dockerfile</code></td><td>The start scripts set <code>WEILO_VERSION</code> from the <code>VERSION</code> file and pull that image; they build only if the pull fails.</td></tr>
+<tr><td>Port</td><td><code>127.0.0.1:3210:3210</code></td><td>Only this computer reaches the app. Remote use goes through <code>tailscale serve</code> (<a href="operating.html#remote">Remote use</a>).</td></tr>
+<tr><td>Data</td><td><code>${USERPROFILE:-${HOME}}/.weilo-agents</code> &rarr; <code>/home/node/.pi</code></td><td>All user data in one host folder.</td></tr>
+<tr><td>Volumes</td><td><code>tools</code> &rarr; <code>/home/node/.local</code>; <code>browser</code> &rarr; <code>/home/node/.browser</code></td><td>What agents install with npm and pip; Chromium's profile (logins). A profile on a Windows bind mount cannot lock its files, so it lives in a volume.</td></tr>
+<tr><td>Hardening</td><td><code>cap_drop: [NET_RAW, NET_ADMIN]</code>, <code>no-new-privileges:true</code></td><td>No raw sockets or network changes, and no privilege gain through set-uid programs.</td></tr>
+<tr><td>Other</td><td><code>init: true</code>, <code>restart: unless-stopped</code>, <code>shm_size: 1gb</code></td><td>A proper PID 1; Chromium needs more shared memory than the 64 MB default.</td></tr>
+</tbody></table></div>
+<h3>The image</h3>
+<ul>
+<li>Two stages from <code>node:22-bookworm-slim</code>: the first runs <code>npm ci</code> and <code>npm run build</code> in <code>ui/</code>; the second holds the daemon (<code>COPY daemon /app</code>) and the built UI (<code>/app/ui</code>).</li>
+<li>From apt: git, curl, ssh client, jq, unzip, procps, Python 3 with pip and venv, ripgrep, fd, Chromium, TigerVNC (<code>Xvnc</code>), openbox and Noto fonts.</li>
+<li>Globally from npm: <code>@earendil-works/pi-coding-agent@${PI_VERSION}</code> (1.2.0 in this version) and <code>playwright-core@${PLAYWRIGHT_VERSION}</code> (1.64.0), found through <code>NODE_PATH=/usr/local/lib/node_modules</code>. Playwright downloads no browser: Chromium comes from apt.</li>
+<li>The group <code>agents</code> is made with gid 2000. The agents' installs go to <code>/home/node/.local</code> (<code>npm_config_prefix</code>, <code>PYTHONUSERBASE</code>, <code>PIP_BREAK_SYSTEM_PACKAGES=1</code>).</li>
+<li>openbox is set to draw no frames and maximize every window, but a pop-up or a dialog keeps a frame with a close button.</li>
+<li>A Chromium policy (<code>image/chromium-policy.json</code>) blocks <code>localhost:3210</code>, <code>127.0.0.1:3210</code> and the other local spellings, so pages in the browser cannot open the app.</li>
+<li>Build arguments <code>VERSION</code> and <code>COMMIT</code> become <code>WEILO_VERSION</code>, <code>WEILO_COMMIT</code> and <code>WEILO_PI</code> and OCI labels. They are set late in the file, so a new version reuses the cached layers above.</li>
+<li>The image sets no <code>USER</code>: <code>CMD ["node", "/app/server.mjs"]</code> runs as root. The daemon is the only process that stays root.</li>
+</ul>
+</section>
+
+<section class="card" id="system">
+<h2>Processes and their users</h2>
+<figure>
+<div class="fig">
+<svg viewBox="0 0 760 560" role="img" aria-labelledby="as-t as-d">
+<title id="as-t">Processes inside weilo-core</title>
+<desc id="as-d">The root daemon listens on port 3210. It starts each agent's pi with setpriv as the agent's user, the curator as uid 1100, plugin programs as uid 1200, and Xvnc, openbox and Chromium as uid 1000. Agent pis call the daemon's API on 127.0.0.1:3210 with their own key. The daemon drives Chromium through a debugging pipe and shows its screen through a unix socket.</desc>
+<defs><marker id="as-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="box b-grey" x="8" y="8" width="744" height="544" rx="14"/>
+<text class="tb" x="24" y="32">weilo-core</text>
+<rect class="box b-amber" x="24" y="48" width="300" height="214" rx="12"/>
+<text class="tb" x="174" y="74" text-anchor="middle">daemon, root (uid 0)</text>
+<text class="tm" x="174" y="96" text-anchor="middle">node /app/server.mjs</text>
+<text class="ts" x="40" y="124">HTTP on 0.0.0.0:3210 in the container</text>
+<text class="ts" x="40" y="146">umask 007; PATH = root's folders only</text>
+<text class="ts" x="40" y="168">admin socket /tmp/weilo-admin/</text>
+<text class="ts" x="40" y="190">routines every 30 s, curator every 5 min</text>
+<text class="ts" x="40" y="212">pi registry for keys and sign-ins</text>
+<text class="ts" x="40" y="234">Playwright over Chromium's pipe</text>
+<rect class="box b-green" x="400" y="48" width="336" height="76" rx="10"/>
+<text class="tb" x="568" y="72" text-anchor="middle">pi --mode rpc (regular agent)</text>
+<text class="ts" x="568" y="94" text-anchor="middle">uid = gid = agent's uid (2001, 2002...)</text>
+<text class="ts" x="568" y="114" text-anchor="middle">groups: 2000 + each isolated agent's</text>
+<rect class="box b-teal" x="400" y="134" width="336" height="76" rx="10"/>
+<text class="tb" x="568" y="158" text-anchor="middle">pi --mode rpc (isolated agent)</text>
+<text class="ts" x="568" y="180" text-anchor="middle">uid = gid = agent's uid</text>
+<text class="ts" x="568" y="200" text-anchor="middle">no other group</text>
+<rect class="box b-violet" x="400" y="220" width="336" height="56" rx="10"/>
+<text class="tb" x="568" y="244" text-anchor="middle">curator: pi -p</text>
+<text class="ts" x="568" y="265" text-anchor="middle">uid 1100, cwd knowledge/, no groups</text>
+<rect class="box b-violet" x="400" y="286" width="336" height="56" rx="10"/>
+<text class="tb" x="568" y="310" text-anchor="middle">plugin programs (regular agents)</text>
+<text class="ts" x="568" y="331" text-anchor="middle">uid 1200, groups 2000 + isolated ones</text>
+<rect class="box b-violet" x="400" y="352" width="336" height="76" rx="10"/>
+<text class="tb" x="568" y="376" text-anchor="middle">Xvnc :1, openbox, Chromium</text>
+<text class="ts" x="568" y="398" text-anchor="middle">uid 1000 (node), no groups</text>
+<text class="ts" x="568" y="418" text-anchor="middle">/tmp/weilo-screen/ is theirs (0700)</text>
+<path class="ar" d="M324 86 H398" marker-end="url(#as-a)"/>
+<path class="ar" d="M324 170 H398" marker-end="url(#as-a)"/>
+<path class="ar" d="M324 236 L398 248" marker-end="url(#as-a)"/>
+<path class="ar" d="M340 262 V314 H398" marker-end="url(#as-a)"/>
+<path class="ar" d="M356 262 V390 H398" marker-end="url(#as-a)"/>
+<text class="ts" x="330" y="78">setpriv</text>
+<rect class="box b-blue" x="24" y="300" width="300" height="128" rx="12"/>
+<text class="tb" x="174" y="326" text-anchor="middle">calls into the daemon</text>
+<text class="ts" x="40" y="352">tools: POST /api/agents/&lt;id&gt;/&lt;tool&gt;</text>
+<text class="ts" x="40" y="374">models: /api/model-proxy/&lt;provider&gt;</text>
+<text class="ts" x="40" y="396">plugins: /api/plugin-proxy, plugin-pipe</text>
+<text class="ts" x="40" y="418">all with Authorization: Bearer WEILO_KEY</text>
+<path class="ar-d" d="M400 100 L330 320" marker-end="url(#as-a)"/>
+<rect class="box" x="24" y="452" width="712" height="84" rx="10"/>
+<text class="tb" x="40" y="476">Not root, not an agent: what the daemon never starts</text>
+<text class="ts" x="40" y="500">No Docker socket is mounted, and the daemon has no Docker code. Every program</text>
+<text class="ts" x="40" y="522">it starts is named by its full path (BIN in config.mjs) and gets a fixed PATH.</text>
+</svg>
+</div>
+<figcaption>Every arrow from the daemon is a <code>spawnAs</code> call in <code>daemon/users.mjs</code>: <code>/usr/bin/setpriv --reuid --regid --groups|--clear-groups --inh-caps=-all --bounding-set=-all --no-new-privs</code>.</figcaption>
+</figure>
+<div class="table wide"><table>
+<thead><tr><th>Process</th><th>Linux user</th><th>Groups</th><th>Working folder</th><th>Started by</th></tr></thead>
+<tbody>
+<tr><td>Daemon</td><td>root (0)</td><td>root's</td><td><code>/</code></td><td>The container (<code>CMD</code>)</td></tr>
+<tr><td>A regular agent's <code>pi --mode rpc</code></td><td>its <code>uid</code> (from 2001), gid = uid</td><td><code>agents</code> (2000) and every isolated agent's gid</td><td><code>workspace/&lt;folder&gt;/</code></td><td><code>runner.mjs</code> <code>start</code></td></tr>
+<tr><td>An isolated agent's <code>pi --mode rpc</code></td><td>its <code>uid</code>, gid = uid</td><td>none (<code>--clear-groups</code>)</td><td><code>isolated/&lt;folder&gt;/</code></td><td><code>runner.mjs</code> <code>start</code></td></tr>
+<tr><td>Curator's <code>pi -p</code></td><td>1100</td><td>none</td><td><code>knowledge/</code></td><td><code>memory/curator.mjs</code></td></tr>
+<tr><td>A plugin program used by a regular agent</td><td>1200</td><td>2000 and every isolated agent's gid</td><td>that agent's folder</td><td><code>gateway/plugins.mjs</code> <code>pipePlugin</code></td></tr>
+<tr><td>A plugin program used by an isolated agent</td><td>the agent's uid</td><td>none</td><td>that agent's folder</td><td><code>pipePlugin</code></td></tr>
+<tr><td><code>pi mcp list</code> (Settings &gt; Plugins status)</td><td>1200</td><td>2000</td><td><code>workspace/</code></td><td><code>settings/plugins.mjs</code></td></tr>
+<tr><td>Xvnc, openbox, Chromium</td><td>1000 (<code>node</code>)</td><td>none</td><td>-</td><td><code>browser/screen.mjs</code>, restarted 2 s after they stop</td></tr>
+<tr><td>Short-lived <code>pi</code> that lists models</td><td>root</td><td>-</td><td><code>agent/</code></td><td><code>settings/providers.mjs</code> <code>availableModels</code></td></tr>
+</tbody></table></div>
+<p>The model-listing pi stays root because it must read <code>auth.json</code>; it runs with <code>--no-session --no-mcp --no-skills --no-extensions --no-context-files</code> and in root's own folder, not where agents write. Sign-in with an account (<code>settings/login.mjs</code>) runs pi's own login code inside the daemon.</p>
+</section>
+
+<section class="card" id="daemon">
+<h2>What the daemon does</h2>
+<div class="cols">
+<div class="tile"><h3>Serves</h3><p>The built UI (<code>http/static.mjs</code>, with <code>frame-ancestors 'none'</code>), the JSON API, the live event stream (SSE), files the chats name (<code>http/files.mjs</code>), and two WebSockets: the screen's live view and its own debugging channel to Chromium.</p></div>
+<div class="tile"><h3>Guards</h3><p>Host, Origin and <code>Sec-Fetch-Site</code> checks (<code>http/request.mjs</code>), paired devices and agent keys (<code>http/access.mjs</code>), the per-route tool gate and <code>mayCall</code> (<code>server.mjs</code>). See <a href="security.html#boundaries">Security</a>.</p></div>
+<div class="tile"><h3>Keeps</h3><p>Keys, plugin secrets, paired devices, profiles, settings, routines, notification keys: all in <code>agent/</code>, root's. It writes JSON files whole (temporary file, then rename) and one change at a time per file (<code>updateJson</code> in <code>common.mjs</code>).</p></div>
+<div class="tile"><h3>Runs</h3><p>One pi per open agent (<code>agents/runner.mjs</code>), the routines clock, the curator, the browser's screen, and the notifications. It owns owners and modes too (<code>secure()</code> at every start).</p></div>
+</div>
+<h3 id="startup">Start order</h3>
+<ol>
+<li><code>process.umask(0o007)</code>: what the daemon makes is never readable by everyone. <code>PATH</code> becomes <code>SYSTEM_PATH</code> (root's folders only), and <code>npm_config_prefix</code> and <code>PYTHONUSERBASE</code> are dropped.</li>
+<li>The admin socket <code>/tmp/weilo-admin/admin.sock</code> (folder 0700, root's) starts: whoever connects gets a new pairing code. Only root in the container can open it (<code>docker exec weilo-core node /app/pair.mjs</code>).</li>
+<li><code>migrate()</code> brings the data folder to this app's data version, or stops the start if the folder is newer (<a href="#versions">Versions and data</a>).</li>
+<li><code>secure(profiles)</code> sets owner and mode of the top of every place (<a href="data-and-permissions.html#tree">the tree</a>).</li>
+<li>The server listens on port 3210. Then, in the background: compaction settings are written for the models in use, every scratch folder is emptied, routines start, the screen starts, and the curator's 5-minute timer starts.</li>
+<li>On <code>SIGTERM</code> or <code>SIGINT</code> every pi is stopped before the daemon exits.</li>
+</ol>
+</section>
+
+<section class="card" id="pi-start">
+<h2>How an agent's pi starts</h2>
+<p>A pi starts on first use: the chat opening its event stream, a message, a routine, or a call that needs it. <code>open(id)</code> in <code>runner.mjs</code> keeps one run per agent; a second caller waits for the same start.</p>
+<figure>
+<div class="fig narrow">
+<svg viewBox="0 0 520 760" role="img" aria-labelledby="ps-t ps-d">
+<title id="ps-t">Start sequence of an agent's pi</title>
+<desc id="ps-d">Eight steps: wait for a folder move, read the profile and its add-ons, build the argument list, prepare folders, make a fresh agent key, write the pi folder, spawn pi as the agent's user, and send the history to the chat.</desc>
+<defs><marker id="ps-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L10 5L0 10z"/></marker></defs>
+<g>
+<rect class="box b-grey" x="20" y="10" width="480" height="64" rx="10"/>
+<text class="tb" x="36" y="36">1. Wait for a folder move</text>
+<text class="ts" x="36" y="58">holds: no pi starts while its folders move</text>
+<path class="ar" d="M260 74 V90" marker-end="url(#ps-a)"/>
+<rect class="box b-amber" x="20" y="92" width="480" height="84" rx="10"/>
+<text class="tb" x="36" y="118">2. Read what it is made of</text>
+<text class="ts" x="36" y="140">profile, browser rule, plugins, skills,</text>
+<text class="ts" x="36" y="162">extensions (bundled and added), all profiles</text>
+<path class="ar" d="M260 176 V192" marker-end="url(#ps-a)"/>
+<rect class="box b-amber" x="20" y="194" width="480" height="64" rx="10"/>
+<text class="tb" x="36" y="220">3. Build argv and the user</text>
+<text class="ts" x="36" y="242">argvOf(agent, kind, plugins); userOf(agent, agents)</text>
+<path class="ar" d="M260 258 V274" marker-end="url(#ps-a)"/>
+<rect class="box b-green" x="20" y="276" width="480" height="84" rx="10"/>
+<text class="tb" x="36" y="302">4. Prepare folders</text>
+<text class="ts" x="36" y="324">scratch /tmp/weilo/&lt;id&gt; 0700; home 2770;</text>
+<text class="ts" x="36" y="346">chat folder 0700; HOME homes/&lt;folder&gt; 0700</text>
+<path class="ar" d="M260 360 V376" marker-end="url(#ps-a)"/>
+<rect class="box b-red" x="20" y="378" width="480" height="64" rx="10"/>
+<text class="tb" x="36" y="404">5. Make a fresh agent key</text>
+<text class="ts" x="36" y="426">32 random bytes; an older key of this agent goes</text>
+<path class="ar" d="M260 442 V458" marker-end="url(#ps-a)"/>
+<rect class="box b-red" x="20" y="460" width="480" height="106" rx="10"/>
+<text class="tb" x="36" y="486">6. Write the pi folder</text>
+<text class="tm" x="36" y="508">/var/lib/weilo/pi/&lt;id&gt;/</text>
+<text class="ts" x="36" y="530">root 0700 while written; settings.json, models.json,</text>
+<text class="ts" x="36" y="552">mcp.json 0600; then the agent's, 0700</text>
+<path class="ar" d="M260 566 V582" marker-end="url(#ps-a)"/>
+<rect class="box b-green" x="20" y="584" width="480" height="84" rx="10"/>
+<text class="tb" x="36" y="610">7. Spawn as the agent's user</text>
+<text class="ts" x="36" y="632">setpriv ... /usr/local/bin/pi --mode rpc ...</text>
+<text class="ts" x="36" y="654">cwd: its home folder; env below</text>
+<path class="ar" d="M260 668 V684" marker-end="url(#ps-a)"/>
+<rect class="box b-blue" x="20" y="686" width="480" height="64" rx="10"/>
+<text class="tb" x="36" y="712">8. History to the chat</text>
+<text class="ts" x="36" y="734">get_messages, then every live event</text>
+</g>
+</svg>
+</div>
+<figcaption>From <code>start()</code> and <code>subscribe()</code> in <code>daemon/agents/runner.mjs</code>, <code>writePiDir</code> in <code>agents/pidir.mjs</code> and <code>makeHome</code> in <code>agents/agents.mjs</code>.</figcaption>
+</figure>
+<h3>The command line</h3>
+<p>Built by <code>argvOf</code>. A regular agent:</p>
+<pre><code>/usr/local/bin/pi --mode rpc [--model &lt;provider/model&gt;] [--thinking &lt;level&gt;]
+  --append-system-prompt agent/profiles/&lt;id&gt;/agent.json
+  --append-system-prompt "&lt;house rules for its folder&gt;"
+  [--append-system-prompt agent/USER.md] [--append-system-prompt agent/MEMORY.md]
+  -ne -e builtin:mcp -e builtin:codemode -e builtin:tool-search -e builtin:llama.cpp
+  -e /app/weilo.mjs -e /app/memory/extension.mjs
+  [-e /app/browser/extension/index.js] [-e /app/routines/extension/index.js]
+  [-e agent/extensions/&lt;name&gt;/&lt;entry&gt; ...]
+  --no-skills [--skill agent/skills/&lt;skill&gt; ...]
+  --tools read,bash,edit,write,show,ask,manage_agents,skill,memory,fetch_knowledge,manage_settings[,browser][,routine][,&lt;extension tools&gt;][,codemode,mcp__&lt;plugin&gt;__* ...]
+  --session-dir agent/sessions/&lt;id&gt; --session-id &lt;id&gt;</code></pre>
+<p>An isolated agent differs in five places: its profile, skills and added extensions are read from root-owned copies in its pi folder; it gets <code>--no-context-files</code> instead of <code>USER.md</code> and <code>MEMORY.md</code>; it does not load <code>memory/extension.mjs</code>; its <code>--tools</code> leave out <code>skill</code>, <code>memory</code>, <code>fetch_knowledge</code> and <code>manage_settings</code>; and its chat is in <code>isolated-sessions/&lt;id&gt;</code>. Without plugins the list ends with <code>--no-mcp</code> instead of <code>codemode</code> and the plugin tools.</p>
+<ul>
+<li><code>-ne</code> turns off extension discovery, so nothing left in <code>agent/extensions/</code> or named in <code>settings.json</code> loads. It also drops pi's built-in extensions, so each one is named again (<code>PI_BUILTINS</code> in <code>config.mjs</code>): a new built-in in a later pi must be added there, or agents lose it.</li>
+<li><code>--tools</code> is pi's allowlist: pi hides any tool it does not name. The daemon's own tools are listed only if <code>mayCall</code> allows them, so what pi offers matches what the routes accept.</li>
+<li><code>USER.md</code> and <code>MEMORY.md</code> are passed only when the file exists: a path that is not a file would become prompt text.</li>
+<li>The session id is the agent id, so opening an agent always resumes its one conversation.</li>
+</ul>
+<h3>The environment</h3>
+<div class="table mid"><table>
+<thead><tr><th>Variable</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td><code>PI_CODING_AGENT_DIR</code></td><td><code>/var/lib/weilo/pi/&lt;id&gt;</code>: its own settings, models and plugins (<a href="security.html#gateway">no real key</a>)</td></tr>
+<tr><td><code>HOME</code></td><td><code>homes/&lt;folder&gt;</code>: its own tool settings and sign-ins (git and the like)</td></tr>
+<tr><td><code>PATH</code>, <code>npm_config_prefix</code>, <code>PYTHONUSERBASE</code></td><td>Regular: root's folders, then <code>/home/node/.local/bin</code> (shared tools). Isolated: root's folders, then <code>&lt;HOME&gt;/.local/bin</code>.</td></tr>
+<tr><td><code>WEILO_AGENT</code>, <code>WEILO_API</code>, <code>WEILO_KEY</code></td><td>Who it is, <code>http://127.0.0.1:3210/api</code>, and its key for every call back</td></tr>
+<tr><td><code>WEILO_ASK_BEFORE</code></td><td>The browser rule from Settings &gt; Browser, or empty when off</td></tr>
+<tr><td><code>WEILO_SCRATCH</code></td><td><code>/tmp/weilo/&lt;id&gt;</code>, emptied when it goes idle</td></tr>
+<tr><td><code>WEILO_ISOLATED</code></td><td><code>1</code> for an isolated agent: the tools then describe what it may ask for</td></tr>
+</tbody></table></div>
+<p>The rest of the daemon's environment is inherited (for example <code>NODE_PATH</code> and <code>WEILO_VERSION</code>).</p>
+</section>
+
+<section class="card" id="restarts">
+<h2>When pis stop and start anew</h2>
+<div class="table mid"><table>
+<thead><tr><th>Event</th><th>What happens</th><th>Code</th></tr></thead>
+<tbody>
+<tr><td>No viewer and no run for 10 minutes</td><td>The pi stops and its scratch folder is emptied</td><td><code>touch</code>, <code>IDLE_MS</code></td></tr>
+<tr><td>Agent saved in Edit agent</td><td>Its pi starts anew: now if idle, else when the run ends (<code>stale</code>)</td><td><code>restart</code></td></tr>
+<tr><td>Skills or extensions added or removed, a plugin removed, About you, Memory or the browser rule saved</td><td>Every pi starts anew</td><td><code>forAll</code> in <code>server.mjs</code></td></tr>
+<tr><td><code>manage_settings</code> change approved</td><td>Every pi starts anew</td><td><code>restartAll</code></td></tr>
+<tr><td>An isolated agent made, deleted, or switched to or from isolated</td><td>Every regular agent's pi starts anew (group membership changed)</td><td><code>restartRegular</code></td></tr>
+<tr><td>Switch to or from isolated</td><td>Its pi stops; no pi starts until the folders moved</td><td><code>holding</code></td></tr>
+<tr><td><code>/reload</code> in the chat</td><td>That pi starts anew</td><td><code>POST …/reload</code></td></tr>
+</tbody></table></div>
+<p>A pi is stopped by closing its stdin; it is killed if it has not exited after 5 seconds (<code>PI_KILL_MS</code>). Its key is dropped at once, so a stopped pi's tools can no longer call the daemon. Viewers see an <code>exit</code> event with code 0 and reconnect to the new pi by themselves. Adding a plugin does not restart anything: an agent uses a plugin only after its profile names it, which is a save.</p>
+</section>
+
+<section class="card" id="turn">
+<h2>A chat turn, end to end</h2>
+<figure>
+<div class="fig">
+<svg viewBox="0 0 760 640" role="img" aria-labelledby="ct-t ct-d">
+<title id="ct-t">A chat turn</title>
+<desc id="ct-d">The app posts a message; the daemon sends a prompt to pi over stdin; pi calls the model through the daemon's model proxy with its own key, the daemon swaps in the real key and streams the answer back; pi's events go to the app over server-sent events; a tool call reaches the daemon with the agent key; when the run settles a notification may be sent.</desc>
+<defs><marker id="ct-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="box b-blue" x="10" y="10" width="160" height="50" rx="10"/><text class="tb" x="90" y="41" text-anchor="middle">App (device)</text>
+<rect class="box b-amber" x="210" y="10" width="160" height="50" rx="10"/><text class="tb" x="290" y="41" text-anchor="middle">daemon</text>
+<rect class="box b-green" x="410" y="10" width="160" height="50" rx="10"/><text class="tb" x="490" y="41" text-anchor="middle">agent's pi</text>
+<rect class="box b-blue" x="610" y="10" width="140" height="50" rx="10"/><text class="tb" x="680" y="41" text-anchor="middle">provider</text>
+<line class="life" x1="90" y1="60" x2="90" y2="630"/><line class="life" x1="290" y1="60" x2="290" y2="630"/><line class="life" x1="490" y1="60" x2="490" y2="630"/><line class="life" x1="680" y1="60" x2="680" y2="630"/>
+<path class="ar" d="M90 96 H286" marker-end="url(#ct-a)"/><text class="ts" x="98" y="88">POST /api/agents/&lt;id&gt;/message</text>
+<path class="ar" d="M290 136 H486" marker-end="url(#ct-a)"/><text class="ts" x="298" y="128">stdin: prompt (steer if busy)</text>
+<path class="ar" d="M490 176 H294" marker-end="url(#ct-a)"/><text class="ts" x="298" y="168">/api/model-proxy/&lt;provider&gt;</text>
+<text class="ts" x="298" y="194">pi's own key in the header</text>
+<path class="ar" d="M290 224 H676" marker-end="url(#ct-a)"/><text class="ts" x="460" y="216">real key swapped in</text>
+<path class="ar-d" d="M680 262 H294" marker-end="url(#ct-a)"/><text class="ts" x="460" y="254">streamed answer</text>
+<path class="ar-d" d="M290 296 H486" marker-end="url(#ct-a)"/><text class="ts" x="298" y="288">passed through</text>
+<path class="ar" d="M490 336 H294" marker-end="url(#ct-a)"/><text class="ts" x="298" y="328">stdout: message_update ...</text>
+<path class="ar" d="M290 376 H94" marker-end="url(#ct-a)"/><text class="ts" x="98" y="368">SSE: the same event</text>
+<path class="ar" d="M490 426 H294" marker-end="url(#ct-a)"/><text class="ts" x="298" y="410">tool call, e.g. memory:</text>
+<text class="ts" x="298" y="446">POST …/memory, Bearer key</text>
+<path class="ar-d" d="M290 476 H486" marker-end="url(#ct-a)"/><text class="ts" x="298" y="468">{ text } as the tool result</text>
+<path class="ar" d="M490 526 H294" marker-end="url(#ct-a)"/><text class="ts" x="298" y="518">agent_settled</text>
+<path class="ar" d="M290 566 H94" marker-end="url(#ct-a)"/><text class="ts" x="98" y="558">SSE: agent_settled</text>
+<rect class="box b-violet" x="300" y="584" width="300" height="40" rx="8"/><text class="ts" x="450" y="609" text-anchor="middle">push notification if no screen shows the app</text>
+</svg>
+</div>
+<figcaption>Simplified: pi may call the model several times and run several tools in one run. Its events are relayed unchanged; there is no translation layer.</figcaption>
+</figure>
+<ul>
+<li><code>POST /api/agents/:id/message</code> takes <code>{text, images, files}</code>. Images (PNG, JPEG, GIF, WebP data URLs) go to the model as image blocks; other files are saved in <code>uploads/</code> of the agent's folder and named in the message as <code>[Attached file: uploads/…]</code> (<a href="agents.html#folders">Folders and uploads</a>). The UI allows at most 4 images and 5 files of 5 MB (<code>ui/src/lib/limits.ts</code>); the daemon accepts a body of at most 64 million characters.</li>
+<li>A message sent during a run is queued into it (<code>streamingBehavior: "steer"</code>).</li>
+<li>Pi's RPC lines are split on LF only, not with Node's <code>readline</code>, which would also split on U+2028 and U+2029 inside JSON strings.</li>
+<li>When an agent uses <code>ask</code>, pi sends an <code>extension_ui_request</code> (<code>select</code> or <code>input</code>). The daemon keeps it as <code>run.asking</code>, sends it to the chat, writes the answer back, and ends it with <code>ask_end</code>. Other dialogs pi may open (<code>confirm</code>, <code>editor</code>) are cancelled at once.</li>
+</ul>
+</section>
+
+<section class="card" id="events">
+<h2>Events and chat files</h2>
+<p><code>GET /api/agents/:id/events</code> is a server-sent event stream, for paired devices only. The first event is <code>{type: "history", messages, busy, asking}</code> (pi's <code>get_messages</code>, taken in the same step that adds the listener, so no event falls between them). Then come pi's own events: <code>agent_start</code>, <code>message_update</code>, <code>message_end</code>, <code>tool_execution_start</code> and <code>_end</code>, <code>compaction_start</code> and <code>_end</code>, <code>agent_settled</code>, <code>extension_ui_request</code>, plus the daemon's <code>ask_end</code> and finally <code>{type: "exit", code, error}</code> when pi ends.</p>
+<p>A user message that pi expanded from <code>/skill:name</code> is turned back into what was typed (<code>asTyped</code> in <code>agents/sessions.mjs</code>), in the stream and in the files read later.</p>
+<h3>The chat files</h3>
+<p>Pi writes one JSON line per entry in <code>*.jsonl</code> files in the agent's session folder: <code>agent/sessions/&lt;id&gt;/</code> or <code>isolated-sessions/&lt;id&gt;/</code>. The daemon reads them directly for four things:</p>
+<ul>
+<li>The agent list's newest message: only the last 64 KB of the newest file.</li>
+<li>Earlier messages that pi summarized away: <code>GET /api/agents/:id/earlier?skip=n</code>, 60 at a time, the entries before the last compaction's <code>firstKeptEntryId</code>, without thinking and without tool results other than <code>ask</code>, <code>routine</code> and <code>manage_agents</code>.</li>
+<li>Search (<code>GET /api/search?q=</code>, at most 200 characters, 50 results, newest first) and <a href="memory-and-knowledge.html#fetch"><code>fetch_knowledge</code></a>: only the last 32 MB of each file (<code>CHAT_TAIL</code>), read in 1 MB pieces, user and assistant text only.</li>
+<li>The <a href="memory-and-knowledge.html#curator">curator</a>.</li>
+</ul>
+<h3>Context and compaction</h3>
+<p>Pi summarizes long conversations itself, when the free tokens fall to <code>compaction.modelOverrides.&lt;provider/id&gt;.reserveTokens</code>. The daemon writes that value for each model in use that has none: summarize at 40% of a 1M window, 80% of a 500k one, 90% of a smaller one, never with less than 16384 tokens free (<code>COMPACT_AT</code>, <code>MIN_RESERVE</code>, <code>settings/compaction.mjs</code>). A value set by hand stays. <code>GET …/context</code> gives the chat's meter <code>{tokens, window, point}</code>; <code>POST …/compact</code> summarizes now and is refused during a run.</p>
+</section>
+
+<section class="card" id="routines">
+<h2>Routines</h2>
+<p><code>routines/routines.mjs</code> keeps <code>agent/routines.json</code> <code>{timezone, items}</code> and checks every 30 seconds.</p>
+<ul>
+<li><code>every</code> is <code>once</code>, <code>hour</code>, <code>day</code>, <code>weekday</code> or <code>week</code>; <code>times</code> are 1 to 6 <code>HH:MM</code> values; <code>day</code> (0 to 6) for a week; <code>date</code> (<code>YYYY-MM-DD</code>, <code>today</code>, <code>tomorrow</code>) or <code>in_minutes</code> (1 to 525600) for once. At most 50 routines per agent.</li>
+<li>Times are wall-clock times in the routine's time zone: the browser's, sent as <code>X-Timezone</code> with every request. A time a clock change repeats runs once, at the earlier moment; one it skips runs at the later moment (<code>routines/schedule.mjs</code>).</li>
+<li>A routine moves to its next time, and that is saved, before its task is sent: a crash skips one run and never repeats one.</li>
+<li>A routine missed by more than an hour (the computer was off) waits for its next time; a missed one-time routine stays in the list with an error.</li>
+<li>The task goes to the chat as a message that starts with <code>⏰ Routine: &lt;title&gt;</code>, followed by a note that the user is away: do what the task covers, leave steps that need the user for the end, and reply with what was done and what waits. An agent that does not take it within a minute is marked failed, so one stuck agent does not hold up the others.</li>
+<li>Agents manage their own routines with the <code>routine</code> tool of the bundled routines extension, which calls <code>/api/agents/:id/routines</code>.</li>
+</ul>
+</section>
+
+<section class="card" id="push">
+<h2>Notifications</h2>
+<p><code>daemon/push.mjs</code> sends Web Push without a library. It makes its own VAPID key pair (P-256) on first use and keeps it, the subscribed browsers and the muted agents in <code>agent/push.json</code>. Each notification is encrypted for one browser (RFC 8291, <code>aes128gcm</code>) and signed for 12 hours (RFC 8292).</p>
+<ul>
+<li>Only endpoints at Google's, Apple's, Mozilla's or Microsoft's push services are accepted (<code>PUSH_SERVICE</code>): the daemon never posts to an address a page made up.</li>
+<li>Sent when a run ends (the start of the answer, or its error; a run you stopped sends none) and when an agent asks something. At most 180 characters.</li>
+<li>None while the app is on screen somewhere: the agent list asks <code>GET /api/agents?seen</code> every 2 to 5 seconds while visible, and notifications resume 15 seconds after the last such call.</li>
+<li>A push service that answers 404 or 410 removes that browser. The service worker <code>ui/public/sw.js</code> shows one notification per agent; a tap opens the app at that agent.</li>
+</ul>
+</section>
+
+<section class="card" id="browser">
+<h2>The browser</h2>
+<p>One Chromium on a virtual screen, shared by all agents, with one set of logins. Each agent has its own window with as many tabs as it needs; the browser's window id tells them apart.</p>
+<ul>
+<li><code>browser/screen.mjs</code> starts <code>Xvnc :1</code> (1280x800, VNC on a unix socket only, no TCP), openbox and Chromium as user 1000, and restarts any of them 2 seconds after it stops.</li>
+<li>The VNC socket and the display's Xauthority cookie are in <code>/tmp/weilo-screen/</code> (1000's, 0700). Xvnc takes X clients with that cookie only, so an agent cannot type into the browser.</li>
+<li>Chromium has no debugging port. It runs with <code>--remote-debugging-pipe</code>; the daemon passes that pipe to a WebSocket at <code>/api/browser-cdp/&lt;secret&gt;</code> (a secret made at each start) for its own Playwright.</li>
+<li>Chromium runs with background calls to Google turned off (sync, component updates, pings and more).</li>
+<li>Agents read a page as text (Playwright's accessibility snapshot, at most 15000 characters, each element with a ref such as <code>e13</code>) and act with <code>open</code>, <code>read</code>, <code>click</code>, <code>type</code>, <code>press</code>, <code>scroll</code>, <code>back</code> and tab actions. An agent's steps run one after another.</li>
+<li>The browser tool refuses the app's own address; the Chromium policy blocks it too, for redirects.</li>
+<li>The live view (<code>WS /api/browser/view</code>, paired devices only) turns the screen's VNC into binary WebSocket messages for noVNC.</li>
+<li>Take over stops the agent's run, waits for a running step, and refuses the agent's browser steps until you give the window back.</li>
+</ul>
+<p>Who may use the browser, and what that means for logins: <a href="security.html#limits">Known limits</a>.</p>
+</section>
+
+<section class="card" id="versions">
+<h2>Versions, updates and data</h2>
+<ul>
+<li><strong>Version.</strong> One <code>VERSION</code> file (SemVer). The image keeps it as <code>WEILO_VERSION</code>, with <code>WEILO_COMMIT</code> and <code>WEILO_PI</code>; <code>GET /api/version</code> and Settings &gt; About show them. A build without the arguments is <code>dev</code>. A <code>v*</code> tag runs the release workflow (<a href="RELEASING.md">RELEASING.md</a>).</li>
+<li><strong>Update check.</strong> <code>update.mjs</code> asks GitHub for the newest release at most every 6 hours, only if <code>checkUpdates</code> in <code>weilo.json</code> is not false, and never for a <code>dev</code> build. The app does not update itself: <code>update.sh</code> or <code>update.cmd</code> download the newest release zip over the folder and run the start script (<a href="operating.html#update">Update</a>).</li>
+<li><strong>Data version.</strong> <code>weilo.json</code> holds <code>{dataVersion, version, lastUid}</code>. At start, <code>migrate()</code> runs the steps from the folder's version up to <code>DATA_VERSION</code> (4 in this version), saving the version after each one. A folder from a newer app stops the start with a message instead of being touched. Steps: <a href="data-and-permissions.html#migrations">Migrations</a>.</li>
+</ul>
+</section>
+</div>
+</div>
+</main>
+<footer class="foot">
+<div class="pager"><a href="index.html">&larr; Overview</a><a href="security.html">Security &rarr;</a></div>
+<p>Written from the code of this version of Weilo Agents. When the code and a page disagree, the code is right and the page needs fixing. Project: <a href="https://github.com/Shyam1203/weilo-agents">github.com/Shyam1203/weilo-agents</a>.</p>
+</footer>
+</body>
+</html>

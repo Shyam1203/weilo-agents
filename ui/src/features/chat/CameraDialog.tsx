@@ -1,4 +1,3 @@
-// Takes a photo with the device camera and hands it to the composer as an image file.
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../components/ui/Button";
 import { ErrorText } from "../../components/ui/Field";

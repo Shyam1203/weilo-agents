@@ -1,4 +1,3 @@
-// "Contact us": a message to Weilo, for a problem, an idea or a question. It goes to Weilo with the app's version.
 import { useState, type FormEvent } from "react";
 import { sendContact, TOPICS, type Contact } from "../../api/app";
 import { Button } from "../../components/ui/Button";
@@ -8,7 +7,6 @@ import { Select } from "../../components/ui/Select";
 import { MAX_CONTACT_EMAIL, MAX_CONTACT_MESSAGE, MAX_CONTACT_NAME } from "../../lib/limits";
 import { useAction } from "../../lib/useAction";
 
-/** `name` is what the app already calls the user. */
 export function ContactDialog({ name, onClose }: { name: string; onClose: () => void }) {
   const [draft, setDraft] = useState<Contact>({ name, email: "", topic: "Problem", message: "" });
   const [sent, setSent] = useState(false);

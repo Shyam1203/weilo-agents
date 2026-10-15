@@ -1,4 +1,3 @@
-// The blocks an agent shows with the `show` tool, drawn in the chat's own style.
 import { useState, type ReactNode } from "react";
 import { Icon } from "../../components/ui/Icon";
 import { kindOf } from "../files/kinds";
@@ -12,14 +11,10 @@ const CARD = "rounded-2xl border border-line bg-page";
 
 interface Props {
   blocks: Block[];
-  /** Choosing something replies with its message; absent when it can no longer be answered. */
   onReply?: (message: string) => void;
-  /** What you replied, when you have: the choice it matches is marked. */
   chosen?: string;
 }
 
-// A card's picture (a product photo, say), from the web. Shops often refuse pictures asked for from another site's page,
-// so the request says nothing of this one; a picture that does not load is left out.
 function CardImage({ src }: { src: string }) {
   const [failed, setFailed] = useState(false);
   if (failed) return null;
@@ -130,12 +125,10 @@ function One({ block, onReply, chosen }: Omit<Props, "blocks"> & { block: Block 
   }
 }
 
-// A button that replies with its message; once you have replied, the one you chose stays marked.
 function Choice({ label, done, message, chosen, onReply }: { label: string; done?: string; message: string; chosen?: string; onReply?: (message: string) => void }) {
   return <PickButton label={label} done={done} picked={chosen === message} onPick={onReply && (() => onReply(message))} />;
 }
 
-// A file in the workspace: a picture shows, most files can be previewed in the app, and any file can be downloaded.
 function File({ path, name }: { path: string; name: string }) {
   const url = useFileUrl()(path);
   const preview = usePreview();
@@ -176,7 +169,6 @@ const format = (n: number) => n.toLocaleString(undefined, { maximumFractionDigit
 
 type Points = { label: string; value: number }[];
 
-// Horizontal bars, from zero (or the lowest value when some are below it).
 function Bars({ points }: { points: Points }) {
   const low = Math.min(0, ...points.map((p) => p.value));
   const span = Math.max(...points.map((p) => p.value)) - low || 1;

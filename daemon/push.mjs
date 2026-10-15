@@ -2,18 +2,10 @@ import { createCipheriv, createECDH, createPrivateKey, generateKeyPairSync, hkdf
 import { fail, plainText, PUSH, readJson, updateJson } from "./common.mjs";
 import { PUSH_BODY_CHARS, PUSH_SEEN_MS, PUSH_SUBJECT, PUSH_TIMEOUT_MS, PUSH_TTL_S } from "./config.mjs";
 
-// Notifications on your phone or computer when an agent replies, asks you something or fails, while the app is not open:
-// Web Push. Each browser that turns them on gives an endpoint at its push service (Google's, Apple's, Mozilla's,
-// Microsoft's); the daemon sends there, encrypted for that browser alone (RFC 8291), signed with the app's own key (VAPID,
-// RFC 8292). The push service sees only who to wake, not what the notification says.
-// agent/push.json { vapid: { publicKey, privateKey (JWK) }, devices: [{ id, endpoint, keys: { p256dh, auth }, label, added }], muted: [agent ids] }
-
 const b64url = (buffer) => Buffer.from(buffer).toString("base64url");
 
-// Only the browsers' push services: the daemon never posts to an address a page made up.
 const PUSH_SERVICE = /^https:\/\/([a-z0-9-]+\.)*(googleapis\.com|push\.apple\.com|push\.services\.mozilla\.com|notify\.windows\.com)\//;
 
-// The app's key pair, made the first time it is needed.
 async function vapid() {
   const { vapid: saved } = await readJson(PUSH);
   if (saved) return saved;
@@ -28,21 +20,18 @@ async function vapid() {
   ).vapid;
 }
 
-/** What the page needs to turn notifications on, and what is on: { publicKey, devices: [{ id, label, added }], muted }. */
 export async function pushStatus() {
   const { publicKey } = await vapid();
   const { devices = [], muted = [] } = await readJson(PUSH);
   return { publicKey, devices: devices.map(({ id, label, added }) => ({ id, label, added })), muted };
 }
 
-/** A browser that turned notifications on: its subscription (as `PushSubscription.toJSON()` gives it) and a name for it. Returns its id. */
 export async function addDevice({ subscription, label } = {}) {
   const { endpoint, keys } = subscription ?? {};
   if (typeof endpoint !== "string" || !PUSH_SERVICE.test(endpoint) || typeof keys?.p256dh !== "string" || typeof keys?.auth !== "string") throw fail(400, "This browser's notification address is not valid");
   const id = randomUUID();
   await updateJson(PUSH, (data) => ({
     ...data,
-    // The same browser again (after clearing its data, say) replaces its old entry.
     devices: [...(data.devices ?? []).filter((d) => d.endpoint !== endpoint), { id, endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth }, label: typeof label === "string" ? label.slice(0, 80) : "", added: Date.now() }],
   }));
   return { id };
@@ -50,18 +39,14 @@ export async function addDevice({ subscription, label } = {}) {
 
 export const removeDevice = (id) => updateJson(PUSH, (data) => ({ ...data, devices: (data.devices ?? []).filter((d) => d.id !== id) }));
 
-/** The agents that send no notifications. */
 export async function setMuted(muted) {
   if (!Array.isArray(muted) || !muted.every((id) => typeof id === "string")) throw fail(400, "The list is not valid");
   await updateJson(PUSH, (data) => ({ ...data, muted }));
 }
 
-// The app was on screen somewhere (its agent list asks the daemon every few seconds while it is): no notification then,
-// as you see the reply in the app.
 let seen = 0;
 export const markSeen = () => (seen = Date.now());
 
-// The payload, encrypted for one browser (RFC 8291, aes128gcm: one record).
 function encrypt(text, { p256dh, auth }) {
   const browserKey = Buffer.from(p256dh, "base64url");
   const ecdh = createECDH("prime256v1");
@@ -72,7 +57,6 @@ function encrypt(text, { p256dh, auth }) {
   const key = Buffer.from(hkdfSync("sha256", ikm, salt, Buffer.from("Content-Encoding: aes128gcm\0"), 16));
   const nonce = Buffer.from(hkdfSync("sha256", ikm, salt, Buffer.from("Content-Encoding: nonce\0"), 12));
   const cipher = createCipheriv("aes-128-gcm", key, nonce);
-  // A 2 ends the last (only) record.
   const body = Buffer.concat([cipher.update(Buffer.concat([Buffer.from(text), Buffer.from([2])])), cipher.final(), cipher.getAuthTag()]);
   const header = Buffer.alloc(21);
   salt.copy(header);
@@ -81,7 +65,6 @@ function encrypt(text, { p256dh, auth }) {
   return Buffer.concat([header, ownKey, body]);
 }
 
-// The app's signature for one push service, good for 12 hours.
 function signature(endpoint, { publicKey, privateKey }) {
   const head = b64url(JSON.stringify({ typ: "JWT", alg: "ES256" }));
   const claims = b64url(JSON.stringify({ aud: new URL(endpoint).origin, exp: Math.floor(Date.now() / 1000) + 12 * 60 * 60, sub: PUSH_SUBJECT }));
@@ -89,7 +72,6 @@ function signature(endpoint, { publicKey, privateKey }) {
   return `vapid t=${head}.${claims}.${b64url(signed)}, k=${publicKey}`;
 }
 
-// Sends to one browser. A browser that turned notifications off (or is gone) is forgotten.
 async function send(device, payload, keys) {
   try {
     const res = await fetch(device.endpoint, {
@@ -105,10 +87,6 @@ async function send(device, payload, keys) {
   }
 }
 
-/**
- * Tells your devices what an agent did: `kind` is "reply", "ask" or "error"; `text` what it said. Nothing is sent while the
- * app is on screen, for an agent you muted, or when no device turned notifications on.
- */
 export async function notify(agent, kind, text) {
   if (Date.now() - seen < PUSH_SEEN_MS) return;
   const { devices = [], muted = [] } = await readJson(PUSH).catch(() => ({}));

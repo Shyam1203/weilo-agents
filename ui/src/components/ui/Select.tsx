@@ -20,10 +20,6 @@ const GAP = 4;
 const MARGIN = 12;
 const ROOM = 220;
 
-/**
- * A dropdown in the app's own style (the browser's can't be styled). The list is drawn in <body>,
- * so a dialog's scroll area never clips it; it opens upward when there is more room above.
- */
 export function Select({ label, value, options, onChange, placeholder = "", disabled = false }: { label: string; value: string; options: Option[]; onChange: (value: string) => void; placeholder?: string; disabled?: boolean }) {
   const [place, setPlace] = useState<Place | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -36,7 +32,6 @@ export function Select({ label, value, options, onChange, placeholder = "", disa
     const below = innerHeight - r.bottom - MARGIN;
     const above = r.top - MARGIN;
     const up = below < ROOM && above > below;
-    // Measured on the screen; the list's style is in the page's own (unzoomed) sizes.
     const z = zoom();
     setPlace({ left: r.left / z, minWidth: r.width / z, ...(up ? { bottom: (innerHeight - r.top) / z + GAP, maxHeight: above / z } : { top: r.bottom / z + GAP, maxHeight: below / z }) });
   };
@@ -47,7 +42,6 @@ export function Select({ label, value, options, onChange, placeholder = "", disa
     const outside = (e: Event) => !list.current?.contains(e.target as Node) && !trigger.current?.contains(e.target as Node);
     const onDown = (e: PointerEvent) => outside(e) && close();
     const onScroll = (e: Event) => outside(e) && close();
-    // Capture, so a dialog around the list does not also close on this Escape.
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key !== "Escape") return;
       e.stopImmediatePropagation();

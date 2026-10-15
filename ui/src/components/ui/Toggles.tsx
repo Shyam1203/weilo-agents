@@ -12,15 +12,11 @@ interface Item {
 interface Props {
   label: string;
   items: Item[];
-  /** What to say when there are no items. */
   empty: string;
-  /** The ids that are on. */
   value: string[];
   onChange: (value: string[]) => void;
 }
 
-/** A switch per item, with Enabled and All views and a search, so a long list stays easy to work with. It opens on
- * Enabled, unless none are. */
 export function Toggles({ label, items, empty, value, onChange }: Props) {
   const [show, setShow] = useState<"all" | "enabled">(() => (value.length ? "enabled" : "all"));
   const [query, setQuery] = useState("");

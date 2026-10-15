@@ -1,5 +1,3 @@
-// Settings and the add-ons, as a page in place of the chat. On a wide screen: pages in a menu on the left, rows
-// on the right. On a phone: the list of pages first, then a page with a back arrow.
 import { useEffect, useRef, useState } from "react";
 import type { Agent } from "../../api/agents";
 import type { Extension } from "../../api/extensions";
@@ -17,6 +15,7 @@ import { BrowserSettings } from "../browser/BrowserSettings";
 import { ExtensionsPage } from "../extensions/ExtensionsPage";
 import { MemoryPage } from "../memory/MemoryPage";
 import { PluginsPage } from "../plugins/PluginsPage";
+import { DevicesPage } from "./DevicesPage";
 import { SkillsPage } from "../skills/SkillsPage";
 import { AboutYouForm } from "../user/AboutYouForm";
 import { AboutPage } from "./AboutPage";
@@ -24,14 +23,14 @@ import { NotificationsPage } from "./NotificationsPage";
 import { Appearance } from "./Appearance";
 import { ProvidersPage } from "./ProvidersPage";
 
-export type SettingsPage = "providers" | "notifications" | "you" | "memory" | "browser" | "appearance" | "about" | "skills" | "plugins" | "extensions";
+export type SettingsPage = "providers" | "devices" | "notifications" | "you" | "memory" | "browser" | "appearance" | "about" | "skills" | "plugins" | "extensions";
 
-// The first group has no heading: the page is already called Settings.
 const MENU: { group: string; pages: { value: SettingsPage; label: string; icon: IconName }[] }[] = [
   {
     group: "",
     pages: [
       { value: "providers", label: "Providers", icon: "key" },
+      { value: "devices", label: "Devices", icon: "devices" },
       { value: "notifications", label: "Notifications", icon: "bell" },
       { value: "you", label: "About you", icon: "user" },
       { value: "memory", label: "Memory", icon: "brain" },
@@ -53,7 +52,6 @@ const MENU: { group: string; pages: { value: SettingsPage; label: string; icon: 
 const LABELS = Object.fromEntries(MENU.flatMap((m) => m.pages).map((p) => [p.value, p.label]));
 
 interface Props {
-  /** The page to open first; "menu" opens the list of pages on a phone (and Providers on a wide screen). */
   page: SettingsPage | "menu";
   agents: Agent[];
   providers: Provider[];
@@ -64,20 +62,17 @@ interface Props {
   models?: Model[];
   onChange: () => void;
   onModels: (ids: string[]) => void;
-  /** Leaves Settings (back to the chat). */
   onClose: () => void;
 }
 
 export function SettingsView({ page: first, agents, providers, skills, plugins, extensions, user, models, onChange, onModels, onClose }: Props) {
   const wide = useMedia("(min-width: 768px)");
-  // On a phone `null` is the list of pages.
   const [chosen, setChosen] = useState<SettingsPage | null>(first === "menu" ? null : first);
   useEffect(() => setChosen(first === "menu" ? null : first), [first]);
   const page = chosen ?? "providers";
   const list = !wide && chosen === null;
   const back = wide || list ? onClose : () => setChosen(null);
 
-  // What each page holds, at a glance in the list (a phone shows the list on its own).
   const count = (n: number, one: string, many = `${one}s`) => (n ? `${n} ${n === 1 ? one : many}` : "None");
   const theme = getTheme();
   const hints: Partial<Record<SettingsPage, string>> = {
@@ -93,7 +88,6 @@ export function SettingsView({ page: first, agents, providers, skills, plugins, 
   const goBack = useRef(back);
   goBack.current = back;
   useEffect(() => {
-    // A dialog that handled Escape has marked it, so it does not close this too.
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && !document.querySelector('[role="dialog"]') && goBack.current();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -134,6 +128,8 @@ export function SettingsView({ page: first, agents, providers, skills, plugins, 
             <div className="mx-auto w-full max-w-2xl">
               {page === "providers" ? (
                 <ProvidersPage providers={providers} models={models} onChange={onChange} onModels={onModels} />
+              ) : page === "devices" ? (
+                <DevicesPage />
               ) : page === "notifications" ? (
                 <NotificationsPage agents={agents} />
               ) : page === "you" ? (

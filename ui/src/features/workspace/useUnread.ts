@@ -10,16 +10,10 @@ const seenOf = (): Record<string, number> => {
   }
 };
 
-/**
- * The agents whose newest message is a reply you haven't seen: newer than when you last had their
- * chat open. `open` is the agent whose chat is on screen. Kept per browser; what is already there
- * on first sight counts as seen.
- */
 export function useUnread(agents: Agent[], open?: string) {
   const seen = useRef(seenOf());
   const [, again] = useReducer((n: number) => n + 1, 0);
 
-  // A tab that comes back to the front has seen the open chat.
   useEffect(() => {
     document.addEventListener("visibilitychange", again);
     return () => document.removeEventListener("visibilitychange", again);

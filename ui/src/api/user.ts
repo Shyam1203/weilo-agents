@@ -1,6 +1,5 @@
 import { request } from "./http";
 
-/** What the agents know about you. */
 export interface User {
   name: string;
   about: string;

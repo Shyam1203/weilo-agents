@@ -1,17 +1,15 @@
-import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { profiles } from "../agents/agents.mjs";
+import { piDirOf, writePiDir } from "../agents/pidir.mjs";
 import { activityOf } from "../agents/runner.mjs";
 import { chatFiles, messagesOf } from "../agents/sessions.mjs";
-import { CURATOR, fail, KNOWLEDGE, PI_ENV, readJson, updateJson } from "../common.mjs";
-import { CURATOR_EVERY_MS, CURATOR_MAX_FAILURES, CURATOR_MAX_GAP_MS, CURATOR_MAX_INPUT, CURATOR_MAX_MESSAGE, CURATOR_MAX_PIECES, CURATOR_QUIET_MS, CURATOR_TIMEOUT_MS } from "../config.mjs";
+import { CURATOR, fail, KNOWLEDGE, readJson, updateJson } from "../common.mjs";
+import { BIN, CURATOR_EVERY_MS, CURATOR_MAX_FAILURES, CURATOR_MAX_GAP_MS, CURATOR_MAX_INPUT, CURATOR_MAX_MESSAGE, CURATOR_MAX_PIECES, CURATOR_QUIET_MS, CURATOR_TIMEOUT_MS } from "../config.mjs";
+import { agentKey, dropAgentKey } from "../http/access.mjs";
+import { CURATOR as CURATOR_USER, spawnAs } from "../users.mjs";
 import { ensureVault, scrub } from "./vault.mjs";
 
-// The curator: a model with file tools, working inside the vault, reads what is new in a
-// chat and files what lasts as pages: preferences, topics, workflows, projects. It is off until a model is chosen in Settings. A
-// chat is read when it has been quiet for a while, or, if it never is, once every CURATOR_MAX_GAP_MS. Each run reads the new
-// messages in pieces of CURATOR_MAX_INPUT characters, oldest first, and costs one model run for each piece.
-// agent/curator.json: { model, seen: { <agent id>: <time of the last message read> }, ran: { <agent id>: <time of the last run> } }.
+export const CURATOR_KEY = "curator";
 
 const INSTRUCTIONS = `You are the curator of a knowledge vault: a folder of markdown pages that AI assistants search later. Your working folder is the vault. You are given part of a chat between a user and an assistant. File what lasts.
 Layout:
@@ -38,25 +36,31 @@ export async function setCurator({ model } = {}) {
   return getCurator();
 }
 
-// What `pi -p` says when the model's answer was cut off at its output limit.
 const TRUNCATED = /^Response was truncated/m;
 
-// pi once, with file tools in the vault: the prompt on stdin, its answer ignored (the work is in the files).
-const askPi = (model, prompt) =>
+async function askPi(model, prompt) {
+  const key = agentKey(CURATOR_KEY);
+  const dir = piDirOf(CURATOR_KEY);
+  try {
+    await writePiDir(dir, CURATOR_USER, { model, key, agent: CURATOR_KEY });
+    await runPi(model, prompt, { ...process.env, PI_CODING_AGENT_DIR: dir, HOME: dir });
+  } finally {
+    dropAgentKey(key);
+  }
+}
+
+const runPi = (model, prompt, env) =>
   new Promise((resolve, reject) => {
     const args = ["-p", "--no-session", "--no-extensions", "--no-skills", "--no-mcp", "--no-context-files", "--tools", "read,write,edit,grep,find,ls", "--thinking", "off", "--model", model, "--system-prompt", INSTRUCTIONS];
-    const child = spawn("pi", args, { cwd: KNOWLEDGE, env: { ...process.env, ...PI_ENV } });
+    const child = spawnAs(CURATOR_USER, BIN.pi, args, { cwd: KNOWLEDGE, env });
     let err = "";
     const timer = setTimeout(() => child.kill(), CURATOR_TIMEOUT_MS);
     child.stderr.on("data", (d) => (err = (err + d).slice(-4000)));
     child.stdout.resume();
-    // A pi that exits before it reads the prompt (a bad model, say) closes stdin under the write.
     child.stdin.on("error", () => {});
     child.on("error", (e) => (clearTimeout(timer), reject(e)));
     child.on("close", (code) => {
       clearTimeout(timer);
-      // A run that was killed (the timeout) has no exit code: it did not finish. One whose last answer hit the model's
-      // output limit exits 1 (pi 1.2.0), but its work is in the pages it wrote: reading the piece again would only hit it again.
       code === 0 || TRUNCATED.test(err) ? resolve() : reject(new Error(err.trim().split("\n").at(-1) || `pi did not finish (${code ?? "timeout"})`));
     });
     child.stdin.end(prompt);
@@ -65,7 +69,6 @@ const askPi = (model, prompt) =>
 async function curate(model, agent, chat) {
   await ensureVault();
   const started = Date.now();
-  // Pages written before a failed or timed-out run are scrubbed too.
   try {
     await askPi(model, `Today is ${new Date().toISOString().slice(0, 10)}.
 
@@ -76,8 +79,6 @@ ${chat}`);
   }
 }
 
-// What is new in a chat after `since`, as lines for the model (none when the user wrote nothing new), and the time of
-// its last message. One run reads at most CURATOR_MAX_PIECES pieces, so lines past them are not kept: the next run reads them.
 async function newLines(id, since) {
   const budget = CURATOR_MAX_PIECES * CURATOR_MAX_INPUT;
   const lines = [];
@@ -96,7 +97,6 @@ async function newLines(id, since) {
   return { until, lines: user ? lines : [] };
 }
 
-// Lines in pieces; each piece knows the time of its last message.
 function piecesOf(lines) {
   const pieces = [];
   let piece = [];
@@ -115,19 +115,14 @@ function piecesOf(lines) {
   return pieces;
 }
 
-// Which version of a chat was read last: its files' names, sizes and times. A chat that has not changed is not read again.
 const versionOf = async (id) => (await Promise.all((await chatFiles(id)).map(async (file) => stat(file).then(({ size, mtimeMs }) => `${file}:${size}:${mtimeMs}`, () => "")))).join("|");
 
 const mark = (field, id, value) => updateJson(CURATOR, (data) => ({ ...data, [field]: { ...data[field], [id]: value } }));
 
-// Chats that keep failing (a model that does not exist, a bad key) wait for a new message instead of paying again.
 const failures = new Map();
-// agent id -> { version, seen, until, fresh }: what the last read of an unchanged chat found.
 const peeks = new Map();
 let working = false;
 
-// Whether a chat is read now: it has something new (`until` is the time of its last message), it has been quiet for a while or
-// was last read long ago, and it has not failed too often on this same message.
 const due = ({ seen, until, ran, failed }, now) =>
   until > seen && (now - Date.parse(until) >= CURATOR_QUIET_MS || now - Date.parse(ran) >= CURATOR_MAX_GAP_MS) && !(failed?.until === until && failed.n >= CURATOR_MAX_FAILURES);
 
@@ -143,7 +138,6 @@ async function look() {
       if (activityOf(agent.id) !== null) continue;
       const state = await readJson(CURATOR);
       const seen = state.seen?.[agent.id] ?? "";
-      // The 12 hours start the first time the chat is looked at.
       const ran = state.ran?.[agent.id] ?? new Date().toISOString();
       if (!state.ran?.[agent.id]) await mark("ran", agent.id, ran);
       const version = await versionOf(agent.id);
@@ -163,7 +157,6 @@ async function look() {
           await curate(model, agent, piece.text);
           await mark("seen", agent.id, piece.at);
         }
-        // No new user message: nothing to read, the chat only moves on.
         if (!lines.length) await mark("seen", agent.id, until);
         await mark("ran", agent.id, new Date().toISOString());
         failures.delete(agent.id);

@@ -4,13 +4,10 @@ import { Toggles } from "../../components/ui/Toggles";
 
 interface Props {
   providerId: string;
-  /** Every model, from every provider; undefined while they load. */
   models?: Model[];
-  /** Saves which models are enabled, as ids. */
   onChange: (ids: string[]) => void;
 }
 
-/** Which of a provider's models agents can choose. With none enabled, they can choose any. */
 export function ModelPicker({ providerId, models, onChange }: Props) {
   if (!models) return <Loading />;
   const own = modelsOf(models, providerId);

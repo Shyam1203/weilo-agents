@@ -20,8 +20,6 @@ export function PluginsPage({ plugins, onChange }: Props) {
   const [status, setStatus] = useState<Record<string, PluginStatus>>();
   const { busy, error, run } = useAction();
 
-  // Whether they connect takes pi a few seconds (it starts each one), so it fills in after the list
-  // shows, and is checked again only when the plugins change.
   const names = plugins.map((p) => p.name).join();
   useEffect(() => {
     setStatus(undefined);
@@ -75,7 +73,6 @@ export function PluginsPage({ plugins, onChange }: Props) {
   );
 }
 
-// "KEY=value" lines to an object; a line without "=" is an error.
 function variablesOf(text: string) {
   const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
   const bad = lines.find((line) => !line.includes("="));

@@ -1,6 +1,5 @@
 import { Avatar, COLOR_NAMES, COLORS, SHAPES, type AvatarSpec } from "../../components/ui/Avatar";
 
-// The shapes and the colors in even rows, four a row on a phone and eight on a computer, each color under a shape.
 export function AvatarPicker({ value, onChange }: { value: AvatarSpec; onChange: (avatar: AvatarSpec) => void }) {
   return (
     <div className="flex items-center gap-4">
