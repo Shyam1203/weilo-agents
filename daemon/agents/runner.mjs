@@ -20,7 +20,7 @@ import { ownTools, sharedTools, spawnAs } from "../users.mjs";
 import { chatDirOf, getAgent, homeOf, isIsolated, makeHome, mayCall, placesOf, profilePath, userHomeOf, userOf } from "./agents.mjs";
 import { piDirOf, piFiles, writePiDir } from "./pidir.mjs";
 import { piRpc } from "./pi.mjs";
-import { asTyped, textOf } from "./sessions.mjs";
+import { asTyped, chatFiles, textOf } from "./sessions.mjs";
 import { saveFiles, toImages } from "./uploads.mjs";
 import { clearScratch, makeScratch, rulesOf, scratchOf } from "./workspace.mjs";
 
@@ -179,8 +179,9 @@ const current = (id) => runs.get(id)?.ready.catch(() => null);
 
 export async function subscribe(id, send) {
   const run = await open(id);
+  const older = (await chatFiles(id)).length > 1;
   await run.pi.send("get_messages", {}, ({ messages }) => {
-    send({ type: "history", messages: messages.map(asTyped), busy: run.busy, asking: run.asking });
+    send({ type: "history", messages: messages.map(asTyped), more: older || messages[0]?.role === "compactionSummary", busy: run.busy, asking: run.asking });
     run.listeners.add(send);
   });
   touch(run);

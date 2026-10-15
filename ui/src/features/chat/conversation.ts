@@ -88,7 +88,7 @@ export function reduce(state: Conversation, e: PiEvent): Conversation {
   switch (e.type) {
     case "history": {
       const messages = (e.messages ?? []).filter(shows);
-      return { ready: true, messages, busy: !!e.busy, open: false, asking: e.asking ?? null, queued: [], earlier: [], more: messages[0]?.role === "compactionSummary" };
+      return { ready: true, messages, busy: !!e.busy, open: false, asking: e.asking ?? null, queued: [], earlier: [], more: e.more ?? messages[0]?.role === "compactionSummary" };
     }
     case "earlier":
       return { ...state, earlier: [...(e.messages ?? []), ...state.earlier], more: !!e.more };

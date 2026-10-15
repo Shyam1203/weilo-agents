@@ -91,9 +91,12 @@ const shown = (m) => m?.role === "user" || m?.role === "assistant" || (m?.role =
 const slim = (m) => (Array.isArray(m.content) && m.role === "assistant" ? { ...m, content: m.content.filter((b) => b.type !== "thinking") } : m);
 
 export async function earlierOf(id, skip = 0) {
+  const files = await chatFiles(id);
   const entries = [];
   let kept = null;
-  for (const file of await chatFiles(id)) {
+  let before = 0;
+  for (const file of files) {
+    if (file === files.at(-1)) [before, kept] = [entries.length, null];
     for await (const raw of linesOf(file)) {
       const head = raw.slice(0, 120);
       if (!head.includes('"type":"message"') && !head.includes('"type":"compaction"')) continue;
@@ -107,7 +110,7 @@ export async function earlierOf(id, skip = 0) {
       else entries.push(entry);
     }
   }
-  const end = kept ? entries.findIndex((e) => e.id === kept) : -1;
+  const end = kept ? entries.findIndex((e, i) => i >= before && e.id === kept) : before;
   const earlier = entries.slice(0, Math.max(0, end)).filter((e) => shown(e.message));
   const stop = Math.max(0, earlier.length - skip);
   const start = Math.max(0, stop - EARLIER_PAGE);
