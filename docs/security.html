@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="The threat model, every boundary and where the code enforces it, and the known limits.">
+<title>Weilo Security Model</title>
+<link rel="stylesheet" href="assets/docs.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="top">
+<div class="top-in">
+<a class="brand" href="index.html">Weilo Agents docs</a>
+<nav aria-label="Documentation pages"><ul>
+<li><a class="nav" href="index.html">Overview</a></li>
+<li><a class="nav" href="architecture.html">Architecture</a></li>
+<li><a class="nav" href="security.html" aria-current="page">Security</a></li>
+<li><a class="nav" href="agents.html">Agents</a></li>
+<li><a class="nav" href="memory-and-knowledge.html">Memory</a></li>
+<li><a class="nav" href="data-and-permissions.html">Data</a></li>
+<li><a class="nav" href="ui.html">UI</a></li>
+<li><a class="nav" href="operating.html">Operating</a></li>
+<li><a class="nav" href="development.html">Development</a></li>
+</ul></nav>
+</div>
+</header>
+<main id="main">
+<div class="layout has-toc">
+<nav class="toc" aria-label="On this page"><h2>On this page</h2><ol>
+<li><a href="#threat">Threat model</a></li>
+<li><a href="#boundaries">The boundaries and where they are enforced</a></li>
+<li><a href="#network">Network checks</a></li>
+<li><a href="#pairing">Paired devices</a></li>
+<li><a href="#agent-keys">Agent keys and the route gate</a></li>
+<li><a href="#gateway">The key gateway</a></li>
+<li><a href="#users">Linux users, full paths and the fixed PATH</a></li>
+<li><a href="#approvals">Approvals</a></li>
+<li><a href="#trusted">Trusted agents ("always allow")</a></li>
+<li><a href="#matrix">Who can read and write what</a></li>
+<li><a href="#attackers">What each attacker can and cannot do</a></li>
+<li><a href="#content">Agent-written content in the app</a></li>
+<li><a href="#outbound">What leaves the computer</a></li>
+<li><a href="#limits">Known limits</a></li>
+</ol></nav>
+<div class="content">
+<h1>Security model</h1>
+<p class="lede">An agent is a program that runs shell commands the model chooses. Treat it as untrusted code inside the container. Every boundary on this page exists so that a misbehaving agent, or a page it visited, cannot take what it was not given: your keys, your devices, other agents' chats, and your approval.</p>
+
+<section class="card" id="threat">
+<h2>Threat model</h2>
+<div class="cols">
+<div class="tile"><h3>What we protect</h3><ul>
+<li>Provider keys and sign-in tokens (<code>agent/auth.json</code>), plugin secrets (<code>agent/mcp.json</code>).</li>
+<li>Who may use the app: paired devices (<code>agent/devices.json</code>).</li>
+<li>Your decisions: only you approve an agent's request.</li>
+<li>Each agent's chat and HOME from other agents; isolated agents' reach.</li>
+<li>The app itself from other websites on your computer.</li>
+</ul></div>
+<div class="tile"><h3>Who may attack</h3><ul>
+<li>An agent that was misled (prompt injection in a page, a file, a chat) or a bad model.</li>
+<li>Code you added: an extension, a plugin program, a skill.</li>
+<li>A web page in the agents' browser, or a <code>page</code> block in the chat.</li>
+<li>Another website open in your own browser.</li>
+<li>Another program on your computer or a device on your network.</li>
+</ul></div>
+<div class="tile"><h3>Out of scope</h3><ul>
+<li>Someone with root on the host, or with <code>docker exec</code> into the container.</li>
+<li>Someone who holds a paired device's cookie: they are you.</li>
+<li>The model provider and the push services themselves.</li>
+<li>Network egress: agents can reach the internet and your network (<a href="#limits">Known limits</a>).</li>
+</ul></div>
+</div>
+</section>
+
+<section class="card" id="boundaries">
+<h2>The boundaries and where they are enforced</h2>
+<figure>
+<div class="fig">
+<svg viewBox="0 0 760 560" role="img" aria-labelledby="bm-t bm-d">
+<title id="bm-t">Boundaries map</title>
+<desc id="bm-d">An HTTP request passes four gates in order: the port bound to 127.0.0.1, the guard that checks Host, Origin and Sec-Fetch-Site, identify which accepts a device cookie or an agent key, and the route gate which lets an agent call only its own tool routes, and mayCall for isolated agents. Separately, every process the daemon starts runs as its own Linux user through setpriv, and file owners and modes decide what it can open.</desc>
+<defs><marker id="bm-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L10 5L0 10z"/></marker></defs>
+<text class="tb" x="16" y="28">Requests to the daemon</text>
+<rect class="box b-blue" x="16" y="44" width="160" height="106" rx="10"/>
+<text class="tb" x="96" y="70" text-anchor="middle">1. Port</text>
+<text class="tm" x="96" y="94" text-anchor="middle">127.0.0.1:3210</text>
+<text class="ts" x="96" y="116" text-anchor="middle">compose.yaml</text>
+<text class="ts" x="96" y="136" text-anchor="middle">(LAN cannot reach)</text>
+<rect class="box b-blue" x="200" y="44" width="160" height="106" rx="10"/>
+<text class="tb" x="280" y="70" text-anchor="middle">2. guard()</text>
+<text class="ts" x="280" y="94" text-anchor="middle">Host, Origin,</text>
+<text class="ts" x="280" y="114" text-anchor="middle">Sec-Fetch-Site</text>
+<text class="tm" x="280" y="136" text-anchor="middle">http/request.mjs</text>
+<rect class="box b-amber" x="384" y="44" width="170" height="106" rx="10"/>
+<text class="tb" x="469" y="70" text-anchor="middle">3. identify()</text>
+<text class="ts" x="469" y="94" text-anchor="middle">device cookie, or</text>
+<text class="ts" x="469" y="114" text-anchor="middle">agent key; else 401</text>
+<text class="tm" x="469" y="136" text-anchor="middle">http/access.mjs</text>
+<rect class="box b-red" x="578" y="44" width="166" height="106" rx="10"/>
+<text class="tb" x="661" y="70" text-anchor="middle">4. route gate</text>
+<text class="ts" x="661" y="94" text-anchor="middle">agent: own tool,</text>
+<text class="ts" x="661" y="114" text-anchor="middle">own id, mayCall</text>
+<text class="tm" x="661" y="136" text-anchor="middle">server.mjs</text>
+<path class="ar" d="M176 97 H198" marker-end="url(#bm-a)"/>
+<path class="ar" d="M360 97 H382" marker-end="url(#bm-a)"/>
+<path class="ar" d="M554 97 H576" marker-end="url(#bm-a)"/>
+<text class="ts" x="16" y="180">Handlers run as root. An agent's request that passes gate 4 still only does what its tool does:</text>
+<text class="ts" x="16" y="200">a manage_agents change waits for your answer; a model call goes out with the provider of its own model.</text>
+<text class="tb" x="16" y="246">Processes and files</text>
+<rect class="box b-amber" x="16" y="262" width="200" height="120" rx="10"/>
+<text class="tb" x="116" y="288" text-anchor="middle">daemon (root)</text>
+<text class="ts" x="116" y="312" text-anchor="middle">full paths only (BIN)</text>
+<text class="ts" x="116" y="334" text-anchor="middle">PATH = root's folders</text>
+<text class="ts" x="116" y="356" text-anchor="middle">umask 007</text>
+<rect class="box b-green" x="270" y="262" width="210" height="120" rx="10"/>
+<text class="tb" x="375" y="288" text-anchor="middle">setpriv</text>
+<text class="ts" x="375" y="312" text-anchor="middle">own uid and gid</text>
+<text class="ts" x="375" y="334" text-anchor="middle">groups from userOf()</text>
+<text class="ts" x="375" y="356" text-anchor="middle">no capabilities, ever</text>
+<path class="ar" d="M216 322 H268" marker-end="url(#bm-a)"/>
+<rect class="box b-grey" x="530" y="262" width="214" height="120" rx="10"/>
+<text class="tb" x="637" y="288" text-anchor="middle">owners and modes</text>
+<text class="ts" x="637" y="312" text-anchor="middle">secure() at each start</text>
+<text class="ts" x="637" y="334" text-anchor="middle">set through the folder,</text>
+<text class="ts" x="637" y="356" text-anchor="middle">never through a link</text>
+<path class="ar" d="M480 322 H528" marker-end="url(#bm-a)"/>
+<rect class="box b-red" x="16" y="410" width="350" height="130" rx="10"/>
+<text class="tb" x="32" y="436">root only (0600 / 0700)</text>
+<text class="tm" x="32" y="462">agent/auth.json  agent/mcp.json</text>
+<text class="tm" x="32" y="486">agent/devices.json  agent/push.json</text>
+<text class="tm" x="32" y="510">agent/settings.json  /tmp/weilo-admin/</text>
+<text class="ts" x="32" y="532">and every other file at the top of agent/</text>
+<rect class="box b-green" x="394" y="410" width="350" height="130" rx="10"/>
+<text class="tb" x="410" y="436">each agent's own (0700)</text>
+<text class="tm" x="410" y="462">agent/sessions/&lt;id&gt;/  homes/&lt;folder&gt;/</text>
+<text class="tm" x="410" y="486">isolated-sessions/&lt;id&gt;/</text>
+<text class="tm" x="410" y="510">/var/lib/weilo/pi/&lt;id&gt;/  /tmp/weilo/&lt;id&gt;/</text>
+<text class="ts" x="410" y="532">the vault is the curator's (uid 1100)</text>
+</svg>
+</div>
+<figcaption>Two independent layers: what a request may ask the root daemon to do, and what a process can open by itself.</figcaption>
+</figure>
+<div class="table wide"><table>
+<thead><tr><th>Boundary</th><th>What it stops</th><th>Enforced in</th></tr></thead>
+<tbody>
+<tr><td>Port on <code>127.0.0.1</code> only</td><td>Other devices on your network</td><td><code>compose.yaml</code> <code>ports</code></td></tr>
+<tr><td>Host, Origin, <code>Sec-Fetch-Site</code></td><td>Other websites and DNS rebinding</td><td><code>guard()</code> in <code>daemon/http/request.mjs</code></td></tr>
+<tr><td>Paired devices</td><td>Any program or agent that reaches the port without a device cookie</td><td><code>identify()</code>, <code>pair()</code> in <code>http/access.mjs</code></td></tr>
+<tr><td>Agent keys and the route gate</td><td>An agent calling anything but its own tools' routes, for itself</td><td>Route loop in <code>daemon/server.mjs</code></td></tr>
+<tr><td><code>mayCall</code></td><td>An isolated agent calling shared tools, or a bundled extension it has off</td><td><code>daemon/agents/agents.mjs</code>, checked in <code>server.mjs</code> and <code>toolsFlags</code></td></tr>
+<tr><td>Key gateway</td><td>Any pi holding a provider key or plugin secret</td><td><code>daemon/gateway/</code>, <code>agents/pidir.mjs</code></td></tr>
+<tr><td>Linux users and groups</td><td>One agent opening another's chat, HOME, pi folder; isolated agents opening shared folders</td><td><code>daemon/users.mjs</code> (<code>spawnAs</code>, <code>secure</code>), <code>userOf</code> in <code>agents.mjs</code></td></tr>
+<tr><td>Full paths and a fixed PATH</td><td>Root running a program an agent planted in the shared tools</td><td><code>BIN</code>, <code>SYSTEM_PATH</code> in <code>config.mjs</code>; <code>server.mjs</code> start</td></tr>
+<tr><td>Link-safe folder setup</td><td>Root handing a file it should not to an agent through a link</td><td><code>folder</code>, <code>newFile</code> in <code>users.mjs</code>; <code>writePiDir</code></td></tr>
+<tr><td>Never-reused uids</td><td>A new agent inheriting what a deleted one left</td><td><code>newUid</code> in <code>agents.mjs</code>, <code>lastUid</code> in <code>weilo.json</code></td></tr>
+<tr><td>Approvals</td><td>An agent changing agents or settings without you</td><td><code>askUser</code> in <code>runner.mjs</code>; <code>agents/manage.mjs</code>, <code>settings/manage.mjs</code></td></tr>
+<tr><td>Admin socket</td><td>An agent making itself a pairing code</td><td><code>/tmp/weilo-admin/</code> 0700, <code>server.mjs</code></td></tr>
+<tr><td>Screen and debugging pipe</td><td>An agent typing into the browser or driving it directly</td><td><code>browser/screen.mjs</code></td></tr>
+<tr><td>Sandboxed pages and files</td><td>Agent-written HTML running as the app</td><td><code>ShowPage.tsx</code>, <code>http/files.mjs</code>, <code>http/static.mjs</code></td></tr>
+</tbody></table></div>
+</section>
+
+<section class="card" id="network">
+<h2>Network checks</h2>
+<ul>
+<li>The <code>Host</code> header must be <code>localhost</code>, <code>127.0.0.1</code>, <code>[::1]</code> or a <code>*.ts.net</code> name, with any port. Only a tailnet's own devices resolve a <code>.ts.net</code> name, and a hostile site cannot point one at this machine.</li>
+<li>An <code>Origin</code> header, when present, must name the same host over http or https.</li>
+<li><code>Sec-Fetch-Site</code>, when present, must be <code>same-origin</code> or <code>none</code>; the one exception is a plain link (a navigation) to a page that is not under <code>/api/</code>. Another site may link to the app, but not load anything from it.</li>
+<li>The UI is served with <code>Content-Security-Policy: frame-src about:; frame-ancestors 'none'</code> and <code>X-Content-Type-Options: nosniff</code>: no other site may frame the app.</li>
+</ul>
+<div class="warn"><p>Being on this computer is not enough. Agents run in the same container and reach the daemon at <code>127.0.0.1:3210</code> with any <code>Host</code> they like. That is why every API call also needs a paired device's cookie or an agent's key.</p></div>
+</section>
+
+<section class="card" id="pairing">
+<h2>Paired devices</h2>
+<figure>
+<div class="fig">
+<svg viewBox="0 0 760 440" role="img" aria-labelledby="pf-t pf-d">
+<title id="pf-t">Pairing flow</title>
+<desc id="pf-d">The first device: the start script runs docker exec weilo-core node /app/pair.mjs, which reads a code from the root-only admin socket and prints a link with the code. Later devices: a paired device asks POST /api/devices/code. Either way the new browser posts the code to /api/pair and gets a random key as an HttpOnly cookie; devices.json keeps only the key's SHA-256.</desc>
+<defs><marker id="pf-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="box b-grey" x="16" y="16" width="220" height="92" rx="10"/>
+<text class="tb" x="126" y="42" text-anchor="middle">First device</text>
+<text class="ts" x="126" y="64" text-anchor="middle">start.sh / start.cmd runs</text>
+<text class="tm" x="126" y="88" text-anchor="middle">node /app/pair.mjs</text>
+<rect class="box b-grey" x="16" y="128" width="220" height="92" rx="10"/>
+<text class="tb" x="126" y="154" text-anchor="middle">More devices</text>
+<text class="ts" x="126" y="176" text-anchor="middle">Settings &gt; Devices &gt; Add</text>
+<text class="tm" x="126" y="200" text-anchor="middle">POST /api/devices/code</text>
+<rect class="box b-red" x="276" y="16" width="220" height="92" rx="10"/>
+<text class="tb" x="386" y="42" text-anchor="middle">admin socket</text>
+<text class="tm" x="386" y="66" text-anchor="middle">/tmp/weilo-admin/</text>
+<text class="ts" x="386" y="90" text-anchor="middle">folder 0700, root only</text>
+<rect class="box b-amber" x="536" y="60" width="208" height="120" rx="10"/>
+<text class="tb" x="640" y="86" text-anchor="middle">newCode()</text>
+<text class="ts" x="640" y="110" text-anchor="middle">8 characters, 40 bits</text>
+<text class="ts" x="640" y="132" text-anchor="middle">one use, 10 minutes</text>
+<text class="ts" x="640" y="154" text-anchor="middle">kept in memory only</text>
+<path class="ar" d="M236 62 H274" marker-end="url(#pf-a)"/>
+<path class="ar" d="M496 62 H534" marker-end="url(#pf-a)"/>
+<path class="ar" d="M236 174 H534" marker-end="url(#pf-a)"/>
+<rect class="box b-blue" x="16" y="250" width="260" height="96" rx="10"/>
+<text class="tb" x="146" y="276" text-anchor="middle">New browser</text>
+<text class="tm" x="146" y="300" text-anchor="middle">/?pair=ABCD-EFGH</text>
+<text class="tm" x="146" y="324" text-anchor="middle">POST /api/pair {code}</text>
+<rect class="box b-amber" x="316" y="250" width="200" height="96" rx="10"/>
+<text class="tb" x="416" y="276" text-anchor="middle">pair()</text>
+<text class="ts" x="416" y="300" text-anchor="middle">10 wrong codes in 10</text>
+<text class="ts" x="416" y="322" text-anchor="middle">min: 429 for 10 min</text>
+<rect class="box b-red" x="556" y="250" width="188" height="96" rx="10"/>
+<text class="tb" x="650" y="276" text-anchor="middle">devices.json</text>
+<text class="ts" x="650" y="300" text-anchor="middle">name, dates,</text>
+<text class="ts" x="650" y="322" text-anchor="middle">SHA-256 of the key</text>
+<path class="ar" d="M640 180 V210 H146 V248" marker-end="url(#pf-a)"/>
+<text class="ts" x="300" y="204">the code is shown or opened as a link</text>
+<path class="ar" d="M276 298 H314" marker-end="url(#pf-a)"/>
+<path class="ar" d="M516 298 H554" marker-end="url(#pf-a)"/>
+<rect class="box b-green" x="16" y="370" width="728" height="56" rx="10"/>
+<text class="t" x="380" y="394" text-anchor="middle">Set-Cookie: weilo_device=&lt;32 random bytes&gt;; HttpOnly; SameSite=Strict;</text>
+<text class="t" x="380" y="416" text-anchor="middle">Max-Age 400 days; Secure on a .ts.net host</text>
+<path class="ar" d="M416 346 V368" marker-end="url(#pf-a)"/>
+</svg>
+</div>
+<figcaption>From <code>daemon/http/access.mjs</code>, <code>daemon/pair.mjs</code> and the admin socket in <code>daemon/server.mjs</code>.</figcaption>
+</figure>
+<ul>
+<li>Codes use 32 letters and digits that cannot be confused (no I, O, 0 or 1) and are shown as <code>ABCD-EFGH</code>.</li>
+<li><code>POST /api/pair</code> is the only API call that needs no cookie. Every other call without one gets <code>401 {pair: true}</code>, and the app shows its pairing screen. The static UI itself is public.</li>
+<li>The device key never leaves the daemon in plain form after pairing: only its hash is stored. A device's last use is written at most once an hour.</li>
+<li>Settings &gt; Devices lists devices and removes them; a removed device needs a new code.</li>
+<li>Only root in the container can open the admin socket, so an agent cannot make itself a code.</li>
+</ul>
+</section>
+
+<section class="card" id="agent-keys">
+<h2>Agent keys and the route gate</h2>
+<p>Each pi gets a fresh random key when it starts (<code>agentKey</code>, 32 bytes), in <code>WEILO_KEY</code> and in its pi folder. Any older key of that agent is dropped, and the key is dropped when the pi stops. The curator's pi gets one too, owned by the name <code>curator</code>.</p>
+<p>A request with <code>Authorization: Bearer &lt;key&gt;</code> is the agent's. In the route loop of <code>server.mjs</code>:</p>
+<ol>
+<li>An agent may only call a route registered with <code>agentRoute</code> (one that names a tool), and only with its own id in the path. Anything else is 403. These routes are <code>browser</code>, <code>model-key</code>, <code>skill</code>, <code>manage_agents</code>, <code>manage_settings</code>, <code>memory</code>, <code>fetch_knowledge</code> and <code>routines</code>.</li>
+<li>Then <code>mayCall(agent, tool)</code>: a regular agent may call them all; an isolated agent may not call <code>skill</code>, <code>memory</code>, <code>fetch_knowledge</code> or <code>manage_settings</code>, nor <code>browser</code> or <code>routines</code> while its profile has that bundled extension off.</li>
+<li>The event stream and file downloads check for a device explicitly (<code>who.device</code>): an agent cannot read chats through the API.</li>
+</ol>
+<p>The same <code>mayCall</code> builds pi's <code>--tools</code> list (<code>toolsFlags</code> in <code>runner.mjs</code>), so a tool an agent may not call is not even offered. Because the routes run as root, the gate on the route is what counts: an agent that calls a route itself with <code>curl</code> meets the same check.</p>
+<div class="note"><p>For a regular agent, switching off a bundled extension removes its tool from pi but does not block the route: <code>mayCall</code> only restricts isolated agents.</p></div>
+</section>
+
+<section class="card" id="gateway">
+<h2>The key gateway</h2>
+<p>No provider key or plugin secret is in reach of any pi. Each pi's folder (<code>/var/lib/weilo/pi/&lt;id&gt;/</code>, outside the data folder, made again at every start) holds only <code>settings.json</code>, a <code>models.json</code> with just its model's provider, and an <code>mcp.json</code> with just its plugins, all pointing back at the daemon.</p>
+<figure>
+<div class="fig">
+<svg viewBox="0 0 760 470" role="img" aria-labelledby="kg-t kg-d">
+<title id="kg-t">Key gateway flow</title>
+<desc id="kg-d">An agent's pi sends its model request to /api/model-proxy/provider with its own key. The daemon finds the agent by the key, checks the provider is its model's, swaps the real key in wherever pi put its own, picks the provider address by API path and streams the request. For an account sign-in, pi runs key.mjs which fetches a short-lived access token. Plugins on the web go through plugin-proxy with the plugin's own headers; plugin programs go through pipe.mjs and the daemon starts them with their secrets.</desc>
+<defs><marker id="kg-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="box b-green" x="16" y="16" width="230" height="140" rx="10"/>
+<text class="tb" x="131" y="42" text-anchor="middle">agent's pi</text>
+<text class="ts" x="32" y="68">models.json:</text>
+<text class="tm" x="32" y="90">baseUrl …/model-proxy/&lt;p&gt;</text>
+<text class="tm" x="32" y="112">apiKey = its own key</text>
+<text class="ts" x="32" y="140">no real key anywhere</text>
+<rect class="box b-amber" x="286" y="16" width="250" height="206" rx="10"/>
+<text class="tb" x="411" y="42" text-anchor="middle">daemon</text>
+<text class="ts" x="302" y="68">1. keyIn: Authorization, x-api-key,</text>
+<text class="ts" x="302" y="88">x-goog-api-key, api-key or ?key=</text>
+<text class="ts" x="302" y="112">2. provider must be its model's</text>
+<text class="ts" x="302" y="132">(else 403)</text>
+<text class="ts" x="302" y="156">3. replace its key with the real</text>
+<text class="ts" x="302" y="176">one in headers and ?key</text>
+<text class="ts" x="302" y="200">4. pick the address by API path</text>
+<rect class="box b-blue" x="576" y="16" width="168" height="92" rx="10"/>
+<text class="tb" x="660" y="44" text-anchor="middle">provider</text>
+<text class="ts" x="660" y="68" text-anchor="middle">HTTPS, real key</text>
+<text class="ts" x="660" y="90" text-anchor="middle">answer streamed back</text>
+<path class="ar" d="M246 86 H284" marker-end="url(#kg-a)"/>
+<path class="ar" d="M536 62 H574" marker-end="url(#kg-a)"/>
+<rect class="box b-red" x="576" y="128" width="168" height="94" rx="10"/>
+<text class="tb" x="660" y="154" text-anchor="middle">auth.json</text>
+<text class="ts" x="660" y="178" text-anchor="middle">root 0600, read by</text>
+<text class="ts" x="660" y="200" text-anchor="middle">pi's registry in-daemon</text>
+<path class="ar-d" d="M574 176 H538" marker-end="url(#kg-a)"/>
+<rect class="box b-teal" x="16" y="244" width="728" height="70" rx="10"/>
+<text class="tb" x="32" y="270">Account sign-in (OAuth): pi must hold the token to shape requests</text>
+<text class="tm" x="32" y="296">apiKey "!node /app/gateway/key.mjs &lt;p&gt;" → GET …/model-key/&lt;p&gt; → access token</text>
+<rect class="box b-violet" x="16" y="334" width="356" height="120" rx="10"/>
+<text class="tb" x="32" y="360">Plugin on the web</text>
+<text class="tm" x="32" y="384">url …/plugin-proxy/&lt;name&gt;</text>
+<text class="ts" x="32" y="408">its Authorization is dropped, the</text>
+<text class="ts" x="32" y="430">plugin's own headers are added</text>
+<rect class="box b-violet" x="388" y="334" width="356" height="120" rx="10"/>
+<text class="tb" x="404" y="360">Plugin program</text>
+<text class="tm" x="404" y="384">node /app/gateway/pipe.mjs &lt;name&gt;</text>
+<text class="ts" x="404" y="408">upgrade to …/plugin-pipe/&lt;name&gt;; the daemon</text>
+<text class="ts" x="404" y="430">starts it with its env, as 1200 or the agent</text>
+</svg>
+</div>
+<figcaption>From <code>daemon/gateway/models.mjs</code>, <code>gateway/plugins.mjs</code>, <code>gateway/key.mjs</code>, <code>gateway/pipe.mjs</code> and the proxy branch of <code>server.mjs</code>.</figcaption>
+</figure>
+<ul>
+<li>Pi sends all of a provider's models to one address. Some providers have two (OpenRouter's Anthropic-style models under <code>/api</code>, the others under <code>/api/v1</code>), so the daemon picks the base address by the API the path names (<code>API_PATHS</code>), else the address most of its models use.</li>
+<li>The user's own settings for that provider in <code>models.json</code> (a custom endpoint, its models) are kept, without their key and headers.</li>
+<li>Account sign-in: the daemon returns the access token only, renewed when it has less than 5 minutes left. The refresh token stays in <code>auth.json</code>. The agent can therefore read a short-lived token of the provider its own model uses (<a href="#limits">Known limits</a>).</li>
+<li>Plugins: an agent reaches only the plugins its profile names (<code>allowedPlugin</code>); the curator reaches none.</li>
+<li>The curator's pi gets the same gateway, for the curator's model.</li>
+</ul>
+</section>
+
+<section class="card" id="users">
+<h2>Linux users, full paths and the fixed PATH</h2>
+<p>The daemon is root and runs nothing else as root, apart from the short-lived model-listing pi (<a href="architecture.html#system">Processes</a>). <code>spawnAs</code> starts every other program through <code>/usr/bin/setpriv</code> with <code>--reuid</code>, <code>--regid</code>, <code>--groups</code> or <code>--clear-groups</code>, <code>--inh-caps=-all</code>, <code>--bounding-set=-all</code> and <code>--no-new-privs</code>: the user changes and every capability is dropped for good before the program starts. With <code>no-new-privileges</code> on the container too, no set-uid program can give root back.</p>
+<h3>Why full paths</h3>
+<p>The image's <code>PATH</code> starts with <code>/home/node/.local/bin</code>, the shared tools, which the <code>agents</code> group can change. A program that root found there by name could be an agent's, run as root. So:</p>
+<ul>
+<li>Root starts every program by its full path (<code>BIN</code> in <code>config.mjs</code>: <code>setpriv</code>, <code>chown</code>, <code>chmod</code>, <code>find</code>, <code>unzip</code>, <code>zipinfo</code>, <code>pi</code>, <code>Xvnc</code>, <code>openbox</code>, <code>chromium</code>).</li>
+<li>At start the daemon sets its own <code>PATH</code> to <code>SYSTEM_PATH</code> (<code>/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin</code>), and everything it starts inherits that.</li>
+<li>A regular agent's pi and plugins get the shared tools after root's folders; an isolated agent's get its own <code>.local/bin</code> after root's folders. Never before: a <code>node</code> an agent put there would otherwise run in every other agent's pi.</li>
+</ul>
+<h3>Link-safe folder setup</h3>
+<p>A home is in the workspace, which agents change. If root followed a link an agent put in place of a folder, root would hand the link's target to that user. So:</p>
+<ul>
+<li><code>folder()</code> opens the folder with <code>O_NOFOLLOW | O_DIRECTORY</code> and sets owner and mode on that handle.</li>
+<li><code>newFile()</code> (uploads) creates with <code>O_CREAT | O_EXCL | O_NOFOLLOW</code> and sets owner and mode on the handle.</li>
+<li><code>writePiDir</code> keeps a pi's folder root's (0700) until everything is written, then gives it to the user. A program of that user still running could otherwise put a link where root writes. Copies for isolated agents leave links out.</li>
+<li>Uploaded <code>.zip</code> files (skills, extensions) are listed with <code>zipinfo</code> first and refused if they contain a link or unpack to more than 50 MB.</li>
+</ul>
+<h3>Never-reused uids</h3>
+<p>A new agent's uid is <code>lastUid + 1</code> (from 2001), kept in <code>weilo.json</code>. Uids are never given twice, so a new agent never owns files a deleted agent left in the workspace, the skills or the installed tools. Data version 4 set <code>lastUid</code> from the profiles and from the owners of all files in the data folder and the tools volume.</p>
+</section>
+
+<section class="card" id="approvals">
+<h2>Approvals</h2>
+<p>An agent cannot change agents or settings on its own: the profiles and <code>settings.json</code> are root's, and its key may not call <code>/api/agents</code>. It can ask, with <code>manage_agents</code> or <code>manage_settings</code>. The daemon then asks you itself.</p>
+<figure>
+<div class="fig narrow">
+<svg viewBox="0 0 520 720" role="img" aria-labelledby="ap-t ap-d">
+<title id="ap-t">Approval flow</title>
+<desc id="ap-d">The agent's tool posts the request with its key. The daemon refuses what the rules do not allow, checks the result as a save would, and builds the question with the whole change and any reach the agent would gain. askUser sends a select request to the chat and a notification. Only a paired device can post the answer. Yes applies the change and restarts the pi; anything else is no.</desc>
+<defs><marker id="ap-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="box b-green" x="20" y="10" width="480" height="64" rx="10"/>
+<text class="tb" x="36" y="36">Agent calls manage_agents</text>
+<text class="tm" x="36" y="60">POST /api/agents/&lt;id&gt;/manage_agents</text>
+<path class="ar" d="M260 74 V90" marker-end="url(#ap-a)"/>
+<rect class="box b-red" x="20" y="92" width="480" height="106" rx="10"/>
+<text class="tb" x="36" y="118">refusal(): rules first</text>
+<text class="ts" x="36" y="142">no isolated or trusted in any request;</text>
+<text class="ts" x="36" y="164">isolated: only itself, only skills, plugins,</text>
+<text class="ts" x="36" y="186">extensions; regular: never an isolated agent</text>
+<path class="ar" d="M260 198 V214" marker-end="url(#ap-a)"/>
+<rect class="box b-amber" x="20" y="216" width="480" height="84" rx="10"/>
+<text class="tb" x="36" y="242">Checked as a save would be</text>
+<text class="ts" x="36" y="264">names exist (known), checkAgent; extra reach:</text>
+<text class="ts" x="36" y="286">another provider, plugins, extensions, browser</text>
+<path class="ar" d="M260 300 V316" marker-end="url(#ap-a)"/>
+<rect class="box b-amber" x="20" y="318" width="480" height="84" rx="10"/>
+<text class="tb" x="36" y="344">askUser(): the daemon's own question</text>
+<text class="ts" x="36" y="366">at most 20000 characters, refused not cut;</text>
+<text class="ts" x="36" y="388">only during a run; replaces an open question</text>
+<path class="ar" d="M260 402 V418" marker-end="url(#ap-a)"/>
+<rect class="box b-blue" x="20" y="420" width="480" height="84" rx="10"/>
+<text class="tb" x="36" y="446">Card in the chat, notification</text>
+<text class="ts" x="36" y="468">extension_ui_request (select), id weilo-…;</text>
+<text class="ts" x="36" y="490">options "Create it" / "Change it" and "Don't"</text>
+<path class="ar" d="M260 504 V520" marker-end="url(#ap-a)"/>
+<rect class="box b-blue" x="20" y="522" width="480" height="84" rx="10"/>
+<text class="tb" x="36" y="548">You answer on a paired device</text>
+<text class="tm" x="36" y="572">POST /api/agents/&lt;id&gt;/answer</text>
+<text class="ts" x="36" y="594">not an agent route: an agent gets 403</text>
+<path class="ar" d="M260 606 V622" marker-end="url(#ap-a)"/>
+<rect class="box b-green" x="20" y="624" width="480" height="84" rx="10"/>
+<text class="tb" x="36" y="650">Yes: apply and restart</text>
+<text class="ts" x="36" y="672">skipped, aborted, pi closed or another</text>
+<text class="ts" x="36" y="694">question: no, and nothing changes</text>
+</svg>
+</div>
+<figcaption>From <code>daemon/agents/manage.mjs</code> and <code>askUser</code>, <code>answer</code> in <code>daemon/agents/runner.mjs</code>.</figcaption>
+</figure>
+<ul>
+<li>The question is the daemon's, not the pi's: a pi cannot answer or skip it, and calling the route itself meets the same question.</li>
+<li>The question holds the whole change. A request too long to show in full (over 20000 characters, <code>MAX_APPROVAL</code>) is refused, never cut, so you approve exactly what you read.</li>
+<li>It warns when the agent would get something the asking agent does not have: another provider, plugins, extensions, or the browser "with the sign-ins of every site you are signed in to there".</li>
+<li>The tools call the daemon with <code>node:http</code>, which waits as long as you take; <code>fetch</code> would give up after five minutes.</li>
+<li><code>manage_settings</code> uses the same question for its exact change (<a href="agents.html#manage-settings">details</a>).</li>
+</ul>
+</section>
+
+<section class="card" id="trusted">
+<h2>Trusted agents ("always allow")</h2>
+<p>In Edit agent &gt; Access, "Always allow its own changes" sets <code>trusted: true</code>. Then a <code>manage_agents</code> update applies without a question only when all of these hold (<code>allowedAlways</code>):</p>
+<ul>
+<li>the asking agent is trusted,</li>
+<li>it changes itself, not another agent,</li>
+<li>the change names at least one field, and only <code>instructions</code>, <code>thinking</code> or <code>skills</code> (none gives it more reach than it has; the skill names are checked against the library).</li>
+</ul>
+<p>The chat shows a line for each such change (the tool result's <code>details.note</code>, for example "Changed its own instructions (always allowed)"). Nothing else is ever allowed always: a model, plugin or extension change, any change to another agent, any new agent, and every <code>manage_settings</code> change still ask. No request can set <code>isolated</code> or <code>trusted</code>; only you can, in the app.</p>
+</section>
+
+<section class="card" id="matrix">
+<h2>Who can read and write what</h2>
+<p>For an agent's Linux user, from the owners and modes in <code>users.mjs</code>, <code>agents.mjs</code>, <code>workspace.mjs</code> and <code>pidir.mjs</code>. The daemon (root) reads everything; what agents get through it is in the last rows.</p>
+<div class="table wide"><table>
+<thead><tr><th>Place</th><th>Regular agent</th><th>Isolated agent</th></tr></thead>
+<tbody>
+<tr><td>Keys, plugin secrets, devices, settings and the other files at the top of <code>agent/</code></td><td class="n">no</td><td class="n">no</td></tr>
+<tr><td><code>agent/USER.md</code>, <code>agent/MEMORY.md</code></td><td class="p">read</td><td class="n">no</td></tr>
+<tr><td>Its own profile <code>agent/profiles/&lt;id&gt;/agent.json</code></td><td class="p">read</td><td class="p">read a copy in its pi folder</td></tr>
+<tr><td>Other regular agents' profiles</td><td class="n">no</td><td class="n">no</td></tr>
+<tr><td>Isolated agents' profiles</td><td class="p">read (it is in their group)</td><td class="n">no</td></tr>
+<tr><td>Skill library <code>agent/skills/</code></td><td class="y">read, write</td><td class="p">read copies of its own skills</td></tr>
+<tr><td>Added extensions <code>agent/extensions/</code></td><td class="p">read</td><td class="p">read copies of its own</td></tr>
+<tr><td>Its own chat folder</td><td class="y">read, write</td><td class="y">read, write</td></tr>
+<tr><td>Other agents' chat folders</td><td class="n">no</td><td class="n">no</td></tr>
+<tr><td><code>workspace/</code></td><td class="y">read, write</td><td class="n">no</td></tr>
+<tr><td>Its own home folder</td><td class="y">read, write</td><td class="y">read, write</td></tr>
+<tr><td>An isolated agent's folder <code>isolated/&lt;folder&gt;/</code></td><td class="y">read, write</td><td class="n">only its own</td></tr>
+<tr><td>Its HOME, pi folder, scratch folder</td><td class="y">its own only</td><td class="y">its own only</td></tr>
+<tr><td>Shared tools <code>/home/node/.local</code></td><td class="y">read, write</td><td class="p">read</td></tr>
+<tr><td>Vault <code>knowledge/</code> (files)</td><td class="n">no</td><td class="n">no</td></tr>
+<tr><td>Browser profile, screen socket, admin socket</td><td class="n">no</td><td class="n">no</td></tr>
+<tr><td>Through the daemon: notes, vault and every chat (<code>memory</code>, <code>fetch_knowledge</code>)</td><td class="y">yes</td><td class="n">no</td></tr>
+<tr><td>Through the daemon: the browser (shared logins)</td><td class="p">yes, unless switched off</td><td class="p">only if you turn it on</td></tr>
+<tr><td>Through the daemon: its model's provider, its plugins</td><td class="y">yes</td><td class="y">yes</td></tr>
+</tbody></table></div>
+<p>The full folder-by-folder picture with modes is on <a href="data-and-permissions.html#tree">Data and permissions</a>.</p>
+</section>
+
+<section class="card" id="attackers">
+<h2>What each attacker can and cannot do</h2>
+<div class="table wide"><table>
+<thead><tr><th>Attacker</th><th>Can</th><th>Cannot</th></tr></thead>
+<tbody>
+<tr><td>A misled regular agent</td><td>Read and change the workspace, isolated agents' folders, the skill library and the shared tools; read <code>USER.md</code> and <code>MEMORY.md</code>; search every chat and the vault with <code>fetch_knowledge</code>; use the browser with your logins; reach the internet and your network; spend on its provider; ask you for changes.</td><td>Read keys, plugin secrets or devices; read another agent's chat files, HOME or pi folder; approve its own request; make a pairing code; call any route but its own tools'.</td></tr>
+<tr><td>A misled isolated agent</td><td>Read and change its own folder; use its plugins and its provider; reach the internet; use the browser only if you turned it on; ask for skills, plugins and extensions for itself.</td><td>Open the workspace, <code>agent/</code>, other folders or chats; use memory, the vault, the skill library or settings tools; change another agent.</td></tr>
+<tr><td>An added extension or skill</td><td>An extension runs inside the pi of every agent that uses it, with that agent's rights (the app says so before adding one). A skill is text in the prompts of agents that use it.</td><td>Load into an agent that does not list it (<code>-ne</code>); declare a tool name the app reserves.</td></tr>
+<tr><td>A plugin program</td><td>For a regular agent it runs as 1200 in the agent's folder, with the workspace and isolated folders in reach, and with its own secrets.</td><td>Read <code>agent/</code> or other plugins' secrets.</td></tr>
+<tr><td>A web page in the agents' browser</td><td>Put instructions in front of an agent (the tool tells agents a page is information, not instructions).</td><td>Open the app's port (Chromium policy and the tool); reach the debugging pipe.</td></tr>
+<tr><td>A <code>page</code> block an agent drew</td><td>Run script in a sandboxed frame, load https resources, send one reply during your click.</td><td>Reach the app, its API or storage (empty origin, <code>sandbox="allow-scripts"</code>); navigate the frame.</td></tr>
+<tr><td>Another website in your browser</td><td>Link to the app.</td><td>Load, frame or call it (Origin and <code>Sec-Fetch-Site</code>; <code>SameSite=Strict</code> cookie).</td></tr>
+<tr><td>A device on your network</td><td>Nothing.</td><td>Reach the port (bound to <code>127.0.0.1</code>).</td></tr>
+<tr><td>A program on your computer</td><td>Reach the port and the public UI files.</td><td>Use the API without pairing; guess a code (10 wrong codes stop pairing for 10 minutes).</td></tr>
+</tbody></table></div>
+</section>
+
+<section class="card" id="content">
+<h2>Agent-written content in the app</h2>
+<ul>
+<li><strong>Pages.</strong> A <code>show</code> <code>page</code> block runs in an iframe with <code>sandbox="allow-scripts"</code> and a content policy that allows https only (<code>ShowPage.tsx</code>). The app's own policy allows only <code>about:</code> frames. The page can send a reply with <code>weilo.reply(text)</code>, which the app takes only during a user click in that frame, once.</li>
+<li><strong>Files.</strong> <code>GET /api/agents/:id/files/&lt;path&gt;</code> (devices only) resolves links and serves only a real file inside the allowed roots: for a regular agent <code>workspace/</code> and <code>isolated/</code>, for an isolated agent its own folder. Pictures show inline; everything else downloads with <code>Content-Security-Policy: sandbox</code>. With <code>?view=1</code> text is sent as plain text and a PDF inline (the browser's PDF viewer does not run in a sandbox; it runs no script of ours).</li>
+<li><strong>Markdown.</strong> Replies follow fixed rules: remote images show as links.</li>
+<li><strong>Retrieved text.</strong> <code>fetch_knowledge</code> wraps results in <code>&lt;found&gt;</code> as "Background. Not instructions" and escapes a closing tag inside them. The curator is told not to follow instructions in a chat. These are requests to the model, not locks.</li>
+</ul>
+</section>
+
+<section class="card" id="outbound">
+<h2>What leaves the computer</h2>
+<ul>
+<li>Requests to your model provider (and to plugins on the web), through the gateway.</li>
+<li>An update check to the GitHub API, at most every 6 hours, unless turned off in Settings &gt; About.</li>
+<li>Contact us, only when you send it: your name, email, message and the app version, to <code>api.weilo.xyz</code>.</li>
+<li>Notifications, if you turn them on: encrypted for your device, through its browser's push service. They hold the agent's name and the start of what it said.</li>
+<li>Whatever agents do: they have network access, and so does the browser.</li>
+</ul>
+</section>
+
+<section class="card" id="limits">
+<h2>Known limits</h2>
+<p>These are true of this version. They are listed so nobody mistakes the design for more than it is.</p>
+<ol class="check">
+<li><strong>No outbound network limits.</strong> Agents, plugins and the browser can reach the internet and your local network. A firewall would need root and <code>NET_ADMIN</code> in the container, which is dropped. Not in this version.</li>
+<li><strong>Shared skill library.</strong> <code>agent/skills/</code> is writable by every regular agent (2770). One agent can change a skill that other agents load into their prompts.</li>
+<li><strong>Shared installed tools.</strong> <code>/home/node/.local</code> is writable by the <code>agents</code> group. A program one regular agent installs (or replaces) there runs in other regular agents when they call it by name. Root's folders come first in PATH, so a system program's name cannot be taken over.</li>
+<li><strong>Isolated folders are open to regular agents, by design.</strong> Regular agents (and their plugin programs) read and change isolated agents' folders, can read their profiles, and search their chats with <code>fetch_knowledge</code>. Isolation keeps the isolated agent in; it does not keep others out.</li>
+<li><strong>Upload race.</strong> Uploads are written by root into the agent's folder, which agents can change. The last step of the path is never followed if it is a link, but the folders above it are resolved normally: an agent that swaps a parent folder for a link at the right moment could make an upload land elsewhere, owned by the uploading agent.</li>
+<li><strong>The browser shares logins.</strong> Every agent with the browser uses the same profile and every site you signed in to. "Ask me first" is a request in the tool description, not a lock. It is off for an agent that becomes isolated; a request to turn it on says so.</li>
+<li><strong>Account sign-ins.</strong> For a provider signed in with an account, pi must hold the access token, so any agent whose model uses that provider can fetch a short-lived token. The refresh token stays with the daemon. Sign-in with an account has not been tested end to end against every provider.</li>
+<li><strong>Bundled switches for regular agents.</strong> Switching off the browser or routines for a regular agent removes the tool, but its routes stay callable with that agent's key.</li>
+<li><strong>The curator's file tools are not fenced by pi.</strong> They are confined by its Linux user (1100), which owns only the vault. It is told to write only there, and every page it touched is scrubbed of lines that look like secrets.</li>
+<li><strong>A real Linux filesystem is assumed.</strong> The whole permission model rests on <code>chown</code> and <code>chmod</code> working on the data folder. On Docker Desktop for Windows and macOS the folder is a bind mount through a file-sharing layer that may not keep owners and modes. Verify it there before relying on it (<a href="operating.html#release-check">release checklist</a>).</li>
+<li><strong>Spending.</strong> An agent can call its provider through the gateway as much as it likes; there is no budget in this version.</li>
+</ol>
+</section>
+</div>
+</div>
+</main>
+<footer class="foot">
+<div class="pager"><a href="architecture.html">&larr; Architecture</a><a href="agents.html">Agents &rarr;</a></div>
+<p>Written from the code of this version of Weilo Agents. When the code and a page disagree, the code is right and the page needs fixing. Project: <a href="https://github.com/Shyam1203/weilo-agents">github.com/Shyam1203/weilo-agents</a>.</p>
+</footer>
+</body>
+</html>
