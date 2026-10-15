@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fail, SESSIONS } from "../common.mjs";
@@ -23,16 +24,19 @@ import { clearScratch, makeScratch, scratchOf, workspaceRules } from "./workspac
 // watching and no run in progress.
 // agent id -> run: { id, ready: Promise<run>, pi, listeners, busy, doing, asking, reply, stale, timer, done }
 // `reply` is the run's newest message from the agent, for the notification when the run ends.
-// `asking` is the question the agent waits on, as pi sent it (`extension_ui_request`).
+// `asking` is the question the agent waits on, as pi sent it (`extension_ui_request`), or as the daemon asks it (`askUser`), with
+// `resolve` for the answer.
 const runs = new Map();
 
 const emit = (run, event) => run.listeners.forEach((send) => send(event));
 
-// The agent's question is over (answered, or the run went on without it).
+// The agent's question is over (answered, or the run went on without it). A question of the daemon's that ends unanswered
+// gets no answer (undefined).
 const endAsk = (run) => {
   if (!run.asking) return;
-  const { id } = run.asking;
+  const { id, resolve } = run.asking;
   run.asking = null;
+  resolve?.(undefined);
   emit(run, { type: "ask_end", id });
 };
 
@@ -118,10 +122,11 @@ async function start(run) {
         if (event.type === "tool_execution_end" || !run.busy) run.doing = "";
         if (event.type === "extension_ui_request") {
           // Only the agent's own questions (`ask`: a choice or a line of text) reach the user; pi may ask others.
-          if (event.method === "select" || event.method === "input") (run.asking = event), void notifyAbout(run.id, "ask", event.title);
+          if (event.method === "select" || event.method === "input") endAsk(run), (run.asking = event), void notifyAbout(run.id, "ask", event.title);
           else if (event.method === "confirm" || event.method === "editor") run.pi.reply({ type: "extension_ui_response", id: event.id, cancelled: true });
         }
-        if (event.type === "tool_execution_end" || !run.busy) endAsk(run);
+        // A question of the daemon's waits on the agent's tool call, which ends it: another tool ending does not.
+        if ((event.type === "tool_execution_end" && !run.asking?.resolve) || !run.busy) endAsk(run);
         emit(run, event.message ? { ...event, message: asTyped(event.message) } : event);
         if (run.stale && !run.busy) close(run);
         else touch(run);
@@ -220,8 +225,26 @@ export const activityOf = (id) => {
 export async function answer(id, { request, value }) {
   const run = await current(id);
   if (!run?.asking || run.asking.id !== request || (value !== undefined && typeof value !== "string")) throw fail(409, "This question is closed");
-  run.pi.reply({ type: "extension_ui_response", id: request, ...(value === undefined ? { cancelled: true } : { value }) });
+  const { resolve } = run.asking;
+  if (resolve) {
+    run.asking = { ...run.asking, resolve: null };
+    resolve(value);
+  } else run.pi.reply({ type: "extension_ui_response", id: request, ...(value === undefined ? { cancelled: true } : { value }) });
   endAsk(run);
+}
+
+// The daemon asks the user, in the agent's chat, as the agent's `ask` would (a choice of `options`): for what the agent may not
+// decide alone. Only the user answers it (POST /api/agents/:id/answer is not the agent's). Resolves with the option chosen,
+// or undefined when the question ends unanswered (skipped, the run stopped, the pi closed).
+export async function askUser(id, title, options) {
+  const run = await current(id);
+  if (!run?.busy) throw fail(409, "The agent is not in a run");
+  endAsk(run);
+  return new Promise((resolve) => {
+    run.asking = { type: "extension_ui_request", id: `weilo-${randomBytes(6).toString("hex")}`, method: "select", title, options, resolve };
+    emit(run, run.asking);
+    void notifyAbout(id, "ask", title);
+  });
 }
 
 export const abort = async (id) => (await current(id))?.pi.send("abort").catch(refused);

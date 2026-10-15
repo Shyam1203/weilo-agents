@@ -4,6 +4,7 @@ import { createServer as createSocketServer } from "node:net";
 import { dirname } from "node:path";
 import { createAgent, getAgent, homeOf, profiles, listAgents, removeFiles, removeProfile, setOrder, updateAgent } from "./agents/agents.mjs";
 import { abort, activityOf, answer, compact, contextOf, prompt, restart, restartAll, skillCommands, stop, stopAll } from "./agents/runner.mjs";
+import { manageAgents } from "./agents/manage.mjs";
 import { searchChats } from "./agents/search.mjs";
 import { earlierOf } from "./agents/sessions.mjs";
 import { clearScratch } from "./agents/workspace.mjs";
@@ -145,6 +146,8 @@ agentRoute("POST", "/api/agents/:id/skill", async ({ id, body }) => {
   await restart(id);
   return { text: `Saved the skill "${skill}" in ${folder}/ (put any scripts or other files it needs there). It is on for you and loads when this reply ends. It shows under Skills in Settings.` };
 });
+// An agent's `manage_agents` tool: it lists the agents, or asks the user to approve an agent it would make or change (agents/manage.mjs).
+agentRoute("POST", "/api/agents/:id/manage_agents", ({ id, body }) => manageAgents(id, body));
 agentRoute("POST", "/api/agents/:id/memory", async ({ body }) => ({ text: await useMemory(body) }));
 agentRoute("POST", "/api/agents/:id/fetch_knowledge", async ({ body }) => ({ text: await fetchKnowledge(body) }));
 agentRoute("GET", "/api/agents/:id/routines", async ({ id, headers }) => (await noteZone(headers["x-timezone"]), listRoutines(id)));

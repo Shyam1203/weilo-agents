@@ -98,9 +98,15 @@ export async function setOrder(order) {
   await updateJson(ORDER, (data) => ({ ...data, agents: order.filter(isAgentId) }));
 }
 
-export async function createAgent(input) {
+// The settings as they would be saved, or why they cannot be: for asking the user before making or changing an agent.
+export async function checkAgent(input) {
   const agent = clean(input);
   await extensionsOf(agent);
+  return agent;
+}
+
+export async function createAgent(input) {
+  const agent = await checkAgent(input);
   const id = `${slug(agent.name, 24) || "agent"}-${randomBytes(3).toString("hex")}`;
   const others = await profiles();
   const made = { ...agent, folder: await newFolder(agent.name, others.map((a) => a.folder)), uid: newUid(others.map((a) => a.uid)) };

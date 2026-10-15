@@ -4,6 +4,7 @@
 // conversation. The tool only checks the call.
 // `ask`: the agent asks the user a question and waits. Pi's own dialogs carry it: the daemon passes
 // the request to the chat and the answer back.
+// `manage_agents`: the agent lists the agents, or asks to make or change one; the daemon asks the user (agents/manage.mjs).
 
 import { daemonTool } from "./tool.mjs";
 
@@ -49,8 +50,31 @@ const SKILL = `Save a skill: instructions for a kind of task that you or the use
 - instructions: the skill itself, in Markdown: the steps, what to check, what goes wrong. Never put secrets in it.
 The skill is saved in the skill library and switched on for you. Use only this tool to make or change a skill: do not write skill files yourself or save them in .agents or anywhere else, because only the library is read.`;
 
+const MANAGE = `List the agents, or make or change one: another agent, or yourself. Use this when the user asks you to set up an agent or change one (its instructions, model, skills, plugins); never edit agent files yourself.
+- action list: every agent, with its model, plugins and skills.
+- action create: a new agent. Give a name and its instructions (who it is and what it does, in the second person); the model, thinking level, skills and plugins are optional (a new agent gets your model unless you name another). Take model, skill and plugin names from the list.
+- action update: change the agent named in "agent" (a name or id; yourself too). Give only what changes; a list you give replaces the old one.
+Nothing is made or changed until the user approves it: the user sees what you ask for in this chat and chooses. If they do not, accept it and do not ask again unless they ask you to. A change to yourself applies from the next message.`;
+
 export default function (pi) {
   daemonTool(pi, "skill", "Skill", SKILL, { name: note("Short, lowercase, with hyphens."), description: note("When to use the skill."), instructions: note("The skill, in Markdown.") }, ["name", "description", "instructions"]);
+  daemonTool(
+    pi,
+    "manage_agents",
+    "Agents",
+    MANAGE,
+    {
+      action: { type: "string", enum: ["list", "create", "update"] },
+      agent: note("update: the agent to change, by name or id."),
+      name: str,
+      instructions: note("Who the agent is and what it does."),
+      model: note("provider/model, as in the list."),
+      thinking: { type: "string", enum: ["", "off", "minimal", "low", "medium", "high", "xhigh", "max"] },
+      skills: { ...list(str), description: "Skill ids." },
+      plugins: { ...list(str), description: "Plugin names." },
+    },
+    ["action"],
+  );
   pi.registerTool({
     name: "show",
     label: "Show",

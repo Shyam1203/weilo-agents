@@ -32,7 +32,7 @@ export interface Agent {
 
 export type AgentInput = Omit<Agent, "id" | "folder" | "last" | "working" | "doing" | "taken">;
 
-const DOING: Record<string, string> = { read: "Reading files", bash: "Running a command", edit: "Editing files", write: "Editing files", grep: "Searching files", find: "Searching files", ls: "Searching files", show: "Preparing what to show", routine: "Setting up a routine", browser: "Using the browser", memory: "Saving to memory", fetch_knowledge: "Searching knowledge", ask: "Waiting for your answer" };
+const DOING: Record<string, string> = { read: "Reading files", bash: "Running a command", edit: "Editing files", write: "Editing files", grep: "Searching files", find: "Searching files", ls: "Searching files", show: "Preparing what to show", routine: "Setting up a routine", browser: "Using the browser", memory: "Saving to memory", fetch_knowledge: "Searching knowledge", ask: "Waiting for your answer", skill: "Saving a skill", manage_agents: "Setting up an agent" };
 
 /** What an agent is doing, in a few words: a plugin's or extension's tools have many names. */
 export const doingText = (tool?: string | null) => (tool ? (DOING[tool] ?? "Using an add-on") : "Working");
