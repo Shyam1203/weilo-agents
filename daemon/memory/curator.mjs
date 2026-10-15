@@ -1,11 +1,16 @@
-import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { profiles } from "../agents/agents.mjs";
+import { piDirOf, writePiDir } from "../agents/pidir.mjs";
 import { activityOf } from "../agents/runner.mjs";
 import { chatFiles, messagesOf } from "../agents/sessions.mjs";
-import { CURATOR, fail, KNOWLEDGE, PI_ENV, readJson, updateJson } from "../common.mjs";
+import { CURATOR, fail, KNOWLEDGE, readJson, updateJson } from "../common.mjs";
 import { CURATOR_EVERY_MS, CURATOR_MAX_FAILURES, CURATOR_MAX_GAP_MS, CURATOR_MAX_INPUT, CURATOR_MAX_MESSAGE, CURATOR_MAX_PIECES, CURATOR_QUIET_MS, CURATOR_TIMEOUT_MS } from "../config.mjs";
+import { agentKey, dropAgentKey } from "../http/access.mjs";
+import { CURATOR as CURATOR_USER, spawnAs } from "../users.mjs";
 import { ensureVault, scrub } from "./vault.mjs";
+
+// What the curator's pi is known by to the daemon (its key's owner), as an agent's pi is by its agent's id.
+export const CURATOR_KEY = "curator";
 
 // The curator: a model with file tools, working inside the vault, reads what is new in a
 // chat and files what lasts as pages: preferences, topics, workflows, projects. It is off until a model is chosen in Settings. A
@@ -41,11 +46,23 @@ export async function setCurator({ model } = {}) {
 // What `pi -p` says when the model's answer was cut off at its output limit.
 const TRUNCATED = /^Response was truncated/m;
 
-// pi once, with file tools in the vault: the prompt on stdin, its answer ignored (the work is in the files).
-const askPi = (model, prompt) =>
+// pi once, with file tools in the vault: the prompt on stdin, its answer ignored (the work is in the files). As the
+// curator's user, who owns the vault and nothing else, with its model through the daemon (gateway/).
+async function askPi(model, prompt) {
+  const key = agentKey(CURATOR_KEY);
+  const dir = piDirOf(CURATOR_KEY);
+  try {
+    await writePiDir(dir, CURATOR_USER, { model, key, agent: CURATOR_KEY });
+    await runPi(model, prompt, { ...process.env, PI_CODING_AGENT_DIR: dir, HOME: dir });
+  } finally {
+    dropAgentKey(key);
+  }
+}
+
+const runPi = (model, prompt, env) =>
   new Promise((resolve, reject) => {
     const args = ["-p", "--no-session", "--no-extensions", "--no-skills", "--no-mcp", "--no-context-files", "--tools", "read,write,edit,grep,find,ls", "--thinking", "off", "--model", model, "--system-prompt", INSTRUCTIONS];
-    const child = spawn("pi", args, { cwd: KNOWLEDGE, env: { ...process.env, ...PI_ENV } });
+    const child = spawnAs(CURATOR_USER, "pi", args, { cwd: KNOWLEDGE, env });
     let err = "";
     const timer = setTimeout(() => child.kill(), CURATOR_TIMEOUT_MS);
     child.stderr.on("data", (d) => (err = (err + d).slice(-4000)));

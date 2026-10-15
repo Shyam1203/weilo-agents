@@ -49,6 +49,16 @@ export const PUSH_TTL_S = 24 * 60 * 60;
 export const PUSH_TIMEOUT_MS = 10_000;
 export const PUSH_BODY_CHARS = 180;
 
+// --- Users (users.mjs) ------------------------------------------------------------------------
+
+// The Linux users the daemon (root) runs things as. The browser runs as the image's own user; each agent as a user of its
+// own, numbered from FIRST_AGENT_UID, in one group that shares the workspace.
+export const BROWSER_UID = 1000;
+export const CURATOR_UID = 1100;
+export const PLUGINS_UID = 1200;
+export const AGENTS_GID = 2000;
+export const FIRST_AGENT_UID = 2001;
+
 // --- Agents (agents/) ------------------------------------------------------------------------
 
 // Pi's built-in tools every agent has: read and change files, and run programs.
@@ -165,9 +175,8 @@ export const SEND_MS = MINUTE;
 
 // --- Browser (browser/) ----------------------------------------------------------------------
 
-// The virtual screen, in pixels, and Chromium's debugging port (only on 127.0.0.1 in the container).
+// The virtual screen, in pixels.
 export const SCREEN = { width: 1280, height: 800 };
-export const CDP_PORT = 9222;
 // A program of the screen that stops starts again after this long (ms).
 export const SCREEN_RESTART_MS = 2000;
 // Largest message from the live view (bytes); a bigger one closes it.

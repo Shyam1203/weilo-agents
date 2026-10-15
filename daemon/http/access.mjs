@@ -81,6 +81,14 @@ export function agentKey(id) {
 
 export const dropAgentKey = (key) => agentKeys.delete(key);
 
+// The key a pi's request to a model or a plugin carries, and whose it is: a provider's API puts it in its own header
+// (Authorization, x-api-key, x-goog-api-key, api-key) or in the address (`key`).
+export function keyIn({ headers }, query) {
+  const candidates = [/^Bearer (\S+)$/.exec(headers.authorization ?? "")?.[1], headers["x-api-key"], headers["x-goog-api-key"], headers["api-key"], query.get("key")];
+  const key = candidates.find((k) => typeof k === "string" && agentKeys.has(k));
+  return key ? { key, agent: agentKeys.get(key) } : null;
+}
+
 // Who sent a request: { device } for a paired browser, { agent } for an agent's pi, or null.
 export async function identify({ headers }) {
   const bearer = /^Bearer (\S+)$/.exec(headers.authorization ?? "")?.[1];

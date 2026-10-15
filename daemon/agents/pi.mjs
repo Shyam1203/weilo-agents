@@ -1,14 +1,16 @@
 import { spawn } from "node:child_process";
 import { PI_KILL_MS } from "../config.mjs";
+import { spawnAs } from "../users.mjs";
 
-// Runs a child that speaks pi's RPC protocol (`pi --mode rpc …`): one JSON record per line.
+// Runs a child that speaks pi's RPC protocol (`pi --mode rpc …`): one JSON record per line; as `user` (users.mjs), if given.
 //   onEvent(record)                every record that is not a command response
 //   onExit({ code, signal, message })  once, when the child ends; message is the last line pi wrote to stderr
 // Returns { send(type, fields, onReply), reply(record), close() }; send resolves with the response data, or rejects
 // with pi's error (or that message, if pi exited first). onReply(data) runs before any later
 // record is handled, so a caller can act on a reply without missing the events after it.
-export function spawnPi(argv, { cwd, env, onEvent, onExit } = {}) {
-  const child = spawn(argv[0], argv.slice(1), { cwd, env: { ...process.env, ...env } });
+export function spawnPi(argv, { user, cwd, env, onEvent, onExit } = {}) {
+  const options = { cwd, env: { ...process.env, ...env } };
+  const child = user ? spawnAs(user, argv[0], argv.slice(1), options) : spawn(argv[0], argv.slice(1), options);
   const pending = new Map();
   let nextId = 0;
   let buffer = "";

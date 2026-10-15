@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { fail, PI_ENV, SESSIONS } from "../common.mjs";
+import { fail, SESSIONS } from "../common.mjs";
 import { agentKey, dropAgentKey } from "../http/access.mjs";
 import { CORE_TOOLS, IDLE_MS, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
 import { askBefore } from "../browser/rule.mjs";
@@ -11,7 +11,9 @@ import { pluginTools } from "../settings/plugins.mjs";
 import { skillPaths } from "../settings/skills.mjs";
 import { userFlags } from "../settings/user.mjs";
 import { notify } from "../push.mjs";
-import { getAgent, homeOf, makeHome, profilePath } from "./agents.mjs";
+import { agentUser } from "../users.mjs";
+import { getAgent, homeOf, makeHome, profilePath, userHomeOf } from "./agents.mjs";
+import { piDirOf, writePiDir } from "./pidir.mjs";
 import { spawnPi } from "./pi.mjs";
 import { asTyped } from "./sessions.mjs";
 import { saveFiles, toImages } from "./uploads.mjs";
@@ -94,13 +96,20 @@ async function start(run) {
   const agent = await getAgent(run.id);
   const [ask, skills, plugins, extensions, user, memory] = await Promise.all([askBefore(), skillPaths(agent.skills), pluginTools(agent.plugins), extensionsOf(agent), userFlags(), memoryFlags()]);
   const argv = argvOf(agent, skills, plugins, extensions, [...user, ...memory]);
-  await Promise.all([makeScratch(run.id), makeHome(agent)]);
-  // The key its tools call the daemon with (tool.mjs): the daemon knows the agent by it.
+  await Promise.all([makeScratch(agent), makeHome(agent)]);
+  // The key its tools and its pi call the daemon with (tool.mjs, gateway/): the daemon knows the agent by it.
   run.key = agentKey(run.id);
+  // Its pi settings: its model's provider and its plugins, through the daemon (no key of theirs).
+  await writePiDir(piDirOf(run.id), agentUser(agent), { model: agent.model, plugins: agent.plugins, key: run.key, agent: run.id });
   run.done = new Promise((resolve) => {
+    // As the agent's own user, at home in its folder.
     run.pi = spawnPi(argv, {
+      user: agentUser(agent),
       cwd: homeOf(agent),
-      env: { ...PI_ENV, WEILO_AGENT: run.id, WEILO_API: `http://127.0.0.1:${PORT}/api`, WEILO_KEY: run.key, WEILO_ASK_BEFORE: ask, WEILO_SCRATCH: scratchOf(run.id) },
+      env: {
+        PI_CODING_AGENT_DIR: piDirOf(run.id), HOME: userHomeOf(agent),
+        WEILO_AGENT: run.id, WEILO_API: `http://127.0.0.1:${PORT}/api`, WEILO_KEY: run.key, WEILO_ASK_BEFORE: ask, WEILO_SCRATCH: scratchOf(run.id),
+      },
       onEvent(event) {
         if (event.type === "agent_start") (run.busy = true), (run.reply = null);
         if (event.type === "message_end" && event.message?.role === "assistant") run.reply = event.message;

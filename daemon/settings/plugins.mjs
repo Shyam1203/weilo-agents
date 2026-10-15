@@ -1,13 +1,14 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { fail, MCP, PI_ENV, readJson, updateJson, WORKSPACE } from "../common.mjs";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { piDirOf } from "../agents/pidir.mjs";
+import { fail, MCP, readJson, updateJson, WORKSPACE } from "../common.mjs";
 import { PLUGIN_STATUS_TIMEOUT_MS } from "../config.mjs";
+import { folder, PLUGINS, setOwner, spawnAs } from "../users.mjs";
 
 // Plugins are MCP servers, pi's own: agent/mcp.json { "mcpServers": { "<name>": { command, args, env } or { url, headers } } }.
 // Which agent uses which is the agent's profile; this only keeps the list. Secrets (env, token)
 // are only ever written here, never returned.
 
-const run = promisify(execFile);
 const NAME = /^[\w-]+$/;
 const ENV_KEY = /^[A-Za-z_]\w*$/;
 
@@ -48,10 +49,27 @@ export async function removePlugin(name) {
   });
 }
 
+// pi's report on the plugins, from a pi that runs them as the plugins' user (they are other people's programs), with their
+// secrets in a folder of that user's alone.
+async function report() {
+  const dir = piDirOf("plugins");
+  await folder(dir, PLUGINS.uid, PLUGINS.gid, 0o700);
+  await writeFile(join(dir, "mcp.json"), JSON.stringify(await readJson(MCP)), { mode: 0o600 });
+  await setOwner(join(dir, "mcp.json"), PLUGINS.uid, PLUGINS.gid, 0o600);
+  return new Promise((resolve) => {
+    const child = spawnAs(PLUGINS, "pi", ["mcp", "list", "--json"], { cwd: WORKSPACE, env: { ...process.env, PI_CODING_AGENT_DIR: dir, HOME: dir }, stdio: ["ignore", "pipe", "ignore"] });
+    let stdout = "";
+    const timer = setTimeout(() => child.kill(), PLUGIN_STATUS_TIMEOUT_MS);
+    child.stdout.setEncoding("utf8").on("data", (d) => (stdout += d));
+    child.on("error", () => resolve(""));
+    // pi exits 1 when a server fails; its report is still on stdout.
+    child.on("close", () => (clearTimeout(timer), resolve(stdout)));
+  });
+}
+
 // Whether each plugin connects, by asking pi: { name: { state, error?, tools } }. Takes a few seconds.
 export async function pluginStatus() {
-  // pi exits 1 when a server fails; its report is still on stdout.
-  const { stdout } = await run("pi", ["mcp", "list", "--json"], { cwd: WORKSPACE, env: { ...process.env, ...PI_ENV }, timeout: PLUGIN_STATUS_TIMEOUT_MS }).catch((err) => err);
+  const stdout = await report();
   try {
     return Object.fromEntries(JSON.parse(stdout).servers.map((s) => [s.name, { state: s.state, error: s.error, tools: s.tools.length }]));
   } catch {

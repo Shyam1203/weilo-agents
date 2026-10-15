@@ -2,23 +2,25 @@ import { mkdirSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { createServer as createSocketServer } from "node:net";
 import { dirname } from "node:path";
-import { createAgent, getAgent, homeOf, listAgents, removeChat, removeHome, removeProfile, setOrder, updateAgent } from "./agents/agents.mjs";
+import { createAgent, getAgent, homeOf, profiles, listAgents, removeFiles, removeProfile, setOrder, updateAgent } from "./agents/agents.mjs";
 import { abort, activityOf, answer, compact, contextOf, prompt, restart, restartAll, skillCommands, stop, stopAll } from "./agents/runner.mjs";
 import { searchChats } from "./agents/search.mjs";
 import { earlierOf } from "./agents/sessions.mjs";
 import { clearScratch } from "./agents/workspace.mjs";
 import { closeBrowser, giveBack, hasWindow, isTaken, showBrowser, takeOver, useBrowser } from "./browser/browser.mjs";
 import { getRule, saveRule } from "./browser/rule.mjs";
-import { startScreen, viewUpgrade } from "./browser/screen.mjs";
+import { cdpUpgrade, isCdpPath, startScreen, viewUpgrade } from "./browser/screen.mjs";
 import { fail } from "./common.mjs";
 import { ADMIN_SOCKET, PORT } from "./config.mjs";
 import { sendContact } from "./contact.mjs";
-import { cookieFor, identify, newCode, pair, pairedDevices, unpair } from "./http/access.mjs";
+import { accessToken, providerOf, proxyModel } from "./gateway/models.mjs";
+import { pipePlugin, pluginOf, proxyPlugin } from "./gateway/plugins.mjs";
+import { cookieFor, identify, keyIn, newCode, pair, pairedDevices, unpair } from "./http/access.mjs";
 import { events } from "./http/events.mjs";
 import { serveFile } from "./http/files.mjs";
 import { bodyOf, guard, reply } from "./http/request.mjs";
 import { serveUi } from "./http/static.mjs";
-import { getCurator, setCurator, startCurator } from "./memory/curator.mjs";
+import { CURATOR_KEY, getCurator, setCurator, startCurator } from "./memory/curator.mjs";
 import { fetchKnowledge } from "./memory/fetch.mjs";
 import { memoryText, saveMemoryText, useMemory } from "./memory/memory.mjs";
 import { migrate } from "./migrate.mjs";
@@ -31,7 +33,12 @@ import { listModels, listProviders, removeKey, saveKey, setEnabledModels, syncCo
 import { addSkills, listSkills, removeSkill, saveSkill } from "./settings/skills.mjs";
 import { getUser, saveUser } from "./settings/user.mjs";
 import { setUpdateCheck, updateStatus } from "./update.mjs";
+import { secure } from "./users.mjs";
 import { BUILD } from "./version.mjs";
+
+// What the daemon makes is its own and its group's, never everyone's: in the workspace (whose group is the agents') the
+// agents share it; elsewhere its group is root's (users.mjs).
+process.umask(0o007);
 
 // JSON API. A handler gets the request as { id, rid (the path's ids), body, query, headers, who } and returns the reply; no
 // reply means 204. Paired devices may use every route; an agent's pi (`who.agent`) only the routes of its own tools
@@ -110,8 +117,7 @@ route("DELETE", "/api/agents/:id", async ({ id, body }) => {
   await forgetRoutines(id);
   await stop(id);
   await closeBrowser(id);
-  if (body.keepChat !== true) await removeChat(id);
-  if (body.keepFiles !== true) await removeHome(agent);
+  await removeFiles(agent, { keepChat: body.keepChat === true, keepFiles: body.keepFiles === true });
 });
 route("POST", "/api/agents/:id/message", ({ id, body }) => prompt(id, body));
 route("POST", "/api/agents/:id/abort", ({ id }) => abort(id));
@@ -126,6 +132,11 @@ route("GET", "/api/agents/:id/browser", async ({ id }) => ({ taken: isTaken(id),
 route("POST", "/api/agents/:id/browser/show", ({ id }) => showBrowser(id));
 route("POST", "/api/agents/:id/browser/take-over", ({ id }) => takeOver(id));
 route("POST", "/api/agents/:id/browser/give-back", ({ id }) => giveBack(id));
+// The access token of the provider of the agent's model, when it is signed in with an account (gateway/key.mjs).
+agentRoute("GET", "/api/agents/:id/model-key/:rid", async ({ id, rid }) => {
+  if (providerOf((await getAgent(id)).model) !== rid) throw fail(403, "Not permitted");
+  return { key: await accessToken(rid) };
+});
 // An agent's `skill` tool: the skill goes into the library and is switched on for that agent, which reads it when its run ends.
 agentRoute("POST", "/api/agents/:id/skill", async ({ id, body }) => {
   const { id: skill, folder } = await saveSkill(body);
@@ -147,6 +158,20 @@ const server = createServer(async (req, res) => {
     const path = url.pathname;
     guard(req, path);
     if (!path.startsWith("/api/")) return await serveUi(req, res);
+    // A pi's request to its model or a plugin, with the key the daemon gave it: passed on with the real key (gateway/).
+    const proxied = path.match(/^\/api\/(model|plugin)-proxy\/([\w.-]+)(\/.*)?$/);
+    if (proxied) {
+      const caller = keyIn(req, url.searchParams);
+      if (!caller) throw fail(401, "Not permitted");
+      const [, kind, name, rest = ""] = proxied;
+      if (kind === "model") {
+        if ((await allowedProvider(caller.agent)) !== name) throw fail(403, "Not permitted");
+        return await proxyModel(req, res, { key: caller.key, provider: name, rest, search: url.search });
+      }
+      const plugin = await allowedPlugin(caller.agent, name);
+      if (!plugin.url) throw fail(404, "Not found");
+      return await proxyPlugin(req, res, { plugin, rest, search: url.search });
+    }
     // Pairing is the one call a browser makes before it is paired: a right code gets it its key, as a cookie.
     if (path === "/api/pair" && req.method === "POST") {
       const token = await pair((await bodyOf(req)).code, req.headers["user-agent"]);
@@ -177,12 +202,32 @@ const server = createServer(async (req, res) => {
   }
 });
 
-// The screen's live view is a WebSocket, for paired devices, with the same checks as the API.
+// The provider an agent's pi may reach: its model's. The curator's pi reaches the curator's.
+async function allowedProvider(agent) {
+  return providerOf(agent === CURATOR_KEY ? (await getCurator()).model : (await getAgent(agent)).model);
+}
+
+// A plugin the agent uses.
+async function allowedPlugin(agent, name) {
+  const plugin = agent !== CURATOR_KEY && (await getAgent(agent)).plugins.includes(name) && (await pluginOf(name));
+  if (!plugin) throw fail(403, "Not permitted");
+  return plugin;
+}
+
+// Upgrades: the screen's live view (a WebSocket, for paired devices) and an agent's pipe to a plugin that runs as a program.
 server.on("upgrade", async (req, socket, head) => {
   try {
-    const path = new URL(req.url, "http://localhost").pathname;
-    guard(req, path);
-    if (path === "/api/browser/view" && (await identify(req))?.device && viewUpgrade(req, socket, head)) return;
+    const url = new URL(req.url, "http://localhost");
+    guard(req, url.pathname);
+    if (url.pathname === "/api/browser/view" && (await identify(req))?.device && viewUpgrade(req, socket, head)) return;
+    // The daemon's own Playwright, to Chromium's debugging pipe (the path is the secret).
+    if (isCdpPath(url.pathname) && cdpUpgrade(req, socket, head)) return;
+    const pipe = url.pathname.match(/^\/api\/plugin-pipe\/([\w-]+)$/);
+    const caller = pipe && keyIn(req, url.searchParams);
+    if (caller) {
+      const plugin = await allowedPlugin(caller.agent, pipe[1]);
+      if (plugin.command) return pipePlugin(socket, plugin, homeOf(await getAgent(caller.agent)));
+    }
   } catch {}
   socket.destroy();
 });
@@ -197,6 +242,7 @@ createSocketServer((socket) => socket.end(`${newCode().code}
 // The data folder is brought to this app's shape before anything reads it; one made by a newer app stops the start.
 try {
   await migrate();
+  await secure(await profiles());
 } catch (err) {
   console.error(err.message);
   process.exit(1);
@@ -208,7 +254,7 @@ void syncCompaction();
 // Scratch files from before a restart are no one's now.
 void clearScratch();
 startRoutines();
-startScreen();
+void startScreen().catch((err) => console.error("The browser cannot start:", err.message));
 startCurator();
 
 for (const signal of ["SIGTERM", "SIGINT"]) process.on(signal, () => stopAll().finally(() => process.exit(0)));

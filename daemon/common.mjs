@@ -3,13 +3,19 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // pi's data folder: the host's ~/.weilo-agents, mounted here.
-const ROOT = "/home/node/.pi";
-const AGENT_DIR = join(ROOT, "agent");
+export const ROOT = "/home/node/.pi";
+export const AGENT_DIR = join(ROOT, "agent");
 
 // Where every pi runs, the environment that points it at the shared config, and what lives there.
 export const WORKSPACE = join(ROOT, "workspace");
 // Each agent's scratch folder lives under here, outside the data folder: it is not kept (agents/workspace.mjs).
 export const SCRATCH = "/tmp/weilo";
+// Each agent's home folder (HOME: its own tool settings and sign-ins, such as git's), beside agent/ and workspace/.
+export const HOMES = join(ROOT, "homes");
+// What each pi is given when it starts (its own settings, models, plugins), made again every time, outside the data folder.
+export const RUN = "/var/lib/weilo";
+// The tools agents install (npm -g, pip --user): a volume shared by them all.
+export const TOOLS = "/home/node/.local";
 export const PI_ENV = { PI_CODING_AGENT_DIR: AGENT_DIR };
 export const AUTH = join(AGENT_DIR, "auth.json");
 export const SETTINGS = join(AGENT_DIR, "settings.json");

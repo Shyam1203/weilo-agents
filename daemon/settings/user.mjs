@@ -1,6 +1,7 @@
 import { access, readFile, rm } from "node:fs/promises";
 import { fail, USER, writePrivate } from "../common.mjs";
 import { MAX_ABOUT, MAX_NAME } from "../config.mjs";
+import { shareWithAgents } from "../users.mjs";
 
 // What the agents know about you: agent/USER.md, which pi adds to every agent's system prompt.
 // The file is "Name: <name>", a blank line, then what else you wrote. You can edit it by hand.
@@ -15,7 +16,7 @@ export async function saveUser({ name = "", about = "" }) {
   if (typeof name !== "string" || typeof about !== "string" || name.length > MAX_NAME || about.length > MAX_ABOUT) throw fail(400, "The details are not valid");
   const user = { name: name.replace(/\s+/g, " ").trim(), about: about.trim() };
   if (!user.name && !user.about) await rm(USER, { force: true });
-  else await writePrivate(USER, `# About the user\nName: ${user.name}\n\n${user.about}\n`);
+  else await writePrivate(USER, `# About the user\nName: ${user.name}\n\n${user.about}\n`).then(() => shareWithAgents(USER));
   return user;
 }
 

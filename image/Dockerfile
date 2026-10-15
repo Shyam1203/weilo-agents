@@ -24,10 +24,13 @@ ENV NODE_PATH=/usr/local/lib/node_modules
 RUN npm install -g --ignore-scripts --omit=dev @earendil-works/pi-coding-agent@${PI_VERSION} playwright-core@${PLAYWRIGHT_VERSION} \
  && npm cache clean --force
 
-# The agent's own installs (npm -g, pip --user) go to ~/.local, a volume. Debian blocks pip
-# outside a venv; --user installs do not touch the system's packages.
-RUN mkdir -p /home/node/.local /home/node/.browser && chown node:node /home/node/.local /home/node/.browser
+# The agents' own installs (npm -g, pip --user) go to /home/node/.local, a volume they share (the daemon gives it to
+# their group, `agents`). Debian blocks pip outside a venv; --user installs do not touch the system's packages.
+# The browser's profile is the image user's (node), who runs the browser.
+RUN mkdir -p /home/node/.local /home/node/.browser && chown node:node /home/node/.browser && chmod 700 /home/node/.browser \
+ && groupadd -g 2000 agents
 ENV npm_config_prefix=/home/node/.local \
+    PYTHONUSERBASE=/home/node/.local \
     PIP_BREAK_SYSTEM_PACKAGES=1 \
     PATH=/home/node/.local/bin:$PATH
 
@@ -48,7 +51,6 @@ LABEL org.opencontainers.image.title="Weilo Agents"       org.opencontainers.ima
 COPY daemon /app
 COPY --from=ui /ui/dist /app/ui
 
-USER node
-
-# No WORKDIR: on a fresh mount Docker would create it as root.
-CMD ["sh", "-c", "mkdir -p /home/node/.pi/workspace && exec node /app/server.mjs"]
+# The daemon runs as root, and nothing else does: it starts the browser, the curator, the plugins and each agent as a user
+# of its own, without root's powers (daemon/users.mjs).
+CMD ["node", "/app/server.mjs"]

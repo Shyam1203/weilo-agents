@@ -1,6 +1,7 @@
 import { access, readFile, rm } from "node:fs/promises";
 import { fail, MEMORY, SECRET, writePrivate } from "../common.mjs";
 import { MAX_NOTE, MAX_NOTES, MAX_NOTES_CHARS, SIMILAR } from "../config.mjs";
+import { shareWithAgents } from "../users.mjs";
 
 // What agents keep as hot memory, for every agent alike: agent/MEMORY.md, short facts about the user, one per line:
 // "- [m7 2026-10] text". Pi adds the file to every agent's system prompt when it starts, so a change shows in the next
@@ -53,7 +54,8 @@ function parse(file) {
 const render = (notes) => (notes.length ? `${HEADER}\n${notes.map((n) => `- [${n.id} ${n.date}] ${n.text}`).join("\n")}\n` : "");
 const show = (n) => `${n.id}: ${n.text}`;
 const readNotes = async () => parse(await readFile(MEMORY, "utf8").catch(() => ""));
-const saveNotes = (notes) => (notes.length ? writePrivate(MEMORY, render(notes)) : rm(MEMORY, { force: true }));
+// Every agent's pi reads the file: it is shared with their group.
+const saveNotes = (notes) => (notes.length ? writePrivate(MEMORY, render(notes)).then(() => shareWithAgents(MEMORY)) : rm(MEMORY, { force: true }));
 const full = (notes) => notes.length > MAX_NOTES || render(notes).length > MAX_NOTES_CHARS;
 
 // The `memory` tool: { action: remember { text, id? } | forget { id } | list }.

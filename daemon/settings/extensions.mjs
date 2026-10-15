@@ -2,7 +2,8 @@ import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { extname, join, relative, resolve } from "node:path";
 import { BUNDLED, EXTENSIONS, fail } from "../common.mjs";
-import { RESERVED_TOOLS } from "../config.mjs";
+import { AGENTS_GID, RESERVED_TOOLS } from "../config.mjs";
+import { tree } from "../users.mjs";
 import { unzip } from "./zip.mjs";
 
 // Extensions are pi extensions: a folder with a weilo.json { apiVersion: 1, name, title, description, entry, tools }.
@@ -89,6 +90,8 @@ export async function addExtension({ name, data }) {
     await mkdir(EXTENSIONS, { recursive: true });
     await rm(join(EXTENSIONS, id), { recursive: true, force: true });
     await cp(folder, join(EXTENSIONS, id), { recursive: true });
+    // Every agent's pi runs it, as the agent's user: they may read it, none may change it.
+    await tree(join(EXTENSIONS, id), 0, AGENTS_GID, "g+rX,g-w,o-rwx");
   } finally {
     await rm(work, { recursive: true, force: true });
   }

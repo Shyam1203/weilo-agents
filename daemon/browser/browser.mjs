@@ -3,9 +3,9 @@ import { createRequire } from "node:module";
 import { abort, activityOf, prompt } from "../agents/runner.mjs";
 import { fail } from "../common.mjs";
 import {
-  BACK_TIMEOUT_MS, CDP_PORT, CONNECT_TIMEOUT_MS, CONTENT_TIMEOUT_MS, ELEMENT_TIMEOUT_MS, LOAD_TIMEOUT_MS, PORT, SETTLE_MS, SNAPSHOT_MAX, SNAPSHOT_TIMEOUT_MS, TAB_TIMEOUT_MS, WINDOW_TRIES, WINDOW_TRY_MS,
+  BACK_TIMEOUT_MS, CONNECT_TIMEOUT_MS, CONTENT_TIMEOUT_MS, ELEMENT_TIMEOUT_MS, LOAD_TIMEOUT_MS, PORT, SETTLE_MS, SNAPSHOT_MAX, SNAPSHOT_TIMEOUT_MS, TAB_TIMEOUT_MS, WINDOW_TRIES, WINDOW_TRY_MS,
 } from "../config.mjs";
-import { hasScreen } from "./screen.mjs";
+import { cdpAddress, hasScreen } from "./screen.mjs";
 
 // What agents do in the browser. All agents share one Chromium (one profile, so one set of logins),
 // and each agent has its own window with as many tabs as it wants: its tab group. An agent only
@@ -33,7 +33,7 @@ const connected = () =>
 
 async function connect() {
   if (!hasScreen()) throw fail(409, "This image has no browser");
-  const browser = await playwright().chromium.connectOverCDP(`http://127.0.0.1:${CDP_PORT}`, { timeout: CONNECT_TIMEOUT_MS });
+  const browser = await playwright().chromium.connectOverCDP(cdpAddress(PORT), { timeout: CONNECT_TIMEOUT_MS });
   browser.on("disconnected", () => {
     connecting = undefined;
     for (const record of agents.values()) record.window = null;
@@ -41,12 +41,12 @@ async function connect() {
   return { ctx: browser.contexts()[0], root: await browser.newBrowserCDPSession() };
 }
 
-// The app's address and the browser's debugging port: agents may not open them, or from there they would reach everything.
-// Chromium blocks them too, for a redirect (image/chromium-policy.json); this gives the agent a clear message.
+// The app's address: agents may not open it in the browser. Chromium blocks it too, for a redirect
+// (image/chromium-policy.json); this gives the agent a clear message.
 const OWN_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "0.0.0.0", "[::]", hostname().toLowerCase()]);
 const isOwn = (url) => {
   const { hostname: host, port, protocol } = url instanceof URL ? url : new URL(url);
-  return /^https?:$/.test(protocol) && (OWN_HOSTS.has(host.toLowerCase()) || host.toLowerCase().startsWith("127.")) && (port === String(PORT) || port === String(CDP_PORT));
+  return /^https?:$/.test(protocol) && (OWN_HOSTS.has(host.toLowerCase()) || host.toLowerCase().startsWith("127.")) && port === String(PORT);
 };
 
 // Which window a page is in: the browser's ids, asked once per page.
