@@ -1,11 +1,12 @@
 import { BUNDLED, fail } from "../common.mjs";
+import { providerOf } from "../gateway/models.mjs";
 import { checkAgent, createAgent, getAgent, isIsolated, profiles, updateAgent } from "./agents.mjs";
 import { listExtensions } from "../settings/extensions.mjs";
 import { listPlugins } from "../settings/plugins.mjs";
 import { listSkills } from "../settings/skills.mjs";
 import { askUser, restart } from "./runner.mjs";
 
-// The `agents` tool: an agent lists the agents, and asks to make one or change one. Nothing is made or changed until the
+// The `manage_agents` tool: an agent lists the agents, and asks to make one or change one. Nothing is made or changed until the
 // user approves it, in the chat of the agent that asked: the daemon asks the question itself (`askUser`), and only a
 // paired device can answer it, so an agent cannot approve its own request. The question shows the whole change, and says
 // what the new or changed agent would get that the asking agent does not have (another provider, plugins, extensions) or
@@ -25,7 +26,6 @@ const DECLINE = "Don't";
 
 const pick = (body) => Object.fromEntries(FIELDS.filter((f) => body[f] !== undefined).map((f) => [f, body[f]]));
 const list = (items) => (items.length ? items.join(", ") : "none");
-const providerOf = (model) => model.split("/")[0];
 
 // An agent's extensions, as the tool names them: the bundled ones it has not turned off, and the added ones it uses.
 export const extensionsIn = (agent) => [...Object.keys(BUNDLED).filter((id) => !agent.disabled.includes(id)), ...agent.extensions];
