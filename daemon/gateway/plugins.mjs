@@ -28,11 +28,12 @@ export async function proxyPlugin(req, res, { plugin, rest, search }) {
 }
 
 export const PLUGINS_HOME = piDirOf("plugins");
+export const PLUGINS_CWD = piDirOf("plugins-cwd");
 
 function startPlugin(plugin, agent) {
   const argv = [plugin.command, ...(plugin.args ?? [])];
   if (!isIsolated(agent)) {
-    return spawnAs(PLUGINS, argv[0], argv.slice(1), { cwd: PLUGINS_HOME, env: { ...sharedTools, HOME: PLUGINS_HOME, WEILO_FOLDER: homeOf(agent), ...plugin.env }, stdio: ["pipe", "pipe", "ignore"] });
+    return spawnAs(PLUGINS, argv[0], argv.slice(1), { cwd: PLUGINS_CWD, env: { ...sharedTools, HOME: PLUGINS_HOME, WEILO_FOLDER: homeOf(agent), ...plugin.env }, stdio: ["pipe", "pipe", "ignore"] });
   }
   const uid = agent.uid + PLUGIN_UID_OFFSET;
   const env = { PATH: SYSTEM_PATH, HOME: "/tmp", WEILO_FOLDER: homeOf(agent), ...plugin.env };
@@ -49,4 +50,5 @@ export function pipePlugin(socket, plugin, agent) {
   socket.on("close", end);
   socket.pipe(child.stdin).on("error", () => {});
   child.stdout.pipe(socket);
+  child.stderr?.resume();
 }

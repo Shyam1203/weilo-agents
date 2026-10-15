@@ -133,6 +133,7 @@ export async function askAgent(id, { agent: which, message }) {
   if (target.id === id) throw fail(400, "Ask another agent.");
   if (activityOf(target.id) !== null) throw fail(409, `${target.name} is working now. Ask again when it is done.`);
   if ((await askUser(id, `${asker.name} asks ${target.name}:\n${message.trim()}`, [SEND, DECLINE])) !== SEND) return { text: "The user did not approve it: nothing was sent." };
+  if (activityOf(target.id) !== null) throw fail(409, `${target.name} started working while the user decided. Ask again when it is done.`);
   const reply = await promptAndWait(target.id, `A message from ${asker.name}, another of the user's agents; the user approved it. Answer it in your reply, which goes back to ${asker.name}.\n\n${message.trim()}`);
   if (reply === null) return { text: `${target.name} did not answer (it stopped, or an error ended its run).` };
   const tag = isIsolated(target) ? ' isolated="true"' : "";

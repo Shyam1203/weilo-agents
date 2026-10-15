@@ -89,6 +89,7 @@ export async function secure(agents) {
   await folder(RUN, 0, AGENTS_GID, 0o751);
   await folder(join(RUN, "pi"), 0, AGENTS_GID, 0o751);
   await folder(join(RUN, "pi", "plugins"), PLUGINS_UID, PLUGINS_UID, 0o700);
+  await folder(join(RUN, "pi", "plugins-cwd"), 0, 0, 0o755);
   const tools = await stat(TOOLS).catch(() => null);
   if (tools && tools.gid !== AGENTS_GID) await tree(TOOLS, 0, AGENTS_GID, "g+rwX,o+rX");
 }

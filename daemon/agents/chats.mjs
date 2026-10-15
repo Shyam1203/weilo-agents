@@ -8,7 +8,7 @@ const CHUNK = 1 << 20;
 const ROLE = /"role":"(user|assistant)"/;
 
 const SCHEMA = `
-  CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, done INTEGER NOT NULL);
+  CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, done INTEGER NOT NULL, head TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY, file TEXT NOT NULL, agent TEXT NOT NULL, speaker TEXT NOT NULL, at TEXT NOT NULL, body TEXT NOT NULL, isolated INTEGER NOT NULL);
   CREATE INDEX IF NOT EXISTS messages_agent ON messages (agent, at);
   CREATE INDEX IF NOT EXISTS messages_file ON messages (file);
@@ -73,10 +73,22 @@ async function index({ path, agent, isolated }, from, size) {
   }
 }
 
+const HEAD = 64;
+const headOf = async (path) => {
+  const handle = await open(path).catch(() => null);
+  if (!handle) return "";
+  try {
+    const { buffer, bytesRead } = await handle.read(Buffer.alloc(HEAD), 0, HEAD, 0);
+    return buffer.subarray(0, bytesRead).toString("hex");
+  } finally {
+    await handle.close();
+  }
+};
+
 async function sync() {
   if (!db) openIndex();
   const files = await chatFiles();
-  const known = new Map(db.prepare("SELECT path, done FROM files").all().map((f) => [f.path, f.done]));
+  const known = new Map(db.prepare("SELECT path, done, head FROM files").all().map((f) => [f.path, f]));
   db.exec("BEGIN");
   try {
     for (const path of known.keys()) {
@@ -86,12 +98,15 @@ async function sync() {
     }
     for (const file of files) {
       const size = (await stat(file.path).catch(() => null))?.size ?? 0;
-      let from = known.get(file.path) ?? 0;
-      if (size < from) {
+      const was = known.get(file.path);
+      if (was && size === was.done) continue;
+      const head = await headOf(file.path);
+      let from = was?.done ?? 0;
+      if (size < from || (was && !head.startsWith(was.head))) {
         db.prepare("DELETE FROM messages WHERE file = ?").run(file.path);
         from = 0;
       }
-      if (size > from) db.prepare("INSERT OR REPLACE INTO files (path, done) VALUES (?, ?)").run(file.path, await index(file, from, size));
+      db.prepare("INSERT OR REPLACE INTO files (path, done, head) VALUES (?, ?, ?)").run(file.path, size > from ? await index(file, from, size) : from, head);
     }
     db.exec("COMMIT");
   } catch (err) {
@@ -107,15 +122,25 @@ const COLUMNS = "agent, speaker, at, substr(at, 1, 10) AS date, body, isolated";
 const query = async (sql, ...params) => (await synced(), db.prepare(sql).all(...params));
 const phrase = (word) => `"${word.replaceAll('"', '""')}"`;
 
-export const containing = (text, limit) => query(`SELECT ${COLUMNS} FROM messages WHERE id IN (SELECT rowid FROM words WHERE body LIKE ? ESCAPE '\\') ORDER BY at DESC LIMIT ?`, `%${text.replace(/[\\%_]/g, "\\$&")}%`, limit);
+const like = (text) => `%${text.replace(/[\\%_]/g, "\\$&")}%`;
 
-export const withAny = (words, agent, limit) => {
+function holding(words) {
   const long = words.filter((w) => w.length >= 3);
-  if (!long.length) return Promise.resolve([]);
-  return query(`SELECT ${COLUMNS} FROM messages WHERE id IN (SELECT rowid FROM words WHERE words MATCH ?) ${agent ? "AND agent = ?" : ""} ORDER BY at DESC LIMIT ?`, long.map(phrase).join(" OR "), ...(agent ? [agent] : []), limit);
-};
+  const short = words.filter((w) => w.length < 3);
+  const where = [...(long.length ? ["id IN (SELECT rowid FROM words WHERE words MATCH ?)"] : []), ...short.map(() => "body LIKE ? ESCAPE '\\'")];
+  return { where: `(${where.join(" OR ")})`, params: [...(long.length ? [long.map(phrase).join(" OR ")] : []), ...short.map(like)] };
+}
+
+export const containing = (text, limit) => withAny([text], null, limit);
+
+export function withAny(words, agent, limit) {
+  if (!words.length) return Promise.resolve([]);
+  const { where, params } = holding(words);
+  return query(`SELECT ${COLUMNS} FROM messages WHERE ${where} ${agent ? "AND agent = ?" : ""} ORDER BY at DESC LIMIT ?`, ...params, ...(agent ? [agent] : []), limit);
+}
 
 export const onDate = (agent, date) => query(`SELECT ${COLUMNS} FROM messages WHERE agent = ? AND at >= ? AND at < ? ORDER BY at`, agent, date, `${date}~`);
 export const newest = async (agent, limit) => (await query(`SELECT ${COLUMNS} FROM messages WHERE agent = ? ORDER BY at DESC LIMIT ?`, agent, limit)).reverse();
+export const latest = async (agent) => (await query("SELECT max(at) AS at FROM messages WHERE agent = ?", agent))[0]?.at ?? null;
 export const after = (agent, at) => query(`SELECT ${COLUMNS} FROM messages WHERE agent = ? AND at > ? ORDER BY at`, agent, at);
 export const agentsWithChats = async () => (await query("SELECT DISTINCT agent, isolated FROM messages")).map(({ agent, isolated }) => ({ id: agent, isolated: isolated === 1 }));

@@ -61,7 +61,7 @@
 <tr><td><code>manage_agents</code></td><td class="y">list, create, update regular agents</td><td class="p">list itself; ask for its own skills, plugins, extensions</td></tr>
 <tr><td>Skills and added extensions</td><td>read from <code>agent/</code></td><td>only its own, mounted read only</td></tr>
 <tr><td>Installed tools on PATH</td><td>shared <code>/home/node/.local/bin</code></td><td>its own <code>.local/bin</code></td></tr>
-<tr><td>Plugin programs run as</td><td>user 1200, in its own folder</td><td>a user of their own (uid + 100000) in the sandbox, with only its folder</td></tr>
+<tr><td>Plugin programs run as</td><td>user 1200, in an empty folder</td><td>a user of their own (uid + 100000) in the sandbox, with only its folder</td></tr>
 <tr><td>Browser</td><td>on unless switched off</td><td>switched off when it becomes isolated; you may turn it on</td></tr>
 <tr><td>Routines</td><td>yes</td><td>yes</td></tr>
 <tr><td>Its chat searched by others and by the curator</td><td>yes</td><td>yes, marked as an isolated agent's report</td></tr>

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { after, agentsWithChats, containing, newest, onDate, openIndex, withAny } from "../agents/chats.mjs";
+import { after, agentsWithChats, containing, latest, newest, onDate, openIndex, withAny } from "../agents/chats.mjs";
 
 const line = (role, text, timestamp) => `${JSON.stringify({ type: "message", timestamp, message: { role, content: [{ type: "text", text }] } })}\n`;
 const regular = join(root, "agent/sessions/a1/s.jsonl");
@@ -33,4 +33,18 @@ test("only complete lines count, and a chat file that shrinks or goes is read ag
   assert.deepEqual((await newest("a1", 10)).map((m) => m.body), ["rewritten"]);
   rmSync(join(root, "isolated-sessions/b2"), { recursive: true });
   assert.equal((await containing("bank", 10)).length, 0);
+});
+
+test("search folds case beyond ASCII, finds short words, and survives a file emptied and refilled", async () => {
+  writeFileSync(regular, line("user", "Ärger im Büro, we use Go and AI", "2026-10-14T00:00:00Z"));
+  assert.equal((await containing("ärger", 10)).length, 1);
+  assert.equal((await containing("BÜRO", 10)).length, 1);
+  assert.equal((await withAny(["go"], "a1", 10)).length, 1);
+  assert.equal((await withAny(["ai", "nothing-like-it"], null, 10)).length, 1);
+  assert.equal(await latest("a1"), "2026-10-14T00:00:00Z");
+  writeFileSync(regular, "");
+  assert.equal((await newest("a1", 10)).length, 0);
+  writeFileSync(regular, line("user", "a much longer first line than before, to pass the old offset", "2026-10-15T00:00:00Z") + line("assistant", "and a second one", "2026-10-15T00:01:00Z"));
+  assert.deepEqual((await newest("a1", 10)).map((m) => m.speaker), ["you", "agent"]);
+  assert.equal(await latest("nobody"), null);
 });

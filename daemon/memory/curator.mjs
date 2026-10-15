@@ -2,7 +2,7 @@ import { constants } from "node:fs";
 import { open, readdir, readlink } from "node:fs/promises";
 import { join, sep } from "node:path";
 import { homeOf, isIsolated, profiles } from "../agents/agents.mjs";
-import { after } from "../agents/chats.mjs";
+import { after, latest } from "../agents/chats.mjs";
 import { piDirOf, piFiles, writePiDir } from "../agents/pidir.mjs";
 import { activityOf } from "../agents/runner.mjs";
 import { CURATOR, fail, KNOWLEDGE, readJson, updateJson } from "../common.mjs";
@@ -84,8 +84,7 @@ async function curate(model, agent, text) {
 
 async function newLines(id, since) {
   const fresh = await after(id, since);
-  const until = fresh.at(-1)?.at ?? since;
-  if (!fresh.some((m) => m.speaker === "you")) return { until, lines: [] };
+  if (!fresh.some((m) => m.speaker === "you")) return [];
   const lines = [];
   let size = 0;
   for (const m of fresh) {
@@ -94,7 +93,7 @@ async function newLines(id, since) {
     lines.push({ line, at: m.at });
     size += line.length;
   }
-  return { until, lines };
+  return lines;
 }
 
 function piecesOf(lines) {
@@ -132,7 +131,7 @@ async function sharedNotes(agent, seen) {
       await handle.close();
     }
   }
-  return notes.slice(0, CURATOR_MAX_PIECES);
+  return notes.sort((a, b) => a.at - b.at).slice(0, CURATOR_MAX_PIECES);
 }
 
 const mark = (field, id, value) => updateJson(CURATOR, (data) => ({ ...data, [field]: { ...data[field], [id]: value } }));
@@ -140,8 +139,14 @@ const mark = (field, id, value) => updateJson(CURATOR, (data) => ({ ...data, [fi
 const failures = new Map();
 let working = false;
 
-const due = ({ seen, until, ran, failed }, now) =>
-  until > seen && (now - Date.parse(until) >= CURATOR_QUIET_MS || now - Date.parse(ran) >= CURATOR_MAX_GAP_MS) && !(failed?.until === until && failed.n >= CURATOR_MAX_FAILURES);
+const given = (failed, until) => failed?.until === until && failed.n >= CURATOR_MAX_FAILURES;
+
+const due = ({ seen, until, ran, failed }, now) => until > seen && (now - Date.parse(until) >= CURATOR_QUIET_MS || now - Date.parse(ran) >= CURATOR_MAX_GAP_MS) && !given(failed, until);
+
+const failing = (key, until) => {
+  const failed = failures.get(key);
+  failures.set(key, { until, n: (failed?.until === until ? failed.n : 0) + 1 });
+};
 
 async function look() {
   if (working) return;
@@ -155,27 +160,31 @@ async function look() {
       const seen = state.seen?.[agent.id] ?? "";
       const ran = state.ran?.[agent.id] ?? new Date().toISOString();
       if (!state.ran?.[agent.id]) await mark("ran", agent.id, ran);
-      const notes = isIsolated(agent) ? await sharedNotes(agent, state.shared?.[agent.id] ?? 0) : [];
-      const { until, lines } = await newLines(agent.id, seen);
-      const failed = failures.get(agent.id);
-      const chat = due({ seen, until, ran, failed }, Date.now());
-      if (!chat && !notes.length) continue;
-      try {
-        for (const note of notes) {
+      const shared = `shared:${agent.id}`;
+      const notes = (isIsolated(agent) ? await sharedNotes(agent, state.shared?.[agent.id] ?? 0) : []).filter((note) => !given(failures.get(shared), note.at));
+      for (const note of notes) {
+        try {
           await curate(model, agent, note.text);
           await mark("shared", agent.id, note.at);
+        } catch (err) {
+          failing(shared, note.at);
+          console.error(`Knowledge curator, ${agent.name}'s shared notes:`, err.message);
+          break;
         }
-        if (chat) {
-          for (const piece of piecesOf(lines).slice(0, CURATOR_MAX_PIECES)) {
-            await curate(model, agent, piece.text);
-            await mark("seen", agent.id, piece.at);
-          }
-          if (!lines.length) await mark("seen", agent.id, until);
-          await mark("ran", agent.id, new Date().toISOString());
+      }
+      const until = (await latest(agent.id)) ?? seen;
+      if (!due({ seen, until, ran, failed: failures.get(agent.id) }, Date.now())) continue;
+      try {
+        const lines = await newLines(agent.id, seen);
+        for (const piece of piecesOf(lines).slice(0, CURATOR_MAX_PIECES)) {
+          await curate(model, agent, piece.text);
+          await mark("seen", agent.id, piece.at);
         }
+        if (!lines.length) await mark("seen", agent.id, until);
+        await mark("ran", agent.id, new Date().toISOString());
         failures.delete(agent.id);
       } catch (err) {
-        failures.set(agent.id, { until, n: (failed?.until === until ? failed.n : 0) + 1 });
+        failing(agent.id, until);
         console.error(`Knowledge curator, ${agent.name}:`, err.message);
       }
     }

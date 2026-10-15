@@ -104,6 +104,7 @@
 <ul>
 <li><div class="row"><span class="name">&lt;id&gt;/</span><span class="tag own">own</span><span class="meta">&lt;uid&gt;:&lt;uid&gt; 0700, files 0600</span><span class="what">A regular pi's settings, models and plugins; root's 0700 while being written. An isolated agent's is written by the sandbox, inside its own namespaces, with a copy of its profile.</span></div></li>
 <li><div class="row"><span class="name">plugins/</span><span class="tag cur">1200</span><span class="meta">1200:1200 0700</span><span class="what"><code>mcp.json</code> with secrets for <code>pi mcp list</code>; HOME and working folder of regular agents' plugin programs.</span></div></li>
+<li><div class="row"><span class="name">plugins-cwd/</span><span class="tag root">root</span><span class="meta">root:root 0755</span><span class="what">Empty: the working folder of regular agents' plugin programs, so none starts where an agent writes.</span></div></li>
 <li><div class="row"><span class="name">curator/</span><span class="tag cur">1100</span><span class="meta">1100:1100 0700</span><span class="what">The curator's pi folder and HOME.</span></div></li>
 </ul></li></ul></li>
 <li><div class="row"><span class="name">/tmp/weilo/</span><span class="tag tmp">temporary</span><span class="meta">root:agents 0751</span></div>
