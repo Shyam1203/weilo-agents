@@ -1,5 +1,6 @@
 import { execFile, spawn } from "node:child_process";
-import { chmod, chown, mkdir, readdir, stat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { chmod, chown, mkdir, open, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { AGENT_DIR, HOMES, KNOWLEDGE, ROOT, RUN, SCRATCH, TOOLS, WORKSPACE } from "./common.mjs";
@@ -35,11 +36,18 @@ export function spawnAs(user, command, args, options) {
 }
 
 // A folder, made if missing, with this owner and mode (a mode with 0o2000 keeps the folder's group on what is made in it).
+// Set through the folder itself: a link an agent put in its place (a home is in the workspace, which agents change) is
+// refused, not followed, or root would hand the link's target to that user.
 export async function folder(path, uid, gid, mode) {
   await mkdir(path, { recursive: true });
   if (!isRoot) return;
-  await chown(path, uid, gid);
-  await chmod(path, mode);
+  const handle = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  try {
+    await handle.chown(uid, gid);
+    await handle.chmod(mode);
+  } finally {
+    await handle.close();
+  }
 }
 
 // A file's owner and mode, if it exists.
