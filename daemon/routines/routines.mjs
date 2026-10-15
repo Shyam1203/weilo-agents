@@ -58,6 +58,8 @@ const find = (agentId, id) => {
   return routine;
 };
 
+export const userZone = async () => (await load(), state.timezone);
+
 export async function noteZone(zone) {
   await load();
   if (!validZone(zone) || state.timezone === zone) return;

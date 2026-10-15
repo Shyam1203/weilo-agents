@@ -1,7 +1,5 @@
 import { DAYS, EVERY } from "../schedule.mjs";
-import { call, note, object, str } from "../../tool.mjs";
-
-const list = (items) => ({ type: "array", items });
+import { call, list, note, object, str } from "../../tool.mjs";
 
 const ROUTINE = `Schedule work for yourself, or change it. At each time the task arrives in this chat as a message and you do it. Use it when the user asks for something later or regularly ("in an hour", "tomorrow at 9", "every morning", "each Monday"). Times are the user's local time.
 The user is away when it runs, so write the task to stand alone: what to do, and the choices the user already made. What needs them then is left for the end of the run.
@@ -36,6 +34,7 @@ export default function (pi) {
     async execute(_id, { action, id, ...fields }) {
       const agent = process.env.WEILO_AGENT;
       const route = `/agents/${agent}/routines/${encodeURIComponent(id ?? "")}`;
+      /** @returns {Promise<{ text: string, details?: object }>} */
       const done = async () => {
         if (action === "create") {
           const routine = await call("POST", `/agents/${agent}/routines`, fields);
@@ -52,7 +51,7 @@ export default function (pi) {
         if (action === "delete") return (await call("DELETE", route), { text: "Deleted.", details: { action } });
         throw new Error("Unknown action.");
       };
-      const { text, details } = await done().catch((err) => ({ text: `Could not do that: ${err.message}` }));
+      const { text, details } = await done().catch((err) => ({ text: `Could not do that: ${err.message}`, details: undefined }));
       return { content: [{ type: "text", text }], details };
     },
   });

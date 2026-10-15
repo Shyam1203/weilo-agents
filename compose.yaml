@@ -1,18 +1,21 @@
 name: weilo-agents
 
+x-app: &app
+  image: ghcr.io/shyam1203/weilo-agents:${WEILO_VERSION:-latest}
+  build:
+    context: .
+    dockerfile: image/Dockerfile
+    args:
+      VERSION: ${WEILO_VERSION:-dev}
+      COMMIT: ${WEILO_COMMIT:-unknown}
+  init: true
+  restart: unless-stopped
+
 services:
   core:
-    image: ghcr.io/shyam1203/weilo-agents:${WEILO_VERSION:-latest}
-    build:
-      context: .
-      dockerfile: image/Dockerfile
-      args:
-        VERSION: ${WEILO_VERSION:-dev}
-        COMMIT: ${WEILO_COMMIT:-unknown}
+    <<: *app
     container_name: weilo-core
-    init: true
-    restart: unless-stopped
-    cap_drop: [NET_RAW, NET_ADMIN]
+    cap_drop: [NET_RAW, NET_ADMIN, MKNOD, AUDIT_WRITE, SYS_CHROOT, SETFCAP, NET_BIND_SERVICE]
     security_opt: ["no-new-privileges:true"]
     shm_size: 1gb
     ports:
@@ -21,7 +24,38 @@ services:
       - ${USERPROFILE:-${HOME}}/.weilo-agents:/home/node/.pi
       - tools:/home/node/.local
       - browser:/home/node/.browser
+      - sandbox:/run/weilo-sandbox
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3210/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+
+  sandbox:
+    <<: *app
+    container_name: weilo-sandbox
+    command: ["node", "/app/sandbox/server.mjs"]
+    runtime: ${WEILO_SANDBOX_RUNTIME:-runc}
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID, SETPCAP, KILL, SYS_ADMIN]
+    security_opt: ["no-new-privileges:true", "apparmor:unconfined"]
+    networks: [sandbox]
+    volumes:
+      - ${USERPROFILE:-${HOME}}/.weilo-agents/isolated:/home/node/.pi/isolated
+      - ${USERPROFILE:-${HOME}}/.weilo-agents/isolated-sessions:/home/node/.pi/isolated-sessions
+      - ${USERPROFILE:-${HOME}}/.weilo-agents/isolated-homes:/home/node/.pi/isolated-homes
+      - ${USERPROFILE:-${HOME}}/.weilo-agents/agent/skills:/home/node/.pi/agent/skills:ro
+      - ${USERPROFILE:-${HOME}}/.weilo-agents/agent/extensions:/home/node/.pi/agent/extensions:ro
+      - sandbox:/run/weilo-sandbox
+    healthcheck:
+      test: ["CMD", "test", "-S", "/run/weilo-sandbox/ctl.sock"]
+      interval: 30s
+      timeout: 5s
+
+networks:
+  sandbox:
 
 volumes:
   tools:
   browser:
+  sandbox:

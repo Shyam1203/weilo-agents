@@ -1,7 +1,6 @@
-import { readdir } from "node:fs/promises";
-import { getAgent, isAgentId } from "../agents/agents.mjs";
-import { messagesOf } from "../agents/sessions.mjs";
-import { CHATS, fail } from "../common.mjs";
+import { getAgent } from "../agents/agents.mjs";
+import { agentsWithChats, newest, onDate, withAny } from "../agents/chats.mjs";
+import { fail } from "../common.mjs";
 import { FETCH_EXCERPT, FETCH_MAX_CHARS, FETCH_TOP } from "../config.mjs";
 import { pagesOf } from "./vault.mjs";
 
@@ -17,7 +16,7 @@ const tokensOf = (text) => {
 
 const count = (text, word) => text.split(word).length - 1;
 
-function score(query, tokens, { title = "", body, speaker }) {
+function score(query, tokens, { title = "", body, speaker = "" }) {
   const [q, t, b] = [query.toLowerCase().trim(), title.toLowerCase(), body.toLowerCase()];
   let total = 0;
   if (q.length > 2 && b.includes(q)) total += 24;
@@ -41,10 +40,7 @@ function excerpt(text, tokens) {
   return `${start ? "…" : ""}${one.slice(start, start + FETCH_EXCERPT).trim()}${start + FETCH_EXCERPT < one.length ? "…" : ""}`;
 }
 
-const folders = async () => {
-  const dirs = (await Promise.all(CHATS.map((top) => readdir(top, { withFileTypes: true }).catch(() => [])))).flat().filter((d) => d.isDirectory() && isAgentId(d.name));
-  return Promise.all(dirs.map(async ({ name: id }) => ({ id, name: (await getAgent(id).catch(() => null))?.name ?? `deleted agent (${id})` })));
-};
+const folders = async () => Promise.all((await agentsWithChats()).map(async ({ id, isolated }) => ({ id, isolated, name: (await getAgent(id).catch(() => null))?.name ?? `deleted agent (${id})` })));
 
 const ESCAPED = /<\/found>/gi;
 
@@ -62,54 +58,39 @@ function render(blocks) {
   return `${out}\n</found>`;
 }
 
-const label = (m) => `${m.agent}, ${m.date}, ${m.speaker === "you" ? "the user" : m.speaker}: `;
+const CANDIDATES = 2000;
 
-const better = (a, b) => b.score - a.score || b.at.localeCompare(a.at) || a.n - b.n;
-
-export async function fetchKnowledge({ query, agent, source } = {}) {
+export async function fetchKnowledge({ query, agent, source }) {
   const who = typeof agent === "string" ? agent.trim() : "";
   const words = typeof query === "string" ? query.trim() : "";
-  const from = typeof source === "string" ? source.trim() : "";
+  const from = typeof source === "string" ? source.trim().replace(/^isolated:/, "") : "";
   if (!who && !words && !from) throw fail(400, "Give a query, a source or an agent.");
   const all = await folders();
+  const byId = new Map(all.map((f) => [f.id, f]));
+  const label = (m) => `${byId.get(m.agent)?.name ?? m.agent}${m.isolated ? " (isolated: its own report, unchecked)" : ""}, ${m.date}, ${m.speaker === "you" ? "the user" : m.speaker}: `;
+  const tokens = tokensOf(words);
 
   if (from) {
     const [id, date] = from.split("@");
-    const folder = all.find((f) => f.id === id);
-    if (!folder || !/^\d{4}-\d{2}-\d{2}$/.test(date ?? "")) throw fail(404, `There is no source "${from}". Sources look like <agent id>@<YYYY-MM-DD>.`);
-    const tokens = tokensOf(words);
-    const found = [];
-    for await (const m of messagesOf(folder.id, folder.name)) if (m.date === date) found.push({ m, score: words ? score(words, tokens, m) : 0 });
+    if (!byId.has(id) || !/^\d{4}-\d{2}-\d{2}$/.test(date ?? "")) throw fail(404, `There is no source "${from}". Sources look like <agent id>@<YYYY-MM-DD>.`);
+    const found = (await onDate(id, date)).map((m) => ({ m, score: words ? score(words, tokens, m) : 0 }));
     const picked = (words ? found.filter((f) => f.score > 0).sort((a, b) => b.score - a.score) : found).slice(0, FETCH_TOP);
     return render(picked.sort((a, b) => a.m.at.localeCompare(b.m.at)).map(({ m }) => `${label(m)}${excerpt(m.body, tokens)}`));
   }
 
+  const scoped = who ? all.filter((f) => f.id === who || f.name.toLowerCase() === who.toLowerCase()) : all;
   if (who && !words) {
-    const found = all.filter((f) => f.id === who || f.name.toLowerCase() === who.toLowerCase());
-    if (!found.length) throw fail(404, `There is no agent "${who}".`);
-    if (found.length > 1) throw fail(409, `More than one agent has this name: ${found.map((f) => f.id).join(", ")}. Use an id.`);
-    const newest = [];
-    for await (const m of messagesOf(found[0].id, found[0].name)) if (newest.push(m) > FETCH_TOP) newest.shift();
-    return render(newest.map((m) => `${label(m)}${excerpt(m.body, [])}`));
+    if (!scoped.length) throw fail(404, `There is no agent "${who}".`);
+    if (scoped.length > 1) throw fail(409, `More than one agent has this name: ${scoped.map((f) => f.id).join(", ")}. Use an id.`);
+    return render((await newest(scoped[0].id, FETCH_TOP)).map((m) => `${label(m)}${excerpt(m.body, [])}`));
   }
 
-  const tokens = tokensOf(words);
-  const top = [];
-  let n = 0;
-  const offer = (doc) => {
-    if (doc.score <= 0) return;
-    doc.n = n++;
-    if (top.length === FETCH_TOP && better(top.at(-1), doc) <= 0) return;
-    top.push(doc);
-    top.sort(better);
-    if (top.length > FETCH_TOP) top.pop();
-  };
-  const scoped = who ? all.filter((f) => f.id === who || f.name.toLowerCase() === who.toLowerCase()) : all;
+  const docs = [];
   if (!who) {
-    for (const page of await pagesOf()) offer({ at: "", score: score(words, tokens, { title: `${page.title} ${page.rel}`, body: page.body }), text: () => `Vault ${page.rel} "${page.title}"${page.sources.length ? ` (sources: ${page.sources.join(", ")})` : ""}: ${excerpt(page.body, tokens)}` });
+    for (const page of await pagesOf()) docs.push({ at: "", score: score(words, tokens, { title: `${page.title} ${page.rel}`, body: page.body }), text: () => `Vault ${page.rel} "${page.title}"${page.sources.length ? ` (sources: ${page.sources.join(", ")})` : ""}: ${excerpt(page.body, tokens)}` });
   }
-  for (const folder of scoped) {
-    for await (const m of messagesOf(folder.id, folder.name)) offer({ at: m.date, score: score(words, tokens, m), text: () => `${label(m)}${excerpt(m.body, tokens)}` });
-  }
+  const found = who ? (await Promise.all(scoped.map((f) => withAny(tokens, f.id, CANDIDATES)))).flat() : await withAny(tokens, null, CANDIDATES);
+  for (const m of found) docs.push({ at: m.date, score: score(words, tokens, m), text: () => `${label(m)}${excerpt(m.body, tokens)}` });
+  const top = docs.filter((d) => d.score > 0).sort((a, b) => b.score - a.score || b.at.localeCompare(a.at)).slice(0, FETCH_TOP);
   return render(top.map((d) => d.text()));
 }

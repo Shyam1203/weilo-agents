@@ -1,4 +1,4 @@
-import { open, readdir } from "node:fs/promises";
+import { open, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { CHATS } from "../common.mjs";
 import { CHAT_TAIL, EARLIER_PAGE, PREVIEW_CHARS, PREVIEW_TAIL } from "../config.mjs";
@@ -19,10 +19,18 @@ export async function chatFiles(id) {
   return found.flat();
 }
 
+const previews = new Map();
 export async function lastMessage(id) {
-  const files = await chatFiles(id);
-  if (!files.length) return null;
-  const file = await open(files.at(-1)).catch(() => null);
+  const path = (await chatFiles(id)).at(-1);
+  const info = path && (await stat(path).catch(() => null));
+  if (!info) return null;
+  const key = `${path}:${info.size}:${info.mtimeMs}`;
+  if (previews.get(id)?.key !== key) previews.set(id, { key, last: readLast(path) });
+  return previews.get(id).last;
+}
+
+async function readLast(path) {
+  const file = await open(path).catch(() => null);
   if (!file) return null;
   try {
     const { size } = await file.stat();
@@ -51,10 +59,7 @@ export async function lastMessage(id) {
   }
 }
 
-const ROLE = /"role":"(user|assistant)"/;
 const CHUNK = 1 << 20;
-
-const textBlocks = (content) => (typeof content === "string" ? content : (content ?? []).filter((b) => b.type === "text").map((b) => b.text).join("\n"));
 
 async function* linesOf(file) {
   const handle = await open(file).catch(() => null);
@@ -108,24 +113,4 @@ export async function earlierOf(id, skip = 0) {
   const stop = Math.max(0, earlier.length - skip);
   const start = Math.max(0, stop - EARLIER_PAGE);
   return { messages: earlier.slice(start, stop).map((e) => slim(asTyped(e.message))), more: start > 0 };
-}
-
-export async function* messagesOf(id, name) {
-  for (const file of await chatFiles(id)) {
-    for await (const raw of linesOf(file)) {
-      if (!ROLE.test(raw.slice(0, 300))) continue;
-      let entry;
-      try {
-        entry = JSON.parse(raw);
-      } catch {
-        continue;
-      }
-      const message = asTyped(entry.message);
-      const text = textBlocks(message?.content).trim();
-      if (!text || (message.role !== "user" && message.role !== "assistant")) continue;
-      const speaker = message.role === "assistant" ? "agent" : text.startsWith("⏰ Routine:") ? "routine" : "you";
-      const at = String(entry.timestamp ?? "");
-      yield { agent: name, id, speaker, at, date: at.slice(0, 10), body: text };
-    }
-  }
 }

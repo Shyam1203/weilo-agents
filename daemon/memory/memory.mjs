@@ -1,5 +1,5 @@
 import { access, readFile, rm } from "node:fs/promises";
-import { fail, MEMORY, SECRET, writePrivate } from "../common.mjs";
+import { fail, MEMORY, unsafe, writePrivate } from "../common.mjs";
 import { MAX_NOTE, MAX_NOTES, MAX_NOTES_CHARS, SIMILAR } from "../config.mjs";
 import { shareWithAgents } from "../users.mjs";
 
@@ -14,7 +14,9 @@ function line(text) {
   const one = typeof text === "string" ? text.replace(/\s+/g, " ").trim() : "";
   if (!one) throw fail(400, "Give the note.");
   if (one.length > MAX_NOTE) throw fail(400, `The note is too long. Use ${MAX_NOTE} characters at most.`);
-  if (SECRET.test(one)) throw fail(400, "This looks like a password, key or card number. Do not save secrets.");
+  const kind = unsafe(one);
+  if (kind === "secret") throw fail(400, "This looks like a password, key or card number. Do not save secrets.");
+  if (kind) throw fail(400, "This reads like an instruction, or hides text. Notes are plain facts about the user.");
   return one;
 }
 
@@ -49,8 +51,13 @@ const readNotes = async () => parse(await readFile(MEMORY, "utf8").catch(() => "
 const saveNotes = (notes) => (notes.length ? writePrivate(MEMORY, render(notes)).then(() => shareWithAgents(MEMORY)) : rm(MEMORY, { force: true }));
 const full = (notes) => notes.length > MAX_NOTES || render(notes).length > MAX_NOTES_CHARS;
 
-export const useMemory = ({ action, text, id } = {}) =>
-  serial(async () => {
+export async function useMemory({ action, text, id }, confirm) {
+  if (confirm && (action === "remember" || action === "forget")) {
+    const old = (await readNotes()).find((n) => n.id === id)?.text;
+    const what = action === "remember" ? `remember: "${line(text)}"${old ? ` (instead of "${old}")` : ""}` : `forget: "${old ?? id}"`;
+    if (!(await confirm(what))) return "The user did not approve it: nothing was changed.";
+  }
+  return serial(async () => {
     const notes = await readNotes();
     if (action === "list") return notes.length ? notes.map(show).join("\n") : "No notes yet.";
     const at = notes.findIndex((n) => n.id === id);
@@ -69,6 +76,7 @@ export const useMemory = ({ action, text, id } = {}) =>
     await saveNotes(next);
     return at < 0 ? `Saved as ${next.at(-1).id}.` : `Updated ${id}.`;
   });
+}
 
 export const memoryText = () => readFile(MEMORY, "utf8").catch(() => "");
 

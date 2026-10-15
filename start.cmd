@@ -15,6 +15,9 @@ if errorlevel 1 (
   exit /b 1
 )
 
+rem The data folder, and the parts of it the sandbox mounts.
+for %%d in (isolated isolated-sessions isolated-homes agent\skills agent\extensions) do if not exist "%USERPROFILE%\.weilo-agents\%%d" mkdir "%USERPROFILE%\.weilo-agents\%%d"
+
 if exist VERSION set /p WEILO_VERSION=<VERSION
 echo Getting Weilo Agents %WEILO_VERSION%. The first time this downloads the app and can take a few minutes.
 docker compose pull

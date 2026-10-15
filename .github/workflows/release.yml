@@ -21,6 +21,12 @@ jobs:
           echo "VERSION=$version" >> "$GITHUB_ENV"
           echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check and test
+        run: npm ci && npm run check && npm test
+
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
 
@@ -49,12 +55,14 @@ jobs:
             COMMIT=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: mode=max
+          sbom: true
 
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          zip "weilo-agents-$VERSION.zip" compose.yaml start.sh start.cmd update.sh update.cmd VERSION README.md
+          zip "weilo-agents-$VERSION.zip" compose.yaml start.sh start.cmd update.sh update.cmd VERSION README.md SECURITY.md
           flags=""
           case "$VERSION" in *-*) flags="--prerelease" ;; esac
           gh release create "$GITHUB_REF_NAME" "weilo-agents-$VERSION.zip" --generate-notes --verify-tag $flags

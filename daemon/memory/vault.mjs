@@ -1,6 +1,6 @@
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
-import { KNOWLEDGE, SECRET } from "../common.mjs";
+import { KNOWLEDGE, unsafe } from "../common.mjs";
 import { CURATOR_UID } from "../config.mjs";
 import { folder } from "../users.mjs";
 
@@ -37,12 +37,14 @@ export async function pagesOf() {
   return pages;
 }
 
+const REMOVED = { secret: "[removed: looked like a secret]", steering: "[removed: looked like an instruction]" };
+
 export async function scrub(since) {
   for await (const path of files(KNOWLEDGE)) {
     const info = await stat(path).catch(() => null);
     if (!info || info.mtimeMs < since) continue;
     const raw = await readFile(path, "utf8");
-    const clean = raw.split("\n").map((line) => (SECRET.test(line) ? "[removed: looked like a secret]" : line)).join("\n");
+    const clean = raw.split("\n").map((line) => REMOVED[unsafe(line)] ?? line).join("\n");
     if (clean !== raw) await writeFile(path, clean);
   }
 }

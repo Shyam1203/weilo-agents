@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { AUTH, fail, INSTALL, MODELS, updateJson } from "../common.mjs";
 import { PI_SDK, PROVIDERS, SIGN_IN_AS, SIGN_IN_STEP_MS, SIGN_IN_TIMEOUT_MS } from "../config.mjs";
-import { syncCompaction } from "./providers.mjs";
+import { forgetModels, syncCompaction } from "./providers.mjs";
 
 const logins = new Map();
 
@@ -78,6 +78,7 @@ export async function startSignIn(id) {
       const { ModelRuntime } = await import(PI_SDK);
       const runtime = await ModelRuntime.create({ authPath: AUTH, modelsPath: MODELS });
       await runtime.login(id, "oauth", interaction, { agentName: SIGN_IN_AS, getDeviceId: () => device });
+      forgetModels();
       void syncCompaction();
       show(login, { state: "done", url: undefined, code: undefined, ask: undefined, message: undefined });
     } catch (err) {

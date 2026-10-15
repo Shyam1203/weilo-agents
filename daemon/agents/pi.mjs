@@ -1,10 +1,6 @@
-import { spawn } from "node:child_process";
 import { PI_KILL_MS } from "../config.mjs";
-import { spawnAs } from "../users.mjs";
 
-export function spawnPi(argv, { user, cwd, env, onEvent, onExit } = {}) {
-  const options = { cwd, env: { ...process.env, ...env } };
-  const child = user ? spawnAs(user, argv[0], argv.slice(1), options) : spawn(argv[0], argv.slice(1), options);
+export function piRpc(child, { onEvent, onExit } = /** @type {{ onEvent?: (event: any) => void, onExit?: (exit: { code: number | null, signal: string | null, message: string }) => void }} */ ({})) {
   const pending = new Map();
   let nextId = 0;
   let buffer = "";

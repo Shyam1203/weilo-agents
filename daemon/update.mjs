@@ -37,7 +37,7 @@ export async function updateStatus() {
   return found ? { ...status, latest: found.version, url: found.url, available: newer(found.version, BUILD.version) } : status;
 }
 
-export async function setUpdateCheck({ enabled } = {}) {
+export async function setUpdateCheck({ enabled }) {
   if (typeof enabled !== "boolean") throw fail(400, "The setting is not valid");
   await updateJson(APP, (data) => ({ ...data, checkUpdates: enabled }));
   return updateStatus();

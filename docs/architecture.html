@@ -42,31 +42,32 @@
 </ol></nav>
 <div class="content">
 <h1>Architecture</h1>
-<p class="lede">One container, one root daemon, and a set of processes that each run as a Linux user of their own. This page follows the code: <code>compose.yaml</code>, <code>image/Dockerfile</code>, <code>daemon/server.mjs</code> and <code>daemon/agents/runner.mjs</code> above all.</p>
+<p class="lede">Two containers: the app (one root daemon, and processes that each run as a Linux user of their own) and the sandbox for isolated agents. This page follows the code: <code>compose.yaml</code>, <code>image/Dockerfile</code>, <code>daemon/server.mjs</code> and <code>daemon/agents/runner.mjs</code> above all.</p>
 
 <section class="card" id="container">
 <h2>The container</h2>
-<p><code>compose.yaml</code> defines one service, <code>core</code>, in the stack <code>weilo-agents</code>, with the container name <code>weilo-core</code>.</p>
+<p><code>compose.yaml</code> defines two services from one image, in the stack <code>weilo-agents</code>: <code>core</code> (container <code>weilo-core</code>, the app) and <code>sandbox</code> (container <code>weilo-sandbox</code>, isolated agents and their plugins; <a href="security.html#sandbox">the sandbox</a>). The table is <code>core</code>'s.</p>
 <div class="table"><table>
 <thead><tr><th>Setting</th><th>Value</th><th>Why</th></tr></thead>
 <tbody>
 <tr><td>Image</td><td><code>ghcr.io/shyam1203/weilo-agents:${WEILO_VERSION:-latest}</code>, or built from <code>image/Dockerfile</code></td><td>The start scripts set <code>WEILO_VERSION</code> from the <code>VERSION</code> file and pull that image; they build only if the pull fails.</td></tr>
 <tr><td>Port</td><td><code>127.0.0.1:3210:3210</code></td><td>Only this computer reaches the app. Remote use goes through <code>tailscale serve</code> (<a href="operating.html#remote">Remote use</a>).</td></tr>
 <tr><td>Data</td><td><code>${USERPROFILE:-${HOME}}/.weilo-agents</code> &rarr; <code>/home/node/.pi</code></td><td>All user data in one host folder.</td></tr>
-<tr><td>Volumes</td><td><code>tools</code> &rarr; <code>/home/node/.local</code>; <code>browser</code> &rarr; <code>/home/node/.browser</code></td><td>What agents install with npm and pip; Chromium's profile (logins). A profile on a Windows bind mount cannot lock its files, so it lives in a volume.</td></tr>
-<tr><td>Hardening</td><td><code>cap_drop: [NET_RAW, NET_ADMIN]</code>, <code>no-new-privileges:true</code></td><td>No raw sockets or network changes, and no privilege gain through set-uid programs.</td></tr>
+<tr><td>Volumes</td><td><code>tools</code> &rarr; <code>/home/node/.local</code>; <code>browser</code> &rarr; <code>/home/node/.browser</code>; <code>sandbox</code> &rarr; <code>/run/weilo-sandbox</code></td><td>What agents install with npm and pip; Chromium's profile (logins: a profile on a Windows bind mount cannot lock its files, so it lives in a volume); the two sockets between the app and the sandbox.</td></tr>
+<tr><td>Hardening</td><td><code>cap_drop: [NET_RAW, NET_ADMIN, MKNOD, AUDIT_WRITE, SYS_CHROOT, SETFCAP, NET_BIND_SERVICE]</code>, <code>no-new-privileges:true</code></td><td>No raw sockets or network changes, none of the capabilities the app does not use, and no privilege gain through set-uid programs.</td></tr>
+<tr><td>Healthcheck</td><td><code>GET /api/health</code> every 30 seconds</td><td><code>docker ps</code> shows whether the app answers.</td></tr>
 <tr><td>Other</td><td><code>init: true</code>, <code>restart: unless-stopped</code>, <code>shm_size: 1gb</code></td><td>A proper PID 1; Chromium needs more shared memory than the 64 MB default.</td></tr>
 </tbody></table></div>
 <h3>The image</h3>
 <ul>
-<li>Two stages from <code>node:22-bookworm-slim</code>: the first runs <code>npm ci</code> and <code>npm run build</code> in <code>ui/</code>; the second holds the daemon (<code>COPY daemon /app</code>) and the built UI (<code>/app/ui</code>).</li>
-<li>From apt: git, curl, ssh client, jq, unzip, procps, Python 3 with pip and venv, ripgrep, fd, Chromium, TigerVNC (<code>Xvnc</code>), openbox and Noto fonts.</li>
-<li>Globally from npm: <code>@earendil-works/pi-coding-agent@${PI_VERSION}</code> (1.2.0 in this version) and <code>playwright-core@${PLAYWRIGHT_VERSION}</code> (1.64.0), found through <code>NODE_PATH=/usr/local/lib/node_modules</code>. Playwright downloads no browser: Chromium comes from apt.</li>
+<li>Two stages from <code>node:22-bookworm-slim</code>, pinned by digest: the first runs <code>npm ci</code> and <code>npm run build</code> in <code>ui/</code>; the second holds the daemon (<code>COPY daemon /app</code>) and the built UI (<code>/app/ui</code>).</li>
+<li>From apt: git, curl, ssh client, jq, unzip, procps, tini, Python 3 with pip and venv, ripgrep, fd, Chromium, TigerVNC (<code>Xvnc</code>), openbox and Noto fonts.</li>
+<li>From npm, with <code>npm ci</code> from <code>image/pi/package-lock.json</code> (versions and hashes): <code>@earendil-works/pi-coding-agent</code> (1.2.0 in this version) and <code>playwright-core</code> (1.64.0), in <code>/opt/pi</code>, found through <code>NODE_PATH=/opt/pi/node_modules</code>; <code>/usr/local/bin/pi</code> links to pi. Playwright downloads no browser: Chromium comes from apt.</li>
 <li>The group <code>agents</code> is made with gid 2000. The agents' installs go to <code>/home/node/.local</code> (<code>npm_config_prefix</code>, <code>PYTHONUSERBASE</code>, <code>PIP_BREAK_SYSTEM_PACKAGES=1</code>).</li>
 <li>openbox is set to draw no frames and maximize every window, but a pop-up or a dialog keeps a frame with a close button.</li>
 <li>A Chromium policy (<code>image/chromium-policy.json</code>) blocks <code>localhost:3210</code>, <code>127.0.0.1:3210</code> and the other local spellings, so pages in the browser cannot open the app.</li>
-<li>Build arguments <code>VERSION</code> and <code>COMMIT</code> become <code>WEILO_VERSION</code>, <code>WEILO_COMMIT</code> and <code>WEILO_PI</code> and OCI labels. They are set late in the file, so a new version reuses the cached layers above.</li>
-<li>The image sets no <code>USER</code>: <code>CMD ["node", "/app/server.mjs"]</code> runs as root. The daemon is the only process that stays root.</li>
+<li>Build arguments <code>VERSION</code> and <code>COMMIT</code> become <code>WEILO_VERSION</code> and <code>WEILO_COMMIT</code> and OCI labels (pi's version is read from its package). They are set late in the file, so a new version reuses the cached layers above.</li>
+<li>The image sets no <code>USER</code>: <code>CMD ["node", "--disable-warning=ExperimentalWarning", "/app/server.mjs"]</code> runs as root (the warning is <code>node:sqlite</code>'s, used by the chat index). The daemon is the only process that stays root. The sandbox runs <code>node /app/sandbox/server.mjs</code> from the same image.</li>
 </ul>
 </section>
 
@@ -76,7 +77,7 @@
 <div class="fig">
 <svg viewBox="0 0 760 560" role="img" aria-labelledby="as-t as-d">
 <title id="as-t">Processes inside weilo-core</title>
-<desc id="as-d">The root daemon listens on port 3210. It starts each agent's pi with setpriv as the agent's user, the curator as uid 1100, plugin programs as uid 1200, and Xvnc, openbox and Chromium as uid 1000. Agent pis call the daemon's API on 127.0.0.1:3210 with their own key. The daemon drives Chromium through a debugging pipe and shows its screen through a unix socket.</desc>
+<desc id="as-d">The root daemon listens on port 3210. It starts each regular agent's pi with setpriv as the agent's user, and asks the sandbox container to start each isolated agent's pi in namespaces of its own; it starts the curator as uid 1100, regular agents' plugin programs as uid 1200, and Xvnc, openbox and Chromium as uid 1000. Agent pis call the daemon's API on 127.0.0.1:3210 with their own key. The daemon drives Chromium through a debugging pipe and shows its screen through a unix socket.</desc>
 <defs><marker id="as-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L10 5L0 10z"/></marker></defs>
 <rect class="box b-grey" x="8" y="8" width="744" height="544" rx="14"/>
 <text class="tb" x="24" y="32">weilo-core</text>
@@ -92,17 +93,17 @@
 <rect class="box b-green" x="400" y="48" width="336" height="76" rx="10"/>
 <text class="tb" x="568" y="72" text-anchor="middle">pi --mode rpc (regular agent)</text>
 <text class="ts" x="568" y="94" text-anchor="middle">uid = gid = agent's uid (2001, 2002...)</text>
-<text class="ts" x="568" y="114" text-anchor="middle">groups: 2000 + each isolated agent's</text>
+<text class="ts" x="568" y="114" text-anchor="middle">group 2000 (agents)</text>
 <rect class="box b-teal" x="400" y="134" width="336" height="76" rx="10"/>
 <text class="tb" x="568" y="158" text-anchor="middle">pi --mode rpc (isolated agent)</text>
-<text class="ts" x="568" y="180" text-anchor="middle">uid = gid = agent's uid</text>
-<text class="ts" x="568" y="200" text-anchor="middle">no other group</text>
+<text class="ts" x="568" y="180" text-anchor="middle">in weilo-sandbox, not here: own pid,</text>
+<text class="ts" x="568" y="200" text-anchor="middle">mount, ipc, uts namespaces; no group</text>
 <rect class="box b-violet" x="400" y="220" width="336" height="56" rx="10"/>
 <text class="tb" x="568" y="244" text-anchor="middle">curator: pi -p</text>
 <text class="ts" x="568" y="265" text-anchor="middle">uid 1100, cwd knowledge/, no groups</text>
 <rect class="box b-violet" x="400" y="286" width="336" height="56" rx="10"/>
 <text class="tb" x="568" y="310" text-anchor="middle">plugin programs (regular agents)</text>
-<text class="ts" x="568" y="331" text-anchor="middle">uid 1200, groups 2000 + isolated ones</text>
+<text class="ts" x="568" y="331" text-anchor="middle">uid 1200, group 2000, own folder</text>
 <rect class="box b-violet" x="400" y="352" width="336" height="76" rx="10"/>
 <text class="tb" x="568" y="376" text-anchor="middle">Xvnc :1, openbox, Chromium</text>
 <text class="ts" x="568" y="398" text-anchor="middle">uid 1000 (node), no groups</text>
@@ -113,6 +114,7 @@
 <path class="ar" d="M340 262 V314 H398" marker-end="url(#as-a)"/>
 <path class="ar" d="M356 262 V390 H398" marker-end="url(#as-a)"/>
 <text class="ts" x="330" y="78">setpriv</text>
+<text class="ts" x="330" y="162">ctl.sock</text>
 <rect class="box b-blue" x="24" y="300" width="300" height="128" rx="12"/>
 <text class="tb" x="174" y="326" text-anchor="middle">calls into the daemon</text>
 <text class="ts" x="40" y="352">tools: POST /api/agents/&lt;id&gt;/&lt;tool&gt;</text>
@@ -122,7 +124,7 @@
 <path class="ar-d" d="M400 100 L330 320" marker-end="url(#as-a)"/>
 <rect class="box" x="24" y="452" width="712" height="84" rx="10"/>
 <text class="tb" x="40" y="476">Not root, not an agent: what the daemon never starts</text>
-<text class="ts" x="40" y="500">No Docker socket is mounted, and the daemon has no Docker code. Every program</text>
+<text class="ts" x="40" y="500">No Docker socket is mounted, and the daemon has no Docker code (the sandbox is a second service). Every program</text>
 <text class="ts" x="40" y="522">it starts is named by its full path (BIN in config.mjs) and gets a fixed PATH.</text>
 </svg>
 </div>
@@ -132,12 +134,13 @@
 <thead><tr><th>Process</th><th>Linux user</th><th>Groups</th><th>Working folder</th><th>Started by</th></tr></thead>
 <tbody>
 <tr><td>Daemon</td><td>root (0)</td><td>root's</td><td><code>/</code></td><td>The container (<code>CMD</code>)</td></tr>
-<tr><td>A regular agent's <code>pi --mode rpc</code></td><td>its <code>uid</code> (from 2001), gid = uid</td><td><code>agents</code> (2000) and every isolated agent's gid</td><td><code>workspace/&lt;folder&gt;/</code></td><td><code>runner.mjs</code> <code>start</code></td></tr>
-<tr><td>An isolated agent's <code>pi --mode rpc</code></td><td>its <code>uid</code>, gid = uid</td><td>none (<code>--clear-groups</code>)</td><td><code>isolated/&lt;folder&gt;/</code></td><td><code>runner.mjs</code> <code>start</code></td></tr>
+<tr><td>A regular agent's <code>pi --mode rpc</code></td><td>its <code>uid</code> (from 2001), gid = uid</td><td><code>agents</code> (2000)</td><td><code>workspace/&lt;folder&gt;/</code></td><td><code>runner.mjs</code> <code>start</code></td></tr>
+<tr><td>An isolated agent's <code>pi --mode rpc</code>, in the sandbox</td><td>its <code>uid</code>, gid = uid</td><td>none (<code>--clear-groups</code>)</td><td><code>isolated/&lt;folder&gt;/</code></td><td><code>runner.mjs</code> <code>start</code>, through <code>sandbox/</code></td></tr>
 <tr><td>Curator's <code>pi -p</code></td><td>1100</td><td>none</td><td><code>knowledge/</code></td><td><code>memory/curator.mjs</code></td></tr>
-<tr><td>A plugin program used by a regular agent</td><td>1200</td><td>2000 and every isolated agent's gid</td><td>that agent's folder</td><td><code>gateway/plugins.mjs</code> <code>pipePlugin</code></td></tr>
-<tr><td>A plugin program used by an isolated agent</td><td>the agent's uid</td><td>none</td><td>that agent's folder</td><td><code>pipePlugin</code></td></tr>
-<tr><td><code>pi mcp list</code> (Settings &gt; Plugins status)</td><td>1200</td><td>2000</td><td><code>workspace/</code></td><td><code>settings/plugins.mjs</code></td></tr>
+<tr><td>A plugin program used by a regular agent</td><td>1200</td><td>2000</td><td><code>/var/lib/weilo/pi/plugins/</code> (the agent's folder is <code>WEILO_FOLDER</code>)</td><td><code>gateway/plugins.mjs</code> <code>pipePlugin</code></td></tr>
+<tr><td>A plugin program used by an isolated agent, in the sandbox</td><td>the agent's uid + 100000</td><td>the agent's gid</td><td><code>/tmp</code>, its own (the agent's folder is <code>WEILO_FOLDER</code>)</td><td><code>pipePlugin</code>, through <code>sandbox/</code></td></tr>
+<tr><td><code>pi mcp list</code> (Settings &gt; Plugins status)</td><td>1200</td><td>2000</td><td><code>/var/lib/weilo/pi/plugins/</code></td><td><code>settings/plugins.mjs</code></td></tr>
+<tr><td>Sandbox program (<code>node /app/sandbox/server.mjs</code>)</td><td>root, in <code>weilo-sandbox</code></td><td>-</td><td>-</td><td>the sandbox container (<code>command</code>)</td></tr>
 <tr><td>Xvnc, openbox, Chromium</td><td>1000 (<code>node</code>)</td><td>none</td><td>-</td><td><code>browser/screen.mjs</code>, restarted 2 s after they stop</td></tr>
 <tr><td>Short-lived <code>pi</code> that lists models</td><td>root</td><td>-</td><td><code>agent/</code></td><td><code>settings/providers.mjs</code> <code>availableModels</code></td></tr>
 </tbody></table></div>
@@ -150,7 +153,7 @@
 <div class="tile"><h3>Serves</h3><p>The built UI (<code>http/static.mjs</code>, with <code>frame-ancestors 'none'</code>), the JSON API, the live event stream (SSE), files the chats name (<code>http/files.mjs</code>), and two WebSockets: the screen's live view and its own debugging channel to Chromium.</p></div>
 <div class="tile"><h3>Guards</h3><p>Host, Origin and <code>Sec-Fetch-Site</code> checks (<code>http/request.mjs</code>), paired devices and agent keys (<code>http/access.mjs</code>), the per-route tool gate and <code>mayCall</code> (<code>server.mjs</code>). See <a href="security.html#boundaries">Security</a>.</p></div>
 <div class="tile"><h3>Keeps</h3><p>Keys, plugin secrets, paired devices, profiles, settings, routines, notification keys: all in <code>agent/</code>, root's. It writes JSON files whole (temporary file, then rename) and one change at a time per file (<code>updateJson</code> in <code>common.mjs</code>).</p></div>
-<div class="tile"><h3>Runs</h3><p>One pi per open agent (<code>agents/runner.mjs</code>), the routines clock, the curator, the browser's screen, and the notifications. It owns owners and modes too (<code>secure()</code> at every start).</p></div>
+<div class="tile"><h3>Runs</h3><p>One pi per open agent (<code>agents/runner.mjs</code>; an isolated one through the sandbox), the routines clock, the curator, the browser's screen, and the notifications. It owns owners and modes too (<code>secure()</code> at every start).</p></div>
 </div>
 <h3 id="startup">Start order</h3>
 <ol>
@@ -158,7 +161,7 @@
 <li>The admin socket <code>/tmp/weilo-admin/admin.sock</code> (folder 0700, root's) starts: whoever connects gets a new pairing code. Only root in the container can open it (<code>docker exec weilo-core node /app/pair.mjs</code>).</li>
 <li><code>migrate()</code> brings the data folder to this app's data version, or stops the start if the folder is newer (<a href="#versions">Versions and data</a>).</li>
 <li><code>secure(profiles)</code> sets owner and mode of the top of every place (<a href="data-and-permissions.html#tree">the tree</a>).</li>
-<li>The server listens on port 3210. Then, in the background: compaction settings are written for the models in use, every scratch folder is emptied, routines start, the screen starts, and the curator's 5-minute timer starts.</li>
+<li>The server listens on port 3210, and on <code>/run/weilo-sandbox/api.sock</code> for the sandbox. Then, in the background: compaction settings are written for the models in use, every scratch folder is emptied, routines start, the screen starts, and the curator's 5-minute timer starts.</li>
 <li>On <code>SIGTERM</code> or <code>SIGINT</code> every pi is stopped before the daemon exits.</li>
 </ol>
 </section>
@@ -184,12 +187,12 @@
 <path class="ar" d="M260 176 V192" marker-end="url(#ps-a)"/>
 <rect class="box b-amber" x="20" y="194" width="480" height="64" rx="10"/>
 <text class="tb" x="36" y="220">3. Build argv and the user</text>
-<text class="ts" x="36" y="242">argvOf(agent, kind, plugins); userOf(agent, agents)</text>
+<text class="ts" x="36" y="242">argvOf(agent, kind, plugins); userOf(agent)</text>
 <path class="ar" d="M260 258 V274" marker-end="url(#ps-a)"/>
 <rect class="box b-green" x="20" y="276" width="480" height="84" rx="10"/>
 <text class="tb" x="36" y="302">4. Prepare folders</text>
-<text class="ts" x="36" y="324">scratch /tmp/weilo/&lt;id&gt; 0700; home 2770;</text>
-<text class="ts" x="36" y="346">chat folder 0700; HOME homes/&lt;folder&gt; 0700</text>
+<text class="ts" x="36" y="324">home 2770 (isolated 2775); chat folder 0700;</text>
+<text class="ts" x="36" y="346">HOME 0700; scratch 0700 (isolated: its own /tmp)</text>
 <path class="ar" d="M260 360 V376" marker-end="url(#ps-a)"/>
 <rect class="box b-red" x="20" y="378" width="480" height="64" rx="10"/>
 <text class="tb" x="36" y="404">5. Make a fresh agent key</text>
@@ -198,12 +201,12 @@
 <rect class="box b-red" x="20" y="460" width="480" height="106" rx="10"/>
 <text class="tb" x="36" y="486">6. Write the pi folder</text>
 <text class="tm" x="36" y="508">/var/lib/weilo/pi/&lt;id&gt;/</text>
-<text class="ts" x="36" y="530">root 0700 while written; settings.json, models.json,</text>
-<text class="ts" x="36" y="552">mcp.json 0600; then the agent's, 0700</text>
+<text class="ts" x="36" y="530">settings.json, models.json, mcp.json 0600, the</text>
+<text class="ts" x="36" y="552">agent's alone (isolated: written by the sandbox)</text>
 <path class="ar" d="M260 566 V582" marker-end="url(#ps-a)"/>
 <rect class="box b-green" x="20" y="584" width="480" height="84" rx="10"/>
 <text class="tb" x="36" y="610">7. Spawn as the agent's user</text>
-<text class="ts" x="36" y="632">setpriv ... /usr/local/bin/pi --mode rpc ...</text>
+<text class="ts" x="36" y="632">setpriv ... pi --mode rpc (isolated: in the sandbox)</text>
 <text class="ts" x="36" y="654">cwd: its home folder; env below</text>
 <path class="ar" d="M260 668 V684" marker-end="url(#ps-a)"/>
 <rect class="box b-blue" x="20" y="686" width="480" height="64" rx="10"/>
@@ -212,7 +215,7 @@
 </g>
 </svg>
 </div>
-<figcaption>From <code>start()</code> and <code>subscribe()</code> in <code>daemon/agents/runner.mjs</code>, <code>writePiDir</code> in <code>agents/pidir.mjs</code> and <code>makeHome</code> in <code>agents/agents.mjs</code>.</figcaption>
+<figcaption>From <code>start()</code> and <code>subscribe()</code> in <code>daemon/agents/runner.mjs</code>, <code>piFiles</code> and <code>writePiDir</code> in <code>agents/pidir.mjs</code>, <code>makeHome</code> in <code>agents/agents.mjs</code> and <code>sandbox/</code>.</figcaption>
 </figure>
 <h3>The command line</h3>
 <p>Built by <code>argvOf</code>. A regular agent:</p>
@@ -225,9 +228,9 @@
   [-e /app/browser/extension/index.js] [-e /app/routines/extension/index.js]
   [-e agent/extensions/&lt;name&gt;/&lt;entry&gt; ...]
   --no-skills [--skill agent/skills/&lt;skill&gt; ...]
-  --tools read,bash,edit,write,show,ask,manage_agents,skill,memory,fetch_knowledge,manage_settings[,browser][,routine][,&lt;extension tools&gt;][,codemode,mcp__&lt;plugin&gt;__* ...]
+  --tools read,bash,edit,write,show,ask,manage_agents,skill,memory,fetch_knowledge,manage_settings,ask_agent[,browser][,routine][,&lt;extension tools&gt;][,codemode,mcp__&lt;plugin&gt;__* ...]
   --session-dir agent/sessions/&lt;id&gt; --session-id &lt;id&gt;</code></pre>
-<p>An isolated agent differs in five places: its profile, skills and added extensions are read from root-owned copies in its pi folder; it gets <code>--no-context-files</code> instead of <code>USER.md</code> and <code>MEMORY.md</code>; it does not load <code>memory/extension.mjs</code>; its <code>--tools</code> leave out <code>skill</code>, <code>memory</code>, <code>fetch_knowledge</code> and <code>manage_settings</code>; and its chat is in <code>isolated-sessions/&lt;id&gt;</code>. Without plugins the list ends with <code>--no-mcp</code> instead of <code>codemode</code> and the plugin tools.</p>
+<p>An isolated agent differs in six places: it starts in the sandbox (<code>spawnSandboxed</code>, with only its folder, chat, HOME and, read only, its skills and added extensions mounted); its profile is read from a copy in its pi folder; it gets <code>--no-context-files</code> instead of <code>USER.md</code> and <code>MEMORY.md</code>; it does not load <code>memory/extension.mjs</code>; its <code>--tools</code> leave out <code>skill</code>, <code>memory</code>, <code>fetch_knowledge</code>, <code>manage_settings</code> and <code>ask_agent</code>; and its chat is in <code>isolated-sessions/&lt;id&gt;</code>. Without plugins the list ends with <code>--no-mcp</code> instead of <code>codemode</code> and the plugin tools.</p>
 <ul>
 <li><code>-ne</code> turns off extension discovery, so nothing left in <code>agent/extensions/</code> or named in <code>settings.json</code> loads. It also drops pi's built-in extensions, so each one is named again (<code>PI_BUILTINS</code> in <code>config.mjs</code>): a new built-in in a later pi must be added there, or agents lose it.</li>
 <li><code>--tools</code> is pi's allowlist: pi hides any tool it does not name. The daemon's own tools are listed only if <code>mayCall</code> allows them, so what pi offers matches what the routes accept.</li>
@@ -239,14 +242,14 @@
 <thead><tr><th>Variable</th><th>Value</th></tr></thead>
 <tbody>
 <tr><td><code>PI_CODING_AGENT_DIR</code></td><td><code>/var/lib/weilo/pi/&lt;id&gt;</code>: its own settings, models and plugins (<a href="security.html#gateway">no real key</a>)</td></tr>
-<tr><td><code>HOME</code></td><td><code>homes/&lt;folder&gt;</code>: its own tool settings and sign-ins (git and the like)</td></tr>
+<tr><td><code>HOME</code></td><td><code>homes/&lt;folder&gt;</code> (isolated: <code>isolated-homes/&lt;folder&gt;</code>): its own tool settings and sign-ins (git and the like)</td></tr>
 <tr><td><code>PATH</code>, <code>npm_config_prefix</code>, <code>PYTHONUSERBASE</code></td><td>Regular: root's folders, then <code>/home/node/.local/bin</code> (shared tools). Isolated: root's folders, then <code>&lt;HOME&gt;/.local/bin</code>.</td></tr>
-<tr><td><code>WEILO_AGENT</code>, <code>WEILO_API</code>, <code>WEILO_KEY</code></td><td>Who it is, <code>http://127.0.0.1:3210/api</code>, and its key for every call back</td></tr>
+<tr><td><code>WEILO_AGENT</code>, <code>WEILO_API</code>, <code>WEILO_KEY</code></td><td>Who it is, <code>http://127.0.0.1:3210/api</code> (in the sandbox, forwarded to the app's socket for it), and its key for every call back</td></tr>
 <tr><td><code>WEILO_ASK_BEFORE</code></td><td>The browser rule from Settings &gt; Browser, or empty when off</td></tr>
-<tr><td><code>WEILO_SCRATCH</code></td><td><code>/tmp/weilo/&lt;id&gt;</code>, emptied when it goes idle</td></tr>
+<tr><td><code>WEILO_SCRATCH</code></td><td><code>/tmp/weilo/&lt;id&gt;</code>, emptied when it goes idle (isolated: <code>/tmp</code>, its own)</td></tr>
 <tr><td><code>WEILO_ISOLATED</code></td><td><code>1</code> for an isolated agent: the tools then describe what it may ask for</td></tr>
 </tbody></table></div>
-<p>The rest of the daemon's environment is inherited (for example <code>NODE_PATH</code> and <code>WEILO_VERSION</code>).</p>
+<p>A regular agent's pi inherits the rest of the daemon's environment (for example <code>NODE_PATH</code> and <code>WEILO_VERSION</code>); an isolated agent's gets only the variables above.</p>
 </section>
 
 <section class="card" id="restarts">
@@ -258,9 +261,9 @@
 <tr><td>Agent saved in Edit agent</td><td>Its pi starts anew: now if idle, else when the run ends (<code>stale</code>)</td><td><code>restart</code></td></tr>
 <tr><td>Skills or extensions added or removed, a plugin removed, About you, Memory or the browser rule saved</td><td>Every pi starts anew</td><td><code>forAll</code> in <code>server.mjs</code></td></tr>
 <tr><td><code>manage_settings</code> change approved</td><td>Every pi starts anew</td><td><code>restartAll</code></td></tr>
-<tr><td>An isolated agent made, deleted, or switched to or from isolated</td><td>Every regular agent's pi starts anew (group membership changed)</td><td><code>restartRegular</code></td></tr>
 <tr><td>Switch to or from isolated</td><td>Its pi stops; no pi starts until the folders moved</td><td><code>holding</code></td></tr>
 <tr><td><code>/reload</code> in the chat</td><td>That pi starts anew</td><td><code>POST …/reload</code></td></tr>
+<tr><td>Its daily token limit reached during a run</td><td>The run is stopped (the pi keeps running)</td><td><code>charge</code></td></tr>
 </tbody></table></div>
 <p>A pi is stopped by closing its stdin; it is killed if it has not exited after 5 seconds (<code>PI_KILL_MS</code>). Its key is dropped at once, so a stopped pi's tools can no longer call the daemon. Viewers see an <code>exit</code> event with code 0 and reconnect to the new pi by themselves. Adding a plugin does not restart anything: an agent uses a plugin only after its profile names it, which is a save.</p>
 </section>
@@ -310,12 +313,11 @@
 <p><code>GET /api/agents/:id/events</code> is a server-sent event stream, for paired devices only. The first event is <code>{type: "history", messages, busy, asking}</code> (pi's <code>get_messages</code>, taken in the same step that adds the listener, so no event falls between them). Then come pi's own events: <code>agent_start</code>, <code>message_update</code>, <code>message_end</code>, <code>tool_execution_start</code> and <code>_end</code>, <code>compaction_start</code> and <code>_end</code>, <code>agent_settled</code>, <code>extension_ui_request</code>, plus the daemon's <code>ask_end</code> and finally <code>{type: "exit", code, error}</code> when pi ends.</p>
 <p>A user message that pi expanded from <code>/skill:name</code> is turned back into what was typed (<code>asTyped</code> in <code>agents/sessions.mjs</code>), in the stream and in the files read later.</p>
 <h3>The chat files</h3>
-<p>Pi writes one JSON line per entry in <code>*.jsonl</code> files in the agent's session folder: <code>agent/sessions/&lt;id&gt;/</code> or <code>isolated-sessions/&lt;id&gt;/</code>. The daemon reads them directly for four things:</p>
+<p>Pi writes one JSON line per entry in <code>*.jsonl</code> files in the agent's session folder: <code>agent/sessions/&lt;id&gt;/</code> or <code>isolated-sessions/&lt;id&gt;/</code>. The daemon reads them for four things:</p>
 <ul>
 <li>The agent list's newest message: only the last 64 KB of the newest file.</li>
 <li>Earlier messages that pi summarized away: <code>GET /api/agents/:id/earlier?skip=n</code>, 60 at a time, the entries before the last compaction's <code>firstKeptEntryId</code>, without thinking and without tool results other than <code>ask</code>, <code>routine</code> and <code>manage_agents</code>.</li>
-<li>Search (<code>GET /api/search?q=</code>, at most 200 characters, 50 results, newest first) and <a href="memory-and-knowledge.html#fetch"><code>fetch_knowledge</code></a>: only the last 32 MB of each file (<code>CHAT_TAIL</code>), read in 1 MB pieces, user and assistant text only.</li>
-<li>The <a href="memory-and-knowledge.html#curator">curator</a>.</li>
+<li>The chat index (<code>agents/chats.mjs</code>), for search (<code>GET /api/search?q=</code>, at most 200 characters, 50 results, newest first), <a href="memory-and-knowledge.html#fetch"><code>fetch_knowledge</code></a> and the <a href="memory-and-knowledge.html#curator">curator</a>: SQLite (<code>node:sqlite</code>) with an FTS5 trigram index of user and assistant text. Each use first reads what was added to the files since (in 1 MB pieces, whole lines only); a file that shrank is read again, one that went is dropped. The index lives in <code>/var/lib/weilo/chats.db</code> and is made again after a restart.</li>
 </ul>
 <h3>Context and compaction</h3>
 <p>Pi summarizes long conversations itself, when the free tokens fall to <code>compaction.modelOverrides.&lt;provider/id&gt;.reserveTokens</code>. The daemon writes that value for each model in use that has none: summarize at 40% of a 1M window, 80% of a 500k one, 90% of a smaller one, never with less than 16384 tokens free (<code>COMPACT_AT</code>, <code>MIN_RESERVE</code>, <code>settings/compaction.mjs</code>). A value set by hand stays. <code>GET …/context</code> gives the chat's meter <code>{tokens, window, point}</code>; <code>POST …/compact</code> summarizes now and is refused during a run.</p>
@@ -364,9 +366,9 @@
 <section class="card" id="versions">
 <h2>Versions, updates and data</h2>
 <ul>
-<li><strong>Version.</strong> One <code>VERSION</code> file (SemVer). The image keeps it as <code>WEILO_VERSION</code>, with <code>WEILO_COMMIT</code> and <code>WEILO_PI</code>; <code>GET /api/version</code> and Settings &gt; About show them. A build without the arguments is <code>dev</code>. A <code>v*</code> tag runs the release workflow (<a href="RELEASING.md">RELEASING.md</a>).</li>
+<li><strong>Version.</strong> One <code>VERSION</code> file (SemVer). The image keeps it as <code>WEILO_VERSION</code>, with <code>WEILO_COMMIT</code> and pi's version from its package; <code>GET /api/version</code> and Settings &gt; About show them. A build without the arguments is <code>dev</code>. A <code>v*</code> tag runs the release workflow (<a href="RELEASING.md">RELEASING.md</a>).</li>
 <li><strong>Update check.</strong> <code>update.mjs</code> asks GitHub for the newest release at most every 6 hours, only if <code>checkUpdates</code> in <code>weilo.json</code> is not false, and never for a <code>dev</code> build. The app does not update itself: <code>update.sh</code> or <code>update.cmd</code> download the newest release zip over the folder and run the start script (<a href="operating.html#update">Update</a>).</li>
-<li><strong>Data version.</strong> <code>weilo.json</code> holds <code>{dataVersion, version, lastUid}</code>. At start, <code>migrate()</code> runs the steps from the folder's version up to <code>DATA_VERSION</code> (4 in this version), saving the version after each one. A folder from a newer app stops the start with a message instead of being touched. Steps: <a href="data-and-permissions.html#migrations">Migrations</a>.</li>
+<li><strong>Data version.</strong> <code>weilo.json</code> holds <code>{dataVersion, version, lastUid}</code>. At start, <code>migrate()</code> runs the steps from the folder's version up to <code>DATA_VERSION</code> (5 in this version), saving the version after each one. A folder from a newer app stops the start with a message instead of being touched. Steps: <a href="data-and-permissions.html#migrations">Migrations</a>.</li>
 </ul>
 </section>
 </div>

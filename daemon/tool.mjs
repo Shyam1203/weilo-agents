@@ -3,6 +3,7 @@ import { request } from "node:http";
 export const object = (properties, required) => ({ type: "object", properties, required });
 export const str = { type: "string" };
 export const note = (description) => ({ type: "string", description });
+export const list = (items) => ({ type: "array", items });
 
 export const call = (method, path, body, signal) =>
   new Promise((resolve, reject) => {

@@ -1,10 +1,13 @@
 import { randomBytes } from "node:crypto";
-import { basename, join, relative } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EXTENSIONS, fail } from "../common.mjs";
 import { agentKey, dropAgentKey } from "../http/access.mjs";
 import { BIN, CORE_TOOLS, IDLE_MS, MAX_APPROVAL, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
+import { audit } from "../audit.mjs";
 import { askBefore } from "../browser/rule.mjs";
+import { addUsage, tokensOf, usageToday } from "./usage.mjs";
 import { memoryFlags } from "../memory/memory.mjs";
 import { pointOf } from "../settings/compaction.mjs";
 import { extensionsOf } from "../settings/extensions.mjs";
@@ -12,10 +15,11 @@ import { pluginTools } from "../settings/plugins.mjs";
 import { skillPaths } from "../settings/skills.mjs";
 import { userFlags } from "../settings/user.mjs";
 import { notify } from "../push.mjs";
-import { ownTools, sharedTools } from "../users.mjs";
-import { chatDirOf, getAgent, homeOf, isIsolated, makeHome, mayCall, profilePath, profiles, userHomeOf, userOf } from "./agents.mjs";
-import { piDirOf, writePiDir } from "./pidir.mjs";
-import { spawnPi } from "./pi.mjs";
+import { spawnSandboxed } from "../sandbox/client.mjs";
+import { ownTools, sharedTools, spawnAs } from "../users.mjs";
+import { chatDirOf, getAgent, homeOf, isIsolated, makeHome, mayCall, profilePath, userHomeOf, userOf } from "./agents.mjs";
+import { piDirOf, piFiles, writePiDir } from "./pidir.mjs";
+import { piRpc } from "./pi.mjs";
 import { asTyped } from "./sessions.mjs";
 import { saveFiles, toImages } from "./uploads.mjs";
 import { clearScratch, makeScratch, rulesOf, scratchOf } from "./workspace.mjs";
@@ -56,16 +60,10 @@ async function kindOf(agent, dir) {
   const [skills, extensions] = await Promise.all([skillPaths(agent.skills), extensionsOf(agent)]);
   if (!isIsolated(agent)) {
     const about = (await Promise.all([userFlags(), memoryFlags()])).flat();
-    return { profile: profilePath(agent.id), skills, extensions, ours: [WEILO, MEMORY], about, copies: {}, env: sharedTools };
+    return { profile: profilePath(agent.id), skills, extensions, ours: [WEILO, MEMORY], about, env: sharedTools, scratch: scratchOf(agent.id) };
   }
-  const copies = { "agent.json": profilePath(agent.id) };
-  for (const path of skills) copies[`skills/${basename(path)}`] = path;
-  const own = extensions.map((x) => {
-    if (x.builtin) return x;
-    copies[`extensions/${x.id}`] = join(EXTENSIONS, x.id);
-    return { ...x, entry: join(dir, "extensions", x.id, relative(join(EXTENSIONS, x.id), x.entry)) };
-  });
-  return { profile: join(dir, "agent.json"), skills: skills.map((path) => join(dir, "skills", basename(path))), extensions: own, ours: [WEILO], about: ["--no-context-files"], copies, env: ownTools(userHomeOf(agent)) };
+  const binds = [...[homeOf, chatDirOf, userHomeOf].map((place) => ({ path: place(agent) })), ...[...skills, ...extensions.filter((x) => !x.builtin).map((x) => join(EXTENSIONS, x.id))].map((path) => ({ path, ro: true }))];
+  return { profile: join(dir, "agent.json"), skills, extensions, ours: [WEILO], about: ["--no-context-files"], env: ownTools(userHomeOf(agent)), scratch: "/tmp", binds };
 }
 
 const argvOf = (agent, kind, plugins) => {
@@ -87,38 +85,59 @@ const argvOf = (agent, kind, plugins) => {
 };
 
 const notifyAbout = (id, kind, text) => getAgent(id).then((agent) => notify(agent, kind, text)).catch(() => {});
+const replyText = (reply) => (typeof reply.content === "string" ? reply.content : reply.content.filter((b) => b.type === "text").map((b) => b.text).join(" ")).trim();
+
 function tell(run) {
   const { reply } = run;
   run.reply = null;
   if (!reply || reply.stopReason === "aborted") return;
   if (reply.stopReason === "error") return void notifyAbout(run.id, "error", reply.errorMessage);
-  const text = typeof reply.content === "string" ? reply.content : reply.content.filter((b) => b.type === "text").map((b) => b.text).join(" ");
+  const text = replyText(reply);
   const shown = Array.isArray(reply.content) && reply.content.some((b) => b.type === "toolCall" && b.name === "show");
-  void notifyAbout(run.id, "reply", text.trim() || (shown ? "Showed you something." : ""));
+  void notifyAbout(run.id, "reply", text || (shown ? "Showed you something." : ""));
+}
+
+const overLimit = (agent) => `${agent.name} used its ${agent.dailyTokens} tokens for today. Raise its daily limit in its settings, or wait until tomorrow.`;
+
+async function charge(run, usage) {
+  const used = await addUsage(run.id, tokensOf(usage));
+  const agent = await getAgent(run.id);
+  if (agent.dailyTokens && used >= agent.dailyTokens && run.busy) {
+    await run.pi.send("abort").catch(() => {});
+    void notifyAbout(run.id, "error", overLimit(agent));
+  }
 }
 
 async function start(run) {
   await holds.get(run.id);
   const agent = await getAgent(run.id);
   const dir = piDirOf(run.id);
-  const [ask, plugins, kind, agents] = await Promise.all([askBefore(), pluginTools(agent.plugins), kindOf(agent, dir), profiles()]);
+  const [ask, plugins, kind] = await Promise.all([askBefore(), pluginTools(agent.plugins), kindOf(agent, dir)]);
   const argv = argvOf(agent, kind, plugins);
-  const user = userOf(agent, agents);
-  await Promise.all([makeScratch(agent), makeHome(agent)]);
+  const user = userOf(agent);
+  await makeHome(agent);
+  if (!kind.binds) await makeScratch(agent);
   run.key = agentKey(run.id);
-  await writePiDir(dir, user, { model: agent.model, plugins: agent.plugins, key: run.key, agent: run.id, copies: kind.copies });
+  const files = await piFiles({ model: agent.model, plugins: agent.plugins, key: run.key, agent: run.id });
+  const cwd = homeOf(agent);
+  const env = {
+    ...kind.env, PI_CODING_AGENT_DIR: dir, HOME: userHomeOf(agent),
+    WEILO_AGENT: run.id, WEILO_API: `http://127.0.0.1:${PORT}/api`, WEILO_KEY: run.key, WEILO_ASK_BEFORE: ask, WEILO_SCRATCH: kind.scratch,
+    ...(kind.binds && { WEILO_ISOLATED: "1" }),
+  };
+  let child;
+  if (kind.binds) {
+    files["agent.json"] = await readFile(profilePath(agent.id), "utf8");
+    child = spawnSandboxed({ user, argv, cwd, env, umask: 0o002, binds: kind.binds, files: Object.fromEntries(Object.entries(files).map(([name, text]) => [join(dir, name), text])) });
+  } else {
+    await writePiDir(dir, user, files);
+    child = spawnAs(user, argv[0], argv.slice(1), { cwd, env: { ...process.env, ...env } });
+  }
   run.done = new Promise((resolve) => {
-    run.pi = spawnPi(argv, {
-      user,
-      cwd: homeOf(agent),
-      env: {
-        ...kind.env, PI_CODING_AGENT_DIR: dir, HOME: userHomeOf(agent),
-        WEILO_AGENT: run.id, WEILO_API: `http://127.0.0.1:${PORT}/api`, WEILO_KEY: run.key, WEILO_ASK_BEFORE: ask, WEILO_SCRATCH: scratchOf(run.id),
-        ...(isIsolated(agent) && { WEILO_ISOLATED: "1" }),
-      },
+    run.pi = piRpc(child, {
       onEvent(event) {
         if (event.type === "agent_start") (run.busy = true), (run.reply = null);
-        if (event.type === "message_end" && event.message?.role === "assistant") run.reply = event.message;
+        if (event.type === "message_end" && event.message?.role === "assistant") (run.reply = event.message), void charge(run, event.message.usage).catch((err) => console.error("Usage:", err.message));
         if (event.type === "agent_settled") (run.busy = false), tell(run);
         if (event.type === "tool_execution_start") run.doing = event.toolName;
         if (event.type === "tool_execution_end" || !run.busy) run.doing = "";
@@ -135,7 +154,7 @@ async function start(run) {
         close(run);
         endAsk(run);
         emit(run, { type: "exit", code, error: code ? message : "" });
-        resolve();
+        resolve(undefined);
       },
     });
   });
@@ -178,11 +197,34 @@ const refused = (err) => {
 export async function prompt(id, { text = "", images = [], files = [] }) {
   if (typeof text !== "string") throw fail(400, "The message is not valid");
   const blocks = toImages(images);
+  const agent = await getAgent(id);
+  if (agent.dailyTokens && ((await usageToday())[id] ?? 0) >= agent.dailyTokens) throw fail(429, overLimit(agent));
   const { pi } = await open(id);
-  const paths = await saveFiles(await getAgent(id), files);
+  const paths = await saveFiles(agent, files);
   const message = [text.trim(), ...paths.map((path) => `[Attached file: ${path}]`)].filter(Boolean).join("\n\n");
   if (!message && !blocks.length) throw fail(400, "The message is empty");
   return pi.send("prompt", { message, images: blocks, streamingBehavior: "steer" }).catch(refused);
+}
+
+export async function promptAndWait(id, text) {
+  const run = await open(id);
+  let last = null;
+  let listen;
+  const stop = () => (run.listeners.delete(listen), touch(run));
+  const ended = new Promise((resolve) => {
+    listen = (event) => {
+      if (event.type === "message_end" && event.message?.role === "assistant") last = event.message;
+      if (event.type !== "agent_settled" && event.type !== "exit") return;
+      stop();
+      resolve(last && last.stopReason !== "error" && last.stopReason !== "aborted" ? replyText(last) : null);
+    };
+    run.listeners.add(listen);
+  });
+  await prompt(id, { text }).catch((err) => {
+    stop();
+    throw err;
+  });
+  return ended;
 }
 
 export async function skillCommands(id) {
@@ -228,11 +270,13 @@ export async function askUser(id, title, options) {
   const run = await current(id);
   if (!run?.busy) throw fail(409, "The agent is not in a run");
   endAsk(run);
-  return new Promise((resolve) => {
+  const answer = await new Promise((resolve) => {
     run.asking = { type: "extension_ui_request", id: `weilo-${randomBytes(6).toString("hex")}`, method: "select", title, options, resolve };
     emit(run, run.asking);
     void notifyAbout(id, "ask", title);
   });
+  audit("approval", { agent: id, question: title.slice(0, 500), answer: answer ?? "(none)" });
+  return answer;
 }
 
 export const abort = async (id) => (await current(id))?.pi.send("abort").catch(refused);
@@ -261,11 +305,5 @@ export async function holding(id, job) {
 }
 
 export const restartAll = () => Promise.all([...runs.keys()].map(restart));
-
-export const restartRegular = () =>
-  Promise.all([...runs.keys()].map(async (id) => {
-    const agent = await getAgent(id).catch(() => null);
-    if (agent && !isIsolated(agent)) await restart(id);
-  }));
 
 export const stopAll = () => Promise.all([...runs.keys()].map(stop));

@@ -61,20 +61,23 @@
 <div class="table wide"><table>
 <thead><tr><th>Module</th><th>Job</th></tr></thead>
 <tbody>
-<tr><td><code>server.mjs</code></td><td>Entry: every API route, the HTTP server and upgrades, the admin socket, start order.</td></tr>
+<tr><td><code>server.mjs</code></td><td>Entry: every API route, the two listeners (the app's port and the sandbox's socket) and upgrades, <code>checkPlace</code>, the admin socket, start order.</td></tr>
 <tr><td><code>config.mjs</code></td><td>Every value to tune (port, limits, timeouts, users, <code>BIN</code>, <code>SYSTEM_PATH</code>, tool lists). Plain constants.</td></tr>
-<tr><td><code>common.mjs</code></td><td>Data paths, <code>fail()</code>, <code>readJson</code>/<code>updateJson</code>/<code>writePrivate</code>, the <code>SECRET</code> pattern, <code>slug</code>.</td></tr>
-<tr><td><code>users.mjs</code></td><td><code>spawnAs</code>, the helper users, PATHs for agents, <code>folder</code>/<code>newFile</code>/<code>tree</code>, <code>secure()</code>.</td></tr>
-<tr><td><code>weilo.mjs</code></td><td>The pi extension every agent loads: <code>show</code>, <code>ask</code>, <code>skill</code>, <code>manage_agents</code>, <code>manage_settings</code>.</td></tr>
-<tr><td><code>tool.mjs</code></td><td>What extensions share: <code>call()</code> to the API with <code>WEILO_KEY</code>, <code>daemonTool()</code>.</td></tr>
+<tr><td><code>common.mjs</code></td><td>Data paths (<code>WEILO_ROOT</code> moves them, for tests), <code>fail()</code>, <code>readJson</code>/<code>updateJson</code>/<code>writePrivate</code>, <code>unsafe()</code> (secrets, instructions, hidden text), <code>slug</code>.</td></tr>
+<tr><td><code>users.mjs</code></td><td><code>spawnAs</code> and <code>asUser</code> (setpriv's arguments), the helper users, PATHs for agents, <code>folder</code>/<code>newFile</code>/<code>tree</code>, <code>secure()</code>.</td></tr>
+<tr><td><code>weilo.mjs</code></td><td>The pi extension every agent loads: <code>show</code>, <code>ask</code>, <code>skill</code>, <code>manage_agents</code>, <code>manage_settings</code>, <code>ask_agent</code>.</td></tr>
+<tr><td><code>tool.mjs</code></td><td>What extensions share: <code>call()</code> to the API with <code>WEILO_KEY</code>, <code>daemonTool()</code>, the JSON-schema helpers.</td></tr>
+<tr><td><code>audit.mjs</code>, <code>security.mjs</code></td><td>The audit log; Settings &gt; Security's checks.</td></tr>
 <tr><td><code>migrate.mjs</code>, <code>version.mjs</code>, <code>update.mjs</code></td><td>Data version steps; the build's version; the release check.</td></tr>
 <tr><td><code>pair.mjs</code>, <code>push.mjs</code>, <code>contact.mjs</code></td><td>Pairing link from the admin socket; Web Push; Contact us.</td></tr>
 <tr><td><code>agents/agents.mjs</code></td><td>Profiles, ids, uids, every path of an agent, <code>mayCall</code>, <code>userOf</code>, moves.</td></tr>
 <tr><td><code>agents/runner.mjs</code></td><td>One pi per agent: start, argv, events, questions (<code>askUser</code>), restarts.</td></tr>
-<tr><td><code>agents/pi.mjs</code>, <code>agents/pidir.mjs</code></td><td>Spawning pi and its RPC framing; the pi folder it gets.</td></tr>
-<tr><td><code>agents/manage.mjs</code></td><td><code>manage_agents</code>: rules, the question, trusted changes.</td></tr>
-<tr><td><code>agents/sessions.mjs</code>, <code>search.mjs</code>, <code>uploads.mjs</code>, <code>workspace.mjs</code></td><td>Chat files; app search; attachments; house rules and scratch folders.</td></tr>
-<tr><td><code>gateway/models.mjs</code>, <code>plugins.mjs</code></td><td>The model and plugin proxies, the pipe, what a pi's <code>models.json</code>/<code>mcp.json</code> hold.</td></tr>
+<tr><td><code>agents/pi.mjs</code>, <code>agents/pidir.mjs</code></td><td>Pi's RPC framing over a started pi; the pi folder's files and writing them.</td></tr>
+<tr><td><code>agents/manage.mjs</code></td><td><code>manage_agents</code>: rules, the question, trusted changes; <code>ask_agent</code>.</td></tr>
+<tr><td><code>agents/sessions.mjs</code>, <code>chats.mjs</code>, <code>search.mjs</code>, <code>usage.mjs</code>, <code>uploads.mjs</code>, <code>workspace.mjs</code></td><td>Chat files (earlier messages, the list's newest); the chat index; app search; daily tokens; attachments; house rules and scratch folders.</td></tr>
+<tr><td><code>gateway/models.mjs</code>, <code>plugins.mjs</code>, <code>forward.mjs</code></td><td>The model and plugin proxies, the pipe and where a plugin program runs, what a pi's <code>models.json</code>/<code>mcp.json</code> hold; the streaming they share.</td></tr>
+<tr><td><code>sandbox/server.mjs</code>, <code>enter.mjs</code>, <code>spec.mjs</code>, <code>frames.mjs</code>, <code>client.mjs</code></td><td>The sandbox container's program; a program's namespaces; what it may be asked to start; its output to the app; the app's side (<a href="security.html#sandbox">the sandbox</a>).</td></tr>
+<tr><td><code>test/</code></td><td>The daemon's tests (<code>node:test</code>); <code>root.mjs</code> gives each file a data folder of its own.</td></tr>
 <tr><td><code>gateway/key.mjs</code>, <code>pipe.mjs</code></td><td>Scripts an agent's pi runs: fetch an access token; pipe to a plugin program.</td></tr>
 <tr><td><code>http/request.mjs</code>, <code>access.mjs</code></td><td>Host/Origin guard, JSON body and reply; devices, codes, agent keys.</td></tr>
 <tr><td><code>http/static.mjs</code>, <code>files.mjs</code>, <code>events.mjs</code>, <code>websocket.mjs</code></td><td>The UI files; files chats name; SSE; a minimal WebSocket server.</td></tr>
@@ -92,8 +95,8 @@
 <h2>Conventions</h2>
 <ul>
 <li><strong>No comments in code.</strong> The code is kept short and named plainly; the reasons behind it live in these pages and in <code>DESIGN.md</code>. A change that alters behavior, a boundary or a limit updates the page that describes it in the same commit. If a page and the code disagree, the code is right and the page is the bug.</li>
-<li><strong>No tests in the repository.</strong> The checks are the maintainers' manual run before each release (<a href="operating.html#release-check">the checklist</a>), plus <code>npm run build</code>, which type-checks the UI. When you change a boundary, add the probe for it to the checklist.</li>
-<li><strong>The daemon has no npm dependencies.</strong> Node built-ins only; the two packages it uses at run time (pi's SDK and <code>playwright-core</code>) are installed globally in the image and loaded by path or through <code>NODE_PATH</code>.</li>
+<li><strong>Checks.</strong> <code>npm run check</code> type-checks the daemon (TypeScript on its JavaScript, with unused locals as errors) and <code>npm test</code> runs its tests (<code>daemon/test/</code>, <code>node:test</code>, no other library); <code>npm run build</code> in <code>ui/</code> type-checks and builds the UI. CI runs all three on every pull request, builds the image and checks that the sandbox makes namespaces. A change to a rule (who may call what, a check, a limit) comes with a test. What only a real install shows stays on the release <a href="operating.html#release-check">checklist</a>.</li>
+<li><strong>The daemon has no npm dependencies.</strong> Node built-ins only; the two packages it uses at run time (pi's SDK and <code>playwright-core</code>) are installed in the image from <code>image/pi/package-lock.json</code> and loaded by path or through <code>NODE_PATH</code>. The root <code>package.json</code> holds only the checks' tools.</li>
 <li><strong>One place for numbers.</strong> Limits and timeouts live in <code>config.mjs</code>. The UI repeats a few in <code>ui/src/lib/limits.ts</code>: change both together. Tool descriptions are built from the same constants.</li>
 <li><strong>Errors</strong> are <code>fail(status, message)</code>; the message is shown to the user or the agent as is, in plain words. Unexpected errors are logged and answered as "An error occurred".</li>
 <li><strong>Files</strong> are written whole (<code>writePrivate</code>) and one change at a time (<code>updateJson</code>). A corrupt JSON file throws and is never overwritten.</li>
@@ -104,7 +107,8 @@
 
 <section class="card" id="dev">
 <h2>Running it while you work</h2>
-<pre><code>docker compose up -d --build      # build and run the container from this checkout
+<pre><code>docker compose up -d --build      # build and run both containers from this checkout
+npm install &amp;&amp; npm run check &amp;&amp; npm test   # the daemon's type check and tests
 cd ui &amp;&amp; npm install
 npm run dev                        # UI on http://localhost:5173, /api proxied to :3210
 npm run build                      # type-check and build the UI</code></pre>
@@ -123,12 +127,13 @@ npm run build                      # type-check and build the UI</code></pre>
 <thead><tr><th>Kind</th><th>Register with</th><th>Who can call</th></tr></thead>
 <tbody>
 <tr><td>For you (the app)</td><td><code>route(method, path, handler)</code></td><td>Paired devices only. An agent key gets 403.</td></tr>
-<tr><td>For an agent's tool</td><td><code>agentRoute(method, "/api/agents/:id/…", tool, handler)</code></td><td>Devices, and the agent whose id is in the path, if <code>mayCall(agent, tool)</code> allows.</td></tr>
+<tr><td>For an agent's tool</td><td><code>agentRoute(method, "/api/agents/:id/…", tool, handler)</code></td><td>Devices, and the agent whose id is in the path, if <code>mayCall(agent, tool)</code> allows (an isolated agent only through the sandbox's socket).</td></tr>
 </tbody></table></div>
 <ul>
 <li>A handler gets <code>{id, rid, body, query, headers, who}</code> and returns the reply object, or nothing for 204. A path under <code>/api/agents/:id</code> loads the agent first, so a missing id is 404.</li>
 <li>Streams and file downloads are matched before the loop and check <code>who.device</code> themselves; do the same for anything that returns chat contents or files.</li>
-<li>If pis read what the route changes when they start, wrap it in <code>forAll</code> so every pi starts anew; if it changes isolated agents, call <code>restartRegular</code>.</li>
+<li>If pis read what the route changes when they start, wrap it in <code>forAll</code> so every pi starts anew.</li>
+<li>A route that changes something is recorded in the audit log by the route loop; add it to <code>QUIET</code> only if it is a chat's own traffic.</li>
 <li>Never return a secret: keys, plugin env or tokens, device keys.</li>
 </ul>
 </section>
@@ -189,15 +194,17 @@ npm run build                      # type-check and build the UI</code></pre>
 <li>Events, files, answers, agents, devices and settings routes are for paired devices only.</li>
 <li>Questions that approve something are the daemon's (<code>askUser</code>), show the whole change, are refused rather than cut over <code>MAX_APPROVAL</code>, and are answered only through the device route.</li>
 <li><code>isolated</code> and <code>trusted</code> are set only by the user. Trusted applies only to the agent's own instructions, thinking and skills.</li>
-<li>Root sets owners only through <code>folder()</code> / <code>newFile()</code> (<code>O_NOFOLLOW</code>), keeps a pi folder its own until written, and copies no links.</li>
+<li>Root sets owners only through <code>folder()</code> / <code>newFile()</code> (<code>O_NOFOLLOW</code>), keeps a pi folder its own until written, and never reads an agent's file through a link (the curator opens <code>shared/</code> notes with <code>O_NOFOLLOW</code> and checks the real path).</li>
 <li>A uid is never given twice (<code>newUid</code>, <code>lastUid</code>).</li>
-<li>Any change to which agents are isolated restarts the regular pis (<code>restartRegular</code>); a folder move runs with the pi stopped (<code>holding</code>).</li>
+<li>An isolated agent and its plugin programs run only in the sandbox; its key works only on the sandbox's socket, and only isolated agents' keys work there (<code>checkPlace</code>). The sandbox mounts nothing but the isolated agents' places and, read only, the skills and extensions; <code>checkSpec</code> refuses anything else, root, and links. A folder move runs with the pi stopped (<code>holding</code>).</li>
+<li>A plugin program never runs as an agent or in a folder an agent writes.</li>
+<li>What an isolated agent said or wrote reaches other agents only labelled as its report.</li>
 <li>The daemon runs with umask 007: nothing it makes is readable by everyone.</li>
 <li>Ids and folder names match <code>^[a-z0-9-]+$</code> before they become paths. Generated agent ids always end in <code>-</code> and 6 hex characters, so they never collide with the pi folders <code>curator</code> and <code>plugins</code>.</li>
 <li>A change to the data folder's shape raises <code>DATA_VERSION</code> with a step, in the same release.</li>
 <li><code>-ne</code> stays, and <code>PI_BUILTINS</code> names every pi built-in extension when pi is updated.</li>
 <li>Pi's RPC lines are split on LF only.</li>
-<li><code>fetch_knowledge</code> never takes a path; its results stay wrapped as background.</li>
+<li><code>fetch_knowledge</code> never takes a path; its results stay wrapped as background. Notes and vault lines pass <code>unsafe()</code>.</li>
 <li>Agent-written HTML runs only in the sandboxed frame; downloads keep <code>Content-Security-Policy: sandbox</code>; the app keeps <code>frame-ancestors 'none'</code>.</li>
 <li>Chromium never gets a debugging port; the screen's socket and cookie stay user 1000's.</li>
 <li>The port stays published on <code>127.0.0.1</code>; the Host check stays.</li>
