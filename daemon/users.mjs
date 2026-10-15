@@ -3,7 +3,7 @@ import { constants } from "node:fs";
 import { chmod, chown, mkdir, open, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { AGENT_DIR, HOMES, ISOLATED, ISOLATED_SESSIONS, KNOWLEDGE, ROOT, RUN, SCRATCH, TOOLS, WORKSPACE } from "./common.mjs";
+import { AGENT_DIR, EXTENSIONS, HOMES, ISOLATED, ISOLATED_SESSIONS, KNOWLEDGE, PROFILES, ROOT, RUN, SCRATCH, SESSIONS, SKILLS, TOOLS, WORKSPACE } from "./common.mjs";
 import { AGENTS_GID, BIN, BROWSER_UID, CURATOR_UID, PLUGINS_UID, SYSTEM_PATH } from "./config.mjs";
 
 // Who runs what, and who may read what. The daemon is root and keeps the keys (agent/: provider keys, plugin secrets,
@@ -11,8 +11,9 @@ import { AGENTS_GID, BIN, BROWSER_UID, CURATOR_UID, PLUGINS_UID, SYSTEM_PATH } f
 // powers: the browser as the image's user, the knowledge curator and the plugins as theirs, and each agent as its own
 // user, in the `agents` group. The group shares the workspace, the installed tools and the skills; an agent's chat, home,
 // scratch and pi settings are its own. An isolated agent's user is in no group: it has only its own folder (which the group
-// shares too: the other agents may read and change it), chat, home, scratch and pi settings (agents/agents.mjs). Pi runs with only what its agent may use (agents/pidir.mjs); a model's key and a
-// plugin's secrets stay with the daemon, which adds them on the way out (gateway/).
+// shares too: the other agents may read and change it), chat, home, scratch and pi settings (agents/agents.mjs). Pi runs
+// with only what its agent may use (agents/pidir.mjs); a model's key and a plugin's secrets stay with the daemon, which
+// adds them on the way out (gateway/).
 // Outside a root daemon (a dev run) everything runs as the daemon, and nothing is changed hands.
 
 const run = promisify(execFile);
@@ -92,14 +93,14 @@ export async function secure(agents) {
     const info = await stat(path).catch(() => null);
     if (info?.isFile()) await (shared.has(name) ? shareWithAgents(path) : setOwner(path, 0, 0, 0o600));
   }
-  await folder(join(AGENT_DIR, "profiles"), 0, AGENTS_GID, 0o750);
-  await folder(join(AGENT_DIR, "sessions"), 0, AGENTS_GID, 0o750);
+  await folder(PROFILES, 0, AGENTS_GID, 0o750);
+  await folder(SESSIONS, 0, AGENTS_GID, 0o750);
   // Skills: agents add files to a skill they made (scripts it needs). Extensions are code every pi runs: read only.
-  await folder(join(AGENT_DIR, "skills"), 0, AGENTS_GID, 0o2770);
-  await folder(join(AGENT_DIR, "extensions"), 0, AGENTS_GID, 0o2750);
+  await folder(SKILLS, 0, AGENTS_GID, 0o2770);
+  await folder(EXTENSIONS, 0, AGENTS_GID, 0o2750);
   for (const agent of agents) {
-    await folder(join(AGENT_DIR, "profiles", agent.id), 0, agent.uid, 0o750);
-    await setOwner(join(AGENT_DIR, "profiles", agent.id, "agent.json"), 0, agent.uid, 0o640);
+    await folder(join(PROFILES, agent.id), 0, agent.uid, 0o750);
+    await setOwner(join(PROFILES, agent.id, "agent.json"), 0, agent.uid, 0o640);
   }
   await folder(WORKSPACE, 0, AGENTS_GID, 0o2770);
   // The isolated agents' folders: the group may look in; an isolated agent (not in it) only passes through, to its own.
