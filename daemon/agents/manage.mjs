@@ -6,17 +6,6 @@ import { listPlugins } from "../settings/plugins.mjs";
 import { listSkills } from "../settings/skills.mjs";
 import { askUser, restart } from "./runner.mjs";
 
-// The `manage_agents` tool: an agent lists the agents, and asks to make one or change one. Nothing is made or changed until the
-// user approves it, in the chat of the agent that asked: the daemon asks the question itself (`askUser`), and only a
-// paired device can answer it, so an agent cannot approve its own request. The question shows the whole change, and says
-// what the new or changed agent would get that the asking agent does not have (another provider, plugins, extensions) or
-// what it would reach (the browser, with its logins).
-// - Who is isolated or trusted is the user's to say, in the app: no request sets it.
-// - An isolated agent sees only itself and what it could ask for, and may ask only for what it uses (skills, plugins,
-//   extensions), for itself. A regular agent may not change an isolated one: only the user changes those.
-// - A trusted agent's change to itself of its instructions, thinking or skills applies without a question (none gives it
-//   more reach than it has), with a line in the chat that says so.
-
 const FIELDS = ["name", "instructions", "model", "thinking", "skills", "plugins", "extensions"];
 const ISOLATED_FIELDS = ["skills", "plugins", "extensions"];
 const TRUSTED_FIELDS = ["instructions", "thinking", "skills"];
@@ -27,13 +16,10 @@ const DECLINE = "Don't";
 const pick = (body) => Object.fromEntries(FIELDS.filter((f) => body[f] !== undefined).map((f) => [f, body[f]]));
 const list = (items) => (items.length ? items.join(", ") : "none");
 
-// An agent's extensions, as the tool names them: the bundled ones it has not turned off, and the added ones it uses.
 export const extensionsIn = (agent) => [...Object.keys(BUNDLED).filter((id) => !agent.disabled.includes(id)), ...agent.extensions];
-// A request's `extensions` (every extension the agent should have) as the profile keeps them.
 const asProfile = ({ extensions, ...rest }) =>
   extensions === undefined ? rest : { ...rest, extensions: extensions.filter((id) => !Object.hasOwn(BUNDLED, id)), disabled: Object.keys(BUNDLED).filter((id) => !extensions.includes(id)) };
 
-// Why `asker` may not ask this (`target`: the agent to change, for update), or nothing.
 export function refusal(asker, action, target, body) {
   if (USER_ONLY.some((f) => body[f] !== undefined)) return "Only the user can make an agent isolated or trusted, in its settings.";
   if (isIsolated(asker)) {
@@ -45,11 +31,8 @@ export function refusal(asker, action, target, body) {
   return null;
 }
 
-// Whether a change applies without asking the user: the asker trusts itself with it (the user said so), it is its own, and
-// it touches only what gives it no more reach. (`known` has checked the skills are in the library.)
 export const allowedAlways = (asker, target, patch) => asker.trusted === true && target.id === asker.id && Object.keys(patch).length > 0 && Object.keys(patch).every((f) => TRUSTED_FIELDS.includes(f));
 
-// Skills, plugins and extensions by the names the library has.
 async function known({ skills, plugins, extensions }) {
   if (![skills, plugins, extensions].every((names) => names === undefined || (Array.isArray(names) && names.every((n) => typeof n === "string")))) throw fail(400, "Give skills, plugins and extensions as lists of names.");
   const [haveSkills, havePlugins, haveExtensions] = await Promise.all([listSkills(), listPlugins(), listExtensions()]);
@@ -61,8 +44,6 @@ async function known({ skills, plugins, extensions }) {
   if (missing.length) throw fail(400, `There is no skill, plugin or extension ${list(missing)}. List the agents to see them.`);
 }
 
-// What `agent` would get that `asker` has not; and the browser, when `asker` has not, or `before` (the agent as it is, for a
-// change) had not.
 export function more(asker, agent, before) {
   const extra = [];
   if (providerOf(agent.model) !== providerOf(asker.model)) extra.push(`the provider ${providerOf(agent.model)}`);
@@ -79,7 +60,6 @@ export function more(asker, agent, before) {
 const describe = (agent) =>
   [`Model: ${agent.model}`, `Plugins: ${list(agent.plugins)}`, `Skills: ${list(agent.skills)}`, `Extensions: ${list(extensionsIn(agent))}`, ...(agent.instructions ? [`Instructions: ${agent.instructions}`] : [])].join("\n");
 
-// An agent by its id or its name.
 async function find(which) {
   const all = await profiles();
   const agent = all.find((a) => a.id === which) ?? all.find((a) => a.name.toLowerCase() === String(which ?? "").toLowerCase());
@@ -101,14 +81,12 @@ async function catalog() {
 export async function manageAgents(id, { action, agent: which, ...body }) {
   const asker = await getAgent(id);
   if (action === "list") {
-    // An isolated agent sees no other agent.
     const all = isIsolated(asker) ? [asker] : await profiles();
     return { text: ["Agents:", ...all.map((a) => line(a, id)), ...(await catalog())].join("\n") };
   }
   if (action === "create") {
     const refused = refusal(asker, action, null, body);
     if (refused) throw fail(403, refused);
-    // A new agent has the asker's model unless the request names another; it is never isolated or trusted.
     const request = pick(body);
     await known(request);
     const input = { model: asker.model, ...asProfile(request) };
@@ -119,7 +97,6 @@ export async function manageAgents(id, { action, agent: which, ...body }) {
     return { text: `Made the agent ${made.name} (id ${made.id}). It shows in the user's agent list.` };
   }
   if (action === "update") {
-    // An isolated agent changes only itself: it need not (and cannot) name another.
     const target = isIsolated(asker) && which === undefined ? asker : await find(which);
     const refused = refusal(asker, action, target, body);
     if (refused) throw fail(403, refused);
@@ -137,10 +114,8 @@ export async function manageAgents(id, { action, agent: which, ...body }) {
       if (answer !== APPROVE.update) return { text: "The user did not approve it: nothing was changed." };
     }
     await updateAgent(target.id, patch);
-    // Its pi starts again with the change: the asking agent's own once this reply ends.
     await restart(target.id);
     const text = self ? "Changed. It applies from your next message." : `Changed ${target.name}.`;
-    // `details`: the chat shows a line, so the user sees what changed without being asked.
     return always ? { text, details: { note: `Changed its own ${Object.keys(request).join(" and ")} (always allowed)` } } : { text };
   }
   throw fail(400, "Use list, create or update.");

@@ -5,17 +5,8 @@ import { PORT } from "../config.mjs";
 import { homeOf, isIsolated, isolatedGroups, profiles, userOf } from "../agents/agents.mjs";
 import { ownTools, PLUGINS, sharedTools, spawnAs } from "../users.mjs";
 
-// The plugins' secrets stay here too. An agent's pi gets only the plugins its agent uses (pidir.mjs), each pointing here:
-// - one on the web: this daemon's address and the agent's key; the daemon swaps the key for the plugin's token.
-// - one that runs as a program: `node /app/gateway/pipe.mjs <name>`, a pipe to the daemon, which starts the program as the
-//   plugins' user, with its secrets, and passes its input and output through. The agent never sees the program's
-//   environment; the program reads and writes the workspace and the isolated agents' folders, from the agent's folder, as
-//   the agent would (in the same groups). An isolated
-//   agent's runs as that agent instead, at home in its folder, with no more access than the agent has.
-
 const servers = async () => (await readJson(MCP)).mcpServers ?? {};
 
-// The mcp.json an agent's pi gets.
 export async function piPlugins(names, key, agent) {
   const all = await servers();
   const mine = {};
@@ -28,12 +19,10 @@ export async function piPlugins(names, key, agent) {
   return { mcpServers: mine };
 }
 
-// The plugin, if it exists.
 export const pluginOf = async (name) => (await servers())[name];
 
 const HOP = new Set(["host", "connection", "keep-alive", "transfer-encoding", "upgrade", "proxy-connection", "te", "trailer", "cookie", "authorization"]);
 
-// Passes a request to a plugin on the web, with its own headers (its token) instead of the agent's key.
 export async function proxyPlugin(req, res, { plugin, rest, search }) {
   const target = new URL(plugin.url.replace(/\/$/, "") + rest + search);
   const headers = {};
@@ -52,8 +41,6 @@ export async function proxyPlugin(req, res, { plugin, rest, search }) {
   });
 }
 
-// A pipe from an agent's pi to a plugin that runs as a program, in the agent's folder. The socket is the upgraded
-// connection; the program lives as long as it does.
 export async function pipePlugin(socket, plugin, agent) {
   const cwd = homeOf(agent);
   const plugins = { ...PLUGINS, groups: [...PLUGINS.groups, ...isolatedGroups(await profiles())] };

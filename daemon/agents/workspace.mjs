@@ -5,23 +5,14 @@ import { AGENTS_GID } from "../config.mjs";
 import { folder } from "../users.mjs";
 import { homeOf, isIsolated } from "./agents.mjs";
 
-// Keeping the workspace tidy. The user browses it; each regular agent works in a folder of its own there, its home, and can
-// still read and write the rest (an isolated agent's home is outside it, and is all it has). Each gets house rules for its
-// home, and a scratch folder outside it for what it only needs while it works (downloaded pages, one-off scripts, raw data). The scratch folder is emptied when the agent goes idle, and all of
-// them when the app starts.
-
 export const scratchOf = (id) => join(SCRATCH, id);
 
-// Emptying a folder takes a moment: an agent that starts again meanwhile waits for it, so its new folder is not removed.
 let clearing = Promise.resolve();
 
-// The agent's scratch folder, ready for use: its user's alone (the folder of them all may have been emptied).
 export const makeScratch = (agent) => clearing.then(() => folder(SCRATCH, 0, AGENTS_GID, 0o751)).then(() => folder(scratchOf(agent.id), agent.uid, agent.uid, 0o700));
 
-// Empties one agent's scratch folder, or every agent's.
 export const clearScratch = (id) => (clearing = clearing.then(() => rm(id ? scratchOf(id) : SCRATCH, { recursive: true, force: true }).catch(() => {})));
 
-// The rules for the agent's folder, appended to its system prompt: the workspace's, or an isolated agent's own.
 export const rulesOf = (agent) => (isIsolated(agent) ? isolatedRules(homeOf(agent), scratchOf(agent.id)) : workspaceRules(agent.folder, scratchOf(agent.id)));
 
 const workspaceRules = (folder, scratch) => `## Your folder and the workspace

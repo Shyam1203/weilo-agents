@@ -38,26 +38,16 @@ import { setUpdateCheck, updateStatus } from "./update.mjs";
 import { secure } from "./users.mjs";
 import { BUILD } from "./version.mjs";
 
-// What the daemon makes is its own and its group's, never everyone's: in the workspace (whose group is the agents') the
-// agents share it; elsewhere its group is root's (users.mjs).
 process.umask(0o007);
-// What the daemon starts finds programs in root's folders only, not first in the tools agents install, as the image has it
-// (config.mjs). An agent's pi gets those tools back, after root's (users.mjs).
 process.env.PATH = SYSTEM_PATH;
 delete process.env.npm_config_prefix;
 delete process.env.PYTHONUSERBASE;
 
-// JSON API. A handler gets the request as { id, rid (the path's ids), body, query, headers, who } and returns the reply; no
-// reply means 204. Paired devices may use every route; an agent's pi (`who.agent`) only the routes of its own tools
-// (`tool`), for itself, and an isolated agent only those it may call (agents.mjs `mayCall`): its pi does not offer the
-// others, and calling the route itself is refused here.
 const routes = [];
 const route = (method, path, handler, { tool = null } = {}) =>
   routes.push({ method, handler, tool, scoped: path.startsWith("/api/agents/:id"), pattern: new RegExp(`^${path.replace(":id", "([^/]+)").replace(":rid", "([^/]+)")}$`) });
 const agentRoute = (method, path, tool, handler) => route(method, path, handler, { tool });
 
-// A change every agent's pi reads when it starts (skills, plugins, extensions, what it knows about you, memory, the browser
-// rule): agents start their pi anew once it is saved.
 const forAll = (change) => async (req) => {
   const result = await change(req);
   await restartAll();
@@ -105,20 +95,16 @@ route("PUT", "/api/push/muted", ({ body }) => setMuted(body.muted));
 route("GET", "/api/browser/rule", () => getRule());
 route("PUT", "/api/browser/rule", forAll(({ body }) => saveRule(body)));
 route("GET", "/api/search", ({ query }) => searchChats(query.get("q")));
-// The app asks for the agent list every few seconds while it is on screen (`?seen`): no notifications meanwhile.
 route("GET", "/api/agents", async ({ query }) => {
   if (query.has("seen")) markSeen();
   return (await listAgents()).map((agent) => ({ ...agent, working: activityOf(agent.id) !== null, doing: activityOf(agent.id), taken: isTaken(agent.id) }));
 });
-// Regular agents are in every isolated agent's group (agents.mjs `userOf`): making, deleting or switching an isolated agent
-// starts their pis anew (each running one once its reply ends).
 route("POST", "/api/agents", async ({ body }) => {
   const agent = await createAgent(body);
   if (isIsolated(agent)) await restartRegular();
   return agent;
 });
 route("PUT", "/api/agents", ({ body }) => setOrder(body.order));
-// An agent that becomes isolated, or regular again, moves its folders: its pi stops first, and starts once they moved.
 route("PUT", "/api/agents/:id", async ({ id, body }) => {
   const moves = typeof body.isolated === "boolean" && body.isolated !== isIsolated(await getAgent(id));
   const agent = moves ? await holding(id, () => updateAgent(id, body)) : await updateAgent(id, body);
@@ -126,8 +112,6 @@ route("PUT", "/api/agents/:id", async ({ id, body }) => {
   if (moves) await restartRegular();
   return agent;
 });
-// Deleting an agent: its profile and routines go first, so nothing starts its pi again; then pi stops, a running
-// browser step ends and its window closes; then its chat and its folder go, each unless the user keeps it.
 route("DELETE", "/api/agents/:id", async ({ id, body }) => {
   const agent = await getAgent(id);
   await removeProfile(id);
@@ -150,12 +134,10 @@ route("GET", "/api/agents/:id/browser", async ({ id }) => ({ taken: isTaken(id),
 route("POST", "/api/agents/:id/browser/show", ({ id }) => showBrowser(id));
 route("POST", "/api/agents/:id/browser/take-over", ({ id }) => takeOver(id));
 route("POST", "/api/agents/:id/browser/give-back", ({ id }) => giveBack(id));
-// The access token of the provider of the agent's model, when it is signed in with an account (gateway/key.mjs).
 agentRoute("GET", "/api/agents/:id/model-key/:rid", "model", async ({ id, rid }) => {
   if (providerOf((await getAgent(id)).model) !== rid) throw fail(403, "Not permitted");
   return { key: await accessToken(rid) };
 });
-// An agent's `skill` tool: the skill goes into the library and is switched on for that agent, which reads it when its run ends.
 agentRoute("POST", "/api/agents/:id/skill", "skill", async ({ id, body }) => {
   const { id: skill, folder } = await saveSkill(body);
   const agent = await getAgent(id);
@@ -163,9 +145,7 @@ agentRoute("POST", "/api/agents/:id/skill", "skill", async ({ id, body }) => {
   await restart(id);
   return { text: `Saved the skill "${skill}" in ${folder}/ (put any scripts or other files it needs there). It is on for you and loads when this reply ends. It shows under Skills in Settings.` };
 });
-// An agent's `manage_agents` tool: it lists the agents, or asks the user to approve an agent it would make or change (agents/manage.mjs).
 agentRoute("POST", "/api/agents/:id/manage_agents", "manage_agents", ({ id, body }) => manageAgents(id, body));
-// An agent's `manage_settings` tool: it lists the models, or asks the user to approve a change to a few settings (settings/manage.mjs).
 agentRoute("POST", "/api/agents/:id/manage_settings", "manage_settings", ({ id, body }) => manageSettings(id, body));
 agentRoute("POST", "/api/agents/:id/memory", "memory", async ({ body }) => ({ text: await useMemory(body) }));
 agentRoute("POST", "/api/agents/:id/fetch_knowledge", "fetch_knowledge", async ({ body }) => ({ text: await fetchKnowledge(body) }));
@@ -180,7 +160,6 @@ const server = createServer(async (req, res) => {
     const path = url.pathname;
     guard(req, path);
     if (!path.startsWith("/api/")) return await serveUi(req, res);
-    // A pi's request to its model or a plugin, with the key the daemon gave it: passed on with the real key (gateway/).
     const proxied = path.match(/^\/api\/(model|plugin)-proxy\/([\w.-]+)(\/.*)?$/);
     if (proxied) {
       const caller = keyIn(req, url.searchParams);
@@ -194,7 +173,6 @@ const server = createServer(async (req, res) => {
       if (!plugin.url) throw fail(404, "Not found");
       return await proxyPlugin(req, res, { plugin, rest, search: url.search });
     }
-    // Pairing is the one call a browser makes before it is paired: a right code gets it its key, as a cookie.
     if (path === "/api/pair" && req.method === "POST") {
       const token = await pair((await bodyOf(req)).code, req.headers["user-agent"]);
       res.setHeader("Set-Cookie", cookieFor(token, req.headers.host));
@@ -211,7 +189,6 @@ const server = createServer(async (req, res) => {
       if (!match) continue;
       const [, id, rid] = match;
       if (who.agent && !(tool && id === who.agent)) throw fail(403, "Not permitted");
-      // A route for an agent only accepts one that exists.
       const agent = scoped && (await getAgent(id));
       if (who.agent && !mayCall(agent, tool)) throw fail(403, "An isolated agent cannot use this. The user can change what it may use in its settings.");
       const result = await handler({ id, rid, body: await bodyOf(req), query: url.searchParams, headers: req.headers, who });
@@ -225,25 +202,21 @@ const server = createServer(async (req, res) => {
   }
 });
 
-// The provider an agent's pi may reach: its model's. The curator's pi reaches the curator's.
 async function allowedProvider(agent) {
   return providerOf(agent === CURATOR_KEY ? (await getCurator()).model : (await getAgent(agent)).model);
 }
 
-// A plugin the agent uses.
 async function allowedPlugin(agent, name) {
   const plugin = agent !== CURATOR_KEY && (await getAgent(agent)).plugins.includes(name) && (await pluginOf(name));
   if (!plugin) throw fail(403, "Not permitted");
   return plugin;
 }
 
-// Upgrades: the screen's live view (a WebSocket, for paired devices) and an agent's pipe to a plugin that runs as a program.
 server.on("upgrade", async (req, socket, head) => {
   try {
     const url = new URL(req.url, "http://localhost");
     guard(req, url.pathname);
     if (url.pathname === "/api/browser/view" && (await identify(req))?.device && viewUpgrade(req, socket, head)) return;
-    // The daemon's own Playwright, to Chromium's debugging pipe (the path is the secret).
     if (isCdpPath(url.pathname) && cdpUpgrade(req, socket, head)) return;
     const pipe = url.pathname.match(/^\/api\/plugin-pipe\/([\w-]+)$/);
     const caller = pipe && keyIn(req, url.searchParams);
@@ -255,14 +228,11 @@ server.on("upgrade", async (req, socket, head) => {
   socket.destroy();
 });
 
-// A pairing code for whoever can open the admin socket (pair.mjs, run in the container: `docker exec weilo-core node
-// /app/pair.mjs`). Its folder is the daemon user's alone.
 rmSync(dirname(ADMIN_SOCKET), { recursive: true, force: true });
 mkdirSync(dirname(ADMIN_SOCKET), { recursive: true, mode: 0o700 });
 createSocketServer((socket) => socket.end(`${newCode().code}
 `)).listen(ADMIN_SOCKET);
 
-// The data folder is brought to this app's shape before anything reads it; one made by a newer app stops the start.
 try {
   await migrate();
   await secure(await profiles());
@@ -274,7 +244,6 @@ try {
 server.listen(PORT, "0.0.0.0", () => console.log(`weilo-core listening on :${PORT}`));
 
 void syncCompaction();
-// Scratch files from before a restart are no one's now.
 void clearScratch();
 startRoutines();
 void startScreen().catch((err) => console.error("The browser cannot start:", err.message));

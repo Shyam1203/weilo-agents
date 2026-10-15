@@ -1,13 +1,3 @@
-// The pi extension every agent gets: the chat's own tools. Browser and routines are extensions of their own (extension/ in browser/ and routines/); memory's tools come from memory/extension.mjs.
-// `show`: the agent hands the chat a list of blocks (a table, cards, a chart, buttons, a file, a page
-// of its own) and the UI draws them from the tool call itself, live and again from the saved
-// conversation. The tool only checks the call.
-// `ask`: the agent asks the user a question and waits. Pi's own dialogs carry it: the daemon passes
-// the request to the chat and the answer back.
-// `manage_agents`: the agent lists the agents, or asks to make or change one; the daemon asks the user (agents/manage.mjs).
-// `manage_settings`: the agent asks to turn models on or off, or to change when a model's conversations are summarized;
-// the daemon asks the user (settings/manage.mjs). An isolated agent's pi does not offer it.
-
 import { daemonTool } from "./tool.mjs";
 
 const object = (properties, required) => ({ type: "object", properties, required });
@@ -63,7 +53,6 @@ const SETTINGS = `See or change a few of the app's settings, for all agents: whi
 - action change: enable (models to turn on), disable (models to turn off; not one an agent uses), compaction ({ "provider/model": tokens to keep free, or null for the app's own value }).
 Nothing changes until the user approves it in this chat. If they do not, accept it.`;
 
-// An isolated agent's version: it sees only itself and asks only for what it uses.
 const MANAGE_ISOLATED = `Ask for a skill, a plugin or an extension (such as the browser), or to drop one. Use this when you need one for your work, or the user asks; never edit agent files yourself.
 - action list: your settings, and the skills, plugins and extensions there are.
 - action update: give the whole new list of skills, plugins or extensions you want (it replaces the old one); only those three.

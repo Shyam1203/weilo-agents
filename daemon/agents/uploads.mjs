@@ -5,8 +5,6 @@ import { AGENTS_GID } from "../config.mjs";
 import { folder, newFile } from "../users.mjs";
 import { homeOf } from "./agents.mjs";
 
-// What a message carries besides text. Images go to the model as they are; other files are
-// saved in the agent's folder and the message names where.
 const IMAGE = /^data:(image\/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+/=]+)$/;
 
 const list = (value) => {
@@ -14,7 +12,6 @@ const list = (value) => {
   return value;
 };
 
-// Data URLs to pi's image blocks.
 export const toImages = (urls = []) =>
   list(urls).map((url) => {
     const match = IMAGE.exec(url);
@@ -22,9 +19,6 @@ export const toImages = (urls = []) =>
     return { type: "image", data: match[2], mimeType: match[1] };
   });
 
-// [{ name, data: base64 }] to files in uploads/ of the agent's folder; returns their paths from there. All are checked
-// before any is saved. They are the agent's, shared with the group as its folder is (an isolated agent, not in the group,
-// could not open them otherwise).
 export async function saveFiles(agent, files = []) {
   for (const file of list(files)) {
     if (typeof file?.name !== "string" || typeof file.data !== "string") throw fail(400, "The attachments are not valid");

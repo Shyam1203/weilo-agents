@@ -1,6 +1,3 @@
-// A pi extension: `memory` (hot notes every agent sees) and `fetch_knowledge` (search of the knowledge vault and of every chat).
-// The tools call the daemon's API, which keeps the files. Every agent gets it (runner.mjs loads it with weilo.mjs).
-
 import { MAX_NOTE } from "../config.mjs";
 import { daemonTool, note, str } from "../tool.mjs";
 

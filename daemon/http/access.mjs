@@ -2,20 +2,12 @@ import { createHash, randomBytes, randomInt } from "node:crypto";
 import { DEVICES, fail, readJson, updateJson } from "../common.mjs";
 import { DEVICE_COOKIE_S, DEVICE_SEEN_MS, PAIR_CODE_MS, PAIR_WRONG_CODES } from "../config.mjs";
 
-// Who may use the app. Being on localhost or the tailnet is not enough: an agent in the container reaches the app the same
-// way your browser does (Docker passes it on from the host). So a browser you use is paired once, with a code, and then
-// sends its key as a cookie; each agent's pi gets a key of its own when it starts, for its tools. Anything else is refused.
-// agent/devices.json { devices: [{ id, name, hash, added, seen }] }: a key is kept only as its hash. Codes live in memory.
-
 const COOKIE = "weilo_device";
 const hash = (text) => createHash("sha256").update(text).digest("hex");
 
-// --- Pairing codes ---
-// Eight characters that cannot be mistaken for each other, shown as ABCD-EFGH: 40 bits, tried at most PAIR_WRONG_CODES
-// times in PAIR_CODE_MS.
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const plain = (code) => code.toUpperCase().replace(/[^A-Z0-9]/g, "");
-const codes = new Map(); // plain code -> expiry time
+const codes = new Map();
 let wrong = [];
 
 export function newCode() {
@@ -24,19 +16,16 @@ export function newCode() {
   return { code: `${code.slice(0, 4)}-${code.slice(4)}`, expires: new Date(Date.now() + PAIR_CODE_MS).toISOString() };
 }
 
-// "Chrome on Windows", from the browser's own description.
 function nameOf(agent = "") {
   const browser = /Edg\//.test(agent) ? "Edge" : /Firefox\//.test(agent) ? "Firefox" : /Chrome\//.test(agent) ? "Chrome" : /Safari\//.test(agent) ? "Safari" : "A browser";
   const system = /iPhone/.test(agent) ? "iPhone" : /iPad/.test(agent) ? "iPad" : /Android/.test(agent) ? "Android" : /Windows/.test(agent) ? "Windows" : /Mac OS X/.test(agent) ? "Mac" : /Linux/.test(agent) ? "Linux" : "";
   return system ? `${browser} on ${system}` : browser;
 }
 
-// --- Devices ---
-let devices = null; // the file's list, read once
+let devices = null;
 const loaded = async () => (devices ??= (await readJson(DEVICES)).devices ?? []);
 const save = (change) => updateJson(DEVICES, (data) => ({ ...data, devices: change(data.devices ?? []) })).then((data) => (devices = data.devices));
 
-// A code from a paired device (or pair.mjs) pairs this browser: its key, for the cookie.
 export async function pair(code, userAgent) {
   const now = Date.now();
   wrong = wrong.filter((t) => now - t < PAIR_CODE_MS);
@@ -68,9 +57,7 @@ export async function unpair(id) {
   await save((list) => list.filter((d) => d.id !== id));
 }
 
-// --- Agents ---
-// A key for each running pi, made when it starts and dropped when it stops: it never leaves the daemon and that pi.
-const agentKeys = new Map(); // key -> agent id
+const agentKeys = new Map();
 
 export function agentKey(id) {
   for (const [key, owner] of agentKeys) if (owner === id) agentKeys.delete(key);
@@ -81,15 +68,12 @@ export function agentKey(id) {
 
 export const dropAgentKey = (key) => agentKeys.delete(key);
 
-// The key a pi's request to a model or a plugin carries, and whose it is: a provider's API puts it in its own header
-// (Authorization, x-api-key, x-goog-api-key, api-key) or in the address (`key`).
 export function keyIn({ headers }, query) {
   const candidates = [/^Bearer (\S+)$/.exec(headers.authorization ?? "")?.[1], headers["x-api-key"], headers["x-goog-api-key"], headers["api-key"], query.get("key")];
   const key = candidates.find((k) => typeof k === "string" && agentKeys.has(k));
   return key ? { key, agent: agentKeys.get(key) } : null;
 }
 
-// Who sent a request: { device } for a paired browser, { agent } for an agent's pi, or null.
 export async function identify({ headers }) {
   const bearer = /^Bearer (\S+)$/.exec(headers.authorization ?? "")?.[1];
   if (bearer) return agentKeys.has(bearer) ? { agent: agentKeys.get(bearer) } : null;

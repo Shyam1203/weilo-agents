@@ -1,8 +1,6 @@
 import { getAgent } from "../agents/agents.mjs";
 import { subscribe } from "../agents/runner.mjs";
 
-// Server-sent events: the conversation so far, then each new event. The stream ends when pi
-// does; the browser reconnects to the next pi by itself.
 export async function events(req, res, id) {
   await getAgent(id);
   res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });

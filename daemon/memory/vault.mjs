@@ -4,12 +4,8 @@ import { KNOWLEDGE, SECRET } from "../common.mjs";
 import { CURATOR_UID } from "../config.mjs";
 import { folder } from "../users.mjs";
 
-// The knowledge vault: folders of markdown pages in `.pi/knowledge`, kept by the curator (curator.mjs) and searched by agents
-// (fetch.mjs). A page may start with frontmatter, `sources: [<agent id>@<date>, ...]`: the chats it was drawn from, so an
-// agent can check a claim against the chat. Agents may edit pages by hand too; nothing here needs the frontmatter.
 const DEPTH = 4;
 
-// The vault is the curator's (users.mjs): it writes there, as its own user.
 export const ensureVault = () => folder(KNOWLEDGE, CURATOR_UID, CURATOR_UID, 0o700);
 
 async function* files(dir, depth = 0) {
@@ -22,7 +18,6 @@ async function* files(dir, depth = 0) {
 
 const FRONT = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
-// A page: its path in the vault, title (the first "# " line, or the file name), sources and text.
 function parsePage(path, raw) {
   const rel = relative(KNOWLEDGE, path).replaceAll("\\", "/");
   const front = FRONT.exec(raw);
@@ -42,8 +37,6 @@ export async function pagesOf() {
   return pages;
 }
 
-// The curator is told to keep secrets out, but a model can slip: a line of a page it just wrote that looks like a key,
-// token, password or card number is replaced before anyone reads it.
 export async function scrub(since) {
   for await (const path of files(KNOWLEDGE)) {
     const info = await stat(path).catch(() => null);

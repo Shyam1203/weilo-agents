@@ -3,14 +3,9 @@ import { MAX_SEARCH, SEARCH_RESULTS } from "../config.mjs";
 import { profiles } from "./agents.mjs";
 import { messagesOf } from "./sessions.mjs";
 
-// Characters of a message around what was found, for the result's snippet.
 const BEFORE = 50;
 const AFTER = 110;
 
-/**
- * Your messages and the agents' that hold `query` (any case), in every agent's chat, newest first:
- * [{ agent: id, name, speaker ("you" | "agent" | "routine"), at (ISO), snippet }].
- */
 export async function searchChats(query) {
   const text = typeof query === "string" ? query.trim() : "";
   if (!text || text.length > MAX_SEARCH) throw fail(400, "Type what to search for");

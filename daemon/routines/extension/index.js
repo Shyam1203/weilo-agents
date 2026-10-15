@@ -1,6 +1,3 @@
-// A pi extension: `routine`, the agent schedules its own work. The tool calls the daemon's API, which keeps the routines.
-// It uses nothing else of the daemon.
-
 import { DAYS, EVERY } from "../schedule.mjs";
 import { call, note, object, str } from "../../tool.mjs";
 
@@ -39,7 +36,6 @@ export default function (pi) {
     async execute(_id, { action, id, ...fields }) {
       const agent = process.env.WEILO_AGENT;
       const route = `/agents/${agent}/routines/${encodeURIComponent(id ?? "")}`;
-      // `details` is for the chat, which shows a line for what you did.
       const done = async () => {
         if (action === "create") {
           const routine = await call("POST", `/agents/${agent}/routines`, fields);

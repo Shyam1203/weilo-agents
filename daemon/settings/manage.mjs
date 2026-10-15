@@ -6,24 +6,12 @@ import { getCurator } from "../memory/curator.mjs";
 import { reserveFor } from "./compaction.mjs";
 import { availableModels, setEnabledModels, syncCompaction } from "./providers.mjs";
 
-// The `manage_settings` tool: a regular agent asks to change a few of the app's settings, and the user approves each
-// request in its chat (agents/manage.mjs has the same question). Only these, which load no code, name no file or address
-// and touch no key or device:
-// - models to turn on (pi's `enabledModels`): only ones the keys and sign-ins can use; and to turn off: not one an agent
-//   or the memory curator uses (the question would break them), and never the last one (none on means all, to pi);
-// - when a model's conversations are summarized (compaction.mjs: the tokens kept free), within compaction.mjs's bounds,
-//   or back to the app's own value.
-// agent/settings.json stays root's; the agents' pis start anew with the change, as after a save in Settings.
-
 const FIELDS = ["enable", "disable", "compaction"];
 const APPROVE = "Change it";
 
 const names = (value) => value === undefined || (Array.isArray(value) && value.every((v) => typeof v === "string"));
 const list = (items) => items.join(", ");
 
-// The change a request makes, from what is now: `enabled` (pi's enabledModels), `models` (pi's available models), `users`
-// ({ model: [who uses it] }), `overrides` (settings.json's compaction.modelOverrides). Returns { enabledModels (or none when
-// it stays), compaction ({ model: tokens, or null for the app's own value }), lines (what the user reads) }.
 export function planSettings(request, { enabled, models, users, overrides }) {
   const other = Object.keys(request).find((f) => !FIELDS.includes(f));
   if (other) throw fail(400, `Only enable, disable and compaction can be changed, not ${other}.`);
@@ -33,7 +21,6 @@ export function planSettings(request, { enabled, models, users, overrides }) {
   const unknown = [...enable, ...Object.keys(compaction)].filter((id) => !byId.has(id));
   if (unknown.length) throw fail(400, `${list(unknown)}: not a model of a provider with a key or sign-in. Only those can be used.`);
   const lines = [];
-  // None on means all are: the list starts from every model then.
   const before = enabled.length ? enabled : [...byId.keys()];
   const off = disable.filter((id) => before.includes(id));
   const breaks = off.filter((id) => users[id]?.length).map((id) => `${id} (used by ${list(users[id])})`);
@@ -61,7 +48,6 @@ export function planSettings(request, { enabled, models, users, overrides }) {
   return { enabledModels: on.length || off.length ? next : undefined, compaction: plan, lines };
 }
 
-// What the agent may see and ask for: the models (and which are on) and when each is summarized.
 async function current() {
   const [settings, models, agents, curator] = await Promise.all([readJson(SETTINGS), availableModels(), profiles(), getCurator()]);
   const users = {};
@@ -98,7 +84,6 @@ export async function manageSettings(id, { action, ...request }) {
       return { ...settings, compaction: { ...settings.compaction, modelOverrides } };
     });
   }
-  // Turning models on or off writes when they are summarized again; a value removed above is the app's own again.
   await (plan.enabledModels ? setEnabledModels(plan.enabledModels) : syncCompaction());
   await restartAll();
   return { text: "Changed. Agents start anew with it (you after this reply)." };
