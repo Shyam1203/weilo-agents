@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { AGENT_DIR, AUTH, fail, MODELS, readJson } from "../common.mjs";
 import { PI_SDK, PORT } from "../config.mjs";
+import { KEY_HEADERS } from "../http/access.mjs";
 import { forward, headersOf } from "./forward.mjs";
 
 let runtime;
@@ -34,6 +35,10 @@ const PLACEHOLDERS = {
   "github-copilot": (key, real) => `tid=weilo;${/proxy-ep=[^;]+/.exec(real)?.[0] ?? ""};weilo=${key}`,
 };
 
+const SIGN_IN_COMPAT = {
+  openai: { supportsMaxOutputTokens: false, supportsMidConvoEffort: false, supportsLongCacheRetention: false, supportsExplicitPromptCacheMode: false },
+};
+
 export const placeholderFor = (provider, key, real) => (PLACEHOLDERS[provider] ?? ((k) => k))(key, real);
 
 export async function piModels(model, key) {
@@ -41,10 +46,16 @@ export async function piModels(model, key) {
   const { apiKey: _key, headers: _headers, ...own } = (await readJson(MODELS)).providers?.[provider] ?? {};
   const models = await registry();
   const real = models.isUsingOAuth(provider) ? (await models.getAuth(provider, FRESH).catch(() => null))?.auth?.apiKey : "";
-  return { providers: { [provider]: { ...own, baseUrl: `http://127.0.0.1:${PORT}/api/model-proxy/${provider}`, apiKey: real ? placeholderFor(provider, key, real) : key } } };
+  const proxied = { ...own, baseUrl: `http://127.0.0.1:${PORT}/api/model-proxy/${provider}`, apiKey: real ? placeholderFor(provider, key, real) : key };
+  return { providers: { [provider]: real && SIGN_IN_COMPAT[provider] ? { ...proxied, compat: { ...own.compat, ...SIGN_IN_COMPAT[provider] } } : proxied } };
 }
 
-export const swapKey = (text, key, real) => text.replace(new RegExp(`[^\\s,]*${key}[^\\s,]*`, "g"), real);
+export const swapKey = (text, key, real) => text.replace(new RegExp(`[^\\s,]*${key}[^\\s,]*`, "g"), () => real);
+
+export const keyedHeaders = (headers, key, real) =>
+  Object.fromEntries(Object.entries(headers).flatMap(([name, value]) => (KEY_HEADERS.includes(name) ? [[name, swapKey(value, key, real)]] : value.includes(key) ? [] : [[name, value]])));
+
+export const forgetAuth = () => (made = 0);
 
 /** @type {[string, RegExp][]} */
 const API_PATHS = [
@@ -72,5 +83,5 @@ export async function proxyModel(req, res, { key, provider, rest, search }) {
   if (!base) throw fail(502, `Unknown provider ${provider}`);
   const target = new URL(base.replace(/\/$/, "") + rest + search);
   if (target.searchParams.has("key")) target.searchParams.set("key", swapKey(target.searchParams.get("key"), key, real));
-  await forward(req, res, target, { ...headersOf(req, [], (value) => swapKey(value, key, real)), ...found.auth.headers });
+  await forward(req, res, target, { ...keyedHeaders(headersOf(req), key, real), ...found.auth.headers });
 }

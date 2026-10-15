@@ -264,7 +264,7 @@
 <h3>Skills</h3>
 <ul>
 <li>Added in Settings &gt; Skills as a <code>.zip</code> or a <code>SKILL.md</code>. A zip is refused if it holds a link or unpacks to over 50 MB; <code>SKILL.md</code> files are looked for up to 3 folders deep; each needs a <code>description</code>. The id is the skill's name as a slug (at most 48 characters); one with the same id is replaced.</li>
-<li>A regular agent saves a skill with the <code>skill</code> tool (description at most 1024 characters, instructions at most 60000). You approve it in the chat first: the question shows the name, the description, the instructions up to their first 2000 characters, and whether it changes an existing skill. Once approved it is written to the library, switched on for that agent, and loads when the reply ends; if you say no, nothing is saved and the agent does not ask again. Other files in that skill's folder stay; the agent may add scripts there.</li>
+<li>A regular agent saves a skill with the <code>skill</code> tool (description at most 1024 characters, instructions at most 16000). You approve it in the chat first: the question shows the name, the description, the whole instructions, and whether it changes an existing skill and which other agents use it. Once approved it is written to the library, switched on for that agent, and loads when the reply ends; if you say no, nothing is saved and the agent does not ask again. Other files in that skill's folder stay; the agent may add scripts there.</li>
 <li>An agent loads exactly the skills its profile lists (<code>--no-skills --skill …</code>). Typing <code>/</code> in the chat lists them; choosing one inserts <code>/skill:name</code>, which pi expands.</li>
 </ul>
 <h3>Plugins</h3>

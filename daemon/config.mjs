@@ -92,8 +92,7 @@ export const MAX_UNZIPPED = 50e6;
 export const SKILL_DEPTH = 3;
 export const MAX_NAME = 100;
 export const MAX_SKILL_DESCRIPTION = 1024;
-export const MAX_SKILL_TEXT = 60_000;
-export const SKILL_EXCERPT = 2000;
+export const MAX_SKILL_TEXT = 16_000;
 export const MAX_ABOUT = 4000;
 
 export const MAX_NOTES = 40;

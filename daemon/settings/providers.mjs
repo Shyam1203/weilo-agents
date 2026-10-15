@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { piRpc } from "../agents/pi.mjs";
 import { AGENT_DIR, AUTH, fail, PI_ENV, readJson, SETTINGS, updateJson } from "../common.mjs";
 import { BIN, MODELS_FOR_MS, MODELS_TIMEOUT_MS, PROVIDERS } from "../config.mjs";
+import { forgetAuth } from "../gateway/models.mjs";
 import { setReserves } from "./compaction.mjs";
 
 const check = (id) => {
@@ -32,7 +33,10 @@ export async function removeKey(id) {
 }
 
 let cache = null;
-export const forgetModels = () => (cache = null);
+export const forgetModels = () => {
+  cache = null;
+  forgetAuth();
+};
 
 export function availableModels() {
   if (!cache || Date.now() - cache.at > MODELS_FOR_MS) cache = { at: Date.now(), list: askModels().catch((err) => ((cache = null), Promise.reject(err))) };

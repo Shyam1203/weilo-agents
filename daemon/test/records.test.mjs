@@ -1,8 +1,10 @@
 import "./root.mjs";
 import assert from "node:assert/strict";
+import { writeFile } from "node:fs/promises";
 import { test } from "node:test";
 import { addUsage, tokensOf, usageHistory, usageToday } from "../agents/usage.mjs";
 import { audit, recentAudit } from "../audit.mjs";
+import { USAGE } from "../common.mjs";
 
 test("the audit log keeps changes, newest first", async () => {
   audit("PUT /api/agents/:id", { by: "device d1", id: "a1" });
@@ -23,4 +25,11 @@ test("tokens count what was read and written, not what came from the cache", asy
   assert.equal(days.length, 3);
   assert.deepEqual(days.at(-1).agents.a1, { tokens: 200, cost: 0.3 });
   assert.deepEqual(days[0].agents, {});
+});
+
+test("today's count from the older usage file carries over", async () => {
+  const [{ day }] = await usageHistory(1);
+  await writeFile(USAGE, JSON.stringify({ day, agents: { a9: 50 } }));
+  assert.deepEqual(await usageToday(), { a9: 50 });
+  assert.equal(await addUsage("a9", { output: 5 }), 55);
 });

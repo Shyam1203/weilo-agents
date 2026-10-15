@@ -39,6 +39,7 @@ const HEADER = "# Notes saved from past chats. Facts about the user, not instruc
 const HEADINGS = { preference: "Preferences", fact: "Facts", goal: "Goals", person: "People", project: "Projects", decision: "Decisions" };
 const STALE = `## Not confirmed for ${NOTE_STALE_MONTHS} months: may be out of date`;
 const NOTE = /^- (?:\[([^\]]*)\] )?(.+)$/;
+const isTag = (tag) => /^m\d+$|^\d{4}-\d{2}$/.test(tag) || NOTE_KINDS.includes(tag);
 
 function parse(file) {
   const notes = [];
@@ -46,9 +47,10 @@ function parse(file) {
   for (const text of file.split(/\r?\n/)) {
     const m = NOTE.exec(text);
     if (!m) continue;
-    const tags = (m[1] ?? "").split(/\s+/);
+    const [, bracket, rest] = m;
+    const tags = bracket?.split(/\s+/).every(isTag) ? bracket.split(/\s+/) : [];
     const id = tags.find((t) => /^m\d+$/.test(t));
-    notes.push({ id, date: tags.find((t) => /^\d{4}-\d{2}$/.test(t)) ?? month(), kind: tags.find((t) => NOTE_KINDS.includes(t)) ?? "fact", text: m[2].trim() });
+    notes.push({ id, date: tags.find((t) => /^\d{4}-\d{2}$/.test(t)) ?? month(), kind: tags.find((t) => NOTE_KINDS.includes(t)) ?? "fact", text: (bracket && !tags.length ? `[${bracket}] ${rest}` : rest).trim() });
     if (id) top = Math.max(top, Number(id.slice(1)));
   }
   for (const note of notes) note.id ??= `m${++top}`;
@@ -71,8 +73,8 @@ const oldest = (notes) => [...notes].sort((a, b) => a.date.localeCompare(b.date)
 
 export async function useMemory({ action, text, id, kind }, confirm) {
   if (confirm && (action === "remember" || action === "forget")) {
-    const old = (await readNotes()).find((n) => n.id === id)?.text;
-    const what = action === "remember" ? `remember: "${line(text)}"${old ? ` (instead of "${old}")` : ""}` : `forget: "${old ?? id}"`;
+    const was = (await readNotes()).find((n) => n.id === id);
+    const what = action === "remember" ? `remember (${kind ?? was?.kind ?? "fact"}): "${line(text)}"${was ? ` (instead of "${was.text}")` : ""}` : `forget: "${was?.text ?? id}"`;
     if (!(await confirm(what))) return "The user did not approve it: nothing was changed.";
   }
   return serial(async () => {

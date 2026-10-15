@@ -25,6 +25,11 @@ const KINDS = [
   { value: "project", label: "Project", group: "Projects" },
   { value: "decision", label: "Decision", group: "Decisions" },
 ];
+const MONTH = /^\d{4}-\d{2}$/;
+const tagsOf = (bracket?: string) => {
+  const tags = bracket?.split(/\s+/) ?? [];
+  return tags.every((t) => /^m\d+$/.test(t) || MONTH.test(t) || KINDS.some((k) => k.value === t)) ? tags : null;
+};
 const STALE_MONTHS = 12;
 const monthOf = (when?: string) => {
   const date = new Date(`${when}-01T00:00:00`);
@@ -67,8 +72,8 @@ export function MemoryPage({ providers, models }: Props) {
   const notes = lines.flatMap((line, i) => {
     const m = NOTE.exec(line);
     if (!m) return [];
-    const tags = (m[1] ?? "").split(/\s+/);
-    return [{ i, when: tags.find((t) => /^\d{4}-\d{2}$/.test(t)), kind: KINDS.find((k) => tags.includes(k.value)) ?? KINDS[1], note: m[2] }];
+    const tags = tagsOf(m[1]);
+    return [{ i, when: tags?.find((t) => MONTH.test(t)), kind: KINDS.find((k) => tags?.includes(k.value)) ?? KINDS[1], note: tags ? m[2] : `[${m[1]}] ${m[2]}` }];
   });
   const setLine = (i: number, change: (line: string) => string | null) =>
     setText((current) =>
@@ -82,7 +87,8 @@ export function MemoryPage({ providers, models }: Props) {
     const { i, note } = editing;
     const one = note.replace(/\s+/g, " ").trim();
     setEditing(null);
-    setLine(i, (line) => (one ? line.replace(NOTE, (_, tags?: string) => `- ${tags ? `[${tags}] ` : ""}${one}`) : null));
+    const kept = (bracket?: string) => tagsOf(bracket)?.filter((t) => !MONTH.test(t)) ?? [];
+    setLine(i, (line) => (one ? line.replace(NOTE, (_, bracket?: string) => `- ${kept(bracket).length ? `[${kept(bracket).join(" ")}] ` : ""}${one}`) : null));
   };
   const add = () => {
     const note = adding.replace(/\s+/g, " ").trim();

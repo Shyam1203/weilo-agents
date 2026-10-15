@@ -29,7 +29,7 @@ test("with confirm, nothing changes until the user says yes", async () => {
   const asked = [];
   const no = async (what) => (asked.push(what), false);
   assert.match(await useMemory({ action: "remember", text: "Lives in Pune" }, no), /did not approve/);
-  assert.deepEqual(asked, ['remember: "Lives in Pune"']);
+  assert.deepEqual(asked, ['remember (fact): "Lives in Pune"']);
   assert.equal(await memoryText(), "");
   assert.match(await useMemory({ action: "remember", text: "Lives in Pune" }, async () => true), /Saved/);
 });
@@ -48,4 +48,9 @@ test("notes are grouped by kind, and one not confirmed for a year is set apart u
   assert.match(await useMemory({ action: "list" }), /m2 \(person, not confirmed since 2020-01\): Sister is Asha/);
   assert.match(await useMemory({ action: "remember", id: "m2", text: "Sister is Asha" }), /confirmed/);
   assert.match(await memoryText(), /## People\n- \[m2 \d{4}-\d{2} person\] Sister is Asha/);
+});
+
+test("a bracket that is not tags stays part of the note", async () => {
+  await saveMemoryText("- [urgent] Call mom on Sunday\n");
+  assert.match(await memoryText(), /- \[m\d+ \d{4}-\d{2} fact\] \[urgent\] Call mom on Sunday/);
 });

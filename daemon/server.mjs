@@ -13,7 +13,7 @@ import { closeBrowser, giveBack, hasWindow, isTaken, showBrowser, takeOver, useB
 import { getRule, saveRule } from "./browser/rule.mjs";
 import { cdpUpgrade, isCdpPath, startScreen, viewUpgrade } from "./browser/screen.mjs";
 import { fail } from "./common.mjs";
-import { ADMIN_SOCKET, PORT, SANDBOX_API, SANDBOX_DIR, SKILL_EXCERPT, SYSTEM_PATH, USAGE_SHOWN } from "./config.mjs";
+import { ADMIN_SOCKET, PORT, SANDBOX_API, SANDBOX_DIR, SYSTEM_PATH, USAGE_SHOWN } from "./config.mjs";
 import { sendContact } from "./contact.mjs";
 import { providerOf, proxyModel } from "./gateway/models.mjs";
 import { pipePlugin, pluginOf, proxyPlugin } from "./gateway/plugins.mjs";
@@ -69,8 +69,8 @@ route("GET", "/api/update", () => updateStatus());
 route("PUT", "/api/update", ({ body }) => setUpdateCheck(body));
 route("POST", "/api/contact", ({ body }) => sendContact(body));
 route("GET", "/api/providers", () => listProviders());
-route("PUT", "/api/providers/:id", ({ id, body }) => saveKey(id, body.key));
-route("DELETE", "/api/providers/:id", ({ id }) => removeKey(id));
+route("PUT", "/api/providers/:id", forAll(({ id, body }) => saveKey(id, body.key)));
+route("DELETE", "/api/providers/:id", forAll(({ id }) => removeKey(id)));
 route("POST", "/api/providers/:id/sign-in", ({ id }) => startSignIn(id));
 route("GET", "/api/providers/:id/sign-in", ({ id }) => signInStatus(id));
 route("PUT", "/api/providers/:id/sign-in", ({ id, body }) => answerSignIn(id, body.answer));
@@ -139,8 +139,9 @@ route("POST", "/api/agents/:id/browser/give-back", ({ id }) => giveBack(id), qui
 agentRoute("POST", "/api/agents/:id/skill", "skill", async ({ id, body }) => {
   const skill = planSkill(body);
   const agent = await getAgent(id);
-  const excerpt = skill.instructions.length > SKILL_EXCERPT ? `${skill.instructions.slice(0, SKILL_EXCERPT)}\n…` : skill.instructions;
-  const question = `${agent.name} asks to ${(await hasSkill(skill.id)) ? "change" : "save"} the skill "${skill.id}": ${skill.about}\n\n${excerpt}`;
+  const users = (await listAgents()).filter((a) => a.id !== id && a.skills.includes(skill.id)).map((a) => a.name);
+  const change = (await hasSkill(skill.id)) ? `change the skill "${skill.id}"${users.length ? ` (also used by ${users.join(", ")})` : ""}` : `save the skill "${skill.id}"`;
+  const question = `${agent.name} asks to ${change}: ${skill.about}\n\n${skill.instructions}`;
   if ((await askUser(id, question, [SAVE, "Don't"])) !== SAVE) return { text: "The user did not approve it: nothing was saved. Do not ask again unless they ask you to." };
   const folder = await saveSkill(skill);
   await updateAgent(id, { skills: [...new Set([...agent.skills, skill.id])] });
