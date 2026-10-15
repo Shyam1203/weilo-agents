@@ -205,3 +205,8 @@ footer.foot .pager { display: flex; justify-content: space-between; gap: 12px; f
   .top, .toc, .skip { display: none; }
   section.card { break-inside: avoid; border: 0; }
 }
+
+@media (max-width: 700px) {
+  .top-in { flex-wrap: wrap; gap: 2px 12px; padding-bottom: 6px; }
+  .top nav { flex-basis: 100%; }
+}
