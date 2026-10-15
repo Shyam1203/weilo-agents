@@ -4,7 +4,8 @@ import { basename, extname, join, sep } from "node:path";
 import { pipeline } from "node:stream";
 import { fail, WORKSPACE } from "../common.mjs";
 
-// Files in the workspace, for the chat to show and download. Pictures show in the page; anything
+// Files in the workspace, for an agent's chat to show and download. A path the agent named is from its folder (`home`); one
+// from before agents had folders, or given from the top of the workspace, is from there, so both are looked for in turn. Pictures show in the page; anything
 // else downloads, so a file an agent wrote can never run as a page of ours. With `view` (the chat's preview) a text file is
 // sent as plain text, for the chat to draw, and a PDF inline.
 const PICTURES = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml" };
@@ -13,18 +14,24 @@ const TEXT = new Set(
   ".md .markdown .txt .csv .tsv .json .jsonl .log .yaml .yml .toml .xml .html .htm .css .js .mjs .ts .tsx .jsx .py .sh .sql .java .go .rs .c .cpp .h .rb .php .ini".split(" "),
 );
 
-export async function serveFile(res, path, view = false) {
+// A file under the workspace by its path from `dir`, or null; the real path, so a link out of the workspace does not lead out of it.
+async function find(root, dir, name) {
+  const file = await realpath(join(dir, name)).catch(() => null);
+  if (!file || !file.startsWith(root + sep)) return null;
+  return (await stat(file)).isFile() ? file : null;
+}
+
+export async function serveFile(res, home, path, view = false) {
   let name;
   try {
     name = decodeURIComponent(path);
   } catch {
     throw fail(404, "Not found");
   }
-  // The real path, so a link out of the workspace does not lead out of it.
-  const file = await realpath(join(WORKSPACE, name)).catch(() => null);
-  if (!file || !file.startsWith((await realpath(WORKSPACE)) + sep)) throw fail(404, "Not found");
+  const root = await realpath(WORKSPACE);
+  const file = (await find(root, home, name)) ?? (await find(root, WORKSPACE, name));
+  if (!file) throw fail(404, "Not found");
   const info = await stat(file);
-  if (!info.isFile()) throw fail(404, "Not found");
   const kind = extname(file).toLowerCase();
   const picture = PICTURES[kind];
   const pdf = view && kind === ".pdf";

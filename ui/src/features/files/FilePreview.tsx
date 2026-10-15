@@ -1,7 +1,6 @@
 // A file an agent made, shown in the app: a picture, a PDF, a Markdown, CSV, JSON, HTML or text file, without a download.
 // Anything else (a Word or Excel file) has no preview here and downloads.
 import { useEffect, useState } from "react";
-import { fileUrl } from "../../api/chat";
 import { messageOf } from "../../api/http";
 import { Button } from "../../components/ui/Button";
 import { Loading } from "../../components/ui/List";
@@ -9,6 +8,7 @@ import { Modal } from "../../components/ui/Modal";
 import { Markdown } from "../../components/Markdown";
 import { ShowPage } from "../chat/ShowPage";
 import { kindOf, parseTable, type Kind } from "./kinds";
+import { useFileUrl } from "./PreviewContext";
 
 /** Larger files show their start only (characters of text), and at most this many rows of a table. */
 const MAX_TEXT = 1_000_000;
@@ -21,6 +21,7 @@ const TEXT_KINDS: Kind[] = ["markdown", "csv", "json", "html", "text"];
 
 export function FilePreview({ path, name, onClose }: { path: string; name: string; onClose: () => void }) {
   const kind = kindOf(path);
+  const fileUrl = useFileUrl();
   const url = fileUrl(path, true);
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

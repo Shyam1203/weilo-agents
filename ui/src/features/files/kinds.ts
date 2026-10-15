@@ -18,11 +18,12 @@ export function kindOf(path: string): Kind {
 }
 
 const IN_WORKSPACE = /^\/home\/node\/\.pi\/workspace\/([^\s`]+\.[A-Za-z0-9]{1,8})$/;
-// Agents work in the workspace, so "notes/plan.md" is a file there too: a folder (no dot in its name, which a web
+// Agents work in their folder in the workspace, so "notes/plan.md" is a file there too: a folder (no dot in its name, which a web
 // address has) and a file of a kind the preview shows. A bare name may be in a folder the text named earlier.
 const RELATIVE = /^(?:\.\/)?([^\s`/:~.][^\s`/:.]*\/[^\s`:]*\.[A-Za-z0-9]{1,8})$/;
 
-/** A file in the workspace named in an agent's text, as a path inside the workspace; null for anything else. */
+/** A file in the workspace named in an agent's text, as a path from the agent's folder or the top of the workspace (the
+ * daemon looks in both); null for anything else. */
 export function workspacePath(text: string): string | null {
   const t = text.trim();
   const m = IN_WORKSPACE.exec(t) ?? RELATIVE.exec(t);
