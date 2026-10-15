@@ -62,7 +62,7 @@ export function ExtensionsPage({ extensions, onChange }: Props) {
       {asking && (
         <Modal title="Add an extension?" onClose={() => setAsking(false)} width="max-w-sm">
           <div className="flex flex-col gap-4">
-            <p className="text-[14px] text-ink-2">An extension runs as a program on your Weilo computer. It can read your keys and your files. Add only extensions from people you trust.</p>
+            <p className="text-[14px] text-ink-2">An extension runs as a program inside each agent that uses it. It can read and change that agent's files and use its model account. Add only extensions from people you trust.</p>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setAsking(false)}>
                 Cancel
