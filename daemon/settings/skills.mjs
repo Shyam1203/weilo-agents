@@ -1,8 +1,10 @@
-import { access, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { access, cp, mkdir, mkdtemp, open, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
 import { fail, SKILLS, slug } from "../common.mjs";
 import { MAX_SKILL_DESCRIPTION, MAX_SKILL_TEXT, SKILL_DEPTH } from "../config.mjs";
+import { inFolder } from "../users.mjs";
 import { unzip } from "./zip.mjs";
 
 const ID = /^[\w-]+$/;
@@ -85,7 +87,10 @@ export const hasSkill = (id) => access(join(SKILLS, id, "SKILL.md")).then(() => 
 export async function saveSkill({ id, text }) {
   const folder = join(SKILLS, id);
   await mkdir(folder, { recursive: true });
-  await writeFile(join(folder, "SKILL.md"), text);
+  await inFolder(folder, async (at) => {
+    const file = await open(`${at}SKILL.md`, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o660);
+    await file.writeFile(text).finally(() => file.close());
+  }).catch(() => Promise.reject(fail(409, `${folder}/SKILL.md cannot be written: it is not a plain folder and file. Remove it, then try again.`)));
   return folder;
 }
 

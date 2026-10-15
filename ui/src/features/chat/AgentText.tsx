@@ -1,4 +1,4 @@
-import { isValidElement, useRef, useState, type ReactNode } from "react";
+import { isValidElement, memo, useRef, useState, type ReactNode } from "react";
 import type { Components } from "react-markdown";
 import { Markdown } from "../../components/Markdown";
 import { Icon } from "../../components/ui/Icon";
@@ -72,16 +72,16 @@ function CodeBlock({ children }: { children: ReactNode }) {
   );
 }
 
-export const CardText = ({ text }: { text: string }) => (
+export const CardText = memo(({ text }: { text: string }) => (
   <div className="prose-chat text-[13.5px]! leading-relaxed! text-ink-2 [&_strong]:text-ink">
     <Markdown text={text} components={MARKDOWN} />
   </div>
-);
+));
 
-export function AgentText({ text }: { text: string }) {
+export const AgentText = memo(function AgentText({ text }: { text: string }) {
   return (
     <div className="prose-chat w-fit max-w-full rounded-2xl bg-bubble px-3.5 py-2 sm:max-w-[85%]">
       <Markdown text={text} components={MARKDOWN} />
     </div>
   );
-}
+});

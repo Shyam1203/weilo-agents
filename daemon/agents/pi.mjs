@@ -1,9 +1,9 @@
+import { splitOn } from "../common.mjs";
 import { PI_KILL_MS } from "../config.mjs";
 
 export function piRpc(child, { onEvent, onExit } = /** @type {{ onEvent?: (event: any) => void, onExit?: (exit: { code: number | null, signal: string | null, message: string }) => void }} */ ({})) {
   const pending = new Map();
   let nextId = 0;
-  let buffer = "";
   let stderr = "";
   let done = false;
   let killer;
@@ -32,11 +32,7 @@ export function piRpc(child, { onEvent, onExit } = /** @type {{ onEvent?: (event
     p?.resolve(msg.data);
   };
 
-  child.stdout.setEncoding("utf8").on("data", (chunk) => {
-    const lines = (buffer + chunk).split("\n");
-    buffer = lines.pop();
-    for (const line of lines) if (line.trim()) record(line);
-  });
+  child.stdout.setEncoding("utf8").on("data", splitOn("\n", (line) => line.trim() && record(line)));
   child.stderr.setEncoding("utf8").on("data", (chunk) => (stderr = (stderr + chunk).slice(-4000)));
   child.stdin.on("error", () => {});
   child.on("error", (err) => {

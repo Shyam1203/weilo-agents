@@ -144,7 +144,7 @@ agentRoute("POST", "/api/agents/:id/skill", "skill", async ({ id, body }) => {
   const question = `${agent.name} asks to ${change}: ${skill.about}\n\n${skill.instructions}`;
   if ((await askUser(id, question, [SAVE, "Don't"])) !== SAVE) return { text: "The user did not approve it: nothing was saved. Do not ask again unless they ask you to." };
   const folder = await saveSkill(skill);
-  await updateAgent(id, { skills: [...new Set([...agent.skills, skill.id])] });
+  await updateAgent(id, (now) => ({ skills: [...new Set([...now.skills, skill.id])] }));
   await restart(id);
   return { text: `Saved the skill "${skill.id}" in ${folder}/ (put any scripts or other files it needs there). It is on for you and loads when this reply ends. It shows under Skills in Settings.` };
 });
@@ -233,6 +233,7 @@ async function allowedPlugin(agent, name) {
 }
 
 async function upgrade(req, socket, head, sandboxed) {
+  socket.on("error", () => socket.destroy());
   try {
     const url = new URL(req.url, "http://localhost");
     guard(req, url.pathname);
@@ -244,7 +245,7 @@ async function upgrade(req, socket, head, sandboxed) {
     const pipe = url.pathname.match(/^\/api\/plugin-pipe\/([\w-]+)$/);
     if (pipe && caller) {
       const plugin = await allowedPlugin(caller.agent, pipe[1]);
-      if (plugin.command) return pipePlugin(socket, plugin, await getAgent(caller.agent));
+      if (plugin.command) return await pipePlugin(socket, pipe[1], plugin, await getAgent(caller.agent));
     }
   } catch {}
   socket.destroy();
@@ -255,7 +256,7 @@ const sandbox = createServer((req, res) => handle(req, res, true)).on("upgrade",
 
 rmSync(dirname(ADMIN_SOCKET), { recursive: true, force: true });
 mkdirSync(dirname(ADMIN_SOCKET), { recursive: true, mode: 0o700 });
-createSocketServer((socket) => socket.end(`${newCode().code}
+createSocketServer((socket) => socket.on("error", () => socket.destroy()).end(`${newCode().code}
 `)).listen(ADMIN_SOCKET);
 
 try {

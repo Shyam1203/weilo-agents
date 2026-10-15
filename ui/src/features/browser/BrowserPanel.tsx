@@ -30,7 +30,7 @@ export function BrowserPanel({ agentId, agentName, off, onTaken }: { agentId: st
 
   useEffect(() => {
     if (off || hasWindow) return;
-    const timer = setInterval(() => void browserState(agentId).then((s) => (setTaken(s.taken), setHasWindow(s.hasWindow)), () => {}), 3000);
+    const timer = setInterval(() => document.visibilityState === "visible" && void browserState(agentId).then((s) => (setTaken(s.taken), setHasWindow(s.hasWindow)), () => {}), 3000);
     return () => clearInterval(timer);
   }, [agentId, off, hasWindow]);
 

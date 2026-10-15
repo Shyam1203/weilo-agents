@@ -14,6 +14,7 @@ export const ISOLATED_HOMES = join(ROOT, "isolated-homes");
 export const RUN = "/var/lib/weilo";
 export const TOOLS = "/home/node/.local";
 export const PLUGINS_HOME = join(RUN, "pi", "plugins");
+export const PLUGIN_USERS = join(AGENT_DIR, "plugin-users.json");
 export const PLUGINS_CWD = join(RUN, "pi", "plugins-cwd");
 export const PI_ENV = { PI_CODING_AGENT_DIR: AGENT_DIR };
 export const AUTH = join(AGENT_DIR, "auth.json");
@@ -56,6 +57,20 @@ export const plainText = (markdown) =>
     .replace(/\*\*|__|~~|`|\|/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+export function splitOn(separator, each) {
+  let held = [];
+  return (chunk) => {
+    let from = 0;
+    for (let at = chunk.indexOf(separator); at >= 0; at = chunk.indexOf(separator, from)) {
+      held.push(chunk.slice(from, at));
+      each(held.join(""));
+      held = [];
+      from = at + separator.length;
+    }
+    if (from < chunk.length) held.push(chunk.slice(from));
+  };
+}
 
 export const fail = (status, message) => Object.assign(new Error(message), { status });
 

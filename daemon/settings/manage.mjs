@@ -74,6 +74,7 @@ export async function manageSettings(id, { action, ...request }) {
   const plan = planSettings(request, now);
   const question = `${(await getAgent(id)).name} asks to change the app's settings:\n${plan.lines.join("\n")}`;
   if ((await askUser(id, question, [APPROVE, "Don't"])) !== APPROVE) return { text: "The user did not approve it: nothing was changed." };
+  if (JSON.stringify(planSettings(request, await current())) !== JSON.stringify(plan)) throw fail(409, "The settings were changed while the user was asked. Look again, and ask again if it is still needed.");
   if (Object.keys(plan.compaction).length) {
     await updateJson(SETTINGS, (settings) => {
       const modelOverrides = { ...settings.compaction?.modelOverrides };

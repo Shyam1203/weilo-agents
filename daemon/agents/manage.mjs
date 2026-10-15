@@ -116,7 +116,7 @@ export async function manageAgents(id, { action, agent: which, ...body }) {
       const answer = await askUser(id, `${asker.name} asks to change ${self ? "itself" : target.name}:\n${changes}${more(asker, after, target)}`, [APPROVE.update, DECLINE]);
       if (answer !== APPROVE.update) return { text: "The user did not approve it: nothing was changed." };
     }
-    await updateAgent(target.id, patch);
+    await updateAgent(target.id, patch, target);
     await restart(target.id);
     const text = self ? "Changed. It applies from your next message." : `Changed ${target.name}.`;
     return always ? { text, details: { note: `Changed its own ${Object.keys(request).join(" and ")} (always allowed)` } } : { text };

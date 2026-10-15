@@ -87,8 +87,8 @@ async function* linesOf(file) {
   }
 }
 
-const shown = (m) => m?.role === "user" || m?.role === "assistant" || (m?.role === "toolResult" && ["ask", "routine", "manage_agents"].includes(m.toolName));
-const slim = (m) => (Array.isArray(m.content) && m.role === "assistant" ? { ...m, content: m.content.filter((b) => b.type !== "thinking") } : m);
+export const shown = (m) => m?.role === "user" || m?.role === "assistant" || m?.role === "compactionSummary" || (m?.role === "toolResult" && ["ask", "routine", "manage_agents"].includes(m.toolName));
+export const slim = (m) => (Array.isArray(m.content) && m.role === "assistant" ? { ...m, content: m.content.filter((b) => b.type !== "thinking") } : m);
 
 export async function earlierOf(id, skip = 0) {
   const files = await chatFiles(id);
