@@ -211,9 +211,9 @@
 <tr><td>About</td><td>Version, build, pi version, update notice, the update check switch</td><td><code>/api/version</code>, <code>/api/update</code></td></tr>
 <tr><td>Skills</td><td>Library, add <code>.zip</code> or <code>SKILL.md</code>, turn on per agent, delete</td><td><code>/api/skills</code>, <code>PUT /api/agents/:id</code></td></tr>
 <tr><td>Plugins</td><td>Add a command or web address, connection status, remove</td><td><code>/api/plugins</code>, <code>/api/plugins/status</code></td></tr>
-<tr><td>Extensions</td><td>Bundled and added ones; adding asks first ("It can read your keys and your files" in the app's own warning)</td><td><code>/api/extensions</code></td></tr>
+<tr><td>Extensions</td><td>Bundled and added ones; adding asks first, and the warning says an extension can read and change the files of each agent that uses it and use its model account</td><td><code>/api/extensions</code></td></tr>
 </tbody></table></div>
-<p>Note: the Extensions warning in the app says an extension "can read your keys". Since the key gateway, an extension runs as the agent and cannot read the key files; it can still use the agent's provider through the gateway, read the agent's files and reach the network.</p>
+<p>An extension runs inside the pi of each agent that uses it, as that agent's Linux user. It cannot read the key files; it can use the agent's provider through the gateway, read and change the agent's files, and reach the network.</p>
 </section>
 
 <section class="card" id="talk">
