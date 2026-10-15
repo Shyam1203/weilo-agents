@@ -4,17 +4,20 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build"
+    "build": "tsc --noEmit && vite build",
+    "openui-prompt": "node scripts/openui-prompt.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",
     "@fontsource-variable/geist-mono": "^5.3.0",
     "@novnc/novnc": "^1.7.0",
+    "@openuidev/react-lang": "^1.0.1",
     "lucide-react": "^1.54.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

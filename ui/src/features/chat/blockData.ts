@@ -6,7 +6,8 @@ export type Block =
   | { type: "chart"; title: string; shape: "bar" | "line"; points: { label: string; value: number }[] }
   | { type: "buttons"; options: { label: string; message: string }[] }
   | { type: "file"; path: string; name: string }
-  | { type: "page"; title: string; html: string };
+  | { type: "page"; title: string; html: string }
+  | { type: "openui"; source: string };
 
 type Raw = Record<string, unknown>;
 
@@ -44,6 +45,8 @@ function blockOf(raw: Raw): Block | null {
       const path = str(raw.path).replace(/^\/home\/node\/\.pi\/workspace\//, "").replace(/^\.?\/+/, "");
       return path ? { type: "file", path, name: str(raw.name) || path.split("/").pop()! } : null;
     }
+    case "openui":
+      return str(raw.source).trim() ? { type: "openui", source: str(raw.source) } : null;
     case "page":
       return str(raw.html) ? { type: "page", title: str(raw.title), html: str(raw.html) } : null;
     default:

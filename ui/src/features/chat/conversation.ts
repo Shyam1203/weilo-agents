@@ -1,4 +1,5 @@
 import { blocksOf, type Block as Shown } from "./blockData";
+import { partialJson } from "./partialJson";
 
 interface Block {
   type: string;
@@ -8,6 +9,7 @@ interface Block {
   id?: string;
   name?: string;
   arguments?: unknown;
+  json?: string;
 }
 
 export interface PiMessage {
@@ -33,6 +35,9 @@ interface StreamEvent {
   contentIndex: number;
   delta?: string;
   content?: string;
+  id?: string;
+  toolName?: string;
+  toolCall?: Block;
 }
 
 export interface PiEvent extends Partial<Asking> {
@@ -75,7 +80,13 @@ function stream(messages: PiMessage[], e: StreamEvent): PiMessage[] {
   const [kind, step] = e.type.split("_");
   const content = [...last.content];
   const block = content[e.contentIndex];
-  if (step === "start") content[e.contentIndex] = { type: kind, text: "" };
+  if (kind === "toolcall") {
+    // Only show is drawn while its arguments arrive; other tools wait for the whole call.
+    if (step === "start") content[e.contentIndex] = { type: "toolCall", id: e.id, name: e.toolName, arguments: {}, json: "" };
+    else if (step === "delta" && block?.name === "show") content[e.contentIndex] = { ...block, json: block.json + (e.delta ?? ""), arguments: partialJson(block.json + (e.delta ?? "")) ?? block.arguments };
+    else if (step === "end" && e.toolCall) content[e.contentIndex] = e.toolCall;
+    else return messages;
+  } else if (step === "start") content[e.contentIndex] = { type: kind, text: "" };
   else if (kind === "text" && block) content[e.contentIndex] = { ...block, text: step === "delta" ? (block.text ?? "") + e.delta : e.content };
   else return messages;
   return [...messages.slice(0, -1), { ...last, content }];
@@ -147,6 +158,7 @@ interface ShownBlocks {
   id: string;
   role: "agent";
   blocks: Shown[];
+  streaming: boolean;
   at: number | null;
 }
 
@@ -233,7 +245,7 @@ export function itemsOf({ messages: live, earlier, open }: Conversation): Item[]
     return m.content.flatMap((b, j): Item[] => {
       if (b.type === "text" && working && !arriving && b.text?.trim()) return [{ kind: "steps", id: `${i}.${j}`, role: "agent", steps: [{ tool: "say", detail: b.text.trim() }], at }];
       if (b.type === "text") return working ? [] : [{ kind: "message", id: `${i}.${j}`, role: "agent", text: b.text ?? "", images: [], at }];
-      if (b.type === "toolCall" && b.name === "show") return [{ kind: "show", id: `${i}.${j}`, role: "agent", blocks: blocksOf(b.arguments), at }];
+      if (b.type === "toolCall" && b.name === "show") return [{ kind: "show", id: `${i}.${j}`, role: "agent", blocks: blocksOf(b.arguments), streaming: arriving, at }];
       if (b.type === "toolCall" && b.name === "ask") {
         const { question, options } = (b.arguments ?? {}) as { question?: unknown; options?: unknown };
         return [{ kind: "ask", id: `${i}.${j}`, role: "agent", question: String(question ?? ""), options: Array.isArray(options) ? options.map(String) : [], answer: b.id && results.has(b.id) ? textOf(results.get(b.id)!.content) : undefined, at }];
