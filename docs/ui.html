@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="How the app&#x27;s interface is built and how it talks to the daemon.">
+<title>The App Interface</title>
+<link rel="stylesheet" href="assets/docs.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="top">
+<div class="top-in">
+<a class="brand" href="index.html">Weilo Agents docs</a>
+<nav aria-label="Documentation pages"><ul>
+<li><a class="nav" href="index.html">Overview</a></li>
+<li><a class="nav" href="architecture.html">Architecture</a></li>
+<li><a class="nav" href="security.html">Security</a></li>
+<li><a class="nav" href="agents.html">Agents</a></li>
+<li><a class="nav" href="memory-and-knowledge.html">Memory</a></li>
+<li><a class="nav" href="data-and-permissions.html">Data</a></li>
+<li><a class="nav" href="ui.html" aria-current="page">UI</a></li>
+<li><a class="nav" href="operating.html">Operating</a></li>
+<li><a class="nav" href="development.html">Development</a></li>
+</ul></nav>
+</div>
+</header>
+<main id="main">
+<div class="layout has-toc">
+<nav class="toc" aria-label="On this page"><h2>On this page</h2><ol>
+<li><a href="#structure">Structure</a></li>
+<li><a href="#layout">Main areas on a computer</a></li>
+<li><a href="#phone">Phone and computer</a></li>
+<li><a href="#agent-form">The agent form and its Access card</a></li>
+<li><a href="#approval-card">Questions and the approval card</a></li>
+<li><a href="#settings">Settings pages</a></li>
+<li><a href="#talk">How the UI talks to the daemon</a></li>
+</ol></nav>
+<div class="content">
+<h1>The app UI</h1>
+<p class="lede">A React 19 single-page app in <code>ui/</code>, built with Vite, Tailwind 4 and TypeScript. It has no router and no data library: state lives in a few components and one reducer over pi's events. The image holds only the built static files, served by the daemon.</p>
+
+<section class="card" id="structure">
+<h2>Structure</h2>
+<div class="table wide"><table>
+<thead><tr><th>Part</th><th>Files</th><th>Role</th></tr></thead>
+<tbody>
+<tr><td>Entry</td><td><code>main.tsx</code>, <code>App.tsx</code></td><td>Registers the service worker; loads agents, providers, skills, plugins, extensions and About you; shows the pairing screen on a 401 with <code>pair: true</code>.</td></tr>
+<tr><td>API client</td><td><code>src/api/*.ts</code></td><td>One thin module per area over <code>request()</code> in <code>api/http.ts</code>, which sends <code>X-Timezone</code> with every call.</td></tr>
+<tr><td>Workspace</td><td><code>features/workspace/</code></td><td>Sidebar (agent list, search, drag to reorder, unread dots), the main area, polling of the agent list.</td></tr>
+<tr><td>Chat</td><td><code>features/chat/</code></td><td><code>useChat.ts</code> (the event stream), <code>conversation.ts</code> (the reducer, pi messages to bubbles), <code>MessageList</code>, <code>Composer</code>, <code>AskCard</code>, <code>ShowBlocks</code>, <code>ShowPage</code>, <code>StepsLine</code>, <code>ContextMeter</code>, <code>FindBar</code>.</td></tr>
+<tr><td>Agents</td><td><code>features/agents/</code></td><td>The agent form, avatars, the delete dialog.</td></tr>
+<tr><td>Settings</td><td><code>features/settings/</code> and the add-on pages</td><td>One view with a menu and pages built from rows (<code>components/ui/Row.tsx</code>).</td></tr>
+<tr><td>Side panel</td><td><code>features/browser/</code>, <code>features/routines/</code></td><td>Live view of the agent's browser window (noVNC, loaded on first use), take over, routines.</td></tr>
+<tr><td>Files</td><td><code>features/files/</code></td><td>Preview of pictures, PDFs, Markdown, CSV/TSV, JSON, HTML (sandboxed) and text.</td></tr>
+<tr><td>Kit</td><td><code>components/ui/</code>, <code>styles/index.css</code>, <code>lib/</code></td><td>Buttons, rows, modals, menus; colour tokens; small hooks (media queries, back step, edge swipe, dictation).</td></tr>
+</tbody></table></div>
+<p>Dependencies beyond React: <code>react-markdown</code> with <code>remark-gfm</code>, <code>lucide-react</code> icons, the Geist fonts and noVNC.</p>
+</section>
+
+<section class="card" id="layout">
+<h2>Main areas on a computer</h2>
+<figure>
+<div class="fig">
+<svg viewBox="0 0 760 440" role="img" aria-labelledby="w1-t w1-d">
+<title id="w1-t">Schematic of the computer layout</title>
+<desc id="w1-d">Schematic, not a screenshot. Left: the sidebar with the app name, a new agent button, search, the agent list with an Isolated tag on one agent, and Settings and Contact us at the bottom. Middle: the chat with a top bar showing avatar, name, Isolated tag and model, find and panel buttons; messages; a folded steps line; and the composer with a plus menu, voice and send. Right: the panel with the browser screen and Take over, then routines grouped by when they run.</desc>
+<rect class="wire" x="8" y="8" width="744" height="424" rx="10"/>
+<rect class="wire-f" x="8" y="8" width="190" height="424" rx="10"/>
+<text class="tb" x="22" y="36">Weilo Agents</text><text class="t" x="176" y="36">+</text>
+<rect class="wire" x="20" y="50" width="166" height="28" rx="8"/><text class="ts" x="30" y="69">Search chats</text>
+<rect class="wire" x="20" y="90" width="166" height="44" rx="8"/><circle class="wire-f" cx="40" cy="112" r="11"/><text class="t" x="58" y="108">Research</text><text class="ts" x="58" y="126">You: compare the…</text>
+<rect class="wire-f" x="20" y="140" width="166" height="44" rx="8"/><circle class="wire" cx="40" cy="162" r="11"/><text class="t" x="58" y="158">Inbox</text><rect class="box b-teal" x="110" y="146" width="66" height="18" rx="9"/><text class="ts" x="143" y="160" text-anchor="middle">Isolated</text><text class="ts" x="58" y="176">Reading files…</text>
+<rect class="wire" x="20" y="190" width="166" height="44" rx="8"/><circle class="wire-f" cx="40" cy="212" r="11"/><text class="t" x="58" y="208">Coder</text><text class="ts" x="58" y="226">No messages yet</text>
+<line class="life" x1="8" y1="388" x2="198" y2="388"/><text class="t" x="22" y="414">Settings</text><text class="ts" x="160" y="414">mail</text>
+<rect class="wire-f" x="198" y="8" width="356" height="48"/>
+<circle class="wire" cx="222" cy="32" r="12"/><text class="tb" x="242" y="30">Inbox</text><rect class="box b-teal" x="242" y="36" width="60" height="16" rx="8"/><text class="ts" x="272" y="49" text-anchor="middle">Isolated</text><text class="ts" x="308" y="49">model</text>
+<text class="ts" x="462" y="36">find</text><text class="ts" x="500" y="36">panel</text>
+<rect class="wire-f" x="370" y="72" width="170" height="34" rx="12"/><text class="ts" x="380" y="94">your message</text>
+<rect class="wire" x="214" y="118" width="250" height="26" rx="8"/><text class="ts" x="224" y="136">Read 2 files · Ran a command  ›</text>
+<text class="t" x="214" y="168">The agent's reply in Markdown…</text>
+<rect class="box b-blue" x="214" y="184" width="300" height="88" rx="10"/><text class="tb" x="226" y="206">Inbox asks to change itself:</text><text class="ts" x="226" y="228">Skills: mail-triage</text>
+<rect class="wire" x="226" y="238" width="88" height="24" rx="12"/><text class="ts" x="270" y="255" text-anchor="middle">Change it</text><rect class="wire" x="322" y="238" width="60" height="24" rx="12"/><text class="ts" x="352" y="255" text-anchor="middle">Don't</text>
+<rect class="wire-f" x="320" y="302" width="110" height="22" rx="11"/><text class="ts" x="375" y="318" text-anchor="middle">Waiting for you</text>
+<rect class="wire" x="214" y="332" width="326" height="84" rx="14"/><text class="ts" x="228" y="356">Type your answer</text><text class="t" x="228" y="402">+</text><text class="ts" x="420" y="402">42%</text><text class="ts" x="458" y="402">mic</text><text class="ts" x="494" y="402">send</text>
+<rect class="wire-f" x="554" y="8" width="198" height="424" rx="10"/>
+<text class="tb" x="566" y="34">Browser</text>
+<rect class="box b-grey" x="566" y="44" width="174" height="108" rx="6"/><text class="ts" x="653" y="102" text-anchor="middle">live screen</text>
+<rect class="wire" x="566" y="160" width="84" height="24" rx="12"/><text class="ts" x="608" y="177" text-anchor="middle">Take over</text>
+<text class="tb" x="566" y="214">Routines</text><text class="ts" x="566" y="238">TODAY</text>
+<rect class="wire" x="566" y="246" width="174" height="40" rx="8"/><text class="ts" x="576" y="270">Summary · in 5 min</text>
+<text class="ts" x="566" y="308">THIS WEEK</text>
+<rect class="wire" x="566" y="316" width="174" height="40" rx="8"/><text class="ts" x="576" y="340">Weekly report</text>
+</svg>
+</div>
+<figcaption>Schematic wireframe, drawn from the components, not a screenshot. The right panel is docked from 1024 px wide (<code>ChatView.tsx</code>); narrower, the panel button opens it as a sheet over the chat.</figcaption>
+</figure>
+<ul>
+<li><strong>Sidebar</strong> (<code>Sidebar.tsx</code>): the name, + New agent, a search of all chats, the agents (avatar, name, <span class="tag iso">Isolated</span> tag, time, newest message or what it is doing, "You have the browser" while you hold its window, an unread dot), then an "Update … is available" button when there is one, Settings, and the mail button for Contact us. Drag to reorder (hold first on a phone; Alt+Up and Alt+Down with the keyboard).</li>
+<li><strong>Chat</strong> (<code>ChatView.tsx</code>): the top bar opens Edit agent from the title, and has find in this chat and the panel button. What the agent did between its words is one folded line ("Read 2 files · Ran a command") that opens to each step; <code>show</code> blocks, questions and routine lines show as themselves; thinking is not shown. Earlier messages load as you scroll up.</li>
+<li><strong>Composer</strong> (<code>Composer.tsx</code>): text, attachments (files and photos, camera, paste, drop), voice typing, the context meter beside send, and Stop during a run. The + offers Files and photos, Camera, and Skills and commands (what typing <code>/</code> offers: <code>/compact</code>, <code>/reload</code>, the agent's skills and plugins). While the agent waits for an answer, what you type is the answer. Without a provider it shows "Add a provider to send messages."</li>
+</ul>
+</section>
+
+<section class="card" id="phone">
+<h2>Phone and computer</h2>
+<figure>
+<div class="fig">
+<svg viewBox="0 0 760 420" role="img" aria-labelledby="w2-t w2-d">
+<title id="w2-t">Schematic of the phone screens</title>
+<desc id="w2-d">Schematic. Three phone screens: the agent list; the chat, which is a step in the browser history so Back returns to the list; and the settings menu which lists pages with a short hint each.</desc>
+<rect class="wire" x="20" y="10" width="220" height="400" rx="22"/>
+<text class="tb" x="38" y="44">Weilo Agents</text><text class="t" x="214" y="44">+</text>
+<rect class="wire" x="34" y="58" width="192" height="28" rx="8"/><text class="ts" x="44" y="77">Search chats</text>
+<rect class="wire-f" x="34" y="96" width="192" height="44" rx="8"/><text class="t" x="44" y="116">Research</text><text class="ts" x="44" y="132">Replied 2 min ago</text>
+<rect class="wire-f" x="34" y="146" width="192" height="44" rx="8"/><text class="t" x="44" y="166">Inbox</text><text class="ts" x="44" y="182">Isolated</text>
+<text class="t" x="44" y="390">Settings</text>
+<text class="tb" x="130" y="232" text-anchor="middle">list</text>
+<path class="ar" d="M248 200 H266"/>
+<rect class="wire" x="270" y="10" width="220" height="400" rx="22"/>
+<text class="t" x="288" y="44">‹</text><text class="tb" x="306" y="44">Inbox</text><text class="ts" x="450" y="44">panel</text>
+<rect class="wire-f" x="360" y="70" width="116" height="30" rx="12"/><text class="ts" x="370" y="90">a message</text>
+<text class="ts" x="286" y="128">a reply…</text>
+<rect class="wire" x="284" y="330" width="192" height="64" rx="14"/><text class="ts" x="296" y="354">Message Inbox</text>
+<text class="tb" x="380" y="232" text-anchor="middle">chat</text>
+<text class="ts" x="380" y="254" text-anchor="middle">Back or edge swipe</text>
+<text class="ts" x="380" y="274" text-anchor="middle">returns to the list</text>
+<rect class="wire" x="520" y="10" width="220" height="400" rx="22"/>
+<text class="t" x="538" y="44">‹</text><text class="tb" x="556" y="44">Settings</text>
+<text class="t" x="540" y="84">Providers</text><text class="ts" x="640" y="84">1 connected</text>
+<text class="t" x="540" y="114">Devices</text>
+<text class="t" x="540" y="144">Notifications</text><text class="ts" x="690" y="144">Off</text>
+<text class="t" x="540" y="174">About you</text>
+<text class="t" x="540" y="204">Memory</text>
+<text class="t" x="540" y="234">Browser</text>
+<text class="t" x="540" y="264">Appearance</text>
+<text class="t" x="540" y="294">About</text>
+<text class="ts" x="540" y="324">ADD-ONS</text>
+<text class="t" x="540" y="350">Skills</text><text class="ts" x="660" y="350">2 skills</text>
+<text class="t" x="540" y="378">Plugins · Extensions</text>
+</svg>
+</div>
+<figcaption>Schematic wireframe. Below 768 px the list and the chat (or Settings) are separate screens (<code>Workspace.tsx</code>, <code>SettingsView.tsx</code>).</figcaption>
+</figure>
+<ul>
+<li>Below 768 px wide, the list and the chat are separate screens. Opening a chat or Settings adds a step to the browser history (<code>useBackStep</code>), so the phone's back gesture returns to the list; from the Home Screen on an iPhone a swipe from the left edge does (<code>useEdgeSwipe</code>).</li>
+<li>Settings on a phone lists the pages first with a hint each ("1 connected", "2 skills"), then a page with a back arrow. On a computer it is a menu on the left and the page on the right; the chat stays mounted behind it, so a draft survives.</li>
+<li>From 1024 px the browser and routines panel docks to the right of the chat; below that it opens as a sheet.</li>
+<li>Notifications on an iPhone work only from the app added to the Home Screen (a browser rule).</li>
+</ul>
+</section>
+
+<section class="card" id="agent-form">
+<h2>The agent form and its Access card</h2>
+<figure>
+<div class="fig narrow">
+<svg viewBox="0 0 520 470" role="img" aria-labelledby="w3-t w3-d">
+<title id="w3-t">Schematic of the agent form</title>
+<desc id="w3-d">Schematic. Edit agent: avatar, name with the folder hint, instructions, a Model card with provider, model and thinking, a Built-in extensions card with switches for Browser and Routines, an Add-ons card with Skills, Plugins and Extensions, and an Access card with switches Isolated and Always allow its own changes, then Delete, Cancel and Save.</desc>
+<rect class="wire" x="10" y="10" width="500" height="450" rx="14"/>
+<text class="tb" x="28" y="40">Edit agent</text>
+<circle class="wire-f" cx="44" cy="76" r="16"/>
+<text class="ts" x="28" y="116">Name</text><rect class="wire" x="28" y="122" width="464" height="26" rx="6"/><text class="ts" x="36" y="140">Inbox</text>
+<text class="ts" x="28" y="164">Works in its own folder, isolated/inbox/.</text>
+<text class="ts" x="28" y="190">Instructions</text><rect class="wire" x="28" y="196" width="464" height="36" rx="6"/>
+<text class="ts" x="28" y="252">MODEL · BUILT-IN EXTENSIONS · ADD-ONS</text>
+<rect class="wire" x="28" y="258" width="464" height="30" rx="8"/><text class="ts" x="38" y="278">Provider, Model, Thinking · Browser, Routines · Skills, Plugins…</text>
+<text class="tb" x="28" y="314">ACCESS</text>
+<rect class="box b-teal" x="28" y="322" width="464" height="88" rx="10"/>
+<text class="t" x="40" y="344">Isolated</text>
+<text class="ts" x="40" y="362">Only its own folder: no workspace, memory…</text>
+<rect class="box b-green" x="438" y="332" width="40" height="20" rx="10"/><circle class="wire" cx="468" cy="342" r="8"/>
+<line class="life" x1="40" y1="372" x2="480" y2="372"/>
+<text class="t" x="40" y="392">Always allow its own changes</text>
+<rect class="wire-f" x="438" y="380" width="40" height="20" rx="10"/><circle class="wire" cx="448" cy="390" r="8"/>
+<rect class="box b-red" x="28" y="422" width="70" height="26" rx="8"/><text class="ts" x="63" y="440" text-anchor="middle">Delete</text>
+<rect class="wire" x="350" y="422" width="66" height="26" rx="8"/><text class="ts" x="383" y="440" text-anchor="middle">Cancel</text>
+<rect class="box b-blue" x="424" y="422" width="68" height="26" rx="8"/><text class="ts" x="458" y="440" text-anchor="middle">Save</text>
+</svg>
+</div>
+<figcaption>Schematic wireframe of <code>features/agents/AgentForm.tsx</code>.</figcaption>
+</figure>
+<ul>
+<li>Avatar, name (with the folder it works in: <code>&lt;folder&gt;/</code> in the workspace, or <code>isolated/&lt;folder&gt;/</code>), instructions.</li>
+<li><strong>Model</strong>: a provider (only connected ones, plus "+ Add provider"), then one of its enabled models (all, when none is enabled), and thinking.</li>
+<li><strong>Built-in extensions</strong>: a switch for each bundled extension (Browser, Routines).</li>
+<li><strong>Add-ons</strong>: Skills, Plugins and Extensions, each a row that says what is on and opens a list of switches, or "Add" that opens Settings when there are none.</li>
+<li><strong>Access</strong>: <em>Isolated</em> ("Only its own folder: no workspace, memory, skill library or settings, and no browser unless you turn it on. Other agents can still read and change its folder and search its chat."; when changed on an existing agent: "Saving moves its folder and restarts it."). Turning it on also switches the browser off in the form. <em>Always allow its own changes</em> ("Changes it asks for to its own instructions, thinking or skills apply without asking you; the chat shows each one. Anything else still asks.").</li>
+<li>Delete opens a dialog that can keep the chat and the files.</li>
+</ul>
+</section>
+
+<section class="card" id="approval-card">
+<h2>Questions and the approval card</h2>
+<p>An agent's <code>ask</code> and the daemon's approval questions arrive the same way: an <code>extension_ui_request</code> with <code>select</code> (options) or <code>input</code> (a line of text). <code>AskCard.tsx</code> shows the question in full (scrolling inside the card when long), the options as buttons or a text field, and Skip. The chosen answer stays marked in the chat. A pill above the composer says "Waiting for you", and what you type in the message box is the answer.</p>
+<p>The answer is <code>POST /api/agents/:id/answer</code> <code>{request, value}</code>; Skip sends no value. An approval card's options are "Create it" or "Change it", and "Don't". A change applied without a question (a trusted agent's) shows as a small line in the chat instead.</p>
+</section>
+
+<section class="card" id="settings">
+<h2>Settings pages</h2>
+<div class="table wide"><table>
+<thead><tr><th>Page</th><th>What it holds</th><th>Daemon routes</th></tr></thead>
+<tbody>
+<tr><td>Providers</td><td>Connected providers first (In use), then the rest; key field or sign-in with an account; Models switches; Remove</td><td><code>/api/providers</code>, <code>…/sign-in</code>, <code>/api/models</code></td></tr>
+<tr><td>Devices</td><td>Paired devices with dates, Remove, Add a device (code, link, minutes left)</td><td><code>/api/devices</code>, <code>/api/devices/code</code></td></tr>
+<tr><td>Notifications</td><td>This device on or off, the other devices, mute per agent</td><td><code>/api/push</code>, <code>/api/push/devices</code>, <code>/api/push/muted</code></td></tr>
+<tr><td>About you</td><td>Name and text for <code>USER.md</code></td><td><code>/api/user</code></td></tr>
+<tr><td>Memory</td><td>Curator model; notes one by one, or as text</td><td><code>/api/memory</code>, <code>/api/memory/curator</code></td></tr>
+<tr><td>Browser</td><td>"Ask me first" and the rule; says it is a request, not a lock</td><td><code>/api/browser/rule</code></td></tr>
+<tr><td>Appearance</td><td>System, Light, Dark or Weilo Theme (<code>data-theme</code> on <code>&lt;html&gt;</code>)</td><td>none (stored in the browser)</td></tr>
+<tr><td>About</td><td>Version, build, pi version, update notice, the update check switch</td><td><code>/api/version</code>, <code>/api/update</code></td></tr>
+<tr><td>Skills</td><td>Library, add <code>.zip</code> or <code>SKILL.md</code>, turn on per agent, delete</td><td><code>/api/skills</code>, <code>PUT /api/agents/:id</code></td></tr>
+<tr><td>Plugins</td><td>Add a command or web address, connection status, remove</td><td><code>/api/plugins</code>, <code>/api/plugins/status</code></td></tr>
+<tr><td>Extensions</td><td>Bundled and added ones; adding asks first ("It can read your keys and your files" in the app's own warning)</td><td><code>/api/extensions</code></td></tr>
+</tbody></table></div>
+<p>Note: the Extensions warning in the app says an extension "can read your keys". Since the key gateway, an extension runs as the agent and cannot read the key files; it can still use the agent's provider through the gateway, read the agent's files and reach the network.</p>
+</section>
+
+<section class="card" id="talk">
+<h2>How the UI talks to the daemon</h2>
+<ul>
+<li><strong>JSON over fetch</strong>, same origin, with the device cookie sent by the browser (<code>HttpOnly</code>, so the app's script never sees it). Every request carries <code>X-Timezone</code> (the browser's time zone) for routines. A 401 with <code>pair: true</code> shows the pairing screen.</li>
+<li><strong>Live events</strong>: one <code>EventSource</code> per open chat on <code>/api/agents/:id/events</code> (<code>useChat.ts</code>). The reducer in <code>conversation.ts</code> folds <code>history</code> and pi's events into messages. On <code>exit</code> with an error the stream closes and Try again reopens it; a clean restart reconnects by itself.</li>
+<li><strong>Polling</strong>: the agent list every 2 seconds while an agent works, else every 5, only while the page is visible, with <code>?seen</code> (which also holds back notifications).</li>
+<li><strong>The context meter</strong> asks <code>GET …/context</code> after history, each settle and each compaction.</li>
+<li><strong>The live view</strong>: a WebSocket to <code>/api/browser/view</code>, speaking VNC through noVNC.</li>
+<li><strong>Files</strong>: <code>/api/agents/:id/files/&lt;path&gt;</code>, <code>?view=1</code> for the preview. Inline code in a reply that names a full path in the workspace or an isolated folder, or a path from the agent's folder with a file kind the preview shows, becomes a button that opens the preview.</li>
+<li><strong>The service worker</strong> <code>ui/public/sw.js</code> shows push notifications, one per agent, and opens the app at that agent on a tap.</li>
+<li><strong>Development</strong>: <code>npm run dev</code> in <code>ui/</code> proxies <code>/api</code> (WebSockets too) to <code>localhost:3210</code>, the running container (<a href="development.html#dev">Development</a>).</li>
+</ul>
+</section>
+</div>
+</div>
+</main>
+<footer class="foot">
+<div class="pager"><a href="data-and-permissions.html">&larr; Data</a><a href="operating.html">Operating &rarr;</a></div>
+<p>Written from the code of this version of Weilo Agents. When the code and a page disagree, the code is right and the page needs fixing. Project: <a href="https://github.com/Shyam1203/weilo-agents">github.com/Shyam1203/weilo-agents</a>.</p>
+</footer>
+</body>
+</html>
