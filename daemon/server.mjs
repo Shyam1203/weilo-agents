@@ -32,6 +32,7 @@ import { answerSignIn, signInStatus, startSignIn, stopSignIn } from "./settings/
 import { addPlugin, listPlugins, pluginStatus, removePlugin } from "./settings/plugins.mjs";
 import { listModels, listProviders, removeKey, saveKey, setEnabledModels, syncCompaction } from "./settings/providers.mjs";
 import { addSkills, listSkills, removeSkill, saveSkill } from "./settings/skills.mjs";
+import { manageSettings } from "./settings/manage.mjs";
 import { getUser, saveUser } from "./settings/user.mjs";
 import { setUpdateCheck, updateStatus } from "./update.mjs";
 import { secure } from "./users.mjs";
@@ -156,6 +157,8 @@ agentRoute("POST", "/api/agents/:id/skill", "skill", async ({ id, body }) => {
 });
 // An agent's `manage_agents` tool: it lists the agents, or asks the user to approve an agent it would make or change (agents/manage.mjs).
 agentRoute("POST", "/api/agents/:id/manage_agents", "manage_agents", ({ id, body }) => manageAgents(id, body));
+// An agent's `manage_settings` tool: it lists the models, or asks the user to approve a change to a few settings (settings/manage.mjs).
+agentRoute("POST", "/api/agents/:id/manage_settings", "manage_settings", ({ id, body }) => manageSettings(id, body));
 agentRoute("POST", "/api/agents/:id/memory", "memory", async ({ body }) => ({ text: await useMemory(body) }));
 agentRoute("POST", "/api/agents/:id/fetch_knowledge", "fetch_knowledge", async ({ body }) => ({ text: await fetchKnowledge(body) }));
 agentRoute("GET", "/api/agents/:id/routines", "routines", async ({ id, headers }) => (await noteZone(headers["x-timezone"]), listRoutines(id)));

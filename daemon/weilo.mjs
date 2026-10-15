@@ -5,6 +5,8 @@
 // `ask`: the agent asks the user a question and waits. Pi's own dialogs carry it: the daemon passes
 // the request to the chat and the answer back.
 // `manage_agents`: the agent lists the agents, or asks to make or change one; the daemon asks the user (agents/manage.mjs).
+// `manage_settings`: the agent asks to turn models on or off, or to change when a model's conversations are summarized;
+// the daemon asks the user (settings/manage.mjs). An isolated agent's pi does not offer it.
 
 import { daemonTool } from "./tool.mjs";
 
@@ -56,6 +58,11 @@ const MANAGE = `List the agents, or make or change one: another agent, or yourse
 - action update: change the agent named in "agent" (a name or id; yourself too). Give only what changes; a list you give replaces the old one. An isolated agent's settings are the user's alone.
 Nothing is made or changed until the user approves it: the user sees what you ask for in this chat and chooses (some changes to yourself the user allows always; the chat shows them). If they do not, accept it and do not ask again unless they ask you to. A change to yourself applies from the next message.`;
 
+const SETTINGS = `See or change a few of the app's settings, for all agents: which models are on (the ones agents can choose), and when a model's conversations are summarized. Use this only when the user asks for such a change.
+- action list: every model the keys can use, whether it is on, its context window, the tokens kept free before a summary, and who uses it.
+- action change: enable (models to turn on), disable (models to turn off; not one an agent uses), compaction ({ "provider/model": tokens to keep free, or null for the app's own value }).
+Nothing changes until the user approves it in this chat. If they do not, accept it.`;
+
 // An isolated agent's version: it sees only itself and asks only for what it uses.
 const MANAGE_ISOLATED = `Ask for a skill, a plugin or an extension (such as the browser), or to drop one. Use this when you need one for your work, or the user asks; never edit agent files yourself.
 - action list: your settings, and the skills, plugins and extensions there are.
@@ -79,6 +86,19 @@ export default function (pi) {
       skills: { ...list(str), description: "Skill ids." },
       plugins: { ...list(str), description: "Plugin names." },
       extensions: { ...list(str), description: "Extension ids: every extension the agent should have, as in the list." },
+    },
+    ["action"],
+  );
+  daemonTool(
+    pi,
+    "manage_settings",
+    "Settings",
+    SETTINGS,
+    {
+      action: { type: "string", enum: ["list", "change"] },
+      enable: { ...list(str), description: "Models to turn on, provider/model." },
+      disable: { ...list(str), description: "Models to turn off, provider/model." },
+      compaction: { type: "object", additionalProperties: { anyOf: [{ type: "integer" }, { type: "null" }] }, description: "provider/model: tokens to keep free, or null." },
     },
     ["action"],
   );

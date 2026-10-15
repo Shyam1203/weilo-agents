@@ -12,12 +12,15 @@ export async function pointOf(model, window) {
   return Math.max(window - reserve, 1);
 }
 
+// The tokens the app keeps free for a model with this window, unless set by hand.
+export const reserveFor = (window) => Math.max(Math.round(window * (1 - COMPACT_AT(window))), MIN_RESERVE);
+
 // `models` are pi's available models; `enabledModels` the ones in use (none listed means all).
 export async function setReserves(models, enabledModels) {
   const ours = {};
   for (const { provider, id, contextWindow } of models) {
     const key = `${provider}/${id}`;
-    if (contextWindow) ours[key] = { reserveTokens: Math.max(Math.round(contextWindow * (1 - COMPACT_AT(contextWindow))), MIN_RESERVE), used: !enabledModels.length || enabledModels.includes(key) };
+    if (contextWindow) ours[key] = { reserveTokens: reserveFor(contextWindow), used: !enabledModels.length || enabledModels.includes(key) };
   }
   // Asking pi takes a while, and the settings may have changed meanwhile: the latest settings are used.
   await updateJson(SETTINGS, (settings) => {

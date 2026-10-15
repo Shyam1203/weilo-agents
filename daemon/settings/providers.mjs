@@ -34,7 +34,7 @@ export async function removeKey(id) {
 
 // The models the saved keys can use, from a short-lived pi. A pi that does not answer is stopped. It runs as root, which
 // holds the keys: in root's own folder, not in the workspace, where agents write.
-async function availableModels() {
+export async function availableModels() {
   const pi = spawnPi([BIN.pi, "--mode", "rpc", "--no-session", "--no-mcp", "--no-skills", "--no-extensions", "--no-context-files"], { cwd: AGENT_DIR, env: PI_ENV });
   let timer;
   const late = new Promise((_, reject) => (timer = setTimeout(() => reject(fail(504, "Pi did not list the models in time")), MODELS_TIMEOUT_MS)));

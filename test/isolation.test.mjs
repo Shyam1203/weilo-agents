@@ -34,7 +34,7 @@ test("an isolated agent's chat shows only its own files; a regular agent's, the 
 });
 
 test("an isolated agent may not call the tools of what all agents share", () => {
-  for (const tool of ["memory", "fetch_knowledge", "skill"]) {
+  for (const tool of ["memory", "fetch_knowledge", "skill", "manage_settings"]) {
     assert.equal(mayCall(regular, tool), true, tool);
     assert.equal(mayCall(isolated, tool), false, tool);
   }
