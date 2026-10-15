@@ -10,8 +10,9 @@ import { lastMessage } from "./sessions.mjs";
 // An agent is a folder: agent/profiles/<id>/agent.json { name, model, thinking, skills, plugins, extensions, disabled, instructions, avatar, isolated, trusted, folder }.
 // `extensions`: the ids of the added extensions it uses; `disabled`: the ids of the bundled ones it does not use.
 // Its one conversation is the pi session with the same id, in agent/sessions/<id>/.
-// `folder`: its home in the shared workspace (workspace/<folder>/), where it works and its uploads go. Named after the agent
-// when it is made, and kept when it is renamed, so paths in its chat still lead to their files.
+// `folder`: the name of its home (workspace/<folder>/, or isolated/<folder>/ for an isolated agent: `homeOf`), where it works
+// and its uploads go. Named after the agent when it is made, and kept when it is renamed, so paths in its chat still lead to
+// their files.
 // `uid`: the Linux user its pi runs as (users.mjs), given when it is made.
 // `isolated`: it has only its own folder (isolated/<folder>/, its chat in isolated-sessions/<id>/): not the workspace, the
 // skill library, memory or the app's settings; the daemon gives it copies of what it uses (pidir.mjs) and refuses it the
@@ -171,7 +172,7 @@ export async function removeProfile(id) {
   await rm(folder(id), { recursive: true, force: true });
 }
 
-// What a deleted agent leaves: its HOME and pi settings go; its chat and its workspace folder go too, unless the user keeps
+// What a deleted agent leaves: its HOME and pi settings go; its chat and its home folder go too, unless the user keeps
 // them. What is kept is handed to root (the chat) and the group (the folder). Its user is never given again (newUid), so
 // files it left elsewhere are no new agent's.
 export async function removeFiles(agent, { keepChat, keepFiles }) {

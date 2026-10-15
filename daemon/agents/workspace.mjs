@@ -5,9 +5,9 @@ import { AGENTS_GID } from "../config.mjs";
 import { folder } from "../users.mjs";
 import { homeOf, isIsolated } from "./agents.mjs";
 
-// Keeping the workspace tidy. The user browses it; each agent works in a folder of its own there, its home, and can still
-// read and write the rest. Each gets house rules for it, and a scratch folder outside it for what it only needs while it
-// works (downloaded pages, one-off scripts, raw data). The scratch folder is emptied when the agent goes idle, and all of
+// Keeping the workspace tidy. The user browses it; each regular agent works in a folder of its own there, its home, and can
+// still read and write the rest (an isolated agent's home is outside it, and is all it has). Each gets house rules for its
+// home, and a scratch folder outside it for what it only needs while it works (downloaded pages, one-off scripts, raw data). The scratch folder is emptied when the agent goes idle, and all of
 // them when the app starts.
 
 export const scratchOf = (id) => join(SCRATCH, id);
@@ -35,7 +35,6 @@ Your current folder is your home: ${folder}/ in the workspace, ${WORKSPACE}. The
 - Before you finish, delete any temporary files you left in the workspace.
 - Never delete, move or rename files you did not make unless the user asks.
 - When you name a file for the user, give its path from your folder (\`notes/plan.md\`) or in full; the chat makes it a link.`;
-
 
 const isolatedRules = (home, scratch) => `## Your folder
 

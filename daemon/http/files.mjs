@@ -4,11 +4,11 @@ import { basename, extname, join, sep } from "node:path";
 import { pipeline } from "node:stream";
 import { fail } from "../common.mjs";
 
-// Files in the workspace, for an agent's chat to show and download. A path the agent named is from its folder; one from
-// before agents had folders, or given from the top of the workspace, is from there, so both are looked for in turn
-// (`folders`, agents/agents.mjs `filesOf`); a full path is taken as it is. The file must be inside one of `roots`. Pictures show in the page; anything
-// else downloads, so a file an agent wrote can never run as a page of ours. With `view` (the chat's preview) a text file is
-// sent as plain text, for the chat to draw, and a PDF inline.
+// Files in the workspace and the isolated agents' folders, for an agent's chat to show and download. A path the agent
+// named is from its folder; one from before agents had folders, or given from the top of the workspace, is from there, so
+// both are looked for in turn (`folders`, agents/agents.mjs `filesOf`); a full path is taken as it is. The file must be
+// inside one of `roots`. Pictures show in the page; anything else downloads, so a file an agent wrote can never run as a
+// page of ours. With `view` (the chat's preview) a text file is sent as plain text, for the chat to draw, and a PDF inline.
 const PICTURES = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml" };
 // Must match TEXT in ui/src/features/files/kinds.ts.
 const TEXT = new Set(
