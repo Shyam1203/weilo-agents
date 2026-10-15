@@ -1,7 +1,7 @@
 import "./root.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { homeModeOf, isIsolated, mayCall, userHomeOf, userOf } from "../agents/agents.mjs";
+import { homeKindOf, isIsolated, mayCall, userHomeOf, userOf } from "../agents/agents.mjs";
 import { allowedAlways, refusal } from "../agents/manage.mjs";
 
 const regular = { id: "r", name: "R", uid: 2001, folder: "r", isolated: false, trusted: false, disabled: [] };
@@ -20,8 +20,8 @@ test("an isolated agent may not use what is shared", () => {
 test("each kind of agent is its own user, and others only read an isolated folder", () => {
   assert.deepEqual(userOf(regular), { uid: 2001, gid: 2001, groups: [2000] });
   assert.deepEqual(userOf(isolated), { uid: 2002, gid: 2002, groups: [] });
-  assert.equal(homeModeOf(regular), 0o2770);
-  assert.equal(homeModeOf(isolated), 0o2775);
+  assert.equal(homeKindOf(regular).mode, 0o2770);
+  assert.equal(homeKindOf(isolated).mode, 0o2775);
   assert.match(userHomeOf(isolated), /isolated-homes\/i$/);
   assert.ok(isIsolated(isolated) && !isIsolated(regular));
 });

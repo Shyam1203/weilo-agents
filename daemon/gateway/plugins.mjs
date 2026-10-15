@@ -1,7 +1,6 @@
-import { MCP, readJson } from "../common.mjs";
+import { MCP, PLUGINS_CWD, PLUGINS_HOME, readJson } from "../common.mjs";
 import { PLUGIN_UID_OFFSET, PORT, SYSTEM_PATH } from "../config.mjs";
 import { homeOf, isIsolated } from "../agents/agents.mjs";
-import { piDirOf } from "../agents/pidir.mjs";
 import { spawnSandboxed } from "../sandbox/client.mjs";
 import { PLUGINS, sharedTools, spawnAs } from "../users.mjs";
 import { forward, headersOf } from "./forward.mjs";
@@ -27,8 +26,6 @@ export async function proxyPlugin(req, res, { plugin, rest, search }) {
   await forward(req, res, target, { ...headersOf(req, ["authorization"]), ...plugin.headers });
 }
 
-export const PLUGINS_HOME = piDirOf("plugins");
-export const PLUGINS_CWD = piDirOf("plugins-cwd");
 
 function startPlugin(plugin, agent) {
   const argv = [plugin.command, ...(plugin.args ?? [])];

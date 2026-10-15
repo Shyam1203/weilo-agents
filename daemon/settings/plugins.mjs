@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fail, MCP, readJson, updateJson } from "../common.mjs";
-import { PLUGINS_HOME, servers } from "../gateway/plugins.mjs";
+import { fail, MCP, PLUGINS_HOME, readJson, updateJson } from "../common.mjs";
+import { servers } from "../gateway/plugins.mjs";
 import { BIN, PLUGIN_STATUS_TIMEOUT_MS } from "../config.mjs";
 import { folder, PLUGINS, setOwner, sharedTools, spawnAs } from "../users.mjs";
 

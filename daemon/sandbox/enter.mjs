@@ -1,9 +1,9 @@
 import { execFileSync, spawn } from "node:child_process";
-import { chmodSync, chownSync, closeSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ROOT, RUN } from "../common.mjs";
 import { BIN, SANDBOX_DIR } from "../config.mjs";
-import { asUser } from "../users.mjs";
+import { asUser, folder, newFile } from "../users.mjs";
 
 const spec = JSON.parse(readFileSync(3, "utf8"));
 closeSync(3);
@@ -30,11 +30,8 @@ binds.forEach(({ path }, i) => {
 });
 
 for (const [path, text] of Object.entries(files)) {
-  mkdirSync(dirname(path), { recursive: true });
-  chownSync(dirname(path), user.uid, user.gid);
-  chmodSync(dirname(path), 0o700);
-  writeFileSync(path, text, { mode: 0o600 });
-  chownSync(path, user.uid, user.gid);
+  await folder(dirname(path), user.uid, user.gid, 0o700);
+  await newFile(path, text, user.uid, user.gid, 0o600);
 }
 
 process.umask(umask);

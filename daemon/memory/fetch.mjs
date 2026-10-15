@@ -40,7 +40,7 @@ function excerpt(text, tokens) {
   return `${start ? "…" : ""}${one.slice(start, start + FETCH_EXCERPT).trim()}${start + FETCH_EXCERPT < one.length ? "…" : ""}`;
 }
 
-const folders = async () => Promise.all((await agentsWithChats()).map(async ({ id, isolated }) => ({ id, isolated, name: (await getAgent(id).catch(() => null))?.name ?? `deleted agent (${id})` })));
+const folders = async () => Promise.all((await agentsWithChats()).map(async (id) => ({ id, name: (await getAgent(id).catch(() => null))?.name ?? `deleted agent (${id})` })));
 
 const ESCAPED = /<\/found>/gi;
 
@@ -89,7 +89,7 @@ export async function fetchKnowledge({ query, agent, source }) {
   if (!who) {
     for (const page of await pagesOf()) docs.push({ at: "", score: score(words, tokens, { title: `${page.title} ${page.rel}`, body: page.body }), text: () => `Vault ${page.rel} "${page.title}"${page.sources.length ? ` (sources: ${page.sources.join(", ")})` : ""}: ${excerpt(page.body, tokens)}` });
   }
-  const found = who ? (await Promise.all(scoped.map((f) => withAny(tokens, f.id, CANDIDATES)))).flat() : await withAny(tokens, null, CANDIDATES);
+  const found = await withAny(tokens, who ? scoped.map((f) => f.id) : null, CANDIDATES);
   for (const m of found) docs.push({ at: m.date, score: score(words, tokens, m), text: () => `${label(m)}${excerpt(m.body, tokens)}` });
   const top = docs.filter((d) => d.score > 0).sort((a, b) => b.score - a.score || b.at.localeCompare(a.at)).slice(0, FETCH_TOP);
   return render(top.map((d) => d.text()));

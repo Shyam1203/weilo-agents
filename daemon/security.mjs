@@ -3,9 +3,9 @@ import { recentAudit } from "./audit.mjs";
 import { usesSignIn } from "./gateway/models.mjs";
 import { pairedDevices } from "./http/access.mjs";
 import { sandboxStatus } from "./sandbox/client.mjs";
+import { STALE_DEVICE_DAYS } from "./config.mjs";
 import { updateStatus } from "./update.mjs";
 
-const STALE_MS = 90 * 24 * 60 * 60_000;
 const names = (agents) => agents.map((a) => a.name).join(", ");
 
 export async function securityReport() {
@@ -13,7 +13,7 @@ export async function securityReport() {
   const isolated = agents.filter(isIsolated);
   const signedIn = (await Promise.all(isolated.map(async (a) => ((await usesSignIn(a.model).catch(() => false)) ? [a] : [])))).flat();
   const browsing = isolated.filter((a) => !a.disabled.includes("browser"));
-  const stale = devices.filter((d) => Date.now() - Date.parse(d.seen) > STALE_MS);
+  const stale = devices.filter((d) => Date.now() - Date.parse(d.seen) > STALE_DEVICE_DAYS * 864e5);
   const checks = [
     {
       ok: sandbox.running && sandbox.namespaces,
@@ -39,7 +39,7 @@ export async function securityReport() {
     {
       ok: !stale.length,
       title: "Paired devices",
-      detail: stale.length ? `Not used for 90 days: ${stale.map((d) => d.name).join(", ")}. Unpair them in Devices.` : `${devices.length} paired, each used in the last 90 days.`,
+      detail: stale.length ? `Not used for ${STALE_DEVICE_DAYS} days: ${stale.map((d) => d.name).join(", ")}. Unpair them in Devices.` : `${devices.length} paired, each used in the last ${STALE_DEVICE_DAYS} days.`,
     },
     {
       ok: !update?.available,

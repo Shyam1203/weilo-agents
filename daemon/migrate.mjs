@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { homeOf, homeTreeOf, isIsolated, newFolder, newUid, profilePath, profiles, userHomeOf } from "./agents/agents.mjs";
+import { homeKindOf, homeOf, isIsolated, newFolder, newUid, profilePath, profiles, userHomeOf } from "./agents/agents.mjs";
 import { AGENT_DIR, APP, HOMES, ISOLATED_HOMES, KNOWLEDGE, readJson, ROOT, SESSIONS, TOOLS, updateJson, WORKSPACE } from "./common.mjs";
 import { AGENTS_GID, BIN, CURATOR_UID, FIRST_AGENT_UID } from "./config.mjs";
 import { tree } from "./users.mjs";
@@ -46,7 +46,7 @@ const STEPS = {
     await mkdir(ISOLATED_HOMES, { recursive: true });
     for (const agent of (await profiles()).filter(isIsolated)) {
       await rename(join(HOMES, agent.folder), userHomeOf(agent)).catch((err) => err.code === "ENOENT" || Promise.reject(err));
-      await tree(homeOf(agent), agent.uid, agent.uid, homeTreeOf(agent));
+      await tree(homeOf(agent), agent.uid, agent.uid, homeKindOf(agent).tree);
     }
   },
 };

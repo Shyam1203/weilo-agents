@@ -2,7 +2,7 @@ import { constants } from "node:fs";
 import { open, readdir, readlink } from "node:fs/promises";
 import { join, sep } from "node:path";
 import { homeOf, isIsolated, profiles } from "../agents/agents.mjs";
-import { after, latest } from "../agents/chats.mjs";
+import { after, latest, syncIndex } from "../agents/chats.mjs";
 import { piDirOf, piFiles, writePiDir } from "../agents/pidir.mjs";
 import { activityOf } from "../agents/runner.mjs";
 import { CURATOR, fail, KNOWLEDGE, readJson, updateJson } from "../common.mjs";
@@ -83,7 +83,7 @@ async function curate(model, agent, text) {
 }
 
 async function newLines(id, since) {
-  const fresh = await after(id, since);
+  const fresh = after(id, since);
   if (!fresh.some((m) => m.speaker === "you")) return [];
   const lines = [];
   let size = 0;
@@ -154,6 +154,7 @@ async function look() {
   try {
     const { model } = await getCurator();
     if (!model) return;
+    await syncIndex();
     for (const agent of await profiles()) {
       if (activityOf(agent.id) !== null) continue;
       const state = await readJson(CURATOR);
@@ -172,7 +173,7 @@ async function look() {
           break;
         }
       }
-      const until = (await latest(agent.id)) ?? seen;
+      const until = latest(agent.id) ?? seen;
       if (!due({ seen, until, ran, failed: failures.get(agent.id) }, Date.now())) continue;
       try {
         const lines = await newLines(agent.id, seen);

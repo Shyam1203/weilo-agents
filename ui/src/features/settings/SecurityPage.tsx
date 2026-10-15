@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react";
 import type { Agent } from "../../api/agents";
 import { messageOf } from "../../api/http";
-import { getSecurity, type AuditEntry, type SecurityCheck } from "../../api/security";
+import { getSecurity, type AuditEntry, type SecurityReport } from "../../api/security";
 import { ErrorText } from "../../components/ui/Field";
 import { Icon } from "../../components/ui/Icon";
-import { Loading } from "../../components/ui/List";
+import { List, Loading } from "../../components/ui/List";
 import { Card, Page, Row } from "../../components/ui/Row";
-
-const when = (iso: string) => new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+import { longWhen } from "../../lib/format";
 
 function describe(entry: AuditEntry, names: Map<string, string>) {
   const agent = (id?: string) => (id && names.get(id)) || id || "";
@@ -20,7 +19,7 @@ function describe(entry: AuditEntry, names: Map<string, string>) {
 }
 
 export function SecurityPage({ agents }: { agents: Agent[] }) {
-  const [report, setReport] = useState<{ checks: SecurityCheck[]; activity: AuditEntry[] } | null>(null);
+  const [report, setReport] = useState<SecurityReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => void getSecurity().then(setReport, (e) => setError(messageOf(e))), []);
   if (!report) return error ? <ErrorText>{error}</ErrorText> : <Loading />;
@@ -35,15 +34,9 @@ export function SecurityPage({ agents }: { agents: Agent[] }) {
         ))}
       </Card>
       <h3 className="label">Recent activity</h3>
-      {report.activity.length ? (
-        <Card>
-          {report.activity.map((entry, i) => (
-            <Row key={i} title={describe(entry, names)} description={`${when(entry.at)}${entry.by ? ` · by ${by(entry.by)}` : ""}`} />
-          ))}
-        </Card>
-      ) : (
-        <p className="text-xs text-ink-3">Nothing yet.</p>
-      )}
+      <List items={report.activity} empty="Nothing yet.">
+        {(entry) => <Row key={`${entry.at}${entry.event}`} title={describe(entry, names)} description={`${longWhen(Date.parse(entry.at) / 1000)}${entry.by ? ` · by ${by(entry.by)}` : ""}`} />}
+      </List>
     </Page>
   );
 }

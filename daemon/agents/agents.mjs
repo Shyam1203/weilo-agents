@@ -2,12 +2,12 @@ import { randomBytes } from "node:crypto";
 import { access, readdir, readFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { APP, BUNDLED, fail, HOMES, ISOLATED, ISOLATED_HOMES, ISOLATED_SESSIONS, ORDER, PROFILES, readJson, RUN, SESSIONS, slug, updateJson, WORKSPACE } from "../common.mjs";
-import { AGENTS_GID, FIRST_AGENT_UID, SHARED_TOOLS } from "../config.mjs";
+import { AGENTS_GID, FIRST_AGENT_UID, ISOLATED_HOME, REGULAR_HOME, SHARED_TOOLS } from "../config.mjs";
 import { folder as ownFolder, setOwner, tree } from "../users.mjs";
 import { extensionsOf } from "../settings/extensions.mjs";
 import { lastMessage } from "./sessions.mjs";
 
-export const isAgentId = (id) => /^[a-z0-9-]+$/.test(id);
+const isAgentId = (id) => /^[a-z0-9-]+$/.test(id);
 const folder = (id) => {
   if (!isAgentId(id)) throw fail(404, "This agent does not exist");
   return join(PROFILES, id);
@@ -39,8 +39,7 @@ export const newUid = async () => (await updateJson(APP, (data) => ({ ...data, l
 export const userOf = (agent) => ({ uid: agent.uid, gid: agent.uid, groups: isIsolated(agent) ? [] : [AGENTS_GID] });
 
 export const homeGroupOf = (agent) => (isIsolated(agent) ? agent.uid : AGENTS_GID);
-export const homeModeOf = (agent) => (isIsolated(agent) ? 0o2775 : 0o2770);
-export const homeTreeOf = (agent) => (isIsolated(agent) ? "ug+rwX,o+rX,o-w" : "ug+rwX,o-rwx");
+export const homeKindOf = (agent) => (isIsolated(agent) ? ISOLATED_HOME : REGULAR_HOME);
 
 export async function newFolder(name, taken = []) {
   const used = new Set([...(await readdir(WORKSPACE).catch(() => [])), ...(await readdir(ISOLATED).catch(() => [])), ...taken]);
@@ -56,19 +55,21 @@ export const homeOf = (agent) => {
 };
 export const chatDirOf = (agent) => join(isIsolated(agent) ? ISOLATED_SESSIONS : SESSIONS, agent.id);
 export const userHomeOf = (agent) => join(isIsolated(agent) ? ISOLATED_HOMES : HOMES, agent.folder);
+export const placesOf = (agent) => [homeOf, chatDirOf, userHomeOf].map((place) => place(agent));
 
 export const filesOf = (agent) => (isIsolated(agent) ? { folders: [homeOf(agent)], roots: [homeOf(agent)] } : { folders: [homeOf(agent), WORKSPACE], roots: [WORKSPACE, ISOLATED] });
 
 export const makeHome = (agent) =>
-  Promise.all([ownFolder(homeOf(agent), agent.uid, homeGroupOf(agent), homeModeOf(agent)), ownFolder(chatDirOf(agent), agent.uid, agent.uid, 0o700), ownFolder(userHomeOf(agent), agent.uid, agent.uid, 0o700)]);
+  Promise.all([ownFolder(homeOf(agent), agent.uid, homeGroupOf(agent), homeKindOf(agent).mode), ownFolder(chatDirOf(agent), agent.uid, agent.uid, 0o700), ownFolder(userHomeOf(agent), agent.uid, agent.uid, 0o700)]);
 
 async function move(before, after) {
-  const pairs = [homeOf, chatDirOf, userHomeOf].map((place) => [place(before), place(after)]);
+  const [from, to] = [placesOf(before), placesOf(after)];
+  const pairs = from.map((path, i) => [path, to[i]]);
   for (const [, to] of pairs) {
     if (await access(to).then(() => true, () => false)) throw fail(409, `${to} already exists. Rename or remove it, then save again.`);
   }
   for (const [from, to] of pairs) await rename(from, to).catch((err) => err.code === "ENOENT" || Promise.reject(err));
-  await tree(homeOf(after), after.uid, homeGroupOf(after), homeTreeOf(after));
+  await tree(homeOf(after), after.uid, homeGroupOf(after), homeKindOf(after).tree);
 }
 
 const withoutBrowser = (agent, before) => (agent.isolated && !before?.isolated ? { ...agent, disabled: [...new Set([...agent.disabled, "browser"])] } : agent);

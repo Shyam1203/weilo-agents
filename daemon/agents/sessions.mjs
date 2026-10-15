@@ -1,9 +1,9 @@
 import { open, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { CHATS } from "../common.mjs";
-import { CHAT_TAIL, EARLIER_PAGE, PREVIEW_CHARS, PREVIEW_TAIL } from "../config.mjs";
+import { CHAT_CHUNK, CHAT_TAIL, EARLIER_PAGE, PREVIEW_CHARS, PREVIEW_TAIL } from "../config.mjs";
 
-const textOf = (content) => (typeof content === "string" ? content : (content ?? []).map((b) => b.text ?? "").join(""));
+export const textOf = (content, between = "") => (typeof content === "string" ? content : (content ?? []).filter((b) => b.type === "text").map((b) => b.text).join(between));
 
 const SKILL = /^<skill name="([^"]+)"[^>]*>[\s\S]*?<\/skill>\s*/;
 const typed = (text) => text.replace(SKILL, (_, name) => `/${name} `).trimEnd();
@@ -59,7 +59,6 @@ async function readLast(path) {
   }
 }
 
-const CHUNK = 1 << 20;
 
 async function* linesOf(file) {
   const handle = await open(file).catch(() => null);
@@ -70,7 +69,7 @@ async function* linesOf(file) {
     const start = Math.max(0, size - CHAT_TAIL);
     let cut = start > 0;
     let rest = "";
-    for await (const chunk of handle.createReadStream({ start, end: size - 1, encoding: "utf8", highWaterMark: CHUNK, autoClose: false })) {
+    for await (const chunk of handle.createReadStream({ start, end: size - 1, encoding: "utf8", highWaterMark: CHAT_CHUNK, autoClose: false })) {
       if (!chunk.includes("\n")) {
         rest += chunk;
         continue;

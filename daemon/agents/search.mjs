@@ -12,8 +12,7 @@ export async function searchChats(query) {
   const names = new Map((await profiles()).map((a) => [a.id, a.name]));
   const needle = text.toLowerCase();
   const found = [];
-  for (const m of await containing(text, SEARCH_RESULTS * 2)) {
-    if (!names.has(m.agent)) continue;
+  for (const m of await containing(text, [...names.keys()], SEARCH_RESULTS)) {
     const body = plainText(m.body);
     const at = body.toLowerCase().indexOf(needle);
     if (at < 0) continue;

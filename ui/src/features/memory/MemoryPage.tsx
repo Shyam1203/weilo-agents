@@ -35,7 +35,7 @@ export function MemoryPage({ providers, models }: Props) {
   useEffect(
     () =>
       void getMemory().then(
-        (m) => (setSettings({ model: m.model, ask: m.ask }), setText(m.text), setSaved(m.text)),
+        (m) => (setSettings(m), setText(m.text), setSaved(m.text)),
         (e) => setLoadError(messageOf(e)),
       ),
     [],

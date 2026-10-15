@@ -3,8 +3,8 @@ import { constants } from "node:fs";
 import { chmod, chown, lstat, mkdir, open, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { AGENT_DIR, EXTENSIONS, HOMES, ISOLATED, ISOLATED_HOMES, ISOLATED_SESSIONS, KNOWLEDGE, PROFILES, ROOT, RUN, SCRATCH, SESSIONS, SKILLS, TOOLS, WORKSPACE } from "./common.mjs";
-import { AGENTS_GID, BIN, BROWSER_UID, CURATOR_UID, PLUGINS_UID, SYSTEM_PATH } from "./config.mjs";
+import { AGENT_DIR, EXTENSIONS, HOMES, ISOLATED, ISOLATED_HOMES, ISOLATED_SESSIONS, PLUGINS_CWD, PLUGINS_HOME, KNOWLEDGE, PROFILES, ROOT, RUN, SCRATCH, SESSIONS, SKILLS, TOOLS, WORKSPACE } from "./common.mjs";
+import { AGENTS_GID, BIN, BROWSER_UID, CURATOR_UID, ISOLATED_HOME, PLUGINS_UID, SYSTEM_PATH } from "./config.mjs";
 
 const run = promisify(execFile);
 export const isRoot = process.getuid?.() === 0;
@@ -80,16 +80,16 @@ export async function secure(agents) {
     const home = join(ISOLATED, agent.folder);
     const info = await lstat(home).catch(() => null);
     if (!info?.isDirectory()) continue;
-    if (info.gid !== agent.uid) await tree(home, agent.uid, agent.uid, "ug+rwX,o+rX,o-w");
-    await folder(home, agent.uid, agent.uid, 0o2775).catch(() => {});
+    if (info.gid !== agent.uid) await tree(home, agent.uid, agent.uid, ISOLATED_HOME.tree);
+    await folder(home, agent.uid, agent.uid, ISOLATED_HOME.mode).catch(() => {});
   }
   await folder(HOMES, 0, AGENTS_GID, 0o751);
   await folder(KNOWLEDGE, CURATOR_UID, CURATOR_UID, 0o700);
   await folder(SCRATCH, 0, AGENTS_GID, 0o751);
   await folder(RUN, 0, AGENTS_GID, 0o751);
   await folder(join(RUN, "pi"), 0, AGENTS_GID, 0o751);
-  await folder(join(RUN, "pi", "plugins"), PLUGINS_UID, PLUGINS_UID, 0o700);
-  await folder(join(RUN, "pi", "plugins-cwd"), 0, 0, 0o755);
+  await folder(PLUGINS_HOME, PLUGINS_UID, PLUGINS_UID, 0o700);
+  await folder(PLUGINS_CWD, 0, 0, 0o755);
   const tools = await stat(TOOLS).catch(() => null);
   if (tools && tools.gid !== AGENTS_GID) await tree(TOOLS, 0, AGENTS_GID, "g+rwX,o+rX");
 }

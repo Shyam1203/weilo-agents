@@ -47,14 +47,10 @@ delete process.env.npm_config_prefix;
 delete process.env.PYTHONUSERBASE;
 
 const routes = [];
-const route = (method, path, handler, { tool = null } = {}) =>
-  routes.push({ method, path, handler, tool, scoped: path.startsWith("/api/agents/:id"), pattern: new RegExp(`^${path.replace(":id", "([^/]+)").replace(":rid", "([^/]+)")}$`) });
-
-const QUIET = new Set(
-  ["PUT /api/agents", "POST /api/agents/:id/message", "POST /api/agents/:id/abort", "POST /api/agents/:id/answer", "POST /api/agents/:id/reload", "POST /api/agents/:id/compact", "POST /api/agents/:id/fetch_knowledge"]
-    .concat(["", "/show", "/take-over", "/give-back"].map((end) => `POST /api/agents/:id/browser${end}`)),
-);
-const agentRoute = (method, path, tool, handler) => route(method, path, handler, { tool });
+const route = (method, path, handler, { tool = null, audited = method !== "GET" } = {}) =>
+  routes.push({ method, path, handler, tool, audited, scoped: path.startsWith("/api/agents/:id"), pattern: new RegExp(`^${path.replace(":id", "([^/]+)").replace(":rid", "([^/]+)")}$`) });
+const agentRoute = (method, path, tool, handler, options = {}) => route(method, path, handler, { tool, ...options });
+const quiet = { audited: false };
 
 const forAll = (change) => async (req) => {
   const result = await change(req);
@@ -110,7 +106,7 @@ route("GET", "/api/agents", async ({ query }) => {
   return agents.map((agent) => ({ ...agent, used: used[agent.id] ?? 0, working: activityOf(agent.id) !== null, doing: activityOf(agent.id), taken: isTaken(agent.id) }));
 });
 route("POST", "/api/agents", ({ body }) => createAgent(body));
-route("PUT", "/api/agents", ({ body }) => setOrder(body.order));
+route("PUT", "/api/agents", ({ body }) => setOrder(body.order), quiet);
 route("PUT", "/api/agents/:id", async ({ id, body }) => {
   const moves = typeof body.isolated === "boolean" && body.isolated !== isIsolated(await getAgent(id));
   const agent = moves ? await holding(id, () => updateAgent(id, body)) : await updateAgent(id, body);
@@ -125,19 +121,19 @@ route("DELETE", "/api/agents/:id", async ({ id, body }) => {
   await closeBrowser(id);
   await removeFiles(agent, { keepChat: body.keepChat === true, keepFiles: body.keepFiles === true });
 });
-route("POST", "/api/agents/:id/message", ({ id, body }) => prompt(id, body));
-route("POST", "/api/agents/:id/abort", ({ id }) => abort(id));
-route("POST", "/api/agents/:id/answer", ({ id, body }) => answer(id, body));
+route("POST", "/api/agents/:id/message", ({ id, body }) => prompt(id, body), quiet);
+route("POST", "/api/agents/:id/abort", ({ id }) => abort(id), quiet);
+route("POST", "/api/agents/:id/answer", ({ id, body }) => answer(id, body), quiet);
 route("GET", "/api/agents/:id/commands", ({ id }) => skillCommands(id));
 route("GET", "/api/agents/:id/context", ({ id }) => contextOf(id));
 route("GET", "/api/agents/:id/earlier", ({ id, query }) => earlierOf(id, Math.max(0, Number(query.get("skip")) || 0)));
-route("POST", "/api/agents/:id/reload", ({ id }) => restart(id));
-route("POST", "/api/agents/:id/compact", ({ id, body }) => compact(id, body.instructions));
-agentRoute("POST", "/api/agents/:id/browser", "browser", async ({ id, body }) => ({ text: await useBrowser(id, body) }));
+route("POST", "/api/agents/:id/reload", ({ id }) => restart(id), quiet);
+route("POST", "/api/agents/:id/compact", ({ id, body }) => compact(id, body.instructions), quiet);
+agentRoute("POST", "/api/agents/:id/browser", "browser", async ({ id, body }) => ({ text: await useBrowser(id, body) }), quiet);
 route("GET", "/api/agents/:id/browser", async ({ id }) => ({ taken: isTaken(id), hasWindow: await hasWindow(id) }));
-route("POST", "/api/agents/:id/browser/show", ({ id }) => showBrowser(id));
-route("POST", "/api/agents/:id/browser/take-over", ({ id }) => takeOver(id));
-route("POST", "/api/agents/:id/browser/give-back", ({ id }) => giveBack(id));
+route("POST", "/api/agents/:id/browser/show", ({ id }) => showBrowser(id), quiet);
+route("POST", "/api/agents/:id/browser/take-over", ({ id }) => takeOver(id), quiet);
+route("POST", "/api/agents/:id/browser/give-back", ({ id }) => giveBack(id), quiet);
 agentRoute("GET", "/api/agents/:id/model-key/:rid", "model", async ({ id, rid }) => {
   if (providerOf((await getAgent(id)).model) !== rid) throw fail(403, "Not permitted");
   return { key: await accessToken(rid) };
@@ -154,9 +150,9 @@ agentRoute("POST", "/api/agents/:id/ask_agent", "ask_agent", ({ id, body }) => a
 agentRoute("POST", "/api/agents/:id/manage_settings", "manage_settings", ({ id, body }) => manageSettings(id, body));
 agentRoute("POST", "/api/agents/:id/memory", "memory", async ({ id, body }) => {
   const confirm = (await getCurator()).ask && (async (what) => (await askUser(id, `${(await getAgent(id)).name} asks to ${what}`, ["Save it", "Don't"])) === "Save it");
-  return { text: await useMemory(body, confirm || undefined) };
+  return { text: await useMemory(body, confirm) };
 });
-agentRoute("POST", "/api/agents/:id/fetch_knowledge", "fetch_knowledge", async ({ body }) => ({ text: await fetchKnowledge(body) }));
+agentRoute("POST", "/api/agents/:id/fetch_knowledge", "fetch_knowledge", async ({ body }) => ({ text: await fetchKnowledge(body) }), quiet);
 agentRoute("GET", "/api/agents/:id/routines", "routines", async ({ id, headers }) => (await noteZone(headers["x-timezone"]), listRoutines(id)));
 agentRoute("POST", "/api/agents/:id/routines", "routines", ({ id, body, headers }) => addRoutine(id, body, headers["x-timezone"]));
 agentRoute("PUT", "/api/agents/:id/routines/:rid", "routines", ({ id, rid, body }) => updateRoutine(id, rid, body));
@@ -172,16 +168,14 @@ async function handle(req, res, sandboxed) {
     const url = new URL(req.url, "http://localhost");
     const path = url.pathname;
     guard(req, path);
-    if (path === "/api/health" && !sandboxed) return reply(res, 200, { ok: true });
-    if (!path.startsWith("/api/")) {
-      if (sandboxed) throw fail(404, "Not found");
-      return await serveUi(req, res);
-    }
+    const caller = keyIn(req, url.searchParams);
+    if (caller) await checkPlace(caller.agent, sandboxed);
+    else if (sandboxed) throw fail(403, "Not permitted");
+    if (!sandboxed && path === "/api/health") return reply(res, 200, { ok: true });
+    if (!sandboxed && !path.startsWith("/api/")) return await serveUi(req, res);
     const proxied = path.match(/^\/api\/(model|plugin)-proxy\/([\w.-]+)(\/.*)?$/);
     if (proxied) {
-      const caller = keyIn(req, url.searchParams);
       if (!caller) throw fail(401, "Not permitted");
-      await checkPlace(caller.agent, sandboxed);
       const [, kind, name, rest = ""] = proxied;
       if (kind === "model") {
         if ((await allowedProvider(caller.agent)) !== name) throw fail(403, "Not permitted");
@@ -201,14 +195,12 @@ async function handle(req, res, sandboxed) {
       return reply(res, 204);
     }
     const who = await identify(req);
-    if (who?.agent) await checkPlace(who.agent, sandboxed);
-    else if (sandboxed) throw fail(403, "Not permitted");
     if (!who) return reply(res, 401, { error: "Pair this device to use Weilo Agents.", pair: true });
     const file = path.match(/^\/api\/agents\/([^/]+)\/files\/(.+)$/);
     if (file && req.method === "GET" && who.device) return await serveFile(res, filesOf(await getAgent(file[1])), file[2], url.searchParams.has("view"));
     const stream = path.match(/^\/api\/agents\/([^/]+)\/events$/);
     if (stream && req.method === "GET" && who.device) return await events(req, res, stream[1]);
-    for (const { method, path: name, pattern, handler, scoped, tool } of routes) {
+    for (const { method, path: name, pattern, handler, scoped, tool, audited } of routes) {
       const match = req.method === method && path.match(pattern);
       if (!match) continue;
       const [, id, rid] = match;
@@ -216,7 +208,7 @@ async function handle(req, res, sandboxed) {
       const agent = scoped && (await getAgent(id));
       if (who.agent && !mayCall(agent, tool)) throw fail(403, "An isolated agent cannot use this. The user can change what it may use in its settings.");
       const result = await handler({ id, rid, body: await bodyOf(req), query: url.searchParams, headers: req.headers, who });
-      if (method !== "GET" && !QUIET.has(`${method} ${name}`)) audit(`${method} ${name}`, { by: who.device ? `device ${who.device}` : `agent ${who.agent}`, ...(id && { id }), ...(rid && { rid }) });
+      if (audited) audit(`${method} ${name}`, { by: who.device ? `device ${who.device}` : `agent ${who.agent}`, ...(id && { id }), ...(rid && { rid }) });
       return result === undefined ? reply(res, 204) : reply(res, 200, result);
     }
     throw fail(404, "Not found");
@@ -241,12 +233,13 @@ async function upgrade(req, socket, head, sandboxed) {
   try {
     const url = new URL(req.url, "http://localhost");
     guard(req, url.pathname);
+    const caller = keyIn(req, url.searchParams);
+    if (caller) await checkPlace(caller.agent, sandboxed);
+    else if (sandboxed) throw fail(403, "Not permitted");
     if (!sandboxed && url.pathname === "/api/browser/view" && (await identify(req))?.device && viewUpgrade(req, socket, head)) return;
     if (!sandboxed && isCdpPath(url.pathname) && cdpUpgrade(req, socket, head)) return;
     const pipe = url.pathname.match(/^\/api\/plugin-pipe\/([\w-]+)$/);
-    const caller = pipe && keyIn(req, url.searchParams);
-    if (caller) {
-      await checkPlace(caller.agent, sandboxed);
+    if (pipe && caller) {
       const plugin = await allowedPlugin(caller.agent, pipe[1]);
       if (plugin.command) return pipePlugin(socket, plugin, await getAgent(caller.agent));
     }

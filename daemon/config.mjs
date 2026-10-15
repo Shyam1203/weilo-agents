@@ -28,12 +28,16 @@ export const PUSH_TTL_S = 24 * 60 * 60;
 export const PUSH_TIMEOUT_MS = 10_000;
 export const PUSH_BODY_CHARS = 180;
 
+export const STALE_DEVICE_DAYS = 90;
+
 export const BROWSER_UID = 1000;
 export const CURATOR_UID = 1100;
 export const PLUGINS_UID = 1200;
 export const AGENTS_GID = 2000;
 export const FIRST_AGENT_UID = 2001;
 export const PLUGIN_UID_OFFSET = 100_000;
+export const REGULAR_HOME = { mode: 0o2770, tree: "ug+rwX,o-rwx", file: 0o660 };
+export const ISOLATED_HOME = { mode: 0o2775, tree: "ug+rwX,o+rX,o-w", file: 0o664 };
 export const SYSTEM_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 export const BIN = {
   setpriv: "/usr/bin/setpriv",
@@ -78,6 +82,7 @@ export const SIGN_IN_AS = "Weilo Agents";
 export const SIGN_IN_TIMEOUT_MS = 15 * MINUTE;
 export const SIGN_IN_STEP_MS = 8000;
 export const MODELS_TIMEOUT_MS = 90_000;
+export const MODELS_FOR_MS = 10 * MINUTE;
 export const COMPACT_AT = (window) => (window >= 1e6 ? 0.4 : window >= 5e5 ? 0.8 : 0.9);
 export const MIN_RESERVE = 16384;
 export const PLUGIN_STATUS_TIMEOUT_MS = 90_000;
@@ -97,6 +102,7 @@ export const FETCH_TOP = 5;
 export const FETCH_EXCERPT = 480;
 export const FETCH_MAX_CHARS = 1800;
 export const CHAT_TAIL = 32e6;
+export const CHAT_CHUNK = 1 << 20;
 
 export const CURATOR_EVERY_MS = 5 * MINUTE;
 export const CURATOR_QUIET_MS = 10 * MINUTE;

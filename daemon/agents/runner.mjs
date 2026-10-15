@@ -17,10 +17,10 @@ import { userFlags } from "../settings/user.mjs";
 import { notify } from "../push.mjs";
 import { spawnSandboxed } from "../sandbox/client.mjs";
 import { ownTools, sharedTools, spawnAs } from "../users.mjs";
-import { chatDirOf, getAgent, homeOf, isIsolated, makeHome, mayCall, profilePath, userHomeOf, userOf } from "./agents.mjs";
+import { chatDirOf, getAgent, homeOf, isIsolated, makeHome, mayCall, placesOf, profilePath, userHomeOf, userOf } from "./agents.mjs";
 import { piDirOf, piFiles, writePiDir } from "./pidir.mjs";
 import { piRpc } from "./pi.mjs";
-import { asTyped } from "./sessions.mjs";
+import { asTyped, textOf } from "./sessions.mjs";
 import { saveFiles, toImages } from "./uploads.mjs";
 import { clearScratch, makeScratch, rulesOf, scratchOf } from "./workspace.mjs";
 
@@ -62,7 +62,7 @@ async function kindOf(agent, dir) {
     const about = (await Promise.all([userFlags(), memoryFlags()])).flat();
     return { profile: profilePath(agent.id), skills, extensions, ours: [WEILO, MEMORY], about, env: sharedTools, scratch: scratchOf(agent.id) };
   }
-  const binds = [...[homeOf, chatDirOf, userHomeOf].map((place) => ({ path: place(agent) })), ...[...skills, ...extensions.filter((x) => !x.builtin).map((x) => join(EXTENSIONS, x.id))].map((path) => ({ path, ro: true }))];
+  const binds = [...placesOf(agent).map((path) => ({ path })), ...[...skills, ...extensions.filter((x) => !x.builtin).map((x) => join(EXTENSIONS, x.id))].map((path) => ({ path, ro: true }))];
   return { profile: join(dir, "agent.json"), skills, extensions, ours: [WEILO], about: ["--no-context-files"], env: ownTools(userHomeOf(agent)), scratch: "/tmp", binds };
 }
 
@@ -85,7 +85,7 @@ const argvOf = (agent, kind, plugins) => {
 };
 
 const notifyAbout = (id, kind, text) => getAgent(id).then((agent) => notify(agent, kind, text)).catch(() => {});
-const replyText = (reply) => (typeof reply.content === "string" ? reply.content : reply.content.filter((b) => b.type === "text").map((b) => b.text).join(" ")).trim();
+const replyText = (reply) => textOf(reply.content, " ").trim();
 
 function tell(run) {
   const { reply } = run;
@@ -115,18 +115,18 @@ async function start(run) {
   const [ask, plugins, kind] = await Promise.all([askBefore(), pluginTools(agent.plugins), kindOf(agent, dir)]);
   const argv = argvOf(agent, kind, plugins);
   const user = userOf(agent);
-  await makeHome(agent);
-  if (!kind.binds) await makeScratch(agent);
+  const isolated = isIsolated(agent);
+  await Promise.all([makeHome(agent), isolated ? null : makeScratch(agent)]);
   run.key = agentKey(run.id);
   const files = await piFiles({ model: agent.model, plugins: agent.plugins, key: run.key, agent: run.id });
   const cwd = homeOf(agent);
   const env = {
     ...kind.env, PI_CODING_AGENT_DIR: dir, HOME: userHomeOf(agent),
     WEILO_AGENT: run.id, WEILO_API: `http://127.0.0.1:${PORT}/api`, WEILO_KEY: run.key, WEILO_ASK_BEFORE: ask, WEILO_SCRATCH: kind.scratch,
-    ...(kind.binds && { WEILO_ISOLATED: "1" }),
+    ...(isolated && { WEILO_ISOLATED: "1" }),
   };
   let child;
-  if (kind.binds) {
+  if (isolated) {
     files["agent.json"] = await readFile(profilePath(agent.id), "utf8");
     child = spawnSandboxed({ user, argv, cwd, env, umask: 0o002, binds: kind.binds, files: Object.fromEntries(Object.entries(files).map(([name, text]) => [join(dir, name), text])) });
   } else {

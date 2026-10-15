@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { piRpc } from "../agents/pi.mjs";
 import { AGENT_DIR, AUTH, fail, PI_ENV, readJson, SETTINGS, updateJson } from "../common.mjs";
-import { BIN, MODELS_TIMEOUT_MS, PROVIDERS } from "../config.mjs";
+import { BIN, MODELS_FOR_MS, MODELS_TIMEOUT_MS, PROVIDERS } from "../config.mjs";
 import { setReserves } from "./compaction.mjs";
 
 const check = (id) => {
@@ -31,7 +31,6 @@ export async function removeKey(id) {
   forgetModels();
 }
 
-const MODELS_FOR_MS = 10 * 60_000;
 let cache = null;
 export const forgetModels = () => (cache = null);
 

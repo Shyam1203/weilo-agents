@@ -133,7 +133,7 @@ npm run build                      # type-check and build the UI</code></pre>
 <li>A handler gets <code>{id, rid, body, query, headers, who}</code> and returns the reply object, or nothing for 204. A path under <code>/api/agents/:id</code> loads the agent first, so a missing id is 404.</li>
 <li>Streams and file downloads are matched before the loop and check <code>who.device</code> themselves; do the same for anything that returns chat contents or files.</li>
 <li>If pis read what the route changes when they start, wrap it in <code>forAll</code> so every pi starts anew.</li>
-<li>A route that changes something is recorded in the audit log by the route loop; add it to <code>QUIET</code> only if it is a chat's own traffic.</li>
+<li>A route that changes something is recorded in the audit log by the route loop; register it with <code>quiet</code> (<code>{ audited: false }</code>) only if it is a chat's own traffic.</li>
 <li>Never return a secret: keys, plugin env or tokens, device keys.</li>
 </ul>
 </section>

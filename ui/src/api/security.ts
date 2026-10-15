@@ -19,4 +19,9 @@ export interface AuditEntry {
   reason?: string;
 }
 
-export const getSecurity = () => request<{ checks: SecurityCheck[]; activity: AuditEntry[] }>("GET", "/api/security");
+export interface SecurityReport {
+  checks: SecurityCheck[];
+  activity: AuditEntry[];
+}
+
+export const getSecurity = () => request<SecurityReport>("GET", "/api/security");
