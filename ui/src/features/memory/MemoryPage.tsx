@@ -18,12 +18,12 @@ interface Props {
 const OFF = "";
 const NOTE = /^- (?:\[([^\]]*)\] )?(.+)$/;
 const KINDS = [
-  { value: "preference", label: "Preference" },
-  { value: "fact", label: "Fact" },
-  { value: "goal", label: "Goal" },
-  { value: "person", label: "Person" },
-  { value: "project", label: "Project" },
-  { value: "decision", label: "Decision" },
+  { value: "preference", label: "Preference", group: "Preferences" },
+  { value: "fact", label: "Fact", group: "Facts" },
+  { value: "goal", label: "Goal", group: "Goals" },
+  { value: "person", label: "Person", group: "People" },
+  { value: "project", label: "Project", group: "Projects" },
+  { value: "decision", label: "Decision", group: "Decisions" },
 ];
 const STALE_MONTHS = 12;
 const monthOf = (when?: string) => {
@@ -119,7 +119,7 @@ export function MemoryPage({ providers, models }: Props) {
                 {KINDS.flatMap((kind) => notes.filter((n) => n.kind === kind)).map(({ i, when, kind, note }, at, sorted) => [
                   sorted[at - 1]?.kind !== kind && (
                     <li key={kind.value} className="pt-1 text-[11px] font-medium tracking-wide text-ink-3 uppercase">
-                      {kind.label}
+                      {kind.group}
                     </li>
                   ),
                   <li key={i} className="flex items-start gap-2 rounded-xl bg-select/60 py-2 pr-1 pl-3">
