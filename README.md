@@ -31,4 +31,6 @@ npm run build   # type-check and build
 
 After you change the daemon or the UI, build the container again: `docker compose up -d --build`.
 
-How it works and the design decisions: [DESIGN.md](docs/DESIGN.md). How a release is made: [RELEASING.md](docs/RELEASING.md).
+## Documentation
+
+Start at [docs/index.html](docs/index.html) (open it in a browser from a checkout or the source zip): architecture, security model, agents, memory, data and permissions, the UI, operating and development, with diagrams. Dense reference tables: [DESIGN.md](docs/DESIGN.md). How a release is made: [RELEASING.md](docs/RELEASING.md).

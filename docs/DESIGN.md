@@ -1,5 +1,7 @@
 # weilo-agents: design
 
+The full documentation, with diagrams, is in HTML: start at [index.html](index.html). This file keeps the dense reference tables.
+
 A chat app for the pi coding agent. Pi runs in a Docker container; a small daemon in that
 container serves the UI and runs pi. All user data is one host folder, `~/.weilo-agents`.
 
