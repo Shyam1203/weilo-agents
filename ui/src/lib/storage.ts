@@ -1,5 +1,3 @@
-// Per-browser conveniences (last agent, theme). Storage can be blocked; nothing depends on it.
-
 export function read(key: string): string | null {
   try {
     return localStorage.getItem(key);
@@ -13,7 +11,6 @@ export function write(key: string, value: string | null) {
     if (value === null) localStorage.removeItem(key);
     else localStorage.setItem(key, value);
   } catch {
-    /* Not persisted; that's fine. */
   }
 }
 

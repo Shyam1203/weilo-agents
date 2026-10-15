@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Icon, type IconName } from "../../components/ui/Icon";
 
-/** A shortcut offered when a message starts with "/": what it is called, and the text it puts in the box. */
 export interface Shortcut {
   group: "Commands" | "Skills" | "Plugins";
   label: string;
@@ -10,24 +9,19 @@ export interface Shortcut {
   icon: IconName;
 }
 
-/** The list's id, which the message box points to. */
 export const COMMAND_LIST = "shortcuts";
 
 interface Props {
   shortcuts: Shortcut[];
   active: number;
   onPick: (shortcut: Shortcut) => void;
-  /** Said instead of the list when there is nothing to pick. */
   hint?: string;
-  /** Offered beside the hint: where to turn skills and plugins on. */
   onEdit?: () => void;
 }
 
-/** The shortcuts above the message box, in a section per group; the box keeps focus, and the arrow keys and Enter work from there. */
 export function CommandMenu({ shortcuts, active, onPick, hint, onEdit }: Props) {
   const list = useRef<HTMLUListElement>(null);
 
-  // A long list scrolls, and the arrow keys keep the chosen one in view (the first also shows its heading).
   useEffect(() => {
     if (active === 0) list.current?.scrollTo({ top: 0 });
     else list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });

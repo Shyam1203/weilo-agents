@@ -9,16 +9,11 @@ interface Option<T extends string> {
   icon?: IconName;
 }
 
-/**
- * One choice among a few, as selectable cards: short ones in a `row`, or stacked with details.
- * Every radio-style picker in the app is this.
- */
 export function Choice<T extends string>({ label, value, onChange, options, row }: { label: string; value: T; onChange: (value: T) => void; options: Option<T>[]; row?: boolean }) {
   return (
     <div
       role="radiogroup"
       aria-label={label}
-      // A row wraps on a phone, three to a line, and the cards of the last line share its width.
       className={row ? "flex flex-wrap gap-2" : "flex flex-col gap-2"}
     >
       {options.map((o) => {

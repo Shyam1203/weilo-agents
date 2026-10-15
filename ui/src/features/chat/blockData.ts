@@ -1,6 +1,3 @@
-// What an agent shows with the `show` tool. A model can get the shape a little wrong, so each
-// block is read leniently: what does not fit is dropped, never an error.
-
 export type Block =
   | { type: "text"; text: string }
   | { type: "table"; title: string; columns: string[]; rows: string[][] }
@@ -16,7 +13,6 @@ type Raw = Record<string, unknown>;
 const record = (x: unknown): Raw => (x && typeof x === "object" ? (x as Raw) : {});
 const list = (x: unknown) => (Array.isArray(x) ? x : []);
 const str = (x: unknown) => (typeof x === "string" || typeof x === "number" ? String(x) : "");
-// Only web addresses become links.
 const link = (x: unknown) => (/^https?:\/\//i.test(str(x)) ? str(x) : "");
 
 function blockOf(raw: Raw): Block | null {
@@ -45,7 +41,6 @@ function blockOf(raw: Raw): Block | null {
       return options.length ? { type: "buttons", options: options.map((o) => ({ label: str(o.label), message: str(o.message) || str(o.label) })) } : null;
     }
     case "file": {
-      // Relative to the workspace, whether the agent wrote it so or in full.
       const path = str(raw.path).replace(/^\/home\/node\/\.pi\/workspace\//, "").replace(/^\.?\/+/, "");
       return path ? { type: "file", path, name: str(raw.name) || path.split("/").pop()! } : null;
     }
@@ -56,5 +51,4 @@ function blockOf(raw: Raw): Block | null {
   }
 }
 
-/** The blocks in a `show` call's arguments. */
 export const blocksOf = (args: unknown): Block[] => list(record(args).blocks).flatMap((b) => blockOf(record(b)) ?? []);

@@ -1,9 +1,7 @@
-// What the agent did between its words, in one line ("Read 3 files · Ran 2 commands"); tap it for each step.
 import { useState } from "react";
 import { Icon, type IconName } from "../../components/ui/Icon";
 import type { Step } from "./conversation";
 
-// How a tool reads in the line: what one use is called, the plural, and its icon. Others read "Used <tool>".
 const KINDS: Record<string, { one: string; many: string; icon: IconName }> = {
   read: { one: "Read a file", many: "Read # files", icon: "file" },
   edit: { one: "Edited a file", many: "Edited # files", icon: "file" },
@@ -19,7 +17,6 @@ const KINDS: Record<string, { one: string; many: string; icon: IconName }> = {
   manage_agents: { one: "Worked on agents", many: "Worked on agents # times", icon: "agent" },
 };
 const kindOf = (tool: string) => KINDS[tool] ?? { one: `Used ${tool}`, many: `Used ${tool} # times`, icon: "puzzle" as IconName };
-/** At most this many kinds in the line; the rest are counted. */
 const SHOWN = 3;
 
 function summary(steps: Step[]) {

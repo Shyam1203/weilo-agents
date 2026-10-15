@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 
-/** A labelled form control with an optional hint below it. */
 export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
     <label className="flex flex-col gap-1.5">

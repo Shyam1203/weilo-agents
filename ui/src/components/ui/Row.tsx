@@ -1,15 +1,10 @@
-// Settings-style rows: a bordered card of rows, each with a title and a short description on the
-// left and its control on the right; and a page heading to put above them.
 import type { ReactNode } from "react";
 import { IconTile } from "./Tag";
 import type { IconName } from "./Icon";
 
-/** The card that holds rows. */
 export const Card = ({ children }: { children: ReactNode }) => <ul className="divide-y divide-line overflow-hidden rounded-xl ring-1 ring-line">{children}</ul>;
 
-/** One row. `children` is its control (a button, a switch, a tag); `below` is a form or list that opens under it.
- *  A control marked with the class `pick` (a dropdown) takes the full width on a phone. */
-export function Row({ icon, tile, title, description, children, below }: { icon?: IconName; /** Shown instead of an icon. */ tile?: ReactNode; title: ReactNode; description?: ReactNode; children?: ReactNode; below?: ReactNode }) {
+export function Row({ icon, tile, title, description, children, below }: { icon?: IconName; tile?: ReactNode; title: ReactNode; description?: ReactNode; children?: ReactNode; below?: ReactNode }) {
   return (
     <li className="px-4 py-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -25,8 +20,6 @@ export function Row({ icon, tile, title, description, children, below }: { icon?
   );
 }
 
-/** A page of Settings: its heading, what it is for, and an action at the right.
- *  On a phone the bar above already names the page, so the heading is left out there. */
 export function Page({ title, description, action, children }: { title: string; description?: ReactNode; action?: ReactNode; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-4">

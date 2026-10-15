@@ -1,6 +1,3 @@
-// The app's service worker: it shows a notification the daemon pushed (daemon/push.mjs: { title, body, agent, kind }) and
-// opens that agent's chat when you tap it. Nothing is cached: the app needs the daemon anyway.
-
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 
@@ -9,7 +6,6 @@ self.addEventListener("push", (event) => {
   try {
     data = event.data?.json() ?? {};
   } catch {}
-  // One notification per agent: a newer one replaces the last.
   event.waitUntil(
     self.registration.showNotification(data.title || "Weilo Agents", {
       body: data.body || "",

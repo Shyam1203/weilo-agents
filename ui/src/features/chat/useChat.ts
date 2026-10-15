@@ -4,20 +4,15 @@ import { empty, failureOf, itemsOf, noteOf, reduce, type PiEvent, type PiMessage
 
 const RELOADED = "Reloaded: skills, instructions and notes were read again.";
 const ACTIVITY = ["agent_start", "agent_settled", "tool_execution_start", "tool_execution_end"];
-// After these the context has changed: measure it again.
 const MEASURE = ["history", "agent_settled", "compaction_end"];
 
-/** One agent's conversation, live from the server; `onActivity` runs when a run starts or ends, and as it moves from one tool to the next (the agent list shows what it is doing). Give it a `key` of the agent's id. */
 export function useChat(agentId: string, onActivity: () => void) {
   const [chat, dispatch] = useReducer(reduce, empty);
   const [attempt, setAttempt] = useState(0);
   const [context, setContext] = useState<Context | null>(null);
   const [compacting, setCompacting] = useState(false);
-  // The tool in use now, from the live stream (the agent list's own copy is polled and lags).
   const [doing, setDoing] = useState<string | null>(null);
-  // What /compact, /reload or an automatic summary just did, in a line under the chat; it goes when the agent starts again.
   const [status, setStatus] = useState<string | null>(null);
-  // Messages pi summarized away are loaded a page at a time, one page at once.
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const loading = useRef(false);
   const loadEarlier = async () => {
@@ -28,18 +23,15 @@ export function useChat(agentId: string, onActivity: () => void) {
       const page = await getEarlier<PiMessage>(agentId, chat.earlier.length);
       dispatch({ type: "earlier", messages: page.messages, more: page.more });
     } catch {
-      // Scrolling up again tries again.
     } finally {
       loading.current = false;
       setLoadingEarlier(false);
     }
   };
-  // A /reload sent while the agent works takes effect when it finishes.
   const reloading = useRef(false);
   const activity = useRef(onActivity);
   activity.current = onActivity;
 
-  // The stream ends when pi does; the browser reconnects to the next pi by itself, except after a failure.
   useEffect(() => {
     const source = new EventSource(eventsUrl(agentId));
     source.onmessage = (m) => {
@@ -58,7 +50,6 @@ export function useChat(agentId: string, onActivity: () => void) {
     return () => source.close();
   }, [agentId, attempt]);
 
-  // Summarizes now (pi's /compact); the error, if any, is for the caller to show.
   const compact = async (instructions?: string) => {
     setCompacting(true);
     try {
@@ -75,28 +66,23 @@ export function useChat(agentId: string, onActivity: () => void) {
     ready: chat.ready,
     stopped: !!chat.exit,
     busy: chat.busy,
-    /** The tool in use now; null when none. */
     doing,
     asking: chat.asking,
     queued: chat.queued,
     note: status ?? noteOf(chat),
     messages: useMemo(() => itemsOf(chat), [chat]),
-    /** The messages pi holds: they change when something new arrives (loading earlier messages leaves them as they are). */
     live: chat.messages,
-    /** Pi summarized messages that are not loaded yet; `loadEarlier` loads the next page of them. */
     more: chat.more,
     loadingEarlier,
     loadEarlier,
     error: chat.exit ?? failureOf(chat) ?? null,
     retry: () => setAttempt((n) => n + 1),
-    // "/compact" (and what to keep after it) and "/reload" are commands of the chat: pi's own prompt does not take them.
     send: (message: Outgoing) => {
       const command = !message.images.length && !message.files.length && /^\/(compact|reload)(?:\s+([\s\S]*))?$/.exec(message.text.trim());
       if (!command) return send(agentId, message);
       if (command[1] === "compact") return compact(command[2]);
       return reloadAgent(agentId).then(() => (reloading.current = chat.busy, setStatus(chat.busy ? "The agent reloads when it finishes." : RELOADED)));
     },
-    /** Answers the question the agent waits on; no value skips it. */
     answer: (value?: string) => answerAsk(agentId, chat.asking!.id, value),
     stop: () => abort(agentId).catch(() => {}),
   };

@@ -21,7 +21,6 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
   icon?: IconName;
-  /** Shows a spinner in place of the icon and disables the button. */
   busy?: boolean;
   children?: ReactNode;
 }
@@ -40,7 +39,6 @@ export function Button({ variant = "secondary", size = "md", icon, busy = false,
   );
 }
 
-/** A round icon-only button with an accessible label. */
 export function IconButton({ icon, label, className = "", ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { icon: IconName; label: string }) {
   return (
     <button

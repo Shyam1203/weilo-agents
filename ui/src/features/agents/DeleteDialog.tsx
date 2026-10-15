@@ -1,5 +1,3 @@
-// Asks before an agent is deleted: its chat goes with it, unless you clear the box. Its folder stays, unless you tick that box:
-// files are what the user keeps.
 import { useState } from "react";
 import { Button } from "../../components/ui/Button";
 import { ErrorText } from "../../components/ui/Field";
@@ -9,7 +7,6 @@ import { useAction } from "../../lib/useAction";
 interface Props {
   name: string;
   folder: string;
-  /** What is not deleted with the agent: the conversation, and its folder. */
   onDelete: (keep: { keepChat: boolean; keepFiles: boolean }) => Promise<void>;
   onClose: () => void;
 }

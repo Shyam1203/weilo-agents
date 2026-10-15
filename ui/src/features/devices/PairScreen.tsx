@@ -1,5 +1,3 @@
-// The screen of a browser that is not paired yet: it types a code from a paired device (or opens a link with one, which
-// pairs it at once). Agents reach the app the way a browser does, so being on this computer or the tailnet is not enough.
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { pairThisDevice } from "../../api/devices";
 import { Button } from "../../components/ui/Button";
@@ -7,7 +5,6 @@ import { ErrorText } from "../../components/ui/Field";
 import { Logo } from "../../components/ui/Logo";
 import { useAction } from "../../lib/useAction";
 
-/** The code in the address (?pair=), taken out of it so a reload does not use it again. */
 function codeInAddress() {
   const url = new URL(location.href);
   const code = url.searchParams.get("pair");
@@ -24,7 +21,6 @@ export function PairScreen({ onPaired }: { onPaired: () => void }) {
   const pair = (value: string) => run("pair", async () => (await pairThisDevice(value), onPaired()));
   const submit = (e: FormEvent) => (e.preventDefault(), void pair(code));
 
-  // A link with a code pairs at once.
   const tried = useRef(false);
   useEffect(() => {
     if (!code || tried.current) return;

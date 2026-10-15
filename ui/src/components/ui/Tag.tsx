@@ -1,4 +1,3 @@
-// Small shared marks: a tag ("Built in", "Not connected"), and the icon or letter tile at the start of rows and cards.
 import type { ReactNode } from "react";
 import { Icon, type IconName } from "./Icon";
 
@@ -10,7 +9,6 @@ export const IconTile = ({ icon }: { icon: IconName }) => (
   </span>
 );
 
-/** A name's first letter in a tile, where items would otherwise share one icon (providers). */
 export const LetterTile = ({ name }: { name: string }) => (
   <span aria-hidden className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-card text-[13px] font-semibold text-ink-2">
     {name.trim().charAt(0).toUpperCase()}

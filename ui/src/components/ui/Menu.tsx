@@ -1,13 +1,10 @@
-// A popover menu: a trigger and a list of actions, closed by a click outside or Escape.
 import { useCallback, useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useDismiss } from "../../lib/useDismiss";
 import { useExit } from "../../lib/useExit";
 import { Icon, type IconName } from "./Icon";
 
 interface Props {
-  /** The trigger; gets the open state and a toggle. */
   trigger: (props: { open: boolean; toggle: () => void }) => ReactNode;
-  /** Where the menu opens, relative to the trigger. */
   placement?: "below-end" | "above-start";
   children: (close: () => void) => ReactNode;
 }
@@ -21,17 +18,14 @@ export function Menu({ trigger, placement = "below-end", children }: Props) {
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
   const ref = useDismiss<HTMLDivElement>(open, close);
-  // It grows from the trigger and fades back into it.
   const { shown, closing } = useExit(open);
   const items = () => [...(ref.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]') ?? [])];
 
-  // Opening moves focus to the first item; arrows, Home and End move between items.
   useEffect(() => {
     if (open) items()[0]?.focus();
   }, [open]);
 
   const onKeyDown = (e: KeyboardEvent) => {
-    // Escape closes the menu (useDismiss); focus goes back to the trigger, the first button.
     if (e.key === "Escape") ref.current?.querySelector("button")?.focus();
     const list = items();
     const at = list.indexOf(document.activeElement as HTMLElement);

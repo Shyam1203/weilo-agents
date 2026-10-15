@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { messageOf } from "../api/http";
 
-/** Runs an action: `busy` names the one running, `error` says why the last one failed. */
 export function useAction() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

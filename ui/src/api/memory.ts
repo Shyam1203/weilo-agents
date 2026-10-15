@@ -1,6 +1,5 @@
 import { request } from "./http";
 
-/** `text` is the MEMORY.md file; `model` is the knowledge curator's model, "" while it is off. */
 export interface Memory {
   text: string;
   model: string;

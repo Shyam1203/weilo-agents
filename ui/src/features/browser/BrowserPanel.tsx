@@ -1,6 +1,3 @@
-// The top of the chat's right-hand panel: the browser's screen, showing the agent's window. You can
-// take over: the agent stops and waits, and you use its window until you give it back. The screen
-// loads on first use: noVNC is large.
 import { lazy, Suspense, useEffect, useState } from "react";
 import { browserState, giveBack, showBrowser, takeOver } from "../../api/browser";
 import { Button } from "../../components/ui/Button";
@@ -23,7 +20,6 @@ export function BrowserPanel({ agentId, agentName, off, onTaken }: { agentId: st
   const [open, setOpen] = useState(false);
   const { busy, error, run } = useAction();
 
-  // The screen has one window in front: this agent's.
   useEffect(() => {
     setTaken(false);
     setHasWindow(false);
@@ -32,7 +28,6 @@ export function BrowserPanel({ agentId, agentName, off, onTaken }: { agentId: st
     void showBrowser(agentId).catch(() => {});
   }, [agentId, off]);
 
-  // An agent opens its window the first time it uses the browser: look again now and then until it has one.
   useEffect(() => {
     if (off || hasWindow) return;
     const timer = setInterval(() => void browserState(agentId).then((s) => (setTaken(s.taken), setHasWindow(s.hasWindow)), () => {}), 3000);
@@ -40,7 +35,6 @@ export function BrowserPanel({ agentId, agentName, off, onTaken }: { agentId: st
   }, [agentId, off, hasWindow]);
 
   const open_ = () => hasWindow && (void showBrowser(agentId).catch(() => {}), setOpen(true));
-  // The agent list shows who has taken a browser: it learns of the change now.
   const take = () => run("take", async () => (await takeOver(agentId), setTaken(true), setHasWindow(true), setOpen(true), onTaken()));
   const give = () => run("give", async () => (await giveBack(agentId), setTaken(false), setOpen(false), onTaken()));
   const action = taken ? (
@@ -53,7 +47,6 @@ export function BrowserPanel({ agentId, agentName, off, onTaken }: { agentId: st
     </Button>
   );
 
-  // Turned off for this agent: the screen stays blank, so it does not show another agent's window.
   if (off) {
     return (
       <section className="flex flex-col gap-3 p-4 pb-0">

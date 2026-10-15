@@ -1,30 +1,21 @@
-// How full the agent's context is, beside the send button: a number and a small bar (a ring looked like a loading
-// spinner). Hover or tap it for the tokens, where pi
-// summarizes, and a button to summarize now.
 import { useCallback, useState } from "react";
 import type { Context } from "../../api/chat";
 import { useDismiss } from "../../lib/useDismiss";
 
 interface Props {
   context: Context;
-  /** A summary is being made. */
   compacting: boolean;
-  /** A run is going: a summary has to wait for it. */
   busy: boolean;
   onCompact: () => void;
 }
 
-// 188100 -> "188.1k", 1048576 -> "1.05M".
 const short = (n: number) => (n >= 1e6 ? `${+(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${+(n / 1e3).toFixed(1)}k` : String(n));
 
 export function ContextMeter({ context, compacting, busy, onCompact }: Props) {
   const { tokens, window, point } = context;
   const used = tokens === null ? 0 : Math.min(tokens / window, 1);
-  // Red as the context nears the point where pi summarizes.
   const fill = tokens === null ? 0 : Math.min(tokens / point, 1);
   const tight = fill >= 0.8;
-  // Hovering shows the details on a computer; a tap (a touch screen has no hover, and Safari does not focus a tapped
-  // button) or a click keeps them open until a tap outside.
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
   const ref = useDismiss<HTMLDivElement>(open, close);

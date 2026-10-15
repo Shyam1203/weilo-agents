@@ -2,21 +2,15 @@ import { request } from "./http";
 
 export type Every = "once" | "hour" | "day" | "weekday" | "week";
 
-/** Work an agent does on a schedule. Run times are milliseconds. */
 export interface Routine {
   id: string;
   title: string;
   task: string;
   every: Every;
-  /** HH:MM in its time zone; for once and hour just one (for hour only the minutes count). */
   times: string[];
-  /** With every week: 0 is Sunday. */
   day?: number;
-  /** With once: YYYY-MM-DD. */
   date?: string;
-  /** The time zone its time is in. */
   timezone: string;
-  /** Null when it is over: a one-time routine that was missed or failed. */
   nextRunAt: number | null;
   lastError: string | null;
 }
@@ -32,7 +26,6 @@ export const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday"
 
 export const clock = (time: string) => new Date(2000, 0, 1, Number(time.slice(0, 2)), Number(time.slice(3))).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
-/** "Weekdays at 8:00 AM and 5:00 PM", "Every hour at :15", "Once, Mon, Oct 12 at 3:00 PM"; with its time zone when it is not this browser's. */
 export function describeSchedule({ every, times, day, date, timezone }: Routine) {
   if (every === "hour") return `Every hour at :${times[0].slice(3)}`;
   const zone = timezone !== Intl.DateTimeFormat().resolvedOptions().timeZone ? ` (${timezone.replace(/_/g, " ")})` : "";

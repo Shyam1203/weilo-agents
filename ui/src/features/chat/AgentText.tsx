@@ -1,4 +1,3 @@
-// The agent's text, as Markdown in its bubble: its replies and the text blocks it shows.
 import { isValidElement, useRef, useState, type ReactNode } from "react";
 import type { Components } from "react-markdown";
 import { Markdown } from "../../components/Markdown";
@@ -7,12 +6,10 @@ import { useCopy } from "../../lib/useCopy";
 import { workspacePath } from "../files/kinds";
 import { usePreview } from "../files/PreviewContext";
 
-// A long path outside the workspace (the agent's own files), which would break mid-word across lines.
 const LONG_PATH = /^~?\/\S+\/[^\s/]+$/;
 const LONG = 28;
 
 const MARKDOWN: Components = {
-  // A file of the workspace named in the text opens in the preview; another long path shows its file name.
   code: ({ className, children }) => {
     const text = String(children);
     if (className || text.includes("\n")) return <code className={className}>{children}</code>;
@@ -21,7 +18,6 @@ const MARKDOWN: Components = {
     return text.length > LONG && LONG_PATH.test(text) ? <ShortPath path={text} /> : <code>{children}</code>;
   },
   pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
-  // A quote is often a draft for you to paste somewhere: it copies with one tap.
   blockquote: ({ children }) => <Quote>{children}</Quote>,
 };
 
@@ -38,7 +34,6 @@ function Quote({ children }: { children: ReactNode }) {
   );
 }
 
-/** "…/agent.json"; a tap shows the whole path. */
 function ShortPath({ path }: { path: string }) {
   const [whole, setWhole] = useState(false);
   const toggle = () => setWhole(!whole);
@@ -59,7 +54,6 @@ function FileLink({ path }: { path: string }) {
   );
 }
 
-/** A code block under a bar with its language and a Copy button. */
 function CodeBlock({ children }: { children: ReactNode }) {
   const pre = useRef<HTMLPreElement>(null);
   const { copied, copy } = useCopy();
@@ -78,7 +72,6 @@ function CodeBlock({ children }: { children: ReactNode }) {
   );
 }
 
-/** Markdown without the bubble, in a smaller size: the text of a card. */
 export const CardText = ({ text }: { text: string }) => (
   <div className="prose-chat text-[13.5px]! leading-relaxed! text-ink-2 [&_strong]:text-ink">
     <Markdown text={text} components={MARKDOWN} />
@@ -86,7 +79,6 @@ export const CardText = ({ text }: { text: string }) => (
 );
 
 export function AgentText({ text }: { text: string }) {
-  // A phone's screen is narrow: a reply takes all of it.
   return (
     <div className="prose-chat w-fit max-w-full rounded-2xl bg-bubble px-3.5 py-2 sm:max-w-[85%]">
       <Markdown text={text} components={MARKDOWN} />

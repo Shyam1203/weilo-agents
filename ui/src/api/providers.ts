@@ -4,14 +4,11 @@ export interface Provider {
   id: string;
   name: string;
   keyUrl?: string;
-  /** The account it can be signed in with instead of a key ("Claude Pro or Max"). */
   signIn?: string;
   connected: boolean;
-  /** Signed in with an account, not a key. */
   account: boolean;
 }
 
-/** Where a sign-in is: what to open, a code to type there, or a question to answer. */
 export interface SignIn {
   state: "working" | "waiting" | "done" | "failed";
   message?: string;
@@ -23,16 +20,13 @@ export interface SignIn {
 export interface Model {
   id: string;
   name: string;
-  /** Chosen in Settings for agents to use. */
   enabled: boolean;
 }
 
-/** A model id is "provider/model"; "" has no provider. */
 export const providerOf = (modelId: string) => (modelId.includes("/") ? modelId.split("/")[0] : "");
 
 export const modelsOf = (models: Model[], providerId: string) => models.filter((m) => providerOf(m.id) === providerId);
 
-/** What agents can pick from a provider: the models enabled in Settings, or all of them when none is. */
 export function choosableOf(models: Model[], providerId: string) {
   const all = modelsOf(models, providerId);
   const enabled = all.filter((m) => m.enabled);
@@ -49,5 +43,4 @@ export const stopSignIn = (id: string) => request("DELETE", `/api/providers/${id
 export const listModels = () => request<Model[]>("GET", "/api/models");
 export const setEnabledModels = (ids: string[]) => request("PUT", "/api/models", { enabled: ids });
 
-/** A model's name without its maker said twice: "DeepSeek: DeepSeek V4.1 Flash" -> "DeepSeek V4.1 Flash". */
 export const shortName = (name: string) => name.replace(/^([^:]+):\s+(?=\1\b)/i, "");

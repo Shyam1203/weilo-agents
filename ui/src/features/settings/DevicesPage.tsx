@@ -1,4 +1,3 @@
-// The phones and computers that can open the app: each was paired with a code. Add one, or remove one you no longer use.
 import { useEffect, useState } from "react";
 import { listDevices, newPairingCode, unpairDevice, type PairedDevice } from "../../api/devices";
 import { messageOf } from "../../api/http";
@@ -21,7 +20,6 @@ export function DevicesPage() {
   useEffect(() => void load(), []);
   if (!devices) return loadError ? <ErrorText>{loadError}</ErrorText> : <Loading />;
 
-  // Removing this browser signs it out: the app reloads to the pairing screen.
   const remove = (d: PairedDevice) => run(d.id, async () => (await unpairDevice(d.id), d.current ? location.reload() : await load()));
   return (
     <Page
@@ -49,7 +47,6 @@ export function DevicesPage() {
   );
 }
 
-// The code to type on the new device while it works, and a link that pairs at once (to send to a phone).
 function PairingCode({ code, expires, onDone }: { code: string; expires: string; onDone: () => void }) {
   const { copied, copy } = useCopy();
   const link = `${location.origin}/?pair=${code}`;

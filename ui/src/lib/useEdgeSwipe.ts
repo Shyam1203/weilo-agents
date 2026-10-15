@@ -1,15 +1,9 @@
 import { useEffect, useRef } from "react";
 import { zoom } from "./zoom";
 
-/** How close to the left edge (px) a swipe must start, and how far (px) it must go to count. */
 const EDGE = 24;
 const FAR = 80;
 
-/**
- * Swiping from the left edge to the right goes back, with the screen following the finger. Only where the phone itself
- * has no such gesture: the app opened from the Home Screen on an iPhone or iPad (in Safari, and on Android, the system's
- * back gesture already does it, through `useBackStep`).
- */
 export function useEdgeSwipe(onBack: () => void, enabled: boolean) {
   const box = useRef<HTMLElement>(null);
   const back = useRef(onBack);
@@ -40,7 +34,6 @@ export function useEdgeSwipe(onBack: () => void, enabled: boolean) {
     const onMove = (e: TouchEvent) => {
       if (!start) return;
       const t = e.touches[0];
-      // A move that is more up and down than sideways is a scroll.
       if (!dx && Math.abs(t.clientY - start.y) > Math.abs(t.clientX - start.x)) return void (start = null);
       dx = Math.max(0, t.clientX - start.x);
       e.preventDefault();

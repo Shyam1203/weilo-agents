@@ -1,4 +1,3 @@
-/** A refused request: its HTTP status, and `pair` when this browser has to be paired first. */
 export class RequestError extends Error {
   constructor(message: string, readonly status: number, readonly pair = false) {
     super(message);
@@ -21,5 +20,4 @@ export async function request<T = void>(method: string, url: string, body?: unkn
   return data as T;
 }
 
-/** A readable sentence for any thrown value. */
 export const messageOf = (error: unknown, fallback = "An error occurred.") => (error instanceof Error && error.message ? error.message : fallback);

@@ -5,27 +5,18 @@ import { IconButton } from "./Button";
 
 interface Props {
   title: string;
-  /** Shows a back arrow before the title (a page opened inside the dialog). */
   onBack?: () => void;
   onClose: () => void;
-  /** Tailwind max-width class for the dialog. */
   width?: string;
-  /** Kept mounted (its state stays) but out of sight, while something else is shown. */
   hidden?: boolean;
-  /** No padding around the content: it fills the dialog (it has its own layout). */
   flush?: boolean;
   children: ReactNode;
 }
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-/**
- * A dialog, rendered into <body> through a portal: an ancestor with a filter or backdrop-filter
- * would otherwise become the containing block of this fixed overlay and clip it.
- */
 export function Modal({ title, onBack, onClose, width = "max-w-lg", hidden = false, flush = false, children }: Props) {
   const dialog = useRef<HTMLDivElement>(null);
-  // Closing by hand (the close button, a click outside, Escape) lets the dialog animate out first.
   const [closing, setClosing] = useState(false);
   const dismiss = () => {
     if (closing) return;
@@ -37,8 +28,6 @@ export function Modal({ title, onBack, onClose, width = "max-w-lg", hidden = fal
     return all[all.length - 1] === dialog.current;
   };
 
-  // Focus moves into the dialog (unless a field there took it), and back where it was on close.
-  // What had focus is read while rendering: a field's autoFocus takes it before effects run.
   const [before] = useState(() => document.activeElement as HTMLElement | null);
   useEffect(() => {
     const box = dialog.current;
@@ -51,10 +40,8 @@ export function Modal({ title, onBack, onClose, width = "max-w-lg", hidden = fal
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Only the topmost dialog answers (a dialog can open another).
       if (hidden || !topmost()) return;
       if (e.key === "Escape") (e.preventDefault(), dismiss());
-      // Tab stays inside the dialog.
       if (e.key === "Tab" && dialog.current) {
         const items = [...dialog.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
         if (!items.length) return;

@@ -1,5 +1,3 @@
-// The message box: text, attachments (+: pick files or take a photo; or paste, or drop) and voice typing. Lists need
-// no button: typing "- " or "1. " starts one. The round button on the right sends, stops a run, or starts voice typing.
 import { useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { doingText } from "../../api/agents";
 import type { Outgoing } from "../../api/chat";
@@ -19,25 +17,17 @@ const MAX_HEIGHT = 200;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
 interface Props {
-  /** Opens the agent's settings. */
   onEdit: () => void;
-  /** What typing "/" offers. */
   shortcuts: Shortcut[];
-  /** Who the message goes to, and what they look like while they work. */
   to: string;
   avatar: AvatarSpec;
-  /** The tool the agent is using now. */
   doing?: string | null;
   busy: boolean;
-  /** The agent waits for your answer to a question. */
   waiting: boolean;
-  /** When the agent waits for your answer: a message you type is the answer. */
   onAnswer?: (value: string) => Promise<void>;
   disabled: boolean;
-  /** Rejects with the reason when the message could not be sent. */
   onSend: (message: Outgoing) => Promise<void>;
   onStop: () => void;
-  /** Shown beside the send button: how full the context is. */
   meter?: ReactNode;
 }
 
@@ -51,9 +41,7 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
   const [camera, setCamera] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
-  // Where the caret goes once the text a list changed is drawn.
   const caret = useRef<number | null>(null);
-  // A message that so far is just "/" and a word offers the shortcuts that match it; Escape closes the list.
   const [active, setActive] = useState(0);
   const [closedFor, setClosedFor] = useState<string | null>(null);
   const typing = /^\/([^\s/]*)$/.exec(text)?.[1];
@@ -62,7 +50,6 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
   const hint = open && !offered.length ? (shortcuts.length ? "No match." : "No skills or plugins are on for this agent.") : undefined;
   const dictation = useDictation((heard) => setText((current) => (current && !/\s$/.test(current) ? `${current} ${heard}` : current + heard)));
 
-  // Grow with the text, up to a limit; measure again when the width changes (wrapping does too).
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
@@ -139,7 +126,6 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
         return setActive((i) => (i + step + offered.length) % offered.length);
       }
       const chosen = offered[Math.min(active, offered.length - 1)];
-      // Enter on a command that is already typed out sends it (picking it would change nothing); Tab still picks.
       const typedOut = event.key === "Enter" && text.trim() === chosen.insert.trim();
       if ((event.key === "Enter" || event.key === "Tab") && !typedOut) {
         event.preventDefault();
@@ -148,13 +134,11 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
       if (event.key === "Escape") return setClosedFor(text);
     }
     if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
-    // On phones Enter adds a line; the send button sends.
     const newLine = event.shiftKey || !matchMedia("(pointer: fine)").matches;
     if (!newLine) {
       event.preventDefault();
       return void submit();
     }
-    // A new line in a list carries the list on.
     const el = event.currentTarget;
     const next = el.selectionStart === el.selectionEnd ? continueList(el.value, el.selectionStart) : null;
     if (next) {
@@ -237,7 +221,6 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
               <>
                 <MenuItem icon="attach" label="Files and photos" onClick={() => (close(), picker.current?.click())} />
                 <MenuItem icon="camera" label="Camera" onClick={() => (close(), setCamera(true))} />
-                {/* Typing "/" is hard to find, on a phone most of all. */}
                 {shortcuts.length > 0 && <MenuItem icon="sparkle" label="Skills and commands" onClick={() => (close(), setText("/"), box.current?.focus())} />}
               </>
             )}
@@ -257,7 +240,6 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
             aria-expanded={offered.length > 0}
             aria-controls={offered.length ? COMMAND_LIST : undefined}
             aria-activedescendant={offered.length ? `${COMMAND_LIST}-${Math.min(active, offered.length - 1)}` : undefined}
-            // A long placeholder ("Message Ralph's Job Hunt") stays on one line on a phone, so the empty box is not taller.
             className="block min-w-0 flex-1 resize-none bg-transparent px-1 py-1.5 text-[15px] leading-6 outline-none placeholder:truncate placeholder:text-ink-3 focus-visible:outline-none"
           />
           {meter}
@@ -276,9 +258,7 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
   );
 }
 
-// `active`: recording (red). `open`: its menu is open (a quiet pressed look, the + turned into an ×).
 function RoundButton({ icon, label, solid = false, active = false, open = false, type = "button", disabled, onClick }: { icon: IconName; label: string; solid?: boolean; active?: boolean; open?: boolean; type?: "button" | "submit"; disabled?: boolean; onClick?: () => void }) {
-  // When the button changes job (send, stop, voice typing), its new icon grows in where the old one was.
   const [last, setLast] = useState(icon);
   const [swapped, setSwapped] = useState(false);
   if (icon !== last) (setLast(icon), setSwapped(true));

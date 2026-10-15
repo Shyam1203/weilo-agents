@@ -12,19 +12,14 @@ import { useDragOrder } from "./useDragOrder";
 
 interface Props {
   agents: Agent[];
-  /** The agents with a reply you have not seen. */
   unread: Set<string>;
   selected?: string;
-  /** A newer release, if one exists. */
   update?: Update | null;
   onSelect: (id: string) => void;
-  /** Opens a chat at a message a search found: the words, and the message's time (s). */
   onFound: (id: string, query: string, at: number) => void;
-  /** Saves the list's new order (an agent was dragged to another place). */
   onReorder: (ids: string[]) => Promise<unknown>;
   onNew: () => void;
   onSettings: () => void;
-  /** Opens Settings > About, where the update is. */
   onAbout: () => void;
   onContact: () => void;
 }

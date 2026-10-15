@@ -1,23 +1,18 @@
 import { request } from "./http";
 
-/** What a message carries: images as data URLs, files as base64. */
 export interface Outgoing {
   text: string;
   images: string[];
   files: { name: string; data: string }[];
 }
 
-/** Where a file an agent named can be downloaded (its path from the agent's folder, or from the top of the workspace); with
- * `view`, shown (text as plain text, a PDF inline). */
 export const fileUrl = (agent: string, path: string, view = false) => `/api/agents/${agent}/files/${path.split("/").map(encodeURIComponent).join("/")}${view ? "?view=1" : ""}`;
 
-/** A skill the agent can run as a /command. */
 export interface Command {
   name: string;
   description: string;
 }
 
-/** How full an agent's context is: `tokens` (null just after a summary) of the model's `window`; pi summarizes at `point`. */
 export interface Context {
   tokens: number | null;
   window: number;
@@ -25,16 +20,12 @@ export interface Context {
 }
 
 export const send = (agentId: string, message: Outgoing) => request("POST", `/api/agents/${agentId}/message`, message);
-/** Answers the question the agent waits on; no `value` skips it. */
 export const answerAsk = (agentId: string, requestId: string, value?: string) => request("POST", `/api/agents/${agentId}/answer`, { request: requestId, value });
 
 export const abort = (agentId: string) => request("POST", `/api/agents/${agentId}/abort`);
 export const listCommands = (agentId: string) => request<Command[]>("GET", `/api/agents/${agentId}/commands`);
-/** Messages pi summarized away, a page at a time: the page that ends `skip` messages before what pi holds. */
 export const getEarlier = <M>(agentId: string, skip: number) => request<{ messages: M[]; more: boolean }>("GET", `/api/agents/${agentId}/earlier?skip=${skip}`);
 export const getContext = (agentId: string) => request<Context | null>("GET", `/api/agents/${agentId}/context`);
-/** Summarizes the conversation now; `instructions` say what to keep. Returns the context after it. */
 export const compactChat = (agentId: string, instructions?: string) => request<Context | null>("POST", `/api/agents/${agentId}/compact`, { instructions });
-/** Starts the agent's pi anew, so it reads its skills, instructions, notes and extensions again. */
 export const reloadAgent = (agentId: string) => request("POST", `/api/agents/${agentId}/reload`);
 export const eventsUrl = (agentId: string) => `/api/agents/${agentId}/events`;

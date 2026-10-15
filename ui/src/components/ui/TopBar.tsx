@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { IconButton } from "./Button";
 
-/** The bar across the top of the chat: a back button on phones (to the agent list), the title (a button), and actions. */
 export function TopBar({ leading, title, subtitle, actions, onBack, onTitle }: { leading?: ReactNode; title: ReactNode; subtitle?: ReactNode; actions?: ReactNode; onBack?: () => void; onTitle: () => void }) {
   const heading = (
     <>

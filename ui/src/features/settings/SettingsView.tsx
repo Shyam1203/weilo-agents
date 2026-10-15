@@ -1,5 +1,3 @@
-// Settings and the add-ons, as a page in place of the chat. On a wide screen: pages in a menu on the left, rows
-// on the right. On a phone: the list of pages first, then a page with a back arrow.
 import { useEffect, useRef, useState } from "react";
 import type { Agent } from "../../api/agents";
 import type { Extension } from "../../api/extensions";
@@ -27,7 +25,6 @@ import { ProvidersPage } from "./ProvidersPage";
 
 export type SettingsPage = "providers" | "devices" | "notifications" | "you" | "memory" | "browser" | "appearance" | "about" | "skills" | "plugins" | "extensions";
 
-// The first group has no heading: the page is already called Settings.
 const MENU: { group: string; pages: { value: SettingsPage; label: string; icon: IconName }[] }[] = [
   {
     group: "",
@@ -55,7 +52,6 @@ const MENU: { group: string; pages: { value: SettingsPage; label: string; icon: 
 const LABELS = Object.fromEntries(MENU.flatMap((m) => m.pages).map((p) => [p.value, p.label]));
 
 interface Props {
-  /** The page to open first; "menu" opens the list of pages on a phone (and Providers on a wide screen). */
   page: SettingsPage | "menu";
   agents: Agent[];
   providers: Provider[];
@@ -66,20 +62,17 @@ interface Props {
   models?: Model[];
   onChange: () => void;
   onModels: (ids: string[]) => void;
-  /** Leaves Settings (back to the chat). */
   onClose: () => void;
 }
 
 export function SettingsView({ page: first, agents, providers, skills, plugins, extensions, user, models, onChange, onModels, onClose }: Props) {
   const wide = useMedia("(min-width: 768px)");
-  // On a phone `null` is the list of pages.
   const [chosen, setChosen] = useState<SettingsPage | null>(first === "menu" ? null : first);
   useEffect(() => setChosen(first === "menu" ? null : first), [first]);
   const page = chosen ?? "providers";
   const list = !wide && chosen === null;
   const back = wide || list ? onClose : () => setChosen(null);
 
-  // What each page holds, at a glance in the list (a phone shows the list on its own).
   const count = (n: number, one: string, many = `${one}s`) => (n ? `${n} ${n === 1 ? one : many}` : "None");
   const theme = getTheme();
   const hints: Partial<Record<SettingsPage, string>> = {
@@ -95,7 +88,6 @@ export function SettingsView({ page: first, agents, providers, skills, plugins, 
   const goBack = useRef(back);
   goBack.current = back;
   useEffect(() => {
-    // A dialog that handled Escape has marked it, so it does not close this too.
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && !document.querySelector('[role="dialog"]') && goBack.current();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

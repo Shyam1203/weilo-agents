@@ -17,7 +17,6 @@ interface Props {
 export function ExtensionsPage({ extensions, onChange }: Props) {
   const picker = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
-  // The warning is open: an extension runs code, so adding one asks first.
   const [asking, setAsking] = useState(false);
   const { busy, error, run } = useAction();
   const change = (name: string, action: () => Promise<void>) =>

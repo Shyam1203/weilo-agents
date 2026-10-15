@@ -2,7 +2,6 @@ import { Button } from "./ui/Button";
 import { Icon } from "./ui/Icon";
 import { Logo } from "./ui/Logo";
 
-/** Loading, or an error with a retry, centered on the page. */
 export function FullScreenStatus({ error, onRetry }: { error: string | null; onRetry: () => void }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-5 px-6 text-center">

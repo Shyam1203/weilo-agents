@@ -1,6 +1,3 @@
-// Voice typing with the browser's built-in speech recognition (Chrome, Edge, Safari; not
-// Firefox). Recognized phrases are handed to onText as they're finalized. Note: Chrome sends the
-// audio to Google's speech service to transcribe it.
 import { useCallback, useEffect, useRef, useState } from "react";
 
 interface Recognition {
@@ -23,14 +20,12 @@ const Speech: RecognitionConstructor | undefined =
 interface Dictation {
   supported: boolean;
   listening: boolean;
-  /** Words heard but not final yet, to show while speaking. */
   interim: string;
   error: string | null;
   toggle: () => void;
   stop: () => void;
 }
 
-/** How long (ms) a stopped recognition may take to end before it is ended here (Safari on iPhone sometimes never ends it). */
 const END_MS = 1500;
 
 export function useDictation(onText: (text: string) => void): Dictation {
@@ -38,7 +33,6 @@ export function useDictation(onText: (text: string) => void): Dictation {
   const [interim, setInterim] = useState("");
   const [error, setError] = useState<string | null>(null);
   const recognition = useRef<Recognition | null>(null);
-  // The words heard but not final yet, and the end of the recognition going on.
   const pending = useRef("");
   const finish = useRef<(() => void) | null>(null);
   const handler = useRef(onText);
@@ -48,7 +42,6 @@ export function useDictation(onText: (text: string) => void): Dictation {
     const r = recognition.current;
     if (!r) return;
     r.stop();
-    // Safari on iPhone may never say it ended: end it here after a moment.
     setTimeout(() => recognition.current === r && finish.current?.(), END_MS);
   }, []);
 
@@ -59,8 +52,6 @@ export function useDictation(onText: (text: string) => void): Dictation {
     r.continuous = true;
     r.interimResults = true;
     r.lang = navigator.language || "en-US";
-    // Each result is a phrase, and every event has all of them so far: each final one is handed on once, from the first.
-    // Safari on iPhone often never marks the last one final, so ending hands on what is pending too.
     let given = 0;
     r.onresult = (event) => {
       const results = Array.from(event.results);
@@ -75,7 +66,6 @@ export function useDictation(onText: (text: string) => void): Dictation {
       if (event.error === "not-allowed" || event.error === "service-not-allowed") setError("This site cannot use the microphone. Allow access in the browser settings.");
       else if (event.error !== "no-speech" && event.error !== "aborted") setError("Voice typing stopped: " + event.error);
     };
-    // Ending keeps the words heard so far, final or not.
     const end = () => {
       if (recognition.current !== r) return;
       recognition.current = null;

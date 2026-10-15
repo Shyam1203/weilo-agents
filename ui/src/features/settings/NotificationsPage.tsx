@@ -13,7 +13,6 @@ import { thisDevice, turnOff, turnOn, unsupported } from "../../lib/push";
 import { useAction } from "../../lib/useAction";
 import { avatarOf } from "../agents/avatars";
 
-/** Notifications when an agent replies, asks or fails: on for this device, the other devices, and which agents send them. */
 export function NotificationsPage({ agents }: { agents: Agent[] }) {
   const [status, setStatus] = useState<PushStatus | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);

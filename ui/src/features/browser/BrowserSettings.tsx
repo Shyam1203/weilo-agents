@@ -9,7 +9,6 @@ import { Switch } from "../../components/ui/Switch";
 import { MAX_RULE } from "../../lib/limits";
 import { useAction } from "../../lib/useAction";
 
-/** When agents must ask you before they use a website. */
 export function BrowserSettings() {
   const [rule, setRule] = useState<Rule | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);

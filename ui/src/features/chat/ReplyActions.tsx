@@ -1,11 +1,8 @@
-// Under the end of a reply: copy it, share it (where the device can, as on a phone), or send your last message again.
 import { Icon, type IconName } from "../../components/ui/Icon";
 import { useCopy } from "../../lib/useCopy";
 
 interface Props {
-  /** The reply's text, as Markdown. */
   text: string;
-  /** Sends your last message again; only under the newest reply. */
   onRetry?: () => void;
 }
 

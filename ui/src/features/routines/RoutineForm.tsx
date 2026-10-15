@@ -1,4 +1,3 @@
-// Adds or changes a routine: what the agent does, and when.
 import { useEffect, useState, type FormEvent } from "react";
 import { addRoutine, clock, DAY_NAMES, removeRoutine, updateRoutine, type Every, type Routine } from "../../api/routines";
 import { Button, IconButton } from "../../components/ui/Button";
@@ -16,14 +15,12 @@ const EVERY: { value: Every; label: string }[] = [
   { value: "week", label: "Weekly" },
 ];
 
-// A day as YYYY-MM-DD, in this browser's time zone: today, or later with `plusDays`.
 const dayOf = (plusDays = 0) => {
   const d = new Date();
   d.setDate(d.getDate() + plusDays);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-// The times left today, every five minutes, from the next one: a one-time routine today can pick only these.
 const timesLeft = () => {
   const next = Math.ceil((Date.now() + 60_000) / 300_000) * 300_000;
   const left: string[] = [];
@@ -41,7 +38,6 @@ interface Props {
   onDone: () => void;
 }
 
-/** `routine`: the one to change; `null` for a new one. */
 export function RoutineForm({ agentId, agentName, routine, onClose, onDone }: Props) {
   const { busy, error, run } = useAction();
   const [title, setTitle] = useState(routine?.title ?? "");
@@ -51,14 +47,12 @@ export function RoutineForm({ agentId, agentName, routine, onClose, onDone }: Pr
   const [date, setDate] = useState(routine?.date ?? dayOf(1));
   const [day, setDay] = useState(routine?.day ?? 1);
 
-  // A one-time routine today offers only the times still to come.
   const today = every === "once" && date === dayOf();
   const left = today ? timesLeft() : [];
   useEffect(() => {
     if (today && left.length && !left.includes(times[0])) setTimes([left[0]]);
   }, [today, times[0]]);
 
-  // A one-time routine cannot run in the past.
   const past = every === "once" && !!date && new Date(`${date}T${times[0]}`).getTime() <= Date.now();
 
   const save = (event: FormEvent) => {

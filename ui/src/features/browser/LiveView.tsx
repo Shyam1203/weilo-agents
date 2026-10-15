@@ -1,13 +1,9 @@
-// The browser's screen, live: noVNC over the daemon's WebSocket. View only unless `interactive`
-// (you took over), when clicks and keys reach the browser.
 import RFB from "@novnc/novnc";
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "../../components/ui/Icon";
 
 type State = "connecting" | "connected" | "closed";
 
-// The screen is a separate computer, so what you copied here cannot be pasted into it: the text is typed into it instead,
-// key by key (a password, say). Long text is cut.
 const MAX_TYPED = 2000;
 function typeInto(client: RFB, text: string) {
   for (const ch of [...text.replaceAll("\r", "")].slice(0, MAX_TYPED)) {
@@ -20,8 +16,6 @@ function typeInto(client: RFB, text: string) {
   }
 }
 
-// noVNC has already sent Ctrl or Cmd to the screen when V arrives (on Windows it holds it back about 100 ms), so they are
-// let go before the text is typed, or the screen would get shortcuts instead of letters.
 const MODIFIERS = [0xffe3, 0xffe4, 0xffe7, 0xffe8, 0xffeb, 0xffec];
 const MODIFIER_DELAY = 150;
 
@@ -47,7 +41,6 @@ export function LiveView({ interactive = false }: { interactive?: boolean }) {
     };
   }, [attempt]);
 
-  // A lost screen (the container restarted, say) is tried again by itself.
   useEffect(() => {
     if (state !== "closed") return;
     const timer = setTimeout(() => setAttempt((n) => n + 1), 5000);
@@ -59,7 +52,6 @@ export function LiveView({ interactive = false }: { interactive?: boolean }) {
     rfb.current.viewOnly = !interactive;
   }, [interactive, state]);
 
-  // Ctrl+V (Cmd+V) types what you copied into the screen; so does the Paste button, which a phone needs.
   const paste = (modifiers = false) => {
     const client = rfb.current;
     if (!client) return;
@@ -92,8 +84,6 @@ export function LiveView({ interactive = false }: { interactive?: boolean }) {
 
   return (
     <div className={`relative aspect-[8/5] w-full overflow-hidden rounded-xl ${state === "connected" ? "bg-white" : "bg-screen"} ring-1 ${interactive ? "ring-2 ring-live" : "ring-line"}`}>
-      {/* The app is drawn larger (CSS zoom, lib/zoom.ts). noVNC measures the pointer in zoomed pixels but scales the screen
-          in unzoomed ones, so a click landed right of the pointer; the screen undoes the zoom, and both agree. */}
       <div ref={screen} style={{ zoom: "calc(1 / var(--zoom))" }} className={`absolute inset-0 ${interactive ? "" : "pointer-events-none"}`} />
       {interactive && state === "connected" && (
         <button type="button" onClick={() => paste()} className="absolute top-2 right-2 rounded-lg bg-black/60 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm hover:bg-black/75">

@@ -1,10 +1,5 @@
 import type { KeyboardEvent } from "react";
 
-/**
- * Tabs: a row of pills, the selected one filled. The one way the app switches between views of a thing.
- * `panel`: the id of the element that shows the selected tab (role tabpanel, labelled by `${panel}-tab-${value}`).
- * The arrow keys move between the tabs, as in any tab list.
- */
 export function Tabs<T extends string>({ label, tabs, value, onChange, panel }: { label: string; tabs: { value: T; label: string }[]; value: T; onChange: (value: T) => void; panel?: string }) {
   const onKeyDown = (e: KeyboardEvent) => {
     const at = tabs.findIndex((t) => t.value === value);

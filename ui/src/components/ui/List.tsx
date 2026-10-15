@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { Icon } from "./Icon";
 import { Card } from "./Row";
 
-/** A card of rows, or the empty state when there are none. */
 export function List<T>({ items, empty, children }: { items: T[]; empty: ReactNode; children: (item: T) => ReactNode }) {
   if (items.length === 0) return <Empty>{empty}</Empty>;
   return <Card>{items.map(children)}</Card>;

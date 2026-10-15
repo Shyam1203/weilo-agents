@@ -22,7 +22,6 @@ export function ProvidersPage({ providers, models, onChange, onModels }: Props) 
   const row = (p: Provider) => <ProviderRow key={p.id} provider={p} models={models} onChange={onChange} onModels={onModels} />;
   return (
     <Page title="Providers" description="Agents use your own account with a model provider: sign in with it, or add an API key. Keys and sign-ins stay on this computer.">
-      {/* The providers in use first; the rest are offers to add one. */}
       {connected.length > 0 && (
         <Group title="In use">
           <List items={connected} empty="">
@@ -62,11 +61,9 @@ function ProviderRow({ provider, models, onChange, onModels }: { provider: Provi
 
   const save = (e: FormEvent) => (e.preventDefault(), change(() => saveKey(provider.id, key.trim())));
   const below = (provider.connected && picking) || open || signingIn || error;
-  // A provider made for signing in (GitHub Copilot) has no key to get.
   const keys = !!provider.keyUrl || !provider.signIn;
   const described = provider.account ? `Signed in with ${provider.signIn ?? "your account"}.` : provider.connected ? "Connected with an API key." : provider.signIn ? `Sign in with ${provider.signIn}${keys ? ", or use an API key" : ""}.` : "Use your own API key.";
 
-  // How many models agents can choose from it (all, when none is switched on).
   const all = provider.connected && models ? modelsOf(models, provider.id).length : 0;
   const choosable = all ? choosableOf(models!, provider.id).length : 0;
   const counted = all ? ` ${choosable === all ? `All ${all} models` : `${choosable} of ${all} models`} on.` : "";

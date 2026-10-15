@@ -32,9 +32,7 @@ interface Props {
   reloadAgents: () => Promise<void>;
 }
 
-/** The agent list beside the open chat; on a phone, one at a time. */
 export function Workspace({ agents, providers, skills, plugins, extensions, user, models, onModels, reload, reloadAgents }: Props) {
-  // A tapped notification opens the app at its agent (`?agent=`).
   const [opened] = useState(() => new URLSearchParams(location.search).get("agent"));
   const [selected, setSelected] = useState(() => opened ?? read(KEYS.agent));
   const [showChat, setShowChat] = useState(!!opened);
@@ -42,27 +40,19 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
     if (opened) history.replaceState(history.state, "", location.pathname);
   }, [opened]);
   const [form, setForm] = useState<"new" | "edit" | null>(null);
-  // Settings, in place of the chat, open at a page. Opening it reads the lists again (an agent may have added a skill).
   const [settings, setSettings] = useState<SettingsPage | "menu" | null>(null);
   const openSettings = (page: SettingsPage | "menu") => (void reload(), setSettings(page));
   const [contact, setContact] = useState(false);
-  // Words to find in the chat as it opens (a search of all chats), and near which message (its time, s).
   const [find, setFind] = useState<{ query: string; at: number } | null>(null);
-  // The open chat's own word on whether its agent works and what it does: the list polls, so it follows the chat for that agent.
   const [live, setLive] = useState<{ busy: boolean; doing: string | null } | null>(null);
-  // A newer release, if there is one (the daemon asks now and then).
   const [update, setUpdate] = useState<Update | null>(null);
-  // Asked again when Settings closes: the check may have been switched on or off there.
   const settingsOpen = settings !== null;
   useEffect(() => void getUpdate().then(setUpdate, () => {}), [settingsOpen]);
-  // The first time, and until you give a name or skip: ask what agents should call you.
   const [welcome, setWelcome] = useState(!user.name && !read(KEYS.welcomed));
   const agent = agents.find((a) => a.id === selected) ?? agents[0];
-  // The chat is on screen beside the list, or alone once opened on a phone.
   const wide = useMedia("(min-width: 768px)");
   const unread = useUnread(agents, showChat || wide ? agent?.id : undefined);
 
-  // An agent keeps working when its chat is not open: look again at the list now and then (sooner while one works), and when the tab comes back.
   const refresh = useRef(reloadAgents);
   refresh.current = reloadAgents;
   const working = agents.some((a) => a.working);
@@ -81,7 +71,6 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
     setShowChat(true);
   };
 
-  // A notification tapped while the app is open already: the service worker says which agent.
   const choose = useRef(select);
   choose.current = select;
   useEffect(() => {
@@ -90,7 +79,6 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
     return () => navigator.serviceWorker?.removeEventListener("message", onMessage);
   }, []);
 
-  // On a phone the chat and Settings cover the list: back (the phone's button or gesture, or a swipe from the left edge) shows it again.
   const covered = !wide && (showChat || settings !== null);
   const uncover = () => (setShowChat(false), setSettings(null));
   useBackStep(covered, uncover);
@@ -115,7 +103,6 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
       </div>
       <main ref={swipe} className={`${showChat || settings ? "flex" : "hidden"} min-w-0 flex-1 md:flex`}>
         {settings && <SettingsView page={settings} agents={agents} providers={providers} skills={skills} plugins={plugins} extensions={extensions} user={user} models={models} onModels={onModels} onChange={reload} onClose={() => setSettings(null)} />}
-        {/* The chat stays mounted behind Settings, so what you were typing is still there. */}
         <div className={settings ? "hidden" : "contents"}>
           {agent ? (
             <ChatView

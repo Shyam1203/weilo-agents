@@ -28,10 +28,8 @@ const THINKING = [
   { value: "max", label: "Maximum" },
 ];
 
-// The last choice of the Provider list: not a provider, it opens Settings to add one.
 const ADD = "+add";
 
-/** The agent being created or edited, as the form fills it in. */
 type Draft = AgentInput & { avatar: NonNullable<AgentInput["avatar"]> };
 
 interface Props {
@@ -40,33 +38,25 @@ interface Props {
   skills: Skill[];
   plugins: Plugin[];
   extensions: Extension[];
-  /** The models the saved keys can use; undefined while they load. */
   models?: Model[];
   onAddProvider: () => void;
-  /** Opens Settings at a page: where add-ons are added. The form stays, out of sight, and comes back with Settings closed. */
   onOpenSettings: (page: SettingsPage) => void;
-  /** Out of sight while Settings is open. */
   hidden?: boolean;
   onClose: () => void;
   onSaved: (agent: Agent) => Promise<void>;
-  /** Runs after the agent is deleted. */
   onDeleted: () => void;
 }
 
-/** Creates an agent, or edits `agent`. */
 export function AgentForm({ agent, providers, skills, plugins, extensions, models, onAddProvider, onOpenSettings, hidden, onClose, onSaved, onDeleted }: Props) {
   const [draft, setDraft] = useState<Draft>(() =>
     agent ? { name: agent.name, model: agent.model, thinking: agent.thinking, skills: agent.skills, plugins: agent.plugins, extensions: agent.extensions, disabled: agent.disabled, instructions: agent.instructions, avatar: avatarOf(agent), isolated: agent.isolated, trusted: agent.trusted } : { name: "", model: "", thinking: "", skills: [], plugins: [], extensions: [], disabled: [], instructions: "", avatar: randomAvatar(), isolated: false, trusted: false },
   );
-  // Which add-on list is open under its row.
   const [choosing, setChoosing] = useState<"skills" | "plugins" | "extensions" | null>(null);
   const [deleting, setDeleting] = useState(false);
   const { busy, error, run } = useAction();
   const change = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }));
-  // The extensions that come with the app are on unless you turn them off; the others are on only if you turn them on.
   const builtIn = extensions.filter((x) => x.builtin);
   const added = extensions.filter((x) => !x.builtin);
-  // A model is "provider/id".
   const firstConnected = providers.find((p) => p.connected)?.id ?? "";
   const [providerId, setProviderId] = useState(() => providerOf(agent?.model ?? "") || firstConnected);
   const ofProvider = choosableOf(models ?? [], providerId);
@@ -78,7 +68,6 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
     change({ model: "" });
   };
 
-  // The provider fills in once there is one (added in Settings while this is hidden). The model is always yours to choose.
   useEffect(() => {
     if (!providerId && firstConnected) setProviderId(firstConnected);
   }, [providerId, firstConnected]);
@@ -167,7 +156,6 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
               </>
             }
           >
-            {/* An agent made isolated starts without the browser (its sign-ins are every agent's); you can turn it on again. */}
             <Switch label="Isolated" checked={draft.isolated} onChange={(isolated) => change({ isolated, ...(isolated && !draft.disabled.includes("browser") && { disabled: [...draft.disabled, "browser"] }) })} />
           </Row>
           <Row title="Always allow its own changes" description="Changes it asks for to its own instructions, thinking or skills apply without asking you; the chat shows each one. Anything else still asks.">
@@ -175,7 +163,6 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
           </Row>
         </Section>
         <ErrorText>{error}</ErrorText>
-        {/* Stays in reach at the bottom of the dialog while the form scrolls. */}
         <div className="sticky -bottom-6 z-10 -mx-6 -mb-6 flex items-center gap-2 border-t border-line bg-raised px-6 py-3">
           {agent && (
             <Button variant="danger" onClick={() => setDeleting(true)}>
@@ -194,7 +181,6 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
   );
 }
 
-// A titled card of rows.
 const Section = ({ title, children }: { title: string; children: ReactNode }) => (
   <section className="flex flex-col gap-1.5">
     <h3 className="label">{title}</h3>
@@ -202,11 +188,8 @@ const Section = ({ title, children }: { title: string; children: ReactNode }) =>
   </section>
 );
 
-// The control of a row: a dropdown of a fixed width.
-// On a phone the control takes the row's full width, so a long model name shows whole.
 const Pick = ({ children }: { children: ReactNode }) => <div className="pick w-full min-w-0 sm:w-56">{children}</div>;
 
-// The skills, plugins or extensions an agent can have: what is on, and a list to change it (or to add the first one).
 function AddOn({ title, on, none, open, onToggle, children }: { title: string; on: string[]; none: boolean; open: boolean; onToggle: () => void; children: ReactNode }) {
   return (
     <Row title={title} description={none ? "None added yet." : on.length ? on.join(", ") : "None on."} below={open ? children : undefined}>

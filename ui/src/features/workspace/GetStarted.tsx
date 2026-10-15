@@ -1,4 +1,3 @@
-// The empty chat pane when there are no agents: one clear next step.
 import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
 

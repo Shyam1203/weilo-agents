@@ -1,4 +1,3 @@
-// The bar under the chat's header for finding words in it: the words, which match of how many, and up, down and close.
 import { IconButton } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
 import { MAX_SEARCH } from "../../lib/limits";

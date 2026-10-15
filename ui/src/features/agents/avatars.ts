@@ -1,10 +1,8 @@
-// Which avatar an agent shows: the one saved on it, or one picked from its id (the same every time).
 import type { Agent } from "../../api/agents";
 import { COLORS, SHAPES, type AvatarSpec } from "../../components/ui/Avatar";
 
 const KINDS = Object.keys(SHAPES);
 
-/** A number from a string, the same every time. */
 const hashOf = (text: string) => [...text].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) >>> 0, 7);
 
 export function avatarOf(agent: Pick<Agent, "id" | "avatar">): AvatarSpec {

@@ -1,6 +1,3 @@
-// Light, dark, Weilo (brand colours, light or dark by system setting), or follow the system.
-// index.html applies the stored choice before first paint, so it repeats the storage key
-// ("weilo.theme") and the names: change both together.
 import { KEYS, read, write } from "./storage";
 
 export type Theme = "system" | "light" | "dark" | "weilo";
