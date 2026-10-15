@@ -67,18 +67,18 @@
 <tr><td><code>users.mjs</code></td><td><code>spawnAs</code> and <code>asUser</code> (setpriv's arguments), the helper users, PATHs for agents, <code>folder</code>/<code>newFile</code>/<code>tree</code>, <code>secure()</code>.</td></tr>
 <tr><td><code>weilo.mjs</code></td><td>The pi extension every agent loads: <code>show</code>, <code>ask</code>, <code>skill</code>, <code>manage_agents</code>, <code>manage_settings</code>, <code>ask_agent</code>.</td></tr>
 <tr><td><code>tool.mjs</code></td><td>What extensions share: <code>call()</code> to the API with <code>WEILO_KEY</code>, <code>daemonTool()</code>, the JSON-schema helpers.</td></tr>
-<tr><td><code>audit.mjs</code>, <code>security.mjs</code></td><td>The audit log; Settings &gt; Security's checks.</td></tr>
+<tr><td><code>audit.mjs</code>, <code>security.mjs</code></td><td>The audit log; the checks in Settings &gt; Security &amp; devices.</td></tr>
 <tr><td><code>migrate.mjs</code>, <code>version.mjs</code>, <code>update.mjs</code></td><td>Data version steps; the build's version; the release check.</td></tr>
 <tr><td><code>pair.mjs</code>, <code>push.mjs</code>, <code>contact.mjs</code></td><td>Pairing link from the admin socket; Web Push; Contact us.</td></tr>
 <tr><td><code>agents/agents.mjs</code></td><td>Profiles, ids, uids, every path of an agent, <code>mayCall</code>, <code>userOf</code>, moves.</td></tr>
 <tr><td><code>agents/runner.mjs</code></td><td>One pi per agent: start, argv, events, questions (<code>askUser</code>), restarts.</td></tr>
 <tr><td><code>agents/pi.mjs</code>, <code>agents/pidir.mjs</code></td><td>Pi's RPC framing over a started pi; the pi folder's files and writing them.</td></tr>
 <tr><td><code>agents/manage.mjs</code></td><td><code>manage_agents</code>: rules, the question, trusted changes; <code>ask_agent</code>.</td></tr>
-<tr><td><code>agents/sessions.mjs</code>, <code>chats.mjs</code>, <code>search.mjs</code>, <code>usage.mjs</code>, <code>uploads.mjs</code>, <code>workspace.mjs</code></td><td>Chat files (earlier messages, the list's newest); the chat index; app search; daily tokens; attachments; house rules and scratch folders.</td></tr>
-<tr><td><code>gateway/models.mjs</code>, <code>plugins.mjs</code>, <code>forward.mjs</code></td><td>The model and plugin proxies, the pipe and where a plugin program runs, what a pi's <code>models.json</code>/<code>mcp.json</code> hold; the streaming they share.</td></tr>
+<tr><td><code>agents/sessions.mjs</code>, <code>chats.mjs</code>, <code>search.mjs</code>, <code>usage.mjs</code>, <code>uploads.mjs</code>, <code>workspace.mjs</code></td><td>Chat files (earlier messages, the list's newest); the chat index; app search; tokens and cost per day, per agent (31 days); attachments; house rules and scratch folders.</td></tr>
+<tr><td><code>gateway/models.mjs</code>, <code>plugins.mjs</code>, <code>forward.mjs</code></td><td>The model and plugin proxies (account sign-ins get a placeholder token that the model proxy swaps for the real one), the pipe and where a plugin program runs, what a pi's <code>models.json</code>/<code>mcp.json</code> hold; the streaming they share.</td></tr>
 <tr><td><code>sandbox/server.mjs</code>, <code>enter.mjs</code>, <code>spec.mjs</code>, <code>frames.mjs</code>, <code>client.mjs</code></td><td>The sandbox container's program; a program's namespaces; what it may be asked to start; its output to the app; the app's side (<a href="security.html#sandbox">the sandbox</a>).</td></tr>
 <tr><td><code>test/</code></td><td>The daemon's tests (<code>node:test</code>); <code>root.mjs</code> gives each file a data folder of its own.</td></tr>
-<tr><td><code>gateway/key.mjs</code>, <code>pipe.mjs</code></td><td>Scripts an agent's pi runs: fetch an access token; pipe to a plugin program.</td></tr>
+<tr><td><code>gateway/pipe.mjs</code></td><td>Script an agent's pi runs: the pipe to a plugin program.</td></tr>
 <tr><td><code>http/request.mjs</code>, <code>access.mjs</code></td><td>Host/Origin guard, JSON body and reply; devices, codes, agent keys.</td></tr>
 <tr><td><code>http/static.mjs</code>, <code>files.mjs</code>, <code>events.mjs</code>, <code>websocket.mjs</code></td><td>The UI files; files chats name; SSE; a minimal WebSocket server.</td></tr>
 <tr><td><code>memory/memory.mjs</code>, <code>vault.mjs</code>, <code>fetch.mjs</code>, <code>curator.mjs</code>, <code>extension.mjs</code></td><td>Notes; vault pages and scrubbing; search; the curator; the memory tools' extension.</td></tr>
@@ -88,7 +88,7 @@
 <tr><td><code>settings/skills.mjs</code>, <code>plugins.mjs</code>, <code>extensions.mjs</code>, <code>zip.mjs</code>, <code>user.mjs</code></td><td>The libraries; the shared unzip checks; About you.</td></tr>
 </tbody></table></div>
 <h3>ui/src/</h3>
-<p><code>App.tsx</code>, <code>main.tsx</code>; <code>api/</code> (one client module per area); <code>features/</code> (<code>workspace</code>, <code>chat</code>, <code>agents</code>, <code>settings</code>, <code>skills</code>, <code>plugins</code>, <code>extensions</code>, <code>memory</code>, <code>browser</code>, <code>routines</code>, <code>files</code>, <code>devices</code>, <code>user</code>, <code>support</code>); <code>components/</code> (the UI kit); <code>lib/</code> (hooks and helpers, including <code>limits.ts</code>); <code>styles/index.css</code>. Details: <a href="ui.html#structure">The app UI</a>.</p>
+<p><code>App.tsx</code>, <code>main.tsx</code>; <code>api/</code> (one client module per area); <code>features/</code> (<code>workspace</code>, <code>chat</code>, <code>agents</code>, <code>settings</code>, <code>skills</code>, <code>plugins</code>, <code>extensions</code>, <code>memory</code>, <code>browser</code>, <code>routines</code>, <code>files</code>, <code>devices</code>, <code>user</code>, <code>support</code>); <code>components/</code> (the UI kit); <code>lib/</code> (hooks and helpers, including <code>limits.ts</code>); <code>styles/index.css</code>. Settings &gt; Usage is <code>api/usage.ts</code> and <code>features/settings/UsagePage.tsx</code>. Details: <a href="ui.html#structure">The app UI</a>.</p>
 </section>
 
 <section class="card" id="conventions">
@@ -189,7 +189,7 @@ npm run build                      # type-check and build the UI</code></pre>
 <ol class="check">
 <li>The daemon is the only root process. Everything else is started with <code>spawnAs</code> (setpriv, no capabilities), except the model-listing pi, which runs in <code>agent/</code> with every loader switched off.</li>
 <li>Root starts programs only by full path (<code>BIN</code>), with <code>PATH = SYSTEM_PATH</code>. Agents' tool folders come after root's folders, never before.</li>
-<li>No provider key, sign-in refresh token or plugin secret is ever written where a pi can read it. Pis get the gateway's address and a key of their own.</li>
+<li>No provider key, account token (access or refresh) or plugin secret is ever written where a pi can read it. Pis get the gateway's address and a key of their own.</li>
 <li>An agent key reaches only <code>agentRoute</code> routes, for its own id, and only what <code>mayCall</code> allows. <code>--tools</code> is built from the same <code>mayCall</code>.</li>
 <li>Events, files, answers, agents, devices and settings routes are for paired devices only.</li>
 <li>Questions that approve something are the daemon's (<code>askUser</code>), show the whole change, are refused rather than cut over <code>MAX_APPROVAL</code>, and are answered only through the device route.</li>

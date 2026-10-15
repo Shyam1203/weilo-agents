@@ -68,10 +68,12 @@ export function agentKey(id) {
 
 export const dropAgentKey = (key) => agentKeys.delete(key);
 
+export const KEY_HEADERS = ["authorization", "x-api-key", "x-goog-api-key", "api-key"];
+
 export function keyIn({ headers }, query) {
-  const candidates = [/^Bearer (\S+)$/.exec(headers.authorization ?? "")?.[1], headers["x-api-key"], headers["x-goog-api-key"], headers["api-key"], query.get("key")];
-  const key = candidates.find((k) => typeof k === "string" && agentKeys.has(k));
-  return key ? { key, agent: agentKeys.get(key) } : null;
+  const candidates = [...KEY_HEADERS.map((name) => headers[name]), query.get("key")].filter((c) => typeof c === "string");
+  for (const [key, agent] of agentKeys) if (candidates.some((c) => c.includes(key))) return { key, agent };
+  return null;
 }
 
 export async function identify({ headers }) {

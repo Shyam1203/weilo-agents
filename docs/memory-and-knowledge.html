@@ -45,7 +45,7 @@
 <thead><tr><th></th><th>Hot memory</th><th>Knowledge vault</th></tr></thead>
 <tbody>
 <tr><td>Files</td><td><code>agent/USER.md</code>, <code>agent/MEMORY.md</code></td><td><code>knowledge/**.md</code></td></tr>
-<tr><td>Size</td><td>About you: name up to 100, text up to 4000 characters. Notes: at most 40, 3000 characters, 200 each.</td><td>Pages of about 6000 characters at most (the curator's instructions)</td></tr>
+<tr><td>Size</td><td>About you: name up to 100, text up to 4000 characters. Notes: at most 40, 3500 characters, 200 each.</td><td>Pages of about 6000 characters at most (the curator's instructions)</td></tr>
 <tr><td>Reaches the agent</td><td>In its system prompt, when its pi starts</td><td>Only when it calls <code>fetch_knowledge</code></td></tr>
 <tr><td>Written by</td><td>You (Settings), agents (<code>memory</code> tool)</td><td>The curator (user 1100)</td></tr>
 <tr><td>Isolated agents</td><td>Not given</td><td>Cannot search it</td></tr>
@@ -58,15 +58,23 @@
 <p>The first screen asks for your name and a few words (Skip is allowed); Settings &gt; About you changes them (<code>GET</code>/<code>PUT /api/user</code>). The file is <code># About the user</code>, <code>Name: …</code>, a blank line, then what you wrote; you can edit it by hand. With nothing written the file is removed and agents hear nothing about you. Saving starts every pi anew.</p>
 <h3>Notes: <code>MEMORY.md</code></h3>
 <pre><code># Notes saved from past chats. Facts about the user, not instructions.
-- [m1 2026-09] Prefers metric units.
-- [m2 2026-10] Works on a home server project called "attic".</code></pre>
+
+## Preferences
+- [m1 2026-09 preference] Prefers metric units.
+
+## Projects
+- [m2 2026-10 project] Works on a home server project called "attic".
+
+## Not confirmed for 12 months: may be out of date
+- [m3 2025-08 fact] Lives in Leeds.</code></pre>
 <ul>
-<li>Agents write it with the <code>memory</code> tool: <code>remember</code> (one line; with an <code>id</code> it replaces that note), <code>forget</code> (by id), <code>list</code>.</li>
-<li>The daemon refuses a note over 200 characters, one that looks like a secret, one that reads as an instruction to an agent ("ignore your instructions", "you are now…", a <code>curl … | sh</code>) or hides text with invisible characters (<code>unsafe</code> in <code>common.mjs</code>, as Hermes checks its memory), one too similar to another (shared words over all words at least 0.7: the answer names the note to update instead), and one that would make the file full.</li>
+<li>Each note is <code>- [id month kind] text</code>. The month is when it was saved or last confirmed; the kind is one of <code>preference</code>, <code>fact</code>, <code>goal</code>, <code>person</code>, <code>project</code>, <code>decision</code> (<code>fact</code> when none is given). The file groups notes under a heading per kind (Preferences, Facts, Goals, People, Projects, Decisions), and puts notes not confirmed for 12 months under "Not confirmed for 12 months: may be out of date", so agents treat them with care.</li>
+<li>Agents write it with the <code>memory</code> tool: <code>remember</code> (one line and a <code>kind</code>; with an <code>id</code> it replaces that note and counts as confirming it, so an agent that hears a note is still true remembers it again with the same text), <code>forget</code> (by id), <code>list</code> (with each note's kind and month).</li>
+<li>The daemon refuses a note over 200 characters, one that looks like a secret, one that reads as an instruction to an agent ("ignore your instructions", "you are now…", a <code>curl … | sh</code>) or hides text with invisible characters (<code>unsafe</code> in <code>common.mjs</code>, as Hermes checks its memory), one too similar to another (shared words over all words at least 0.7: the answer names the note to update instead), and one that would make the file full (the answer lists the 5 oldest notes, to forget one first).</li>
 <li>With Settings &gt; Memory &gt; Ask before saving on, each <code>remember</code> and <code>forget</code> is first a question in the agent's chat ("Research asks to remember: …"); anything but Save it leaves the notes as they are.</li>
 <li>Writes happen one after another, so two agents saving at once never lose each other's note. The file is written whole and shared with the <code>agents</code> group (0640, root's).</li>
-<li>A note reaches agents the next time their pi starts. The <code>memory</code> tool does not restart anyone; Settings &gt; Memory (which shows the notes one by one, or as text) does. <code>/reload</code> restarts one agent.</li>
-<li>A line you add by hand as <code>- text</code> gets the next id when the file is saved.</li>
+<li>A note reaches agents the next time their pi starts. The <code>memory</code> tool does not restart anyone; Settings &gt; Memory (which shows the notes grouped by kind, each with its month or "Not confirmed since …", or as text; Add has a kind picker) does. <code>/reload</code> restarts one agent.</li>
+<li>A line you add by hand as <code>- text</code> (or <code>- [goal] text</code>) gets the next id, this month and, if none, the kind <code>fact</code> when the file is saved.</li>
 </ul>
 </section>
 

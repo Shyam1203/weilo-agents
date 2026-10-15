@@ -36,7 +36,7 @@ const SKILL = `Save a skill: instructions for a kind of task that you or the use
 - name: short, lowercase, with hyphens.
 - description: when to use it, in one or two sentences. Later you choose the skill by this alone.
 - instructions: the skill itself, in Markdown: the steps, what to check, what goes wrong. Never put secrets in it.
-The skill is saved in the skill library and switched on for you. Use only this tool to make or change a skill: do not write skill files yourself or save them in .agents or anywhere else, because only the library is read.`;
+The user sees the name, description and the start of the instructions and approves it in this chat first; if they do not, accept it and do not ask again unless they ask. Once approved, the skill is saved in the skill library and switched on for you. Use only this tool to make or change a skill: do not write skill files yourself or save them in .agents or anywhere else, because only the library is read.`;
 
 const MANAGE = `List the agents, or make or change one: another agent, or yourself. Use this when the user asks you to set up an agent or change one (its instructions, model, skills, plugins, extensions); never edit agent files yourself.
 - action list: every agent, with its model, plugins, skills and extensions, and the skills, plugins and extensions there are.

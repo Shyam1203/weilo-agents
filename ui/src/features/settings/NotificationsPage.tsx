@@ -13,7 +13,7 @@ import { thisDevice, turnOff, turnOn, unsupported } from "../../lib/push";
 import { useAction } from "../../lib/useAction";
 import { avatarOf } from "../agents/avatars";
 
-export function NotificationsPage({ agents }: { agents: Agent[] }) {
+export function NotificationsPage({ agents, section }: { agents: Agent[]; section?: boolean }) {
   const [status, setStatus] = useState<PushStatus | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const { busy, error, run } = useAction();
@@ -32,7 +32,7 @@ export function NotificationsPage({ agents }: { agents: Agent[] }) {
   };
 
   return (
-    <Page title="Notifications" description="Get a notification when an agent replies, asks you something, or runs into a problem, while Weilo Agents is not on any of your screens.">
+    <Page section={section} title="Notifications" description="Get a notification when an agent replies, asks you something, or runs into a problem, while Weilo Agents is not on any of your screens.">
       {why ? (
         <Notice>{why}</Notice>
       ) : (

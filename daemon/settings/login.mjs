@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { AUTH, fail, INSTALL, MODELS, updateJson } from "../common.mjs";
 import { PI_SDK, PROVIDERS, SIGN_IN_AS, SIGN_IN_STEP_MS, SIGN_IN_TIMEOUT_MS } from "../config.mjs";
+import { restartAll } from "../agents/runner.mjs";
 import { forgetModels, syncCompaction } from "./providers.mjs";
 
 const logins = new Map();
@@ -80,6 +81,7 @@ export async function startSignIn(id) {
       await runtime.login(id, "oauth", interaction, { agentName: SIGN_IN_AS, getDeviceId: () => device });
       forgetModels();
       void syncCompaction();
+      void restartAll();
       show(login, { state: "done", url: undefined, code: undefined, ask: undefined, message: undefined });
     } catch (err) {
       const message = controller.signal.aborted ? "The sign-in was stopped. Try again." : err.message;

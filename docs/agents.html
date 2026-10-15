@@ -89,7 +89,6 @@
 <div class="tile"><h3>Remember</h3><ul>
 <li>Isolation keeps the agent in, and lets your other agents learn from it: they read (never change) its folder, search its chat, and the curator files what it writes in <code>shared/</code>, always marked as its report.</li>
 <li>It reaches the internet like any agent, from the sandbox's own network; it cannot reach the app or your other agents but through its tools.</li>
-<li>A provider you signed in to with an account gives it that account's access token: give it a provider with an API key (Settings &gt; Security warns).</li>
 <li>Turning the browser on for it gives it every login in the shared browser.</li>
 </ul></div>
 </div>
@@ -138,7 +137,7 @@
 <tr><td>pi folder (<code>/var/lib/weilo/pi/&lt;id&gt;/</code>)</td><td>What its pi is given, made again at every start (<a href="security.html#gateway">gateway</a>).</td></tr>
 </tbody></table></div>
 <h3>House rules</h3>
-<p><code>agents/workspace.mjs</code> appends rules to every agent's system prompt. A regular agent: work in its folder, a folder per task with a clear name, scratch work in its scratch folder, the rest of the workspace is shared but never change another agent's files unless asked, no leftover copies, name files by path from its folder so the chat makes them links. An isolated agent: its folder is the only one it has; keep notes as files there; write what your other agents should learn in <code>shared/</code>; scratch in <code>/tmp</code>; ask with <code>manage_agents</code> for a skill, plugin or extension. These rules are order, not a fence: a regular agent can still write anywhere in the workspace.</p>
+<p><code>agents/workspace.mjs</code> appends rules to every agent's system prompt. A regular agent: work in its folder, a folder per task with a clear name, scratch work in its scratch folder, the rest of the workspace is shared but never change another agent's files unless asked, no leftover copies, name files by path from its folder so the chat makes them links, and after a task of many steps or a tricky one, offer once to save how it did it as a skill (saved only if you say yes). An isolated agent: its folder is the only one it has; keep notes as files there; write what your other agents should learn in <code>shared/</code>; scratch in <code>/tmp</code>; ask with <code>manage_agents</code> for a skill, plugin or extension. These rules are order, not a fence: a regular agent can still write anywhere in the workspace.</p>
 <h3>Uploads</h3>
 <p>Files attached to a message are saved by the daemon as <code>uploads/&lt;8 hex&gt;-&lt;safe name&gt;</code> (the name keeps letters, digits, <code>. - _</code> and spaces, at most 100 characters), owned by the agent, in its home's group and mode (regular: group <code>agents</code>, 0660 in a 2770 folder; isolated: its own group, 0664 in a 2775 folder). All attachments are checked before any is saved. Images go to the model directly and are not saved.</p>
 <h3>Deleting an agent</h3>
@@ -265,7 +264,7 @@
 <h3>Skills</h3>
 <ul>
 <li>Added in Settings &gt; Skills as a <code>.zip</code> or a <code>SKILL.md</code>. A zip is refused if it holds a link or unpacks to over 50 MB; <code>SKILL.md</code> files are looked for up to 3 folders deep; each needs a <code>description</code>. The id is the skill's name as a slug (at most 48 characters); one with the same id is replaced.</li>
-<li>A regular agent saves a skill with the <code>skill</code> tool (description at most 1024 characters, instructions at most 60000). It is written to the library, switched on for that agent, and loads when the reply ends. Other files in that skill's folder stay; the agent may add scripts there.</li>
+<li>A regular agent saves a skill with the <code>skill</code> tool (description at most 1024 characters, instructions at most 16000). You approve it in the chat first: the question shows the name, the description, the whole instructions, and whether it changes an existing skill and which other agents use it. Once approved it is written to the library, switched on for that agent, and loads when the reply ends; if you say no, nothing is saved and the agent does not ask again. Other files in that skill's folder stay; the agent may add scripts there.</li>
 <li>An agent loads exactly the skills its profile lists (<code>--no-skills --skill …</code>). Typing <code>/</code> in the chat lists them; choosing one inserts <code>/skill:name</code>, which pi expands.</li>
 </ul>
 <h3>Plugins</h3>

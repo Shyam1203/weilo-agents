@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { AGENT_DIR, AUTH, fail, MODELS, readJson } from "../common.mjs";
 import { PI_SDK, PORT } from "../config.mjs";
+import { KEY_HEADERS } from "../http/access.mjs";
 import { forward, headersOf } from "./forward.mjs";
 
 let runtime;
@@ -16,23 +17,45 @@ async function registry() {
 
 export const providerOf = (model) => model.split("/")[0];
 
-export const usesSignIn = async (model) => (await registry()).isUsingOAuth(providerOf(model));
+const FRESH = { minOAuthValidityMs: 5 * 60_000 };
+const base64url = (data) => Buffer.from(JSON.stringify(data)).toString("base64url");
+const CHATGPT_CLAIM = "https://api.openai.com/auth";
+
+const accountOf = (jwt) => {
+  try {
+    return JSON.parse(Buffer.from(jwt.split(".")[1], "base64url").toString())[CHATGPT_CLAIM]?.chatgpt_account_id ?? "";
+  } catch {
+    return "";
+  }
+};
+
+const PLACEHOLDERS = {
+  anthropic: (key) => `sk-ant-oat01-${key}`,
+  openai: (key, real) => `${base64url({ alg: "none", typ: "JWT" })}.${base64url({ [CHATGPT_CLAIM]: { chatgpt_account_id: accountOf(real) } })}.${key}`,
+  "github-copilot": (key, real) => `tid=weilo;${/proxy-ep=[^;]+/.exec(real)?.[0] ?? ""};weilo=${key}`,
+};
+
+const SIGN_IN_COMPAT = {
+  openai: { supportsMaxOutputTokens: false, supportsMidConvoEffort: false, supportsLongCacheRetention: false, supportsExplicitPromptCacheMode: false },
+};
+
+export const placeholderFor = (provider, key, real) => (PLACEHOLDERS[provider] ?? ((k) => k))(key, real);
 
 export async function piModels(model, key) {
   const provider = providerOf(model);
   const { apiKey: _key, headers: _headers, ...own } = (await readJson(MODELS)).providers?.[provider] ?? {};
-  const oauth = (await registry()).isUsingOAuth(provider);
-  const route = oauth ? { apiKey: `!node /app/gateway/key.mjs ${provider}` } : { baseUrl: `http://127.0.0.1:${PORT}/api/model-proxy/${provider}`, apiKey: key };
-  return { providers: { [provider]: { ...own, ...route } } };
+  const models = await registry();
+  const real = models.isUsingOAuth(provider) ? (await models.getAuth(provider, FRESH).catch(() => null))?.auth?.apiKey : "";
+  const proxied = { ...own, baseUrl: `http://127.0.0.1:${PORT}/api/model-proxy/${provider}`, apiKey: real ? placeholderFor(provider, key, real) : key };
+  return { providers: { [provider]: real && SIGN_IN_COMPAT[provider] ? { ...proxied, compat: { ...own.compat, ...SIGN_IN_COMPAT[provider] } } : proxied } };
 }
 
-export async function accessToken(provider) {
-  const models = await registry();
-  if (!models.isUsingOAuth(provider)) throw fail(404, "This provider has no sign-in");
-  const found = await models.getAuth(provider, { minOAuthValidityMs: 5 * 60_000 });
-  if (!found?.auth?.apiKey) throw fail(409, `Sign in to ${provider} again in Settings`);
-  return found.auth.apiKey;
-}
+export const swapKey = (text, key, real) => text.replace(new RegExp(`[^\\s,]*${key}[^\\s,]*`, "g"), () => real);
+
+export const keyedHeaders = (headers, key, real) =>
+  Object.fromEntries(Object.entries(headers).flatMap(([name, value]) => (KEY_HEADERS.includes(name) ? [[name, swapKey(value, key, real)]] : value.includes(key) ? [] : [[name, value]])));
+
+export const forgetAuth = () => (made = 0);
 
 /** @type {[string, RegExp][]} */
 const API_PATHS = [
@@ -53,12 +76,12 @@ function baseFor(models, path) {
 
 export async function proxyModel(req, res, { key, provider, rest, search }) {
   const models = await registry();
-  const found = await models.getAuth(provider);
+  const found = await models.getAuth(provider, FRESH);
   const real = found?.auth?.apiKey;
-  if (!real) throw fail(502, `There is no key for ${provider}. Add one in Settings.`);
-  const base = baseFor(models.getAllModels(provider), rest);
+  if (!real) throw fail(502, `There is no key or sign-in for ${provider}. Add one in Settings.`);
+  const base = found.auth.baseUrl ?? baseFor(models.getAllModels(provider), rest);
   if (!base) throw fail(502, `Unknown provider ${provider}`);
   const target = new URL(base.replace(/\/$/, "") + rest + search);
-  if (target.searchParams.has("key")) target.searchParams.set("key", target.searchParams.get("key").replaceAll(key, real));
-  await forward(req, res, target, { ...headersOf(req, [], (value) => value.replaceAll(key, real)), ...found.auth.headers });
+  if (target.searchParams.has("key")) target.searchParams.set("key", swapKey(target.searchParams.get("key"), key, real));
+  await forward(req, res, target, { ...keyedHeaders(headersOf(req), key, real), ...found.auth.headers });
 }

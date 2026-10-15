@@ -68,7 +68,7 @@ export async function addSkills({ name, data }) {
   }
 }
 
-export async function saveSkill({ name, description, instructions }) {
+export function planSkill({ name, description, instructions }) {
   const id = typeof name === "string" ? slug(name, 48) : "";
   if (!id) throw fail(400, "Give the skill a name");
   const about = typeof description === "string" ? description.replace(/\s+/g, " ").trim() : "";
@@ -76,11 +76,17 @@ export async function saveSkill({ name, description, instructions }) {
   if (about.length > MAX_SKILL_DESCRIPTION) throw fail(400, `The description is too long. Use ${MAX_SKILL_DESCRIPTION} characters at most.`);
   if (typeof instructions !== "string" || !instructions.trim()) throw fail(400, "Give the skill its instructions");
   if (instructions.length > MAX_SKILL_TEXT) throw fail(400, `The instructions are too long. Use ${MAX_SKILL_TEXT} characters at most.`);
+  const line = /: |\s#|^[-?&*!|>%@`'"[\]{}]/.test(about) ? JSON.stringify(about) : about;
+  return { id, about, instructions: instructions.trim(), text: `---\nname: ${id}\ndescription: ${line}\n---\n\n${instructions.trim()}\n` };
+}
+
+export const hasSkill = (id) => access(join(SKILLS, id, "SKILL.md")).then(() => true, () => false);
+
+export async function saveSkill({ id, text }) {
   const folder = join(SKILLS, id);
   await mkdir(folder, { recursive: true });
-  const line = /: |\s#|^[-?&*!|>%@`'"[\]{}]/.test(about) ? JSON.stringify(about) : about;
-  await writeFile(join(folder, "SKILL.md"), `---\nname: ${id}\ndescription: ${line}\n---\n\n${instructions.trim()}\n`);
-  return { id, folder };
+  await writeFile(join(folder, "SKILL.md"), text);
+  return folder;
 }
 
 export async function removeSkill(id) {

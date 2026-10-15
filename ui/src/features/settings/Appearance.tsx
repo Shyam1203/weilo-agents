@@ -10,10 +10,10 @@ const THEMES = [
   { value: "weilo", label: "Weilo Theme" },
 ];
 
-export function Appearance() {
+export function Appearance({ section }: { section?: boolean }) {
   const [theme, setChoice] = useState<Theme>(getTheme);
   return (
-    <Page title="Appearance">
+    <Page section={section} title="Appearance">
       <Card>
         <Row title="Theme" description="Light, dark, or like your computer.">
           <div className="w-40">

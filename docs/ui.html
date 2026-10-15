@@ -50,7 +50,7 @@
 <tr><td>Workspace</td><td><code>features/workspace/</code></td><td>Sidebar (agent list, search, drag to reorder, unread dots), the main area, polling of the agent list.</td></tr>
 <tr><td>Chat</td><td><code>features/chat/</code></td><td><code>useChat.ts</code> (the event stream), <code>conversation.ts</code> (the reducer, pi messages to bubbles), <code>MessageList</code>, <code>Composer</code>, <code>AskCard</code>, <code>ShowBlocks</code>, <code>ShowPage</code>, <code>StepsLine</code>, <code>ContextMeter</code>, <code>FindBar</code>.</td></tr>
 <tr><td>Agents</td><td><code>features/agents/</code></td><td>The agent form, avatars, the delete dialog.</td></tr>
-<tr><td>Settings</td><td><code>features/settings/</code> and the add-on pages</td><td>One view with a menu and pages built from rows (<code>components/ui/Row.tsx</code>).</td></tr>
+<tr><td>Settings</td><td><code>features/settings/</code> and the add-on pages</td><td>One view with a menu in four groups (You, Models, What agents can use, App) and pages built from rows (<code>components/ui/Row.tsx</code>); Security &amp; devices and General each put several sections on one page. Usage is <code>UsagePage.tsx</code> over <code>api/usage.ts</code>.</td></tr>
 <tr><td>Side panel</td><td><code>features/browser/</code>, <code>features/routines/</code></td><td>Live view of the agent's browser window (noVNC, loaded on first use), take over, routines.</td></tr>
 <tr><td>Files</td><td><code>features/files/</code></td><td>Preview of pictures, PDFs, Markdown, CSV/TSV, JSON, HTML (sandboxed) and text.</td></tr>
 <tr><td>Kit</td><td><code>components/ui/</code>, <code>styles/index.css</code>, <code>lib/</code></td><td>Buttons, rows, modals, menus; colour tokens; small hooks (media queries, back step, edge swipe, dictation).</td></tr>
@@ -127,24 +127,26 @@
 <text class="ts" x="380" y="274" text-anchor="middle">returns to the list</text>
 <rect class="wire" x="520" y="10" width="220" height="400" rx="22"/>
 <text class="t" x="538" y="44">‹</text><text class="tb" x="556" y="44">Settings</text>
-<text class="t" x="540" y="84">Providers</text><text class="ts" x="640" y="84">1 connected</text>
-<text class="t" x="540" y="114">Devices</text>
-<text class="t" x="540" y="144">Notifications</text><text class="ts" x="690" y="144">Off</text>
-<text class="t" x="540" y="174">About you</text>
-<text class="t" x="540" y="204">Memory</text>
-<text class="t" x="540" y="234">Browser</text>
-<text class="t" x="540" y="264">Appearance</text>
-<text class="t" x="540" y="294">About</text>
-<text class="ts" x="540" y="324">ADD-ONS</text>
-<text class="t" x="540" y="350">Skills</text><text class="ts" x="660" y="350">2 skills</text>
-<text class="t" x="540" y="378">Plugins · Extensions</text>
+<text class="ts" x="540" y="72">YOU</text>
+<text class="t" x="540" y="94">About you</text>
+<text class="t" x="540" y="120">Memory</text>
+<text class="ts" x="540" y="146">MODELS</text>
+<text class="t" x="540" y="168">Providers</text><text class="ts" x="640" y="168">1 connected</text>
+<text class="t" x="540" y="194">Usage</text>
+<text class="ts" x="540" y="220">WHAT AGENTS CAN USE</text>
+<text class="t" x="540" y="242">Skills</text><text class="ts" x="660" y="242">2 skills</text>
+<text class="t" x="540" y="268">Plugins · Extensions</text>
+<text class="t" x="540" y="294">Browser</text>
+<text class="ts" x="540" y="320">APP</text>
+<text class="t" x="540" y="342">Security &amp; devices</text>
+<text class="t" x="540" y="368">General</text><text class="ts" x="680" y="368">System</text>
 </svg>
 </div>
 <figcaption>Schematic wireframe. Below 768 px the list and the chat (or Settings) are separate screens (<code>Workspace.tsx</code>, <code>SettingsView.tsx</code>).</figcaption>
 </figure>
 <ul>
 <li>Below 768 px wide, the list and the chat are separate screens. Opening a chat or Settings adds a step to the browser history (<code>useBackStep</code>), so the phone's back gesture returns to the list; from the Home Screen on an iPhone a swipe from the left edge does (<code>useEdgeSwipe</code>).</li>
-<li>Settings on a phone lists the pages first with a hint each ("1 connected", "2 skills"), then a page with a back arrow. On a computer it is a menu on the left and the page on the right; the chat stays mounted behind it, so a draft survives.</li>
+<li>Settings on a phone lists the pages first, in four groups, with a hint each ("1 connected", "2 skills"), then a page with a back arrow. On a computer it is a menu on the left and the page on the right; the chat stays mounted behind it, so a draft survives.</li>
 <li>From 1024 px the browser and routines panel docks to the right of the chat; below that it opens as a sheet.</li>
 <li>Notifications on an iPhone work only from the app added to the Home Screen (a browser rule).</li>
 </ul>
@@ -201,18 +203,20 @@
 <div class="table wide"><table>
 <thead><tr><th>Page</th><th>What it holds</th><th>Daemon routes</th></tr></thead>
 <tbody>
-<tr><td>Providers</td><td>Connected providers first (In use), then the rest; key field or sign-in with an account; Models switches; Remove</td><td><code>/api/providers</code>, <code>…/sign-in</code>, <code>/api/models</code></td></tr>
-<tr><td>Devices</td><td>Paired devices with dates, Remove, Add a device (code, link, minutes left)</td><td><code>/api/devices</code>, <code>/api/devices/code</code></td></tr>
-<tr><td>Security</td><td>Checks (sandbox, account sign-ins and the browser for isolated agents, unused devices, version) and the latest 50 changes from the audit log, in plain words</td><td><code>/api/security</code></td></tr>
-<tr><td>Notifications</td><td>This device on or off, the other devices, mute per agent</td><td><code>/api/push</code>, <code>/api/push/devices</code>, <code>/api/push/muted</code></td></tr>
+<tr><td colspan="3"><strong>You</strong></td></tr>
 <tr><td>About you</td><td>Name and text for <code>USER.md</code></td><td><code>/api/user</code></td></tr>
-<tr><td>Memory</td><td>Curator model; Ask before saving; notes one by one, or as text</td><td><code>/api/memory</code>, <code>/api/memory/curator</code></td></tr>
-<tr><td>Browser</td><td>"Ask me first" and the rule; says it is a request, not a lock</td><td><code>/api/browser/rule</code></td></tr>
-<tr><td>Appearance</td><td>System, Light, Dark or Weilo Theme (<code>data-theme</code> on <code>&lt;html&gt;</code>)</td><td>none (stored in the browser)</td></tr>
-<tr><td>About</td><td>Version, build, pi version, update notice, the update check switch</td><td><code>/api/version</code>, <code>/api/update</code></td></tr>
+<tr><td>Memory</td><td>Curator model; Ask before saving; notes grouped by kind (Preferences, Facts, Goals, People, Projects, Decisions), each with its month or "Not confirmed since …", or as text; Add with a kind picker</td><td><code>/api/memory</code>, <code>/api/memory/curator</code></td></tr>
+<tr><td colspan="3"><strong>Models</strong></td></tr>
+<tr><td>Providers</td><td>Connected providers first (In use), then the rest; key field or sign-in with an account; Models switches; Remove</td><td><code>/api/providers</code>, <code>…/sign-in</code>, <code>/api/models</code></td></tr>
+<tr><td>Usage</td><td>Tiles for today's tokens, the last 14 days' and their estimated cost; a bar chart of tokens per day, stacked by agent (hover or focus a day for its numbers); a row per agent with today's tokens, its daily limit, 14 days' tokens and cost. Cost is pi's estimate at the provider's API prices; a sign-in plan bills differently (<code>UsagePage.tsx</code>)</td><td><code>/api/usage</code></td></tr>
+<tr><td colspan="3"><strong>What agents can use</strong></td></tr>
 <tr><td>Skills</td><td>Library, add <code>.zip</code> or <code>SKILL.md</code>, turn on per agent, delete</td><td><code>/api/skills</code>, <code>PUT /api/agents/:id</code></td></tr>
 <tr><td>Plugins</td><td>Add a command or web address, connection status, remove</td><td><code>/api/plugins</code>, <code>/api/plugins/status</code></td></tr>
 <tr><td>Extensions</td><td>Bundled and added ones; adding asks first, and the warning says an extension can read and change the files of each agent that uses it and use its model account</td><td><code>/api/extensions</code></td></tr>
+<tr><td>Browser</td><td>"Ask me first" and the rule; says it is a request, not a lock</td><td><code>/api/browser/rule</code></td></tr>
+<tr><td colspan="3"><strong>App</strong></td></tr>
+<tr><td>Security &amp; devices</td><td>Paired devices with dates, Remove, Add a device (code, link, minutes left); then the checks (sandbox, the browser for isolated agents, unused devices, version) and the latest 50 changes from the audit log, in plain words</td><td><code>/api/devices</code>, <code>/api/devices/code</code>, <code>/api/security</code></td></tr>
+<tr><td>General</td><td>Appearance (System, Light, Dark or Weilo Theme: <code>data-theme</code> on <code>&lt;html&gt;</code>, stored in the browser); Notifications (this device on or off, the other devices, mute per agent); About (version, build, pi version, update notice, the update check switch)</td><td><code>/api/push</code>, <code>/api/push/devices</code>, <code>/api/push/muted</code>, <code>/api/version</code>, <code>/api/update</code></td></tr>
 </tbody></table></div>
 <p>An extension runs inside the pi of each agent that uses it, as that agent's Linux user. It cannot read the key files; it can use the agent's provider through the gateway, read and change the agent's files, and reach the network.</p>
 </section>
