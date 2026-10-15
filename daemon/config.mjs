@@ -79,8 +79,10 @@ export const BIN = {
 
 // Pi's built-in tools every agent has: read and change files, and run programs.
 export const PI_TOOLS = ["read", "bash", "edit", "write"];
-// The tools every agent has: the chat's own (weilo.mjs) and memory's (memory/extension.mjs).
-export const CORE_TOOLS = ["show", "ask", "skill", "manage_agents", "memory", "fetch_knowledge"];
+// The tools of ours that reach what all agents share (the skill library, memory, the vault): an isolated agent has none of them.
+export const SHARED_TOOLS = ["skill", "memory", "fetch_knowledge"];
+// The tools every agent has: the chat's own (weilo.mjs) and memory's (memory/extension.mjs); an isolated one, the first three.
+export const CORE_TOOLS = ["show", "ask", "manage_agents", ...SHARED_TOOLS];
 // Pi's built-in extensions (pi 1.2.0, `builtin:<name>`). An agent's pi loads these, ours (weilo.mjs, memory/extension.mjs), the extensions that
 // come with the app (extension/ in browser/ and routines/) unless the agent turned them off, and the ones it turned on (settings/extensions.mjs),
 // and nothing else it finds in `agent/extensions/` or `settings.json`.

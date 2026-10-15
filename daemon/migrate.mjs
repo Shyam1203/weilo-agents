@@ -43,8 +43,10 @@ const STEPS = {
     }
   },
   // 4: an agent's user is never given again (agents.mjs `newUid`). The highest so far is the highest of the agents' and of
-  // the owners of the files deleted agents left in the data folder and the installed tools.
+  // the owners of the files deleted agents left in the data folder and the installed tools. Agents may be isolated or
+  // trusted (agents.mjs): every agent so far is neither. (secure() makes the isolated agents' folders.)
   async 3() {
+    for (const agent of await profiles()) await updateJson(profilePath(agent.id), (data) => ({ ...data, isolated: data.isolated === true, trusted: data.trusted === true }));
     // find fails on a folder that is missing (no tools yet); what it found is still in its output.
     const { stdout } = await promisify(execFile)(BIN.find, [ROOT, TOOLS, "-uid", `+${FIRST_AGENT_UID - 1}`, "-printf", "%U\n"], { maxBuffer: 1 << 28 }).catch((err) => err);
     const owners = (stdout ?? "").split("\n").filter(Boolean).map(Number);

@@ -2,8 +2,8 @@ import { mkdirSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { createServer as createSocketServer } from "node:net";
 import { dirname } from "node:path";
-import { createAgent, getAgent, homeOf, profiles, listAgents, removeFiles, removeProfile, setOrder, updateAgent } from "./agents/agents.mjs";
-import { abort, activityOf, answer, compact, contextOf, prompt, restart, restartAll, skillCommands, stop, stopAll } from "./agents/runner.mjs";
+import { createAgent, filesOf, getAgent, isIsolated, mayCall, profiles, listAgents, removeFiles, removeProfile, setOrder, updateAgent } from "./agents/agents.mjs";
+import { abort, activityOf, answer, compact, contextOf, holding, prompt, restart, restartAll, skillCommands, stop, stopAll } from "./agents/runner.mjs";
 import { manageAgents } from "./agents/manage.mjs";
 import { searchChats } from "./agents/search.mjs";
 import { earlierOf } from "./agents/sessions.mjs";
@@ -48,11 +48,12 @@ delete process.env.PYTHONUSERBASE;
 
 // JSON API. A handler gets the request as { id, rid (the path's ids), body, query, headers, who } and returns the reply; no
 // reply means 204. Paired devices may use every route; an agent's pi (`who.agent`) only the routes of its own tools
-// (`forAgent`), for itself.
+// (`tool`), for itself, and an isolated agent only those it may call (agents.mjs `mayCall`): its pi does not offer the
+// others, and calling the route itself is refused here.
 const routes = [];
-const route = (method, path, handler, { forAgent = false } = {}) =>
-  routes.push({ method, handler, forAgent, scoped: path.startsWith("/api/agents/:id"), pattern: new RegExp(`^${path.replace(":id", "([^/]+)").replace(":rid", "([^/]+)")}$`) });
-const agentRoute = (method, path, handler) => route(method, path, handler, { forAgent: true });
+const route = (method, path, handler, { tool = null } = {}) =>
+  routes.push({ method, handler, tool, scoped: path.startsWith("/api/agents/:id"), pattern: new RegExp(`^${path.replace(":id", "([^/]+)").replace(":rid", "([^/]+)")}$`) });
+const agentRoute = (method, path, tool, handler) => route(method, path, handler, { tool });
 
 // A change every agent's pi reads when it starts (skills, plugins, extensions, what it knows about you, memory, the browser
 // rule): agents start their pi anew once it is saved.
@@ -110,8 +111,10 @@ route("GET", "/api/agents", async ({ query }) => {
 });
 route("POST", "/api/agents", ({ body }) => createAgent(body));
 route("PUT", "/api/agents", ({ body }) => setOrder(body.order));
+// An agent that becomes isolated, or regular again, moves its folders: its pi stops first, and starts once they moved.
 route("PUT", "/api/agents/:id", async ({ id, body }) => {
-  const agent = await updateAgent(id, body);
+  const moves = typeof body.isolated === "boolean" && body.isolated !== isIsolated(await getAgent(id));
+  const agent = moves ? await holding(id, () => updateAgent(id, body)) : await updateAgent(id, body);
   await restart(id);
   return agent;
 });
@@ -133,18 +136,18 @@ route("GET", "/api/agents/:id/context", ({ id }) => contextOf(id));
 route("GET", "/api/agents/:id/earlier", ({ id, query }) => earlierOf(id, Math.max(0, Number(query.get("skip")) || 0)));
 route("POST", "/api/agents/:id/reload", ({ id }) => restart(id));
 route("POST", "/api/agents/:id/compact", ({ id, body }) => compact(id, body.instructions));
-agentRoute("POST", "/api/agents/:id/browser", async ({ id, body }) => ({ text: await useBrowser(id, body) }));
+agentRoute("POST", "/api/agents/:id/browser", "browser", async ({ id, body }) => ({ text: await useBrowser(id, body) }));
 route("GET", "/api/agents/:id/browser", async ({ id }) => ({ taken: isTaken(id), hasWindow: await hasWindow(id) }));
 route("POST", "/api/agents/:id/browser/show", ({ id }) => showBrowser(id));
 route("POST", "/api/agents/:id/browser/take-over", ({ id }) => takeOver(id));
 route("POST", "/api/agents/:id/browser/give-back", ({ id }) => giveBack(id));
 // The access token of the provider of the agent's model, when it is signed in with an account (gateway/key.mjs).
-agentRoute("GET", "/api/agents/:id/model-key/:rid", async ({ id, rid }) => {
+agentRoute("GET", "/api/agents/:id/model-key/:rid", "model", async ({ id, rid }) => {
   if (providerOf((await getAgent(id)).model) !== rid) throw fail(403, "Not permitted");
   return { key: await accessToken(rid) };
 });
 // An agent's `skill` tool: the skill goes into the library and is switched on for that agent, which reads it when its run ends.
-agentRoute("POST", "/api/agents/:id/skill", async ({ id, body }) => {
+agentRoute("POST", "/api/agents/:id/skill", "skill", async ({ id, body }) => {
   const { id: skill, folder } = await saveSkill(body);
   const agent = await getAgent(id);
   await updateAgent(id, { skills: [...new Set([...agent.skills, skill])] });
@@ -152,13 +155,13 @@ agentRoute("POST", "/api/agents/:id/skill", async ({ id, body }) => {
   return { text: `Saved the skill "${skill}" in ${folder}/ (put any scripts or other files it needs there). It is on for you and loads when this reply ends. It shows under Skills in Settings.` };
 });
 // An agent's `manage_agents` tool: it lists the agents, or asks the user to approve an agent it would make or change (agents/manage.mjs).
-agentRoute("POST", "/api/agents/:id/manage_agents", ({ id, body }) => manageAgents(id, body));
-agentRoute("POST", "/api/agents/:id/memory", async ({ body }) => ({ text: await useMemory(body) }));
-agentRoute("POST", "/api/agents/:id/fetch_knowledge", async ({ body }) => ({ text: await fetchKnowledge(body) }));
-agentRoute("GET", "/api/agents/:id/routines", async ({ id, headers }) => (await noteZone(headers["x-timezone"]), listRoutines(id)));
-agentRoute("POST", "/api/agents/:id/routines", ({ id, body, headers }) => addRoutine(id, body, headers["x-timezone"]));
-agentRoute("PUT", "/api/agents/:id/routines/:rid", ({ id, rid, body }) => updateRoutine(id, rid, body));
-agentRoute("DELETE", "/api/agents/:id/routines/:rid", ({ id, rid }) => removeRoutine(id, rid));
+agentRoute("POST", "/api/agents/:id/manage_agents", "manage_agents", ({ id, body }) => manageAgents(id, body));
+agentRoute("POST", "/api/agents/:id/memory", "memory", async ({ body }) => ({ text: await useMemory(body) }));
+agentRoute("POST", "/api/agents/:id/fetch_knowledge", "fetch_knowledge", async ({ body }) => ({ text: await fetchKnowledge(body) }));
+agentRoute("GET", "/api/agents/:id/routines", "routines", async ({ id, headers }) => (await noteZone(headers["x-timezone"]), listRoutines(id)));
+agentRoute("POST", "/api/agents/:id/routines", "routines", ({ id, body, headers }) => addRoutine(id, body, headers["x-timezone"]));
+agentRoute("PUT", "/api/agents/:id/routines/:rid", "routines", ({ id, rid, body }) => updateRoutine(id, rid, body));
+agentRoute("DELETE", "/api/agents/:id/routines/:rid", "routines", ({ id, rid }) => removeRoutine(id, rid));
 
 const server = createServer(async (req, res) => {
   try {
@@ -189,16 +192,17 @@ const server = createServer(async (req, res) => {
     const who = await identify(req);
     if (!who) return reply(res, 401, { error: "Pair this device to use Weilo Agents.", pair: true });
     const file = path.match(/^\/api\/agents\/([^/]+)\/files\/(.+)$/);
-    if (file && req.method === "GET" && who.device) return await serveFile(res, homeOf(await getAgent(file[1])), file[2], url.searchParams.has("view"));
+    if (file && req.method === "GET" && who.device) return await serveFile(res, filesOf(await getAgent(file[1])), file[2], url.searchParams.has("view"));
     const stream = path.match(/^\/api\/agents\/([^/]+)\/events$/);
     if (stream && req.method === "GET" && who.device) return await events(req, res, stream[1]);
-    for (const { method, pattern, handler, scoped, forAgent } of routes) {
+    for (const { method, pattern, handler, scoped, tool } of routes) {
       const match = req.method === method && path.match(pattern);
       if (!match) continue;
       const [, id, rid] = match;
-      if (who.agent && !(forAgent && id === who.agent)) throw fail(403, "Not permitted");
+      if (who.agent && !(tool && id === who.agent)) throw fail(403, "Not permitted");
       // A route for an agent only accepts one that exists.
-      if (scoped) await getAgent(id);
+      const agent = scoped && (await getAgent(id));
+      if (who.agent && !mayCall(agent, tool)) throw fail(403, "An isolated agent cannot use this. The user can change what it may use in its settings.");
       const result = await handler({ id, rid, body: await bodyOf(req), query: url.searchParams, headers: req.headers, who });
       return result === undefined ? reply(res, 204) : reply(res, 200, result);
     }
@@ -234,7 +238,7 @@ server.on("upgrade", async (req, socket, head) => {
     const caller = pipe && keyIn(req, url.searchParams);
     if (caller) {
       const plugin = await allowedPlugin(caller.agent, pipe[1]);
-      if (plugin.command) return pipePlugin(socket, plugin, homeOf(await getAgent(caller.agent)));
+      if (plugin.command) return pipePlugin(socket, plugin, await getAgent(caller.agent));
     }
   } catch {}
   socket.destroy();

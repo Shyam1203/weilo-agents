@@ -12,6 +12,10 @@ export const WORKSPACE = join(ROOT, "workspace");
 export const SCRATCH = "/tmp/weilo";
 // Each agent's home folder (HOME: its own tool settings and sign-ins, such as git's), beside agent/ and workspace/.
 export const HOMES = join(ROOT, "homes");
+// An isolated agent's folder (it has no part in the workspace) and its chat (not in agent/, which it cannot open): beside
+// agent/ and workspace/ (agents/agents.mjs).
+export const ISOLATED = join(ROOT, "isolated");
+export const ISOLATED_SESSIONS = join(ROOT, "isolated-sessions");
 // What each pi is given when it starts (its own settings, models, plugins), made again every time, outside the data folder.
 export const RUN = "/var/lib/weilo";
 // The tools agents install (npm -g, pip --user): a volume shared by them all.
@@ -20,6 +24,8 @@ export const PI_ENV = { PI_CODING_AGENT_DIR: AGENT_DIR };
 export const AUTH = join(AGENT_DIR, "auth.json");
 export const SETTINGS = join(AGENT_DIR, "settings.json");
 export const SESSIONS = join(AGENT_DIR, "sessions");
+// The folders the chats are in, by agent id: the regular agents' and the isolated ones' (also deleted agents' kept chats).
+export const CHATS = [SESSIONS, ISOLATED_SESSIONS];
 export const PROFILES = join(AGENT_DIR, "profiles");
 export const ORDER = join(AGENT_DIR, "order.json");
 export const SKILLS = join(AGENT_DIR, "skills");

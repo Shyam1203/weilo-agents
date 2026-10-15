@@ -1,9 +1,9 @@
 import { randomBytes } from "node:crypto";
-import { join } from "node:path";
+import { basename, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { fail, SESSIONS } from "../common.mjs";
+import { EXTENSIONS, fail } from "../common.mjs";
 import { agentKey, dropAgentKey } from "../http/access.mjs";
-import { BIN, CORE_TOOLS, IDLE_MS, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
+import { BIN, CORE_TOOLS, IDLE_MS, PI_BUILTINS, PI_TOOLS, PORT, SHARED_TOOLS } from "../config.mjs";
 import { askBefore } from "../browser/rule.mjs";
 import { memoryFlags } from "../memory/memory.mjs";
 import { pointOf } from "../settings/compaction.mjs";
@@ -12,13 +12,13 @@ import { pluginTools } from "../settings/plugins.mjs";
 import { skillPaths } from "../settings/skills.mjs";
 import { userFlags } from "../settings/user.mjs";
 import { notify } from "../push.mjs";
-import { sharedTools } from "../users.mjs";
-import { getAgent, homeOf, makeHome, profilePath, userHomeOf, userOf } from "./agents.mjs";
+import { ownTools, sharedTools } from "../users.mjs";
+import { chatDirOf, getAgent, homeOf, isIsolated, makeHome, profilePath, userHomeOf, userOf } from "./agents.mjs";
 import { piDirOf, writePiDir } from "./pidir.mjs";
 import { spawnPi } from "./pi.mjs";
 import { asTyped } from "./sessions.mjs";
 import { saveFiles, toImages } from "./uploads.mjs";
-import { clearScratch, makeScratch, scratchOf, workspaceRules } from "./workspace.mjs";
+import { clearScratch, makeScratch, rulesOf, scratchOf } from "./workspace.mjs";
 
 // One pi per agent that is open. It starts on first use and stops after IDLE_MS with nobody
 // watching and no run in progress.
@@ -56,30 +56,53 @@ const touch = (run) => {
   run.timer = setTimeout(() => (close(run), void clearScratch(run.id)), IDLE_MS).unref();
 };
 
-// Our extensions, which give every agent the chat's tools and memory.
-const CORE_EXTENSIONS = ["../weilo.mjs", "../memory/extension.mjs"].map((path) => fileURLToPath(new URL(path, import.meta.url)));
+// Our extensions: the chat's tools, for every agent, and memory's, for every agent but an isolated one.
+const [WEILO, MEMORY] = ["../weilo.mjs", "../memory/extension.mjs"].map((path) => fileURLToPath(new URL(path, import.meta.url)));
 
-// The tools an agent may call, as pi's allowlist: pi's built-in ones, our tools, its extensions' and its plugins'. With no plugin, MCP is off.
-const toolsFlags = (plugins, extensions) => {
-  const tools = [...PI_TOOLS, ...CORE_TOOLS, ...extensions.flatMap((e) => e.tools)];
+// The tools an agent may call, as pi's allowlist: pi's built-in ones, our tools (an isolated agent's without those of what all
+// agents share), its extensions' and its plugins'. With no plugin, MCP is off.
+const toolsFlags = (agent, plugins, extensions) => {
+  const tools = [...PI_TOOLS, ...CORE_TOOLS.filter((t) => !isIsolated(agent) || !SHARED_TOOLS.includes(t)), ...extensions.flatMap((e) => e.tools)];
   return plugins.length ? ["--tools", [...tools, "codemode", ...plugins].join(",")] : ["--no-mcp", "--tools", tools.join(",")];
 };
 
-// pi's command line for an agent: its profile (which holds its instructions), the house rules for its folder and the shared workspace, what it knows about you and remembers, model, thinking level, the extensions it loads (pi's built-in ones, the app's that it has not turned off, and the ones it uses), skills and plugins, and its one conversation.
-const argvOf = (agent, skills, plugins, extensions, about) => {
+// What an agent's pi starts with that differs by its kind. A regular agent's pi reads its profile, skills and added
+// extensions in agent/, with what it knows about you and remembers, and finds the tools the agents share. An isolated
+// agent's cannot open agent/: it reads copies of them in its pi folder (`copies`, for pidir.mjs), knows nothing of the
+// shared memory, loads no AGENTS.md or CLAUDE.md (others may write its folder), and finds only root's programs and its own.
+async function kindOf(agent, dir) {
+  const [skills, extensions] = await Promise.all([skillPaths(agent.skills), extensionsOf(agent)]);
+  if (!isIsolated(agent)) {
+    const about = (await Promise.all([userFlags(), memoryFlags()])).flat();
+    return { profile: profilePath(agent.id), skills, extensions, ours: [WEILO, MEMORY], about, copies: {}, env: sharedTools };
+  }
+  const copies = { "agent.json": profilePath(agent.id) };
+  for (const path of skills) copies[`skills/${basename(path)}`] = path;
+  const own = extensions.map((x) => {
+    if (x.builtin) return x;
+    copies[`extensions/${x.id}`] = join(EXTENSIONS, x.id);
+    return { ...x, entry: join(dir, "extensions", x.id, relative(join(EXTENSIONS, x.id), x.entry)) };
+  });
+  return { profile: join(dir, "agent.json"), skills: skills.map((path) => join(dir, "skills", basename(path))), extensions: own, ours: [WEILO], about: ["--no-context-files"], copies, env: ownTools(userHomeOf(agent)) };
+}
+
+// pi's command line for an agent: its profile (which holds its instructions), the rules for its folder, what it knows about
+// you and remembers, model, thinking level, the extensions it loads (pi's built-in ones, ours, the app's that it has not
+// turned off, and the ones it uses), skills and plugins, and its one conversation.
+const argvOf = (agent, kind, plugins) => {
   const { id, model, thinking } = agent;
   return [
     BIN.pi, "--mode", "rpc",
     ...(model ? ["--model", model] : []),
     ...(thinking ? ["--thinking", thinking] : []),
-    "--append-system-prompt", profilePath(id),
-    "--append-system-prompt", workspaceRules(agent.folder, scratchOf(id)),
-    ...about,
+    "--append-system-prompt", kind.profile,
+    "--append-system-prompt", rulesOf(agent),
+    ...kind.about,
     "-ne", ...PI_BUILTINS.flatMap((name) => ["-e", `builtin:${name}`]),
-    ...CORE_EXTENSIONS.flatMap((path) => ["-e", path]), ...extensions.flatMap((e) => ["-e", e.entry]),
-    "--no-skills", ...skills.flatMap((path) => ["--skill", path]),
-    ...toolsFlags(plugins, extensions),
-    "--session-dir", join(SESSIONS, id),
+    ...kind.ours.flatMap((path) => ["-e", path]), ...kind.extensions.flatMap((e) => ["-e", e.entry]),
+    "--no-skills", ...kind.skills.flatMap((path) => ["--skill", path]),
+    ...toolsFlags(agent, plugins, kind.extensions),
+    "--session-dir", chatDirOf(agent),
     "--session-id", id,
   ];
 };
@@ -97,21 +120,24 @@ function tell(run) {
 }
 
 async function start(run) {
+  // An agent whose folders are moving starts once they are in place.
+  await holds.get(run.id);
   const agent = await getAgent(run.id);
-  const [ask, skills, plugins, extensions, user, memory] = await Promise.all([askBefore(), skillPaths(agent.skills), pluginTools(agent.plugins), extensionsOf(agent), userFlags(), memoryFlags()]);
-  const argv = argvOf(agent, skills, plugins, extensions, [...user, ...memory]);
+  const dir = piDirOf(run.id);
+  const [ask, plugins, kind] = await Promise.all([askBefore(), pluginTools(agent.plugins), kindOf(agent, dir)]);
+  const argv = argvOf(agent, kind, plugins);
   await Promise.all([makeScratch(agent), makeHome(agent)]);
   // The key its tools and its pi call the daemon with (tool.mjs, gateway/): the daemon knows the agent by it.
   run.key = agentKey(run.id);
-  // Its pi settings: its model's provider and its plugins, through the daemon (no key of theirs).
-  await writePiDir(piDirOf(run.id), userOf(agent), { model: agent.model, plugins: agent.plugins, key: run.key, agent: run.id });
+  // Its pi settings: its model's provider and its plugins, through the daemon (no key of theirs), and the copies it reads.
+  await writePiDir(dir, userOf(agent), { model: agent.model, plugins: agent.plugins, key: run.key, agent: run.id, copies: kind.copies });
   run.done = new Promise((resolve) => {
     // As the agent's own user, at home in its folder.
     run.pi = spawnPi(argv, {
       user: userOf(agent),
       cwd: homeOf(agent),
       env: {
-        ...sharedTools, PI_CODING_AGENT_DIR: piDirOf(run.id), HOME: userHomeOf(agent),
+        ...kind.env, PI_CODING_AGENT_DIR: dir, HOME: userHomeOf(agent),
         WEILO_AGENT: run.id, WEILO_API: `http://127.0.0.1:${PORT}/api`, WEILO_KEY: run.key, WEILO_ASK_BEFORE: ask, WEILO_SCRATCH: scratchOf(run.id),
       },
       onEvent(event) {
@@ -141,6 +167,9 @@ async function start(run) {
   });
   return run;
 }
+
+// Agents whose folders are moving (`holding`): their pi waits to start until the move is done.
+const holds = new Map();
 
 const open = (id) => {
   if (!runs.has(id)) {
@@ -182,7 +211,7 @@ export async function prompt(id, { text = "", images = [], files = [] }) {
   const blocks = toImages(images);
   // Open first: no files are saved for an agent that does not exist.
   const { pi } = await open(id);
-  const paths = await saveFiles(homeOf(await getAgent(id)), files);
+  const paths = await saveFiles(await getAgent(id), files);
   const message = [text.trim(), ...paths.map((path) => `[Attached file: ${path}]`)].filter(Boolean).join("\n\n");
   if (!message && !blocks.length) throw fail(400, "The message is empty");
   return pi.send("prompt", { message, images: blocks, streamingBehavior: "steer" }).catch(refused);
@@ -261,6 +290,17 @@ export async function restart(id) {
   const run = await current(id);
   if (run?.busy) run.stale = true;
   else await stop(id);
+}
+
+// Runs `job` (a move of the agent's folders) with its pi stopped, and none started until it is done.
+export async function holding(id, job) {
+  const done = stop(id).then(job);
+  holds.set(id, done.catch(() => {}));
+  try {
+    return await done;
+  } finally {
+    holds.delete(id);
+  }
 }
 
 export const restartAll = () => Promise.all([...runs.keys()].map(restart));

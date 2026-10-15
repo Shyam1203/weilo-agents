@@ -3,14 +3,15 @@ import { constants } from "node:fs";
 import { chmod, chown, mkdir, open, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { AGENT_DIR, HOMES, KNOWLEDGE, ROOT, RUN, SCRATCH, TOOLS, WORKSPACE } from "./common.mjs";
+import { AGENT_DIR, HOMES, ISOLATED, ISOLATED_SESSIONS, KNOWLEDGE, ROOT, RUN, SCRATCH, TOOLS, WORKSPACE } from "./common.mjs";
 import { AGENTS_GID, BIN, BROWSER_UID, CURATOR_UID, PLUGINS_UID, SYSTEM_PATH } from "./config.mjs";
 
 // Who runs what, and who may read what. The daemon is root and keeps the keys (agent/: provider keys, plugin secrets,
 // paired devices) where no one else can read them. Everything else it starts runs as a user of its own, without root's
 // powers: the browser as the image's user, the knowledge curator and the plugins as theirs, and each agent as its own
 // user, in the `agents` group. The group shares the workspace, the installed tools and the skills; an agent's chat, home,
-// scratch and pi settings are its own. Pi runs with only what its agent may use (agents/pidir.mjs); a model's key and a
+// scratch and pi settings are its own. An isolated agent's user is in no group: it has only its own folder (which the group
+// shares too: the other agents may read and change it), chat, home, scratch and pi settings (agents/agents.mjs). Pi runs with only what its agent may use (agents/pidir.mjs); a model's key and a
 // plugin's secrets stay with the daemon, which adds them on the way out (gateway/).
 // Outside a root daemon (a dev run) everything runs as the daemon, and nothing is changed hands.
 
@@ -44,6 +45,18 @@ export async function folder(path, uid, gid, mode) {
   const handle = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
   try {
     await handle.chown(uid, gid);
+    await handle.chmod(mode);
+  } finally {
+    await handle.close();
+  }
+}
+
+// A new file, written whole, with this owner and mode; never through a link (see folder).
+export async function newFile(path, data, uid, gid, mode) {
+  const handle = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, mode);
+  try {
+    await handle.writeFile(data);
+    if (isRoot) await handle.chown(uid, gid);
     await handle.chmod(mode);
   } finally {
     await handle.close();
@@ -89,6 +102,10 @@ export async function secure(agents) {
     await setOwner(join(AGENT_DIR, "profiles", agent.id, "agent.json"), 0, agent.uid, 0o640);
   }
   await folder(WORKSPACE, 0, AGENTS_GID, 0o2770);
+  // The isolated agents' folders: the group may look in; an isolated agent (not in it) only passes through, to its own.
+  // Their chats: no one but root may look in; each agent passes through to its own.
+  await folder(ISOLATED, 0, AGENTS_GID, 0o751);
+  await folder(ISOLATED_SESSIONS, 0, 0, 0o711);
   await folder(HOMES, 0, AGENTS_GID, 0o751);
   await folder(KNOWLEDGE, CURATOR_UID, CURATOR_UID, 0o700);
   await folder(SCRATCH, 0, AGENTS_GID, 0o751);

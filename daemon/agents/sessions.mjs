@@ -1,6 +1,6 @@
 import { open, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { SESSIONS } from "../common.mjs";
+import { CHATS } from "../common.mjs";
 import { CHAT_TAIL, EARLIER_PAGE, PREVIEW_CHARS, PREVIEW_TAIL } from "../config.mjs";
 
 const textOf = (content) => (typeof content === "string" ? content : (content ?? []).map((b) => b.text ?? "").join(""));
@@ -16,10 +16,11 @@ export function asTyped(message) {
   return { ...message, content: typeof content === "string" ? typed(content) : content.map((b) => (b.type === "text" ? { ...b, text: typed(b.text) } : b)) };
 }
 
-// An agent's chat files (pi writes one JSON line per entry), oldest first. A deleted agent's kept chat has some too.
+// An agent's chat files (pi writes one JSON line per entry), oldest first, wherever its kind keeps them (agents.mjs
+// `chatDirOf`; an id is in one of them). A deleted agent's kept chat has some too.
 export async function chatFiles(id) {
-  const dir = join(SESSIONS, id);
-  return (await readdir(dir).catch(() => [])).filter((f) => f.endsWith(".jsonl")).sort().map((f) => join(dir, f));
+  const found = await Promise.all(CHATS.map(async (top) => (await readdir(join(top, id)).catch(() => [])).filter((f) => f.endsWith(".jsonl")).sort().map((f) => join(top, id, f))));
+  return found.flat();
 }
 
 // The newest user or assistant text of an agent's conversation, for the agent list (`shown`: it only showed

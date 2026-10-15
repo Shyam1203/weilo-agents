@@ -1,7 +1,7 @@
 import { readdir } from "node:fs/promises";
 import { getAgent, isAgentId } from "../agents/agents.mjs";
 import { messagesOf } from "../agents/sessions.mjs";
-import { fail, SESSIONS } from "../common.mjs";
+import { CHATS, fail } from "../common.mjs";
 import { FETCH_EXCERPT, FETCH_MAX_CHARS, FETCH_TOP } from "../config.mjs";
 import { pagesOf } from "./vault.mjs";
 
@@ -9,7 +9,7 @@ import { pagesOf } from "./vault.mjs";
 // pages and the chats of all agents (also agents since deleted, whose chat was kept); with only an agent, its newest messages;
 // with a `source` (<agent id>@<date>, as a page lists them) the passages of that chat on that day. Only what the user and the
 // agents wrote is searched: not tool results, thinking or the prompts pi saves at its start. The agent never gives a path:
-// the folders come from the sessions folder and the vault, and a link is not followed.
+// the folders come from the chats' folders (isolated agents' too) and the vault, and a link is not followed.
 
 const STOP_WORDS = new Set(
   "a about an and are as at be been but by can did do does for from had has have how i in into is it me my of on or our should that the their this to was we were what when where which who why with would you your".split(" "),
@@ -49,7 +49,7 @@ function excerpt(text, tokens) {
 }
 
 const folders = async () => {
-  const dirs = (await readdir(SESSIONS, { withFileTypes: true }).catch(() => [])).filter((d) => d.isDirectory() && isAgentId(d.name));
+  const dirs = (await Promise.all(CHATS.map((top) => readdir(top, { withFileTypes: true }).catch(() => [])))).flat().filter((d) => d.isDirectory() && isAgentId(d.name));
   return Promise.all(dirs.map(async ({ name: id }) => ({ id, name: (await getAgent(id).catch(() => null))?.name ?? `deleted agent (${id})` })));
 };
 
