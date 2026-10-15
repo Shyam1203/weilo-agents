@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { fail, PI_ENV, SESSIONS, WORKSPACE } from "../common.mjs";
+import { fail, PI_ENV, SESSIONS } from "../common.mjs";
 import { CORE_TOOLS, IDLE_MS, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
 import { askBefore } from "../browser/rule.mjs";
 import { memoryFlags } from "../memory/memory.mjs";
@@ -10,7 +10,7 @@ import { pluginTools } from "../settings/plugins.mjs";
 import { skillPaths } from "../settings/skills.mjs";
 import { userFlags } from "../settings/user.mjs";
 import { notify } from "../push.mjs";
-import { getAgent, profilePath } from "./agents.mjs";
+import { getAgent, homeOf, makeHome, profilePath } from "./agents.mjs";
 import { spawnPi } from "./pi.mjs";
 import { asTyped } from "./sessions.mjs";
 import { saveFiles, toImages } from "./uploads.mjs";
@@ -57,7 +57,7 @@ const toolsFlags = (plugins, extensions) => {
   return plugins.length ? ["--tools", [...tools, "codemode", ...plugins].join(",")] : ["--no-mcp", "--tools", tools.join(",")];
 };
 
-// pi's command line for an agent: its profile (which holds its instructions), the house rules for the shared workspace, what it knows about you and remembers, model, thinking level, the extensions it loads (pi's built-in ones, the app's that it has not turned off, and the ones it uses), skills and plugins, and its one conversation.
+// pi's command line for an agent: its profile (which holds its instructions), the house rules for its folder and the shared workspace, what it knows about you and remembers, model, thinking level, the extensions it loads (pi's built-in ones, the app's that it has not turned off, and the ones it uses), skills and plugins, and its one conversation.
 const argvOf = (agent, skills, plugins, extensions, about) => {
   const { id, model, thinking } = agent;
   return [
@@ -65,7 +65,7 @@ const argvOf = (agent, skills, plugins, extensions, about) => {
     ...(model ? ["--model", model] : []),
     ...(thinking ? ["--thinking", thinking] : []),
     "--append-system-prompt", profilePath(id),
-    "--append-system-prompt", workspaceRules(scratchOf(id)),
+    "--append-system-prompt", workspaceRules(agent.folder, scratchOf(id)),
     ...about,
     "-ne", ...PI_BUILTINS.flatMap((name) => ["-e", `builtin:${name}`]),
     ...CORE_EXTENSIONS.flatMap((path) => ["-e", path]), ...extensions.flatMap((e) => ["-e", e.entry]),
@@ -92,10 +92,10 @@ async function start(run) {
   const agent = await getAgent(run.id);
   const [ask, skills, plugins, extensions, user, memory] = await Promise.all([askBefore(), skillPaths(agent.skills), pluginTools(agent.plugins), extensionsOf(agent), userFlags(), memoryFlags()]);
   const argv = argvOf(agent, skills, plugins, extensions, [...user, ...memory]);
-  await makeScratch(run.id);
+  await Promise.all([makeScratch(run.id), makeHome(agent)]);
   run.done = new Promise((resolve) => {
     run.pi = spawnPi(argv, {
-      cwd: WORKSPACE,
+      cwd: homeOf(agent),
       env: { ...PI_ENV, WEILO_AGENT: run.id, WEILO_API: `http://127.0.0.1:${PORT}/api`, WEILO_ASK_BEFORE: ask, WEILO_SCRATCH: scratchOf(run.id) },
       onEvent(event) {
         if (event.type === "agent_start") (run.busy = true), (run.reply = null);
@@ -164,7 +164,7 @@ export async function prompt(id, { text = "", images = [], files = [] }) {
   const blocks = toImages(images);
   // Open first: no files are saved for an agent that does not exist.
   const { pi } = await open(id);
-  const paths = await saveFiles(files);
+  const paths = await saveFiles(homeOf(await getAgent(id)), files);
   const message = [text.trim(), ...paths.map((path) => `[Attached file: ${path}]`)].filter(Boolean).join("\n\n");
   if (!message && !blocks.length) throw fail(400, "The message is empty");
   return pi.send("prompt", { message, images: blocks, streamingBehavior: "steer" }).catch(refused);

@@ -1,9 +1,8 @@
 // The blocks an agent shows with the `show` tool, drawn in the chat's own style.
 import { useState, type ReactNode } from "react";
-import { fileUrl } from "../../api/chat";
 import { Icon } from "../../components/ui/Icon";
 import { kindOf } from "../files/kinds";
-import { usePreview } from "../files/PreviewContext";
+import { useFileUrl, usePreview } from "../files/PreviewContext";
 import { AgentText, CardText } from "./AgentText";
 import type { Block } from "./blockData";
 import { PickButton } from "./PickButton";
@@ -138,7 +137,7 @@ function Choice({ label, done, message, chosen, onReply }: { label: string; done
 
 // A file in the workspace: a picture shows, most files can be previewed in the app, and any file can be downloaded.
 function File({ path, name }: { path: string; name: string }) {
-  const url = fileUrl(path);
+  const url = useFileUrl()(path);
   const preview = usePreview();
   const kind = kindOf(path);
   return (

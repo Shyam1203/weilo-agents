@@ -1,13 +1,15 @@
 import { randomBytes } from "node:crypto";
-import { readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { BUNDLED, fail, ORDER, PROFILES, readJson, SESSIONS, slug, updateJson } from "../common.mjs";
+import { BUNDLED, fail, ORDER, PROFILES, readJson, SESSIONS, slug, updateJson, WORKSPACE } from "../common.mjs";
 import { extensionsOf } from "../settings/extensions.mjs";
 import { lastMessage } from "./sessions.mjs";
 
-// An agent is a folder: agent/profiles/<id>/agent.json { name, model, thinking, skills, plugins, extensions, disabled, instructions, avatar }.
+// An agent is a folder: agent/profiles/<id>/agent.json { name, model, thinking, skills, plugins, extensions, disabled, instructions, avatar, folder }.
 // `extensions`: the ids of the added extensions it uses; `disabled`: the ids of the bundled ones it does not use.
 // Its one conversation is the pi session with the same id, in agent/sessions/<id>/.
+// `folder`: its home in the shared workspace (workspace/<folder>/), where it works and its uploads go. Named after the agent
+// when it is made, and kept when it is renamed, so paths in its chat still lead to their files.
 
 // Ids are made here; checking them keeps every path inside the agents folder.
 export const isAgentId = (id) => /^[a-z0-9-]+$/.test(id);
@@ -30,6 +32,23 @@ const clean = ({ name, model, thinking = "", skills = [], plugins = [], extensio
 };
 
 const save = (id, agent) => updateJson(profilePath(id), () => agent);
+
+// A name for a new home folder: the agent's name, unless the workspace or another agent already has it.
+export async function newFolder(name, taken = []) {
+  const used = new Set([...(await readdir(WORKSPACE).catch(() => [])), ...taken]);
+  const base = slug(name, 24) || "agent";
+  let folder = base;
+  for (let n = 2; used.has(folder); n++) folder = `${base}-${n}`;
+  return folder;
+}
+
+// The agent's home folder, on disk, ready for use (the user may have removed it).
+// A folder name is checked like an id, so a home is never the workspace itself or outside it.
+export const homeOf = ({ folder }) => {
+  if (typeof folder !== "string" || !isAgentId(folder)) throw fail(500, "This agent has no folder");
+  return join(WORKSPACE, folder);
+};
+export const makeHome = (agent) => mkdir(homeOf(agent), { recursive: true });
 
 // A switched-off extension that is not bundled any more is dropped when read.
 export async function getAgent(id) {
@@ -67,15 +86,18 @@ export async function createAgent(input) {
   const agent = clean(input);
   await extensionsOf(agent);
   const id = `${slug(agent.name, 24) || "agent"}-${randomBytes(3).toString("hex")}`;
-  await save(id, agent);
+  const folder = await newFolder(agent.name, (await profiles()).map((a) => a.folder));
+  await save(id, { ...agent, folder });
+  await makeHome({ folder });
   return getAgent(id);
 }
 
 export async function updateAgent(id, patch) {
-  const agent = clean({ ...(await getAgent(id)), ...patch });
+  const saved = await getAgent(id);
+  const agent = clean({ ...saved, ...patch });
   // Refused now, not when the agent starts: two of its extensions add the same tool.
   await extensionsOf(agent);
-  await save(id, agent);
+  await save(id, { ...agent, folder: saved.folder });
   return getAgent(id);
 }
 
@@ -85,6 +107,8 @@ export async function removeProfile(id) {
 }
 
 export const removeChat = (id) => rm(join(SESSIONS, id), { recursive: true, force: true });
+
+export const removeHome = (agent) => rm(homeOf(agent), { recursive: true, force: true });
 
 // Where the agent's profile is, for pi's command line: pi adds it to its system prompt.
 export const profilePath = (id) => join(folder(id), "agent.json");

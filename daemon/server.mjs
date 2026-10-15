@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { createAgent, getAgent, listAgents, removeChat, removeProfile, setOrder, updateAgent } from "./agents/agents.mjs";
+import { createAgent, getAgent, homeOf, listAgents, removeChat, removeHome, removeProfile, setOrder, updateAgent } from "./agents/agents.mjs";
 import { abort, activityOf, answer, compact, contextOf, prompt, restart, restartAll, skillCommands, stop, stopAll } from "./agents/runner.mjs";
 import { searchChats } from "./agents/search.mjs";
 import { earlierOf } from "./agents/sessions.mjs";
@@ -94,13 +94,15 @@ route("PUT", "/api/agents/:id", async ({ id, body }) => {
   return agent;
 });
 // Deleting an agent: its profile and routines go first, so nothing starts its pi again; then pi stops, a running
-// browser step ends and its window closes; then its chat goes, unless the user keeps it.
+// browser step ends and its window closes; then its chat and its folder go, each unless the user keeps it.
 route("DELETE", "/api/agents/:id", async ({ id, body }) => {
+  const agent = await getAgent(id);
   await removeProfile(id);
   await forgetRoutines(id);
   await stop(id);
   await closeBrowser(id);
   if (body.keepChat !== true) await removeChat(id);
+  if (body.keepFiles !== true) await removeHome(agent);
 });
 route("POST", "/api/agents/:id/message", ({ id, body }) => prompt(id, body));
 route("POST", "/api/agents/:id/abort", ({ id }) => abort(id));
@@ -136,8 +138,8 @@ const server = createServer(async (req, res) => {
     const path = url.pathname;
     guard(req, path);
     if (!path.startsWith("/api/")) return await serveUi(req, res);
-    const file = path.match(/^\/api\/files\/(.+)$/);
-    if (file && req.method === "GET") return await serveFile(res, file[1], url.searchParams.has("view"));
+    const file = path.match(/^\/api\/agents\/([^/]+)\/files\/(.+)$/);
+    if (file && req.method === "GET") return await serveFile(res, homeOf(await getAgent(file[1])), file[2], url.searchParams.has("view"));
     const stream = path.match(/^\/api\/agents\/([^/]+)\/events$/);
     if (stream && req.method === "GET") return await events(req, res, stream[1]);
     for (const { method, pattern, handler, scoped } of routes) {

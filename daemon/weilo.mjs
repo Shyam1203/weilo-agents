@@ -27,7 +27,7 @@ const BLOCKS = [
   ),
   object({ type: kind("chart"), title: str, shape: { type: "string", enum: ["bar", "line"] }, points: list(object({ label: str, value: { type: "number" } }, ["label", "value"])) }, ["type", "shape", "points"]),
   object({ type: kind("buttons"), options: list(object({ label: str, message: note("Sent as the user's reply when pressed. Defaults to the label.") }, ["label"])) }, ["type", "options"]),
-  object({ type: kind("file"), path: note("A file you made, in the workspace."), name: note("Shown instead of the file's name.") }, ["type", "path"]),
+  object({ type: kind("file"), path: note("A file you made: its path from your folder, or in full."), name: note("Shown instead of the file's name.") }, ["type", "path"]),
   object({ type: kind("page"), title: str, html: note("One complete HTML document, with its CSS and JavaScript inline.") }, ["type", "html"]),
 ];
 

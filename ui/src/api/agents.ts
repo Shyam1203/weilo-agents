@@ -18,6 +18,8 @@ export interface Agent {
   disabled: string[];
   instructions: string;
   avatar?: AvatarSpec;
+  /** Its home in the workspace, where it works: named when it was made, and kept when it is renamed. */
+  folder: string;
   /** The newest message of its conversation; `at` in seconds. */
   last?: { role: "user" | "assistant"; text: string; shown?: boolean; at: number } | null;
   /** It is in the middle of a run. */
@@ -28,7 +30,7 @@ export interface Agent {
   taken?: boolean;
 }
 
-export type AgentInput = Omit<Agent, "id" | "last" | "working" | "doing" | "taken">;
+export type AgentInput = Omit<Agent, "id" | "folder" | "last" | "working" | "doing" | "taken">;
 
 const DOING: Record<string, string> = { read: "Reading files", bash: "Running a command", edit: "Editing files", write: "Editing files", grep: "Searching files", find: "Searching files", ls: "Searching files", show: "Preparing what to show", routine: "Setting up a routine", browser: "Using the browser", memory: "Saving to memory", fetch_knowledge: "Searching knowledge", ask: "Waiting for your answer" };
 
@@ -40,5 +42,5 @@ export const createAgent = (input: AgentInput) => request<Agent>("POST", "/api/a
 export const updateAgent = (id: string, input: AgentInput) => request<Agent>("PUT", `/api/agents/${id}`, input);
 /** The agent list's order, as the user dragged it. */
 export const reorderAgents = (ids: string[]) => request("PUT", "/api/agents", { order: ids });
-/** With `keepChat` the conversation stays on disk, out of sight. */
-export const deleteAgent = (id: string, keepChat = false) => request("DELETE", `/api/agents/${id}`, { keepChat });
+/** With `keepChat` the conversation stays on disk, out of sight; with `keepFiles` its folder stays in the workspace. */
+export const deleteAgent = (id: string, keep: { keepChat: boolean; keepFiles: boolean }) => request("DELETE", `/api/agents/${id}`, keep);

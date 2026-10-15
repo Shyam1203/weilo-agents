@@ -4,6 +4,7 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 ## Unreleased
 
+- Each agent has a folder of its own in the workspace, named after it (`coder/`, `trip-planner/`), and works there: its files stay together, and what you attach goes to its `uploads/`. It can still read and use the rest of the workspace. Existing files stay where they are, shared. Deleting an agent asks whether to delete its folder too (off by default). The agent's settings show its folder.
 - A file preview for a file that was moved or deleted says so plainly, without Open in a new tab and Download buttons that could not work.
 - The chat list keeps a heading or a list line apart from the next in its preview ("Draft ready · Here is a first draft", not "Draft ready Here is").
 - Settings says each title once: no "Settings" heading over the first group, and on a phone no page heading under the bar that already names the page.

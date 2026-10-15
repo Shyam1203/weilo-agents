@@ -92,7 +92,7 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
     <Modal title={agent ? "Edit agent" : "New agent"} hidden={hidden} onClose={onClose}>
       <form onSubmit={save} className="flex flex-col gap-4">
         <AvatarPicker value={draft.avatar} onChange={(avatar) => change({ avatar })} />
-        <Field label="Name">
+        <Field label="Name" hint={agent && <>Works in its folder, <code>{agent.folder}/</code>, in the workspace.</>}>
           <input autoFocus value={draft.name} onChange={(e) => change({ name: e.target.value })} placeholder="For example: Research assistant" className="input" />
         </Field>
         <Field label="Instructions">
@@ -172,7 +172,7 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
           </Button>
         </div>
       </form>
-      {deleting && agent && <DeleteDialog name={agent.name} onDelete={(keepChat) => deleteAgent(agent.id, keepChat).then(onDeleted)} onClose={() => setDeleting(false)} />}
+      {deleting && agent && <DeleteDialog name={agent.name} folder={agent.folder} onDelete={(keep) => deleteAgent(agent.id, keep).then(onDeleted)} onClose={() => setDeleting(false)} />}
     </Modal>
   );
 }
