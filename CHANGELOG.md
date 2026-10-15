@@ -4,6 +4,7 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 ## Unreleased
 
+- Only your paired phones and computers can open the app. Being on this computer or your tailnet was enough before, and agents could reach the app that way too and change anything. The start script pairs the browser it opens; add a phone in Settings > Devices with a code. Agents' tools now call the app with a key of their own, and can only do what those tools do, for that agent.
 - Each agent has a folder of its own in the workspace, named after it (`coder/`, `trip-planner/`), and works there: its files stay together, and what you attach goes to its `uploads/`. It can still read and use the rest of the workspace. Existing files stay where they are, shared. Deleting an agent asks whether to delete its folder too (off by default). The agent's settings show its folder.
 - A file preview for a file that was moved or deleted says so plainly, without Open in a new tab and Download buttons that could not work.
 - The chat list keeps a heading or a list line apart from the next in its preview ("Draft ready · Here is a first draft", not "Draft ready Here is").

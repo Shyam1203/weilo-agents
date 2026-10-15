@@ -39,6 +39,9 @@ until curl -fs "$url" >/dev/null 2>&1; do
   sleep 1
 done
 
+# A link that pairs this browser (a code that works for 10 minutes); an already paired browser just opens the app.
+pair=$(docker exec weilo-core node /app/pair.mjs 2>/dev/null) && url=$pair
+
 case "$(uname)" in
   Darwin) open "$url" ;;
   *) xdg-open "$url" >/dev/null 2>&1 || echo "Open $url" ;;

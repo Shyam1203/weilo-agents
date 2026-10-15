@@ -51,5 +51,8 @@ timeout /t 1 /nobreak >nul
 goto wait
 
 :open
-echo Ready. Opening http://localhost:3210
-start http://localhost:3210
+rem A link that pairs this browser (a code that works for 10 minutes); an already paired browser just opens the app.
+set url=http://localhost:3210
+for /f "delims=" %%l in ('docker exec weilo-core node /app/pair.mjs 2^>nul') do set url=%%l
+echo Ready. Opening Weilo Agents
+start "" "%url%"

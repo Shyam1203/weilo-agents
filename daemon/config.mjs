@@ -11,6 +11,18 @@ export const PORT = 3210;
 // Largest request body, in characters: a message with the UI's most images and files, which travel as base64.
 export const MAX_BODY = 64e6;
 
+// --- Devices (http/access.mjs) ----------------------------------------------------------------
+
+// A pairing code works this long (ms). After this many wrong codes in that time, pairing waits until it has passed.
+export const PAIR_CODE_MS = 10 * MINUTE;
+export const PAIR_WRONG_CODES = 10;
+// How long a paired device stays paired without being used (s; a browser keeps a cookie at most 400 days), and how
+// often its last use is written down (ms).
+export const DEVICE_COOKIE_S = 400 * 24 * 60 * 60;
+export const DEVICE_SEEN_MS = 60 * MINUTE;
+// Where a pairing code is asked for from inside the container (pair.mjs): a socket in a folder only the daemon's user can open.
+export const ADMIN_SOCKET = "/tmp/weilo-admin/admin.sock";
+
 // --- The app (contact.mjs, update.mjs) --------------------------------------------------------
 
 // Where "Contact us" sends a message (weilo-api, which passes it on to Weilo), and the longest wait for it (ms).

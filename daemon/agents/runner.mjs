@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fail, PI_ENV, SESSIONS } from "../common.mjs";
+import { agentKey, dropAgentKey } from "../http/access.mjs";
 import { CORE_TOOLS, IDLE_MS, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
 import { askBefore } from "../browser/rule.mjs";
 import { memoryFlags } from "../memory/memory.mjs";
@@ -38,6 +39,7 @@ const close = (run) => {
   if (runs.get(run.id) === run) runs.delete(run.id);
   clearTimeout(run.timer);
   run.pi?.close();
+  if (run.key) dropAgentKey(run.key);
 };
 
 const touch = (run) => {
@@ -93,10 +95,12 @@ async function start(run) {
   const [ask, skills, plugins, extensions, user, memory] = await Promise.all([askBefore(), skillPaths(agent.skills), pluginTools(agent.plugins), extensionsOf(agent), userFlags(), memoryFlags()]);
   const argv = argvOf(agent, skills, plugins, extensions, [...user, ...memory]);
   await Promise.all([makeScratch(run.id), makeHome(agent)]);
+  // The key its tools call the daemon with (tool.mjs): the daemon knows the agent by it.
+  run.key = agentKey(run.id);
   run.done = new Promise((resolve) => {
     run.pi = spawnPi(argv, {
       cwd: homeOf(agent),
-      env: { ...PI_ENV, WEILO_AGENT: run.id, WEILO_API: `http://127.0.0.1:${PORT}/api`, WEILO_ASK_BEFORE: ask, WEILO_SCRATCH: scratchOf(run.id) },
+      env: { ...PI_ENV, WEILO_AGENT: run.id, WEILO_API: `http://127.0.0.1:${PORT}/api`, WEILO_KEY: run.key, WEILO_ASK_BEFORE: ask, WEILO_SCRATCH: scratchOf(run.id) },
       onEvent(event) {
         if (event.type === "agent_start") (run.busy = true), (run.reply = null);
         if (event.type === "message_end" && event.message?.role === "assistant") run.reply = event.message;

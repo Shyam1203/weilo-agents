@@ -12,7 +12,7 @@ container serves the UI and runs pi. All user data is one host folder, `~/.weilo
 | Data | `~/.weilo-agents` mounted at `/home/node/.pi`. Copy it to move machines. |
 | Providers | No setup page. No provider yet: composer disabled, "Add a provider" opens Settings. Keys only. The agent form picks the first connected provider, but the model is always yours to choose. A connected provider has Models and Edit key (the same field replaces the key). Settings lists the connected providers first (In use), then the rest (Add another). |
 | Agents | Lean profiles: a folder with one file, `agent.json`, which holds the instructions too. Shared pi config. Each agent is one continuous conversation (messenger style): no chat list, no titles. |
-| Network | No token. Port on `127.0.0.1` only, plus `Host`, `Origin` and `Sec-Fetch-Site` checks; no other site may frame the app. |
+| Network | Port on `127.0.0.1` only, plus `Host`, `Origin` and `Sec-Fetch-Site` checks; no other site may frame the app. Every API call also needs a paired device's cookie or an agent's key (Access below). |
 | User | Non-root `node` (uid 1000). Agent installs (`npm -g`, `pip --user`) persist in volume `tools`. `start.sh` makes `~/.weilo-agents` first, so Docker does not make it as root. |
 | Names | Stack `weilo-agents`, container `weilo-core`, image `ghcr.io/shyam1203/weilo-agents:<version>`. |
 | Versions | One `VERSION` file (SemVer). The image build takes `VERSION` and `COMMIT` as build arguments and keeps them as `WEILO_VERSION`, `WEILO_COMMIT` and `WEILO_PI` (`daemon/version.mjs`, `GET /api/version`, Settings > About) and as OCI labels. A `v*` tag runs `.github/workflows/release.yml`: it builds amd64 and arm64, pushes the image and publishes a release with a zip (`compose.yaml`, start and update scripts, `VERSION`). The start scripts set `WEILO_VERSION` from `VERSION`, pull that image, and build only if the pull fails. The data folder has `weilo.json` `{dataVersion, version}` (`daemon/migrate.mjs`): older data is brought up by ordered steps at start, newer data stops the start with a message. See `docs/RELEASING.md`. |
@@ -148,11 +148,24 @@ plugin changes (so the change applies: at once if idle, else when the run ends; 
 reconnect to the new pi). A message during a run is queued into it (`steer`). Split RPC lines
 on LF only (not Node `readline`).
 
-**Access:** no login. The port is published on `127.0.0.1` only, and the daemon rejects
+**Access:** the port is published on `127.0.0.1` only, and the daemon rejects
 requests with an unexpected `Host` or `Origin`, and anything another site loads from it
 (`Sec-Fetch-Site`; a plain link still opens the app). This blocks other websites and DNS rebinding.
-Other programs running as the same user are not blocked; add a token if that ever matters.
-**Remote use:** the host may also be a Tailscale name (`*.ts.net`), and an `https://` origin of the same host is accepted. On the host, `tailscale serve --bg 3210` forwards the tailnet's HTTPS address to the published port, so the port itself stays on `127.0.0.1`. Anyone on the tailnet can then use the app; there is still no login.
+Being on this computer is not enough, though: an agent in the container reaches the published port too (Docker passes
+`host.docker.internal:3210` on to it), with any `Host` it likes. So the daemon knows who calls (`http/access.mjs`):
+- **Paired devices.** A browser pairs once with an 8-character code (40 bits; 10 minutes; one use; 10 wrong codes in 10
+  minutes stop pairing for 10 minutes) and gets a random key as an `HttpOnly`, `SameSite=Strict` cookie (`Secure` on a
+  `.ts.net` host), kept for 400 days. `agent/devices.json` holds each device's name, dates and the key's SHA-256, never
+  the key. Codes live in the daemon's memory. A paired device makes one in Settings > Devices; the first one comes from
+  `pair.mjs` (`docker exec weilo-core node /app/pair.mjs`), which asks the daemon over a unix socket in a folder only the
+  daemon's user can open (`/tmp/weilo-admin/`) and prints a `/?pair=<code>` link. The start scripts open that link.
+  `POST /api/pair` `{code}` is the only API call without a cookie; any other gets 401 `{pair: true}`, and the UI shows
+  its pairing screen. The static UI itself is public.
+- **Agents.** Each pi gets a random key when it starts (`WEILO_KEY`, dropped when it stops); its tools send it as
+  `Authorization: Bearer` (`tool.mjs`). With it a pi may only call the routes of its own tools (`agentRoute` in
+  `server.mjs`: browser, skill, memory, fetch_knowledge, routines), for itself; anything else is 403.
+
+**Remote use:** the host may also be a Tailscale name (`*.ts.net`), and an `https://` origin of the same host is accepted. On the host, `tailscale serve --bg 3210` forwards the tailnet's HTTPS address to the published port, so the port itself stays on `127.0.0.1`. A phone on the tailnet still has to be paired.
 
 **Files** (`daemon/`, copied to `/app` in the image; Node built-ins only, plain relative imports):
 
@@ -164,7 +177,8 @@ weilo.mjs           the pi extension (`-e /app/weilo.mjs`): show, ask
 tool.mjs            what the bundled extensions share: the API call and the tool helper
 version.mjs         what this build is (version, commit, pi), from the image's environment
 migrate.mjs         brings the data folder to this app's data version at start (weilo.json)
-http/               request.mjs (Host/Origin checks, JSON body and reply), static.mjs (the UI),
+pair.mjs            prints a link that pairs a browser (asks the daemon over its admin socket)
+http/               request.mjs (Host/Origin checks, JSON body and reply), access.mjs (paired devices, agents' keys), static.mjs (the UI),
                     events.mjs (SSE), files.mjs (workspace files)
 agents/             agents.mjs (profiles), runner.mjs (pi processes), pi.mjs (spawn and RPC framing),
                     sessions.mjs (chat files and their messages, newest message for the list), uploads.mjs (attachments)

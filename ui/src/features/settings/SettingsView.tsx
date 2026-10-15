@@ -17,6 +17,7 @@ import { BrowserSettings } from "../browser/BrowserSettings";
 import { ExtensionsPage } from "../extensions/ExtensionsPage";
 import { MemoryPage } from "../memory/MemoryPage";
 import { PluginsPage } from "../plugins/PluginsPage";
+import { DevicesPage } from "./DevicesPage";
 import { SkillsPage } from "../skills/SkillsPage";
 import { AboutYouForm } from "../user/AboutYouForm";
 import { AboutPage } from "./AboutPage";
@@ -24,7 +25,7 @@ import { NotificationsPage } from "./NotificationsPage";
 import { Appearance } from "./Appearance";
 import { ProvidersPage } from "./ProvidersPage";
 
-export type SettingsPage = "providers" | "notifications" | "you" | "memory" | "browser" | "appearance" | "about" | "skills" | "plugins" | "extensions";
+export type SettingsPage = "providers" | "devices" | "notifications" | "you" | "memory" | "browser" | "appearance" | "about" | "skills" | "plugins" | "extensions";
 
 // The first group has no heading: the page is already called Settings.
 const MENU: { group: string; pages: { value: SettingsPage; label: string; icon: IconName }[] }[] = [
@@ -32,6 +33,7 @@ const MENU: { group: string; pages: { value: SettingsPage; label: string; icon: 
     group: "",
     pages: [
       { value: "providers", label: "Providers", icon: "key" },
+      { value: "devices", label: "Devices", icon: "devices" },
       { value: "notifications", label: "Notifications", icon: "bell" },
       { value: "you", label: "About you", icon: "user" },
       { value: "memory", label: "Memory", icon: "brain" },
@@ -134,6 +136,8 @@ export function SettingsView({ page: first, agents, providers, skills, plugins, 
             <div className="mx-auto w-full max-w-2xl">
               {page === "providers" ? (
                 <ProvidersPage providers={providers} models={models} onChange={onChange} onModels={onModels} />
+              ) : page === "devices" ? (
+                <DevicesPage />
               ) : page === "notifications" ? (
                 <NotificationsPage agents={agents} />
               ) : page === "you" ? (

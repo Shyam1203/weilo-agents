@@ -1,4 +1,7 @@
+import { mkdirSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
+import { createServer as createSocketServer } from "node:net";
+import { dirname } from "node:path";
 import { createAgent, getAgent, homeOf, listAgents, removeChat, removeHome, removeProfile, setOrder, updateAgent } from "./agents/agents.mjs";
 import { abort, activityOf, answer, compact, contextOf, prompt, restart, restartAll, skillCommands, stop, stopAll } from "./agents/runner.mjs";
 import { searchChats } from "./agents/search.mjs";
@@ -8,8 +11,9 @@ import { closeBrowser, giveBack, hasWindow, isTaken, showBrowser, takeOver, useB
 import { getRule, saveRule } from "./browser/rule.mjs";
 import { startScreen, viewUpgrade } from "./browser/screen.mjs";
 import { fail } from "./common.mjs";
-import { PORT } from "./config.mjs";
+import { ADMIN_SOCKET, PORT } from "./config.mjs";
 import { sendContact } from "./contact.mjs";
+import { cookieFor, identify, newCode, pair, pairedDevices, unpair } from "./http/access.mjs";
 import { events } from "./http/events.mjs";
 import { serveFile } from "./http/files.mjs";
 import { bodyOf, guard, reply } from "./http/request.mjs";
@@ -29,11 +33,13 @@ import { getUser, saveUser } from "./settings/user.mjs";
 import { setUpdateCheck, updateStatus } from "./update.mjs";
 import { BUILD } from "./version.mjs";
 
-// JSON API. A handler gets the request as { id, rid (the path's ids), body, query, headers } and returns the reply; no reply
-// means 204.
+// JSON API. A handler gets the request as { id, rid (the path's ids), body, query, headers, who } and returns the reply; no
+// reply means 204. Paired devices may use every route; an agent's pi (`who.agent`) only the routes of its own tools
+// (`forAgent`), for itself.
 const routes = [];
-const route = (method, path, handler) =>
-  routes.push({ method, handler, scoped: path.startsWith("/api/agents/:id"), pattern: new RegExp(`^${path.replace(":id", "([^/]+)").replace(":rid", "([^/]+)")}$`) });
+const route = (method, path, handler, { forAgent = false } = {}) =>
+  routes.push({ method, handler, forAgent, scoped: path.startsWith("/api/agents/:id"), pattern: new RegExp(`^${path.replace(":id", "([^/]+)").replace(":rid", "([^/]+)")}$`) });
+const agentRoute = (method, path, handler) => route(method, path, handler, { forAgent: true });
 
 // A change every agent's pi reads when it starts (skills, plugins, extensions, what it knows about you, memory, the browser
 // rule): agents start their pi anew once it is saved.
@@ -44,6 +50,9 @@ const forAll = (change) => async (req) => {
 };
 
 route("GET", "/api/version", () => BUILD);
+route("GET", "/api/devices", ({ who }) => pairedDevices(who.device));
+route("POST", "/api/devices/code", () => newCode());
+route("DELETE", "/api/devices/:id", ({ id }) => unpair(id));
 route("GET", "/api/update", () => updateStatus());
 route("PUT", "/api/update", ({ body }) => setUpdateCheck(body));
 route("POST", "/api/contact", ({ body }) => sendContact(body));
@@ -112,25 +121,25 @@ route("GET", "/api/agents/:id/context", ({ id }) => contextOf(id));
 route("GET", "/api/agents/:id/earlier", ({ id, query }) => earlierOf(id, Math.max(0, Number(query.get("skip")) || 0)));
 route("POST", "/api/agents/:id/reload", ({ id }) => restart(id));
 route("POST", "/api/agents/:id/compact", ({ id, body }) => compact(id, body.instructions));
-route("POST", "/api/agents/:id/browser", async ({ id, body }) => ({ text: await useBrowser(id, body) }));
+agentRoute("POST", "/api/agents/:id/browser", async ({ id, body }) => ({ text: await useBrowser(id, body) }));
 route("GET", "/api/agents/:id/browser", async ({ id }) => ({ taken: isTaken(id), hasWindow: await hasWindow(id) }));
 route("POST", "/api/agents/:id/browser/show", ({ id }) => showBrowser(id));
 route("POST", "/api/agents/:id/browser/take-over", ({ id }) => takeOver(id));
 route("POST", "/api/agents/:id/browser/give-back", ({ id }) => giveBack(id));
 // An agent's `skill` tool: the skill goes into the library and is switched on for that agent, which reads it when its run ends.
-route("POST", "/api/agents/:id/skill", async ({ id, body }) => {
+agentRoute("POST", "/api/agents/:id/skill", async ({ id, body }) => {
   const { id: skill, folder } = await saveSkill(body);
   const agent = await getAgent(id);
   await updateAgent(id, { skills: [...new Set([...agent.skills, skill])] });
   await restart(id);
   return { text: `Saved the skill "${skill}" in ${folder}/ (put any scripts or other files it needs there). It is on for you and loads when this reply ends. It shows under Skills in Settings.` };
 });
-route("POST", "/api/agents/:id/memory", async ({ body }) => ({ text: await useMemory(body) }));
-route("POST", "/api/agents/:id/fetch_knowledge", async ({ body }) => ({ text: await fetchKnowledge(body) }));
-route("GET", "/api/agents/:id/routines", async ({ id, headers }) => (await noteZone(headers["x-timezone"]), listRoutines(id)));
-route("POST", "/api/agents/:id/routines", ({ id, body, headers }) => addRoutine(id, body, headers["x-timezone"]));
-route("PUT", "/api/agents/:id/routines/:rid", ({ id, rid, body }) => updateRoutine(id, rid, body));
-route("DELETE", "/api/agents/:id/routines/:rid", ({ id, rid }) => removeRoutine(id, rid));
+agentRoute("POST", "/api/agents/:id/memory", async ({ body }) => ({ text: await useMemory(body) }));
+agentRoute("POST", "/api/agents/:id/fetch_knowledge", async ({ body }) => ({ text: await fetchKnowledge(body) }));
+agentRoute("GET", "/api/agents/:id/routines", async ({ id, headers }) => (await noteZone(headers["x-timezone"]), listRoutines(id)));
+agentRoute("POST", "/api/agents/:id/routines", ({ id, body, headers }) => addRoutine(id, body, headers["x-timezone"]));
+agentRoute("PUT", "/api/agents/:id/routines/:rid", ({ id, rid, body }) => updateRoutine(id, rid, body));
+agentRoute("DELETE", "/api/agents/:id/routines/:rid", ({ id, rid }) => removeRoutine(id, rid));
 
 const server = createServer(async (req, res) => {
   try {
@@ -138,17 +147,26 @@ const server = createServer(async (req, res) => {
     const path = url.pathname;
     guard(req, path);
     if (!path.startsWith("/api/")) return await serveUi(req, res);
+    // Pairing is the one call a browser makes before it is paired: a right code gets it its key, as a cookie.
+    if (path === "/api/pair" && req.method === "POST") {
+      const token = await pair((await bodyOf(req)).code, req.headers["user-agent"]);
+      res.setHeader("Set-Cookie", cookieFor(token, req.headers.host));
+      return reply(res, 204);
+    }
+    const who = await identify(req);
+    if (!who) return reply(res, 401, { error: "Pair this device to use Weilo Agents.", pair: true });
     const file = path.match(/^\/api\/agents\/([^/]+)\/files\/(.+)$/);
-    if (file && req.method === "GET") return await serveFile(res, homeOf(await getAgent(file[1])), file[2], url.searchParams.has("view"));
+    if (file && req.method === "GET" && who.device) return await serveFile(res, homeOf(await getAgent(file[1])), file[2], url.searchParams.has("view"));
     const stream = path.match(/^\/api\/agents\/([^/]+)\/events$/);
-    if (stream && req.method === "GET") return await events(req, res, stream[1]);
-    for (const { method, pattern, handler, scoped } of routes) {
+    if (stream && req.method === "GET" && who.device) return await events(req, res, stream[1]);
+    for (const { method, pattern, handler, scoped, forAgent } of routes) {
       const match = req.method === method && path.match(pattern);
       if (!match) continue;
       const [, id, rid] = match;
+      if (who.agent && !(forAgent && id === who.agent)) throw fail(403, "Not permitted");
       // A route for an agent only accepts one that exists.
       if (scoped) await getAgent(id);
-      const result = await handler({ id, rid, body: await bodyOf(req), query: url.searchParams, headers: req.headers });
+      const result = await handler({ id, rid, body: await bodyOf(req), query: url.searchParams, headers: req.headers, who });
       return result === undefined ? reply(res, 204) : reply(res, 200, result);
     }
     throw fail(404, "Not found");
@@ -159,15 +177,22 @@ const server = createServer(async (req, res) => {
   }
 });
 
-// The screen's live view is a WebSocket, with the same checks as the API.
-server.on("upgrade", (req, socket, head) => {
+// The screen's live view is a WebSocket, for paired devices, with the same checks as the API.
+server.on("upgrade", async (req, socket, head) => {
   try {
     const path = new URL(req.url, "http://localhost").pathname;
     guard(req, path);
-    if (path === "/api/browser/view" && viewUpgrade(req, socket, head)) return;
+    if (path === "/api/browser/view" && (await identify(req))?.device && viewUpgrade(req, socket, head)) return;
   } catch {}
   socket.destroy();
 });
+
+// A pairing code for whoever can open the admin socket (pair.mjs, run in the container: `docker exec weilo-core node
+// /app/pair.mjs`). Its folder is the daemon user's alone.
+rmSync(dirname(ADMIN_SOCKET), { recursive: true, force: true });
+mkdirSync(dirname(ADMIN_SOCKET), { recursive: true, mode: 0o700 });
+createSocketServer((socket) => socket.end(`${newCode().code}
+`)).listen(ADMIN_SOCKET);
 
 // The data folder is brought to this app's shape before anything reads it; one made by a newer app stops the start.
 try {

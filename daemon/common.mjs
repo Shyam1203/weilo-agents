@@ -34,6 +34,8 @@ export const PUSH = join(AGENT_DIR, "push.json");
 // pi's model settings, and this installation's id (some providers' sign-in names the device).
 export const MODELS = join(AGENT_DIR, "models.json");
 export const INSTALL = join(AGENT_DIR, "install.json");
+// The paired devices: the browsers that may use the app (http/access.mjs).
+export const DEVICES = join(AGENT_DIR, "devices.json");
 
 // Keys, tokens, passwords and card numbers are never saved, in a note or in a page of the vault. A false alarm costs a retry (a note) or replaces the line (a page).
 export const SECRET =
