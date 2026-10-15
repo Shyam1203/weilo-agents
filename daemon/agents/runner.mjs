@@ -3,7 +3,7 @@ import { basename, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EXTENSIONS, fail } from "../common.mjs";
 import { agentKey, dropAgentKey } from "../http/access.mjs";
-import { BIN, CORE_TOOLS, IDLE_MS, PI_BUILTINS, PI_TOOLS, PORT, SHARED_TOOLS } from "../config.mjs";
+import { BIN, CORE_TOOLS, IDLE_MS, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
 import { askBefore } from "../browser/rule.mjs";
 import { memoryFlags } from "../memory/memory.mjs";
 import { pointOf } from "../settings/compaction.mjs";
@@ -13,7 +13,7 @@ import { skillPaths } from "../settings/skills.mjs";
 import { userFlags } from "../settings/user.mjs";
 import { notify } from "../push.mjs";
 import { ownTools, sharedTools } from "../users.mjs";
-import { chatDirOf, getAgent, homeOf, isIsolated, makeHome, profilePath, userHomeOf, userOf } from "./agents.mjs";
+import { chatDirOf, getAgent, homeOf, isIsolated, makeHome, mayCall, profilePath, userHomeOf, userOf } from "./agents.mjs";
 import { piDirOf, writePiDir } from "./pidir.mjs";
 import { spawnPi } from "./pi.mjs";
 import { asTyped } from "./sessions.mjs";
@@ -59,10 +59,10 @@ const touch = (run) => {
 // Our extensions: the chat's tools, for every agent, and memory's, for every agent but an isolated one.
 const [WEILO, MEMORY] = ["../weilo.mjs", "../memory/extension.mjs"].map((path) => fileURLToPath(new URL(path, import.meta.url)));
 
-// The tools an agent may call, as pi's allowlist: pi's built-in ones, our tools (an isolated agent's without those of what all
-// agents share), its extensions' and its plugins'. With no plugin, MCP is off.
+// The tools an agent may call, as pi's allowlist: pi's built-in ones, our tools that its routes accept (`mayCall`: an
+// isolated agent's without those of what all agents share), its extensions' and its plugins'. With no plugin, MCP is off.
 const toolsFlags = (agent, plugins, extensions) => {
-  const tools = [...PI_TOOLS, ...CORE_TOOLS.filter((t) => !isIsolated(agent) || !SHARED_TOOLS.includes(t)), ...extensions.flatMap((e) => e.tools)];
+  const tools = [...PI_TOOLS, ...CORE_TOOLS.filter((t) => mayCall(agent, t)), ...extensions.flatMap((e) => e.tools)];
   return plugins.length ? ["--tools", [...tools, "codemode", ...plugins].join(",")] : ["--no-mcp", "--tools", tools.join(",")];
 };
 

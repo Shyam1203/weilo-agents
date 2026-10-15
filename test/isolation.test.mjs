@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { chatDirOf, filesOf, homeOf, isIsolated, mayCall, userHomeOf, userOf } from "../daemon/agents/agents.mjs";
 import { ISOLATED, ISOLATED_SESSIONS, SESSIONS, WORKSPACE, HOMES } from "../daemon/common.mjs";
-import { AGENTS_GID } from "../daemon/config.mjs";
+import { AGENTS_GID, CORE_TOOLS } from "../daemon/config.mjs";
 
 const regular = { id: "coder-a1b2c3", folder: "coder", uid: 2001, disabled: [], isolated: false };
 const isolated = { id: "diary-d4e5f6", folder: "diary", uid: 2002, disabled: ["browser"], isolated: true };
@@ -39,6 +39,13 @@ test("an isolated agent may not call the tools of what all agents share", () => 
     assert.equal(mayCall(isolated, tool), false, tool);
   }
   for (const tool of ["manage_agents", "model"]) assert.equal(mayCall(isolated, tool), true, tool);
+});
+
+test("pi offers an agent exactly our tools it may call", () => {
+  // runner.mjs builds the --tools list from `mayCall`: none of our tools is a bundled extension's, so only the shared ones go.
+  assert.deepEqual(CORE_TOOLS.filter((t) => mayCall(regular, t)), ["show", "ask", "manage_agents", "skill", "memory", "fetch_knowledge", "manage_settings"]);
+  assert.deepEqual(CORE_TOOLS.filter((t) => mayCall(isolated, t)), ["show", "ask", "manage_agents"]);
+  assert.deepEqual(CORE_TOOLS.filter((t) => mayCall({ ...isolated, disabled: [] }, t)), ["show", "ask", "manage_agents"]);
 });
 
 test("an isolated agent reaches a bundled extension's routes only while it has it on", () => {
