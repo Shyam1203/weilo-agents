@@ -139,6 +139,8 @@ async function start(run) {
       env: {
         ...kind.env, PI_CODING_AGENT_DIR: dir, HOME: userHomeOf(agent),
         WEILO_AGENT: run.id, WEILO_API: `http://127.0.0.1:${PORT}/api`, WEILO_KEY: run.key, WEILO_ASK_BEFORE: ask, WEILO_SCRATCH: scratchOf(run.id),
+        // The tools say what an isolated agent may ask for (weilo.mjs).
+        ...(isIsolated(agent) && { WEILO_ISOLATED: "1" }),
       },
       onEvent(event) {
         if (event.type === "agent_start") (run.busy = true), (run.reply = null);

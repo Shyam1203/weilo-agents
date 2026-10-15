@@ -29,7 +29,8 @@ export const call = (method, path, body, signal) =>
     req.end(body && JSON.stringify(body));
   });
 
-// A tool that posts its arguments to /agents/<this agent>/<name> and returns the `text` of the answer.
+// A tool that posts its arguments to /agents/<this agent>/<name> and returns the `text` of the answer, and its `details`
+// for the chat (a line it shows, such as a change the agent made).
 export const daemonTool = (pi, name, label, description, parameters, required) =>
   pi.registerTool({
     name,
@@ -37,10 +38,7 @@ export const daemonTool = (pi, name, label, description, parameters, required) =
     description,
     parameters: object(parameters, required),
     async execute(_id, args, signal) {
-      const text = await call("POST", `/agents/${process.env.WEILO_AGENT}/${name}`, args, signal).then(
-        (data) => data.text,
-        (err) => `Could not do that: ${err.message}`,
-      );
-      return { content: [{ type: "text", text }] };
+      const { text, details } = await call("POST", `/agents/${process.env.WEILO_AGENT}/${name}`, args, signal).catch((err) => ({ text: `Could not do that: ${err.message}` }));
+      return { content: [{ type: "text", text }], details };
     },
   });

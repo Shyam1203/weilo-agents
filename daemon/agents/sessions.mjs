@@ -95,9 +95,9 @@ async function* linesOf(file) {
 }
 
 // What the chat shows of an earlier message: your messages and the agent's without its thinking (never shown), and of the
-// tools' results only the answers to its questions and what a routine did (the rest, such as a browser's screenshots, is
-// what makes a chat file large).
-const shown = (m) => m?.role === "user" || m?.role === "assistant" || (m?.role === "toolResult" && (m.toolName === "ask" || m.toolName === "routine"));
+// tools' results only the answers to its questions and what a routine or a change it was always allowed did (the rest,
+// such as a browser's screenshots, is what makes a chat file large).
+const shown = (m) => m?.role === "user" || m?.role === "assistant" || (m?.role === "toolResult" && ["ask", "routine", "manage_agents"].includes(m.toolName));
 const slim = (m) => (Array.isArray(m.content) && m.role === "assistant" ? { ...m, content: m.content.filter((b) => b.type !== "thinking") } : m);
 
 /**
