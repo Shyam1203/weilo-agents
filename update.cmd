@@ -1,7 +1,5 @@
 @echo off
-rem Update Weilo Agents to the newest release, then start it. Your chats and settings stay (they are in your .weilo-agents folder).
 if /i not "%~1"=="run" (
-  rem Run from a copy: this file is replaced during the update, and cmd reads a script as it runs.
   copy /y "%~f0" "%TEMP%\weilo-update.cmd" >nul
   "%TEMP%\weilo-update.cmd" run "%~dp0"
   exit /b

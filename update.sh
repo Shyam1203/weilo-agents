@@ -1,6 +1,4 @@
 #!/bin/sh
-# Update Weilo Agents to the newest release, then start it. Your chats and settings stay (they are in ~/.weilo-agents).
-# The body is a function and the file ends with `exit`: this file is replaced during the update, and a shell reads a script as it runs.
 main() {
   cd "$(dirname "$0")" || exit 1
 

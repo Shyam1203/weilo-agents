@@ -1,5 +1,4 @@
 @echo off
-rem Start Weilo Agents and open it in the browser.
 cd /d "%~dp0"
 
 if not exist compose.yaml (
@@ -16,7 +15,6 @@ if errorlevel 1 (
   exit /b 1
 )
 
-rem The released image for this version (the VERSION file); built here only if it cannot be pulled.
 if exist VERSION set /p WEILO_VERSION=<VERSION
 echo Getting Weilo Agents %WEILO_VERSION%. The first time this downloads the app and can take a few minutes.
 docker compose pull
@@ -51,7 +49,6 @@ timeout /t 1 /nobreak >nul
 goto wait
 
 :open
-rem A link that pairs this browser (a code that works for 10 minutes); an already paired browser just opens the app.
 set url=http://localhost:3210
 for /f "delims=" %%l in ('docker exec weilo-core node /app/pair.mjs 2^>nul') do set url=%%l
 echo Ready. Opening Weilo Agents
