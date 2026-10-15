@@ -22,8 +22,9 @@ import { NotificationsPage } from "./NotificationsPage";
 import { Appearance } from "./Appearance";
 import { ProvidersPage } from "./ProvidersPage";
 import { SecurityPage } from "./SecurityPage";
+import { UsagePage } from "./UsagePage";
 
-export type SettingsPage = "you" | "memory" | "providers" | "skills" | "plugins" | "extensions" | "browser" | "security" | "general";
+export type SettingsPage = "you" | "memory" | "providers" | "usage" | "skills" | "plugins" | "extensions" | "browser" | "security" | "general";
 
 const MENU: { group: string; pages: { value: SettingsPage; label: string; icon: IconName }[] }[] = [
   {
@@ -35,7 +36,10 @@ const MENU: { group: string; pages: { value: SettingsPage; label: string; icon: 
   },
   {
     group: "Models",
-    pages: [{ value: "providers", label: "Providers", icon: "key" }],
+    pages: [
+      { value: "providers", label: "Providers", icon: "key" },
+      { value: "usage", label: "Usage", icon: "chart" },
+    ],
   },
   {
     group: "What agents can use",
@@ -133,6 +137,8 @@ export function SettingsView({ page: first, agents, providers, skills, plugins, 
             <div className="mx-auto w-full max-w-2xl">
               {page === "providers" ? (
                 <ProvidersPage providers={providers} models={models} onChange={onChange} onModels={onModels} />
+              ) : page === "usage" ? (
+                <UsagePage agents={agents} />
               ) : page === "security" ? (
                 <Sections>
                   <DevicesPage section />

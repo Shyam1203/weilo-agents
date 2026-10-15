@@ -7,7 +7,7 @@ import { agentKey, dropAgentKey } from "../http/access.mjs";
 import { BIN, CORE_TOOLS, IDLE_MS, MAX_APPROVAL, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
 import { audit } from "../audit.mjs";
 import { askBefore } from "../browser/rule.mjs";
-import { addUsage, tokensOf, usageToday } from "./usage.mjs";
+import { addUsage, usageToday } from "./usage.mjs";
 import { memoryFlags } from "../memory/memory.mjs";
 import { pointOf } from "../settings/compaction.mjs";
 import { extensionsOf } from "../settings/extensions.mjs";
@@ -100,7 +100,7 @@ function tell(run) {
 const overLimit = (agent) => `${agent.name} used its ${agent.dailyTokens} tokens for today. Raise its daily limit in its settings, or wait until tomorrow.`;
 
 async function charge(run, usage) {
-  const used = await addUsage(run.id, tokensOf(usage));
+  const used = await addUsage(run.id, usage);
   const agent = await getAgent(run.id);
   if (agent.dailyTokens && used >= agent.dailyTokens && run.busy) {
     await run.pi.send("abort").catch(() => {});

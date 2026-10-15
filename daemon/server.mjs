@@ -6,14 +6,14 @@ import { createAgent, filesOf, getAgent, isIsolated, mayCall, profiles, listAgen
 import { abort, activityOf, answer, askUser, compact, contextOf, holding, prompt, restart, restartAll, skillCommands, stop, stopAll } from "./agents/runner.mjs";
 import { askAgent, manageAgents } from "./agents/manage.mjs";
 import { searchChats } from "./agents/search.mjs";
-import { usageToday } from "./agents/usage.mjs";
+import { usageHistory, usageToday } from "./agents/usage.mjs";
 import { earlierOf } from "./agents/sessions.mjs";
 import { clearScratch } from "./agents/workspace.mjs";
 import { closeBrowser, giveBack, hasWindow, isTaken, showBrowser, takeOver, useBrowser } from "./browser/browser.mjs";
 import { getRule, saveRule } from "./browser/rule.mjs";
 import { cdpUpgrade, isCdpPath, startScreen, viewUpgrade } from "./browser/screen.mjs";
 import { fail } from "./common.mjs";
-import { ADMIN_SOCKET, PORT, SANDBOX_API, SANDBOX_DIR, SYSTEM_PATH } from "./config.mjs";
+import { ADMIN_SOCKET, PORT, SANDBOX_API, SANDBOX_DIR, SYSTEM_PATH, USAGE_SHOWN } from "./config.mjs";
 import { sendContact } from "./contact.mjs";
 import { providerOf, proxyModel } from "./gateway/models.mjs";
 import { pipePlugin, pluginOf, proxyPlugin } from "./gateway/plugins.mjs";
@@ -60,6 +60,7 @@ const forAll = (change) => async (req) => {
 
 route("GET", "/api/version", () => BUILD);
 route("GET", "/api/security", () => securityReport());
+route("GET", "/api/usage", () => usageHistory(USAGE_SHOWN));
 route("GET", "/api/devices", ({ who }) => pairedDevices(who.device));
 route("POST", "/api/devices/code", () => newCode());
 route("DELETE", "/api/devices/:id", ({ id }) => unpair(id));

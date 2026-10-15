@@ -29,6 +29,8 @@ export const PUSH_TIMEOUT_MS = 10_000;
 export const PUSH_BODY_CHARS = 180;
 
 export const STALE_DEVICE_DAYS = 90;
+export const USAGE_DAYS = 31;
+export const USAGE_SHOWN = 14;
 
 export const BROWSER_UID = 1000;
 export const CURATOR_UID = 1100;
