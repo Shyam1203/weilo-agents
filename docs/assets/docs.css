@@ -120,7 +120,7 @@ td.p { background: var(--amber-bg); color: var(--amber); }
 /* Figures: SVG diagrams keep their size and scroll sideways on a narrow screen */
 figure { margin: 16px 0; }
 .fig { overflow-x: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
-.fig svg { display: block; width: 100%; height: auto; min-width: 560px; max-width: 860px; margin: 0 auto; }
+.fig svg { display: block; width: 100%; height: auto; min-width: 640px; max-width: 860px; margin: 0 auto; }
 .fig.narrow svg { min-width: 360px; max-width: 520px; }
 figcaption { color: var(--muted); font-size: .88rem; margin-top: 6px; }
 svg text { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; fill: var(--ink); }

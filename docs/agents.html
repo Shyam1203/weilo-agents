@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Regular, isolated and trusted agents, their tools, add-ons and requests.">
+<title>Agents and Access</title>
+<link rel="stylesheet" href="assets/docs.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="top">
+<div class="top-in">
+<a class="brand" href="index.html">Weilo Agents docs</a>
+<nav aria-label="Documentation pages"><ul>
+<li><a class="nav" href="index.html">Overview</a></li>
+<li><a class="nav" href="architecture.html">Architecture</a></li>
+<li><a class="nav" href="security.html">Security</a></li>
+<li><a class="nav" href="agents.html" aria-current="page">Agents</a></li>
+<li><a class="nav" href="memory-and-knowledge.html">Memory</a></li>
+<li><a class="nav" href="data-and-permissions.html">Data</a></li>
+<li><a class="nav" href="ui.html">UI</a></li>
+<li><a class="nav" href="operating.html">Operating</a></li>
+<li><a class="nav" href="development.html">Development</a></li>
+</ul></nav>
+</div>
+</header>
+<main id="main">
+<div class="layout has-toc">
+<nav class="toc" aria-label="On this page"><h2>On this page</h2><ol>
+<li><a href="#kinds">Regular, isolated and trusted</a></li>
+<li><a href="#decide">When to make an agent isolated</a></li>
+<li><a href="#profile">The profile</a></li>
+<li><a href="#folders">Folders, uploads and deletion</a></li>
+<li><a href="#tools">Tools and who may call them</a></li>
+<li><a href="#manage-agents">manage_agents</a></li>
+<li><a href="#manage-settings">manage_settings</a></li>
+<li><a href="#addons">Skills, plugins and extensions</a></li>
+<li><a href="#bundled">The browser and routines extensions</a></li>
+</ol></nav>
+<div class="content">
+<h1>Agents</h1>
+<p class="lede">An agent is a profile, one conversation and a folder, run by a <code>pi</code> process under a Linux user of its own. This page covers the kinds of agents, what an agent is made of, the tools it has, and how it asks for more.</p>
+
+<section class="card" id="kinds">
+<h2>Regular, isolated and trusted</h2>
+<p>Every agent is <strong>regular</strong> or <strong>isolated</strong>. Separately, any agent may be <strong>trusted</strong>. Both switches are in Edit agent &gt; Access and are the user's alone: no agent's request can set them (<code>USER_ONLY</code> in <code>agents/manage.mjs</code>), and an agent made by request is regular and not trusted.</p>
+<div class="table wide"><table>
+<thead><tr><th></th><th>Regular (default)</th><th>Isolated</th></tr></thead>
+<tbody>
+<tr><td>Home folder</td><td><code>workspace/&lt;folder&gt;/</code>, group <code>agents</code></td><td><code>isolated/&lt;folder&gt;/</code>, its own group</td></tr>
+<tr><td>Chat</td><td><code>agent/sessions/&lt;id&gt;/</code></td><td><code>isolated-sessions/&lt;id&gt;/</code></td></tr>
+<tr><td>Linux groups</td><td><code>agents</code> (2000) and every isolated agent's group</td><td>none but its own (gid = uid)</td></tr>
+<tr><td>Workspace and other regular agents' folders</td><td class="y">read, write</td><td class="n">no</td></tr>
+<tr><td>Isolated agents' folders</td><td class="y">read, write</td><td class="p">its own only</td></tr>
+<tr><td>About you (<code>USER.md</code>) and notes (<code>MEMORY.md</code>) in its prompt</td><td class="y">yes</td><td class="n">no</td></tr>
+<tr><td>AGENTS.md / context files</td><td class="y">loaded</td><td class="n"><code>--no-context-files</code> (others may write its folder)</td></tr>
+<tr><td><code>memory</code>, <code>fetch_knowledge</code>, <code>skill</code>, <code>manage_settings</code></td><td class="y">yes</td><td class="n">no (not offered, routes refuse)</td></tr>
+<tr><td><code>manage_agents</code></td><td class="y">list, create, update regular agents</td><td class="p">list itself; ask for its own skills, plugins, extensions</td></tr>
+<tr><td>Skills and added extensions</td><td>read from <code>agent/</code></td><td>root-owned copies in its pi folder</td></tr>
+<tr><td>Installed tools on PATH</td><td>shared <code>/home/node/.local/bin</code></td><td>its own <code>.local/bin</code></td></tr>
+<tr><td>Plugin programs run as</td><td>user 1200</td><td>the agent itself, in its folder</td></tr>
+<tr><td>Browser</td><td>on unless switched off</td><td>switched off when it becomes isolated; you may turn it on</td></tr>
+<tr><td>Routines</td><td>yes</td><td>yes</td></tr>
+<tr><td>Its chat searched by others and by the curator</td><td>yes</td><td>yes</td></tr>
+<tr><td>Shown with</td><td>-</td><td>an <span class="tag iso">Isolated</span> tag in the list and the chat</td></tr>
+</tbody></table></div>
+<p><strong>Trusted</strong> ("Always allow its own changes") only changes approvals: a change it asks for to its own instructions, thinking or skills applies without a question. See <a href="security.html#trusted">Trusted agents</a>.</p>
+</section>
+
+<section class="card" id="decide">
+<h2>When to make an agent isolated</h2>
+<div class="cols">
+<div class="tile"><h3>Make it isolated when</h3><ul>
+<li>it reads things others wrote (email, web pages, downloaded files) and could be misled by them;</li>
+<li>it does not need your workspace, the shared notes or the vault;</li>
+<li>you do not want it to see what the other agents know about you;</li>
+<li>it runs code or plugins you do not fully trust.</li>
+</ul></div>
+<div class="tile"><h3>Keep it regular when</h3><ul>
+<li>it works on shared files with other agents;</li>
+<li>it should remember things about you or search past chats;</li>
+<li>it makes skills for others, or changes settings and agents on your behalf.</li>
+</ul></div>
+<div class="tile"><h3>Remember</h3><ul>
+<li>Isolation keeps the agent in, not others out: regular agents still read and change its folder and can search its chat.</li>
+<li>Its network access is the same as any agent's.</li>
+<li>Turning the browser on for it gives it every login in the shared browser.</li>
+</ul></div>
+</div>
+<h3>What switching does</h3>
+<p>Saving the form with Isolated changed (<code>PUT /api/agents/:id</code>):</p>
+<ol>
+<li>The agent's pi stops, and no pi of it starts until the move ends (<code>holding</code>).</li>
+<li>Its home and chat folders are renamed to the other kind's place. If a folder of that name is already there, the save stops with 409 and nothing moves: rename or remove that folder first.</li>
+<li>Everything in its home is given to the agent's user, in the home's new group (<code>ug+rwX,o-rwx</code>, setgid on folders).</li>
+<li>When it becomes isolated, <code>browser</code> is added to its <code>disabled</code> list.</li>
+<li>Its pi starts anew, and every regular agent's pi starts anew too, because the isolated groups they belong to changed (<code>restartRegular</code>). Making or deleting an isolated agent does the same.</li>
+</ol>
+</section>
+
+<section class="card" id="profile">
+<h2>The profile</h2>
+<p><code>agent/profiles/&lt;id&gt;/agent.json</code>, written by the daemon (root, mode 0640, group the agent's own gid). The id is the name as a slug (at most 24 characters) plus 6 hex characters, for example <code>research-assistant-3fa91c</code>. Checking ids against <code>^[a-z0-9-]+$</code> keeps every path inside the agents' folders.</p>
+<div class="table wide"><table>
+<thead><tr><th>Field</th><th>Meaning</th><th>Set by</th></tr></thead>
+<tbody>
+<tr><td><code>name</code></td><td>Shown name; required</td><td>You, or an approved request</td></tr>
+<tr><td><code>instructions</code></td><td>Who it is and what it does; the profile file itself goes into its system prompt</td><td>You, a request, or a trusted agent itself</td></tr>
+<tr><td><code>model</code></td><td><code>provider/model</code>; required</td><td>You, or a request</td></tr>
+<tr><td><code>thinking</code></td><td><code>""</code> (pi's default), <code>off</code>, <code>minimal</code>, <code>low</code>, <code>medium</code>, <code>high</code>, <code>xhigh</code>, <code>max</code></td><td>You, a request, or a trusted agent itself</td></tr>
+<tr><td><code>skills</code></td><td>Skill ids from the library</td><td>You, a request, a trusted agent itself, the <code>skill</code> tool</td></tr>
+<tr><td><code>plugins</code></td><td>Plugin names from <code>mcp.json</code></td><td>You, or a request</td></tr>
+<tr><td><code>extensions</code></td><td>Added extensions it uses</td><td>You, or a request</td></tr>
+<tr><td><code>disabled</code></td><td>Bundled extensions it does not use (<code>browser</code>, <code>routines</code>)</td><td>You, or a request</td></tr>
+<tr><td><code>avatar</code></td><td><code>{shape, color}</code></td><td>You</td></tr>
+<tr><td><code>isolated</code>, <code>trusted</code></td><td>Booleans</td><td>You only</td></tr>
+<tr><td><code>folder</code></td><td>Home folder name: the name as a slug, made unique against the workspace, the isolated folders and other agents; fixed when the agent is made, so a rename keeps the paths in its chat</td><td>The daemon</td></tr>
+<tr><td><code>uid</code></td><td>Its Linux user, never given twice</td><td>The daemon</td></tr>
+</tbody></table></div>
+<p>The agent list order is <code>agent/order.json</code> <code>{agents: [ids]}</code>, as dragged; newer agents come after.</p>
+</section>
+
+<section class="card" id="folders">
+<h2>Folders, uploads and deletion</h2>
+<div class="table mid"><table>
+<thead><tr><th>Folder</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>Home (<code>workspace/&lt;folder&gt;/</code> or <code>isolated/&lt;folder&gt;/</code>)</td><td>Its working folder and pi's cwd. Uploads go to <code>uploads/</code> in it.</td></tr>
+<tr><td>HOME (<code>homes/&lt;folder&gt;/</code>)</td><td>Its tools' own settings and sign-ins (git, npm and the like). Its own, 0700.</td></tr>
+<tr><td>Scratch (<code>/tmp/weilo/&lt;id&gt;/</code>, <code>WEILO_SCRATCH</code>)</td><td>Downloaded pages, one-off scripts, raw data. Emptied when the agent goes idle, and all of them when the daemon starts.</td></tr>
+<tr><td>pi folder (<code>/var/lib/weilo/pi/&lt;id&gt;/</code>)</td><td>What its pi is given, made again at every start (<a href="security.html#gateway">gateway</a>).</td></tr>
+</tbody></table></div>
+<h3>House rules</h3>
+<p><code>agents/workspace.mjs</code> appends rules to every agent's system prompt. A regular agent: work in its folder, a folder per task with a clear name, scratch work in its scratch folder, the rest of the workspace is shared but never change another agent's files unless asked, no leftover copies, name files by path from its folder so the chat makes them links. An isolated agent: its folder is the only one it has; keep notes as files there; ask with <code>manage_agents</code> for a skill, plugin or extension. These rules are order, not a fence: a regular agent can still write anywhere in the workspace.</p>
+<h3>Uploads</h3>
+<p>Files attached to a message are saved by the daemon as <code>uploads/&lt;8 hex&gt;-&lt;safe name&gt;</code> (the name keeps letters, digits, <code>. - _</code> and spaces, at most 100 characters), owned by the agent, group <code>agents</code>, mode 0660, in an <code>uploads/</code> folder that is 2770. All attachments are checked before any is saved. Images go to the model directly and are not saved.</p>
+<h3>Deleting an agent</h3>
+<ol>
+<li>Its profile and routines go first, so nothing starts its pi again.</li>
+<li>Its pi stops, a running browser step ends, and its browser window closes.</li>
+<li>Its HOME and pi folder are removed.</li>
+<li>Its chat is removed, or with "keep the chat" handed to root (<code>go-rwx</code>); a kept chat still turns up in <code>fetch_knowledge</code> as "deleted agent (&lt;id&gt;)".</li>
+<li>Its home folder is removed, or with "keep the files" handed to root and the <code>agents</code> group.</li>
+<li>If it was isolated, the regular agents' pis start anew. Its uid is never given again.</li>
+</ol>
+</section>
+
+<section class="card" id="tools">
+<h2>Tools and who may call them</h2>
+<div class="table wide"><table>
+<thead><tr><th>Tool</th><th>From</th><th>Regular</th><th>Isolated</th><th>Daemon route</th></tr></thead>
+<tbody>
+<tr><td><code>read</code>, <code>bash</code>, <code>edit</code>, <code>write</code></td><td>pi itself</td><td class="y">yes</td><td class="y">yes</td><td>none: they run as the agent's user</td></tr>
+<tr><td><code>show</code></td><td><code>weilo.mjs</code></td><td class="y">yes</td><td class="y">yes</td><td>none: the UI draws the tool call</td></tr>
+<tr><td><code>ask</code></td><td><code>weilo.mjs</code></td><td class="y">yes</td><td class="y">yes</td><td>pi's dialog, answered by <code>POST …/answer</code></td></tr>
+<tr><td><code>manage_agents</code></td><td><code>weilo.mjs</code></td><td class="y">yes</td><td class="p">limited</td><td><code>POST …/manage_agents</code></td></tr>
+<tr><td><code>skill</code></td><td><code>weilo.mjs</code></td><td class="y">yes</td><td class="n">no</td><td><code>POST …/skill</code></td></tr>
+<tr><td><code>manage_settings</code></td><td><code>weilo.mjs</code></td><td class="y">yes</td><td class="n">no</td><td><code>POST …/manage_settings</code></td></tr>
+<tr><td><code>memory</code>, <code>fetch_knowledge</code></td><td><code>memory/extension.mjs</code></td><td class="y">yes</td><td class="n">no (not loaded)</td><td><code>POST …/memory</code>, <code>…/fetch_knowledge</code></td></tr>
+<tr><td><code>browser</code></td><td>bundled <code>browser</code> extension</td><td class="p">unless off</td><td class="p">only if on</td><td><code>POST …/browser</code></td></tr>
+<tr><td><code>routine</code></td><td>bundled <code>routines</code> extension</td><td class="p">unless off</td><td class="p">unless off</td><td><code>…/routines</code></td></tr>
+<tr><td><code>codemode</code>, <code>mcp__&lt;plugin&gt;__*</code></td><td>pi's MCP built-ins, its plugins</td><td class="p">its plugins</td><td class="p">its plugins</td><td>plugin proxy or pipe</td></tr>
+<tr><td>an added extension's tools</td><td>the extension</td><td class="p">if listed</td><td class="p">if listed</td><td>whatever the extension does</td></tr>
+</tbody></table></div>
+<p>The daemon tools (<code>skill</code>, <code>manage_agents</code>, <code>manage_settings</code>, <code>memory</code>, <code>fetch_knowledge</code>, <code>browser</code>, <code>routine</code>) run inside pi but only post their arguments to <code>/api/agents/&lt;this agent&gt;/&lt;tool&gt;</code> with the agent's key (<code>daemon/tool.mjs</code>), and return the daemon's <code>text</code> (and <code>details</code>, a line the chat shows). The daemon checks every call (<a href="security.html#agent-keys">route gate</a>).</p>
+<h3><code>show</code> blocks</h3>
+<p>A list of blocks the chat draws from the saved tool call: <code>text</code> (Markdown), <code>table</code>, <code>metrics</code>, <code>cards</code> (a card with a <code>message</code> is choosable), <code>chart</code> (bar or line), <code>buttons</code>, <code>file</code> and <code>page</code> (a sandboxed HTML document). Unknown or malformed blocks are dropped. A choice sends a message as your reply.</p>
+</section>
+
+<section class="card" id="manage-agents">
+<h2><code>manage_agents</code></h2>
+<div class="table mid"><table>
+<thead><tr><th>Action</th><th>Regular agent</th><th>Isolated agent</th></tr></thead>
+<tbody>
+<tr><td><code>list</code></td><td>Every agent with model, plugins, skills and extensions, then the library (skills with descriptions, plugins, extensions)</td><td>Only itself, then the library</td></tr>
+<tr><td><code>create</code></td><td>Name and instructions; model (defaults to its own), thinking, skills, plugins, extensions optional</td><td>Refused</td></tr>
+<tr><td><code>update</code></td><td>Any regular agent, itself included, by name or id; fields: name, instructions, model, thinking, skills, plugins, extensions. An isolated target is refused.</td><td>Only itself; only skills, plugins, extensions</td></tr>
+</tbody></table></div>
+<ul>
+<li>A list in a request replaces the old one. <code>extensions</code> names every extension the agent should have, bundled ones too; the daemon turns that into <code>extensions</code> and <code>disabled</code>.</li>
+<li>Names are checked against the library first ("There is no skill, plugin or extension …"), then the whole result is checked as a save would be (for example, two extensions adding one tool is refused).</li>
+<li>The approval card reads, for example: "Research asks to change itself:" followed by one line per changed field ("Skills: web-research, notes"), or for a new agent "… asks to create an agent: &lt;name&gt;" followed by its model, plugins, skills, extensions and instructions.</li>
+<li>Extra lines warn of reach: "It would get the provider openai and the plugin github, which Research does not have." and "It would get the browser, with the sign-ins of every site you are signed in to there."</li>
+<li>Over 20000 characters the request is refused before it is asked.</li>
+<li>On yes, the target's pi starts anew (the asking agent's own once its reply ends). On anything else: "The user did not approve it".</li>
+</ul>
+</section>
+
+<section class="card" id="manage-settings">
+<h2><code>manage_settings</code></h2>
+<p>Regular agents only. It touches exactly two things in <code>agent/settings.json</code>, which stays root's.</p>
+<ul>
+<li><code>list</code>: every model the keys and sign-ins can use, whether it is on, its context window, the tokens kept free before a summary, and who uses it (agents and the curator).</li>
+<li><code>change</code> with <code>enable</code>, <code>disable</code> and <code>compaction</code>; any other field is refused.</li>
+</ul>
+<div class="table mid"><table>
+<thead><tr><th>Request</th><th>Refused when</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Turn models on</td><td>The model is not one a key or sign-in can use</td><td>It could not run</td></tr>
+<tr><td>Turn models off</td><td>An agent or the curator uses it; or none would stay on</td><td>It would break them; none listed means all to pi</td></tr>
+<tr><td>Tokens kept free for a model</td><td>Not an integer from 16384 to its window minus one, or its window is unknown</td><td>A reply needs room; pi decides when the window is unknown</td></tr>
+<tr><td><code>null</code> for a model</td><td>-</td><td>Gives it back to the app's rule</td></tr>
+<tr><td>Anything else (keys, devices, plugins, paths, addresses, code)</td><td>Always</td><td>Not offered by the tool at all</td></tr>
+</tbody></table></div>
+<p>Every change is a question with the exact lines ("Turn on the models …", "Summarize …'s conversations when … tokens are left free, at …%"). It is never allowed always, trusted or not. On yes the daemon writes <code>settings.json</code> and every agent's pi starts anew.</p>
+</section>
+
+<section class="card" id="addons">
+<h2>Skills, plugins and extensions</h2>
+<figure>
+<div class="fig">
+<svg viewBox="0 0 760 330" role="img" aria-labelledby="ad-t ad-d">
+<title id="ad-t">How add-ons reach a pi</title>
+<desc id="ad-d">A regular agent's pi reads skills and added extensions from agent/skills and agent/extensions directly. An isolated agent's pi cannot open agent/, so the daemon copies its profile, skills and extensions into its pi folder as root-owned, read-only files. Plugins reach both through the gateway.</desc>
+<defs><marker id="ad-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L10 5L0 10z"/></marker></defs>
+<rect class="box b-red" x="16" y="16" width="250" height="150" rx="10"/>
+<text class="tb" x="32" y="42">agent/ (root, group agents)</text>
+<text class="tm" x="32" y="70">profiles/&lt;id&gt;/agent.json</text>
+<text class="tm" x="32" y="94">skills/&lt;skill&gt;/  2770</text>
+<text class="tm" x="32" y="118">extensions/&lt;name&gt;/  2750</text>
+<text class="tm" x="32" y="142">mcp.json  0600</text>
+<rect class="box b-green" x="490" y="16" width="254" height="78" rx="10"/>
+<text class="tb" x="506" y="44">regular agent's pi</text>
+<text class="ts" x="506" y="70">reads them where they are</text>
+<path class="ar" d="M266 60 H488" marker-end="url(#ad-a)"/>
+<text class="ts" x="290" y="52">--skill, -e: paths in agent/</text>
+<rect class="box b-teal" x="490" y="120" width="254" height="128" rx="10"/>
+<text class="tb" x="506" y="146">isolated agent's pi</text>
+<text class="tm" x="506" y="172">/var/lib/weilo/pi/&lt;id&gt;/</text>
+<text class="tm" x="506" y="196">agent.json skills/</text>
+<text class="tm" x="506" y="220">extensions/</text>
+<text class="ts" x="506" y="242">root-owned copies, no links</text>
+<path class="ar-d" d="M266 140 H488" marker-end="url(#ad-a)"/>
+<text class="ts" x="290" y="132">copied at every start</text>
+<rect class="box b-violet" x="16" y="196" width="250" height="118" rx="10"/>
+<text class="tb" x="32" y="222">plugins</text>
+<text class="ts" x="32" y="246">only names the profile lists;</text>
+<text class="ts" x="32" y="268">through the gateway, never</text>
+<text class="ts" x="32" y="290">the secrets themselves</text>
+<path class="ar" d="M266 254 H380 V80 H488" marker-end="url(#ad-a)"/>
+<path class="ar" d="M380 254 V200 H488" marker-end="url(#ad-a)"/>
+</svg>
+</div>
+<figcaption>From <code>kindOf</code> in <code>agents/runner.mjs</code> and <code>writePiDir</code> in <code>agents/pidir.mjs</code>.</figcaption>
+</figure>
+<h3>Skills</h3>
+<ul>
+<li>Added in Settings &gt; Skills as a <code>.zip</code> or a <code>SKILL.md</code>. A zip is refused if it holds a link or unpacks to over 50 MB; <code>SKILL.md</code> files are looked for up to 3 folders deep; each needs a <code>description</code>. The id is the skill's name as a slug (at most 48 characters); one with the same id is replaced.</li>
+<li>A regular agent saves a skill with the <code>skill</code> tool (description at most 1024 characters, instructions at most 60000). It is written to the library, switched on for that agent, and loads when the reply ends. Other files in that skill's folder stay; the agent may add scripts there.</li>
+<li>An agent loads exactly the skills its profile lists (<code>--no-skills --skill …</code>). Typing <code>/</code> in the chat lists them; choosing one inserts <code>/skill:name</code>, which pi expands.</li>
+</ul>
+<h3>Plugins</h3>
+<ul>
+<li>MCP servers in <code>agent/mcp.json</code>, added in Settings &gt; Plugins as a command (split like a shell line, with optional environment variables) or a web address with an optional token (sent as <code>Authorization: Bearer</code>). The name uses letters, digits, <code>-</code> and <code>_</code>. Secrets are written there and never returned.</li>
+<li>Pi gets <code>codemode</code> and <code>mcp__&lt;name&gt;__*</code> in its allowlist for each plugin it uses; with none, <code>--no-mcp</code>.</li>
+<li>Settings &gt; Plugins checks whether each connects by running <code>pi mcp list</code> as user 1200, with the secrets in a folder of that user's alone.</li>
+<li>Sign-in to a plugin with OAuth is not in this version.</li>
+</ul>
+<h3>Extensions</h3>
+<ul>
+<li>A folder with a <code>weilo.json</code>: <code>apiVersion</code> 1, <code>name</code> (lowercase letters, digits, hyphens; not a bundled name), <code>description</code>, optional <code>title</code>, <code>entry</code> (a <code>.js</code>, <code>.mjs</code> or <code>.ts</code> file inside the folder) and <code>tools</code>.</li>
+<li>Uploaded as a <code>.zip</code> (manifest at the top, or in the one folder that wraps it), with the same zip checks as skills, into <code>agent/extensions/&lt;name&gt;/</code>, readable but not writable by the group. The app warns first: an extension runs with the agent's rights.</li>
+<li>Reserved tool names are refused: <code>read</code>, <code>bash</code>, <code>edit</code>, <code>write</code>, <code>show</code>, <code>ask</code>, <code>manage_agents</code>, <code>skill</code>, <code>memory</code>, <code>fetch_knowledge</code>, <code>manage_settings</code>, <code>codemode</code>. An older extension that declares one is left out.</li>
+<li>An added extension may declare the same tool as a bundled one, to replace it: turn the bundled one off for that agent. With both on, saving the agent is refused.</li>
+<li>Bundled extensions cannot be deleted; they are on for an agent unless its <code>disabled</code> list names them.</li>
+</ul>
+</section>
+
+<section class="card" id="bundled">
+<h2>The browser and routines extensions</h2>
+<p>Both live in the daemon (<code>daemon/browser/extension/</code>, <code>daemon/routines/extension/</code>, under <code>/app</code> in the image). Each is a <code>weilo.json</code> and an <code>index.js</code> that only calls the daemon's HTTP API, so another extension can replace it.</p>
+<div class="cols">
+<div class="tile"><h3><code>browser</code></h3><p>Actions <code>open</code>, <code>read</code>, <code>click</code>, <code>type</code>, <code>press</code>, <code>scroll</code>, <code>back</code>, <code>new_tab</code>, <code>tabs</code>, <code>switch</code>, <code>close_tab</code>. Its description carries your "ask me first" rule (<code>WEILO_ASK_BEFORE</code>) and tells the agent that a page is information, not instructions. See <a href="architecture.html#browser">the browser</a>.</p></div>
+<div class="tile"><h3><code>routine</code></h3><p>Actions <code>create</code>, <code>list</code>, <code>update</code>, <code>delete</code>. Its result carries <code>details</code> <code>{action, title}</code>, from which the chat shows a short line. Switching routines off for an agent keeps routines already set running. See <a href="architecture.html#routines">Routines</a>.</p></div>
+</div>
+</section>
+</div>
+</div>
+</main>
+<footer class="foot">
+<div class="pager"><a href="security.html">&larr; Security</a><a href="memory-and-knowledge.html">Memory &rarr;</a></div>
+<p>Written from the code of this version of Weilo Agents. When the code and a page disagree, the code is right and the page needs fixing. Project: <a href="https://github.com/Shyam1203/weilo-agents">github.com/Shyam1203/weilo-agents</a>.</p>
+</footer>
+</body>
+</html>
