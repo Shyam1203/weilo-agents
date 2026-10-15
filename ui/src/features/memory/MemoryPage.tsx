@@ -16,10 +16,22 @@ interface Props {
 }
 
 const OFF = "";
-const NOTE = /^- (?:\[(m\d+)(?: ([\d-]+))?\] )?(.+)$/;
+const NOTE = /^- (?:\[([^\]]*)\] )?(.+)$/;
+const KINDS = [
+  { value: "preference", label: "Preference" },
+  { value: "fact", label: "Fact" },
+  { value: "goal", label: "Goal" },
+  { value: "person", label: "Person" },
+  { value: "project", label: "Project" },
+  { value: "decision", label: "Decision" },
+];
+const STALE_MONTHS = 12;
 const monthOf = (when?: string) => {
   const date = new Date(`${when}-01T00:00:00`);
-  return when && !Number.isNaN(date.getTime()) ? date.toLocaleDateString([], { month: "short", year: "numeric" }) : "Not saved yet";
+  if (!when || Number.isNaN(date.getTime())) return "Not saved yet";
+  const shown = date.toLocaleDateString([], { month: "short", year: "numeric" });
+  const months = (new Date().getFullYear() - date.getFullYear()) * 12 + new Date().getMonth() - date.getMonth();
+  return months >= STALE_MONTHS ? `Not confirmed since ${shown}: may be out of date` : shown;
 };
 
 export function MemoryPage({ providers, models }: Props) {
@@ -30,6 +42,7 @@ export function MemoryPage({ providers, models }: Props) {
   const [raw, setRaw] = useState(false);
   const [editing, setEditing] = useState<{ i: number; note: string } | null>(null);
   const [adding, setAdding] = useState("");
+  const [addingKind, setAddingKind] = useState("fact");
   const { busy, error, run } = useAction();
 
   useEffect(
@@ -53,7 +66,9 @@ export function MemoryPage({ providers, models }: Props) {
   const lines = text.split("\n");
   const notes = lines.flatMap((line, i) => {
     const m = NOTE.exec(line);
-    return m ? [{ i, when: m[2], note: m[3] }] : [];
+    if (!m) return [];
+    const tags = (m[1] ?? "").split(/\s+/);
+    return [{ i, when: tags.find((t) => /^\d{4}-\d{2}$/.test(t)), kind: KINDS.find((k) => tags.includes(k.value)) ?? KINDS[1], note: m[2] }];
   });
   const setLine = (i: number, change: (line: string) => string | null) =>
     setText((current) =>
@@ -67,12 +82,12 @@ export function MemoryPage({ providers, models }: Props) {
     const { i, note } = editing;
     const one = note.replace(/\s+/g, " ").trim();
     setEditing(null);
-    setLine(i, (line) => (one ? line.replace(NOTE, (_, id?: string, when?: string) => `- ${id ? `[${id}${when ? ` ${when}` : ""}] ` : ""}${one}`) : null));
+    setLine(i, (line) => (one ? line.replace(NOTE, (_, tags?: string) => `- ${tags ? `[${tags}] ` : ""}${one}`) : null));
   };
   const add = () => {
     const note = adding.replace(/\s+/g, " ").trim();
     if (!note) return;
-    setText((current) => `${current.trimEnd()}${current.trim() ? "\n" : ""}- ${note}\n`);
+    setText((current) => `${current.trimEnd()}${current.trim() ? "\n" : ""}- [${addingKind}] ${note}\n`);
     setAdding("");
   };
   const save = () =>
@@ -101,7 +116,12 @@ export function MemoryPage({ providers, models }: Props) {
               <textarea aria-label="MEMORY.md" value={text} rows={9} spellCheck={false} onChange={(e) => setText(e.target.value)} placeholder="- Prefers short answers" className="input resize-y font-mono text-[12.5px] leading-relaxed" />
             ) : (
               <ul className="flex flex-col gap-2">
-                {notes.map(({ i, when, note }) => (
+                {KINDS.flatMap((kind) => notes.filter((n) => n.kind === kind)).map(({ i, when, kind, note }, at, sorted) => [
+                  sorted[at - 1]?.kind !== kind && (
+                    <li key={kind.value} className="pt-1 text-[11px] font-medium tracking-wide text-ink-3 uppercase">
+                      {kind.label}
+                    </li>
+                  ),
                   <li key={i} className="flex items-start gap-2 rounded-xl bg-select/60 py-2 pr-1 pl-3">
                     {editing?.i === i ? (
                       <textarea
@@ -121,10 +141,13 @@ export function MemoryPage({ providers, models }: Props) {
                       </button>
                     )}
                     <IconButton icon="close" label="Forget this note" onClick={() => (setEditing(null), setLine(i, () => null))} />
-                  </li>
-                ))}
+                  </li>,
+                ])}
                 <li>
                   <form onSubmit={(e) => (e.preventDefault(), add())} className="flex items-center gap-2">
+                    <div className="w-32 shrink-0">
+                      <Select label="Kind of note" value={addingKind} onChange={setAddingKind} options={KINDS} />
+                    </div>
                     <input aria-label="New note" value={adding} onChange={(e) => setAdding(e.target.value)} placeholder="Add a note: Prefers short answers" className="input min-w-0 flex-1 text-[13px]" />
                     <Button size="sm" type="submit" disabled={!adding.trim()}>
                       Add

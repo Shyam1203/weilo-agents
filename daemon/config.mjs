@@ -96,7 +96,9 @@ export const MAX_SKILL_TEXT = 60_000;
 export const MAX_ABOUT = 4000;
 
 export const MAX_NOTES = 40;
-export const MAX_NOTES_CHARS = 3000;
+export const MAX_NOTES_CHARS = 3500;
+export const NOTE_KINDS = ["preference", "fact", "goal", "person", "project", "decision"];
+export const NOTE_STALE_MONTHS = 12;
 export const MAX_NOTE = 200;
 export const SIMILAR = 0.7;
 
