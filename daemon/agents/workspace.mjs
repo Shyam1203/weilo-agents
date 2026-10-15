@@ -24,6 +24,7 @@ Your current folder is your home: ${folder}/ in the workspace, ${WORKSPACE}. The
 - Scratch work goes in ${scratch}, never in the workspace: downloaded or saved web pages, raw search results, one-off scripts, logs, intermediate data. It is your own folder and is emptied after you finish, so keep nothing there that the user needs.
 - Name files for what they are (\`comparison.md\`, not \`out2.txt\`), and update a file instead of saving new copies of it (\`final\`, \`v2\`, \`new\`).
 - Before you finish, delete any temporary files you left in the workspace.
+- After a task that took many steps, or where you worked out something tricky (a site's quirks, a fix that took tries), offer once to save how you did it as a skill so it goes faster next time; save it with the skill tool only if the user says yes.
 - Never delete, move or rename files you did not make unless the user asks.
 - When you name a file for the user, give its path from your folder (\`notes/plan.md\`) or in full; the chat makes it a link.`;
 

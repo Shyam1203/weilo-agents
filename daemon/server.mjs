@@ -13,7 +13,7 @@ import { closeBrowser, giveBack, hasWindow, isTaken, showBrowser, takeOver, useB
 import { getRule, saveRule } from "./browser/rule.mjs";
 import { cdpUpgrade, isCdpPath, startScreen, viewUpgrade } from "./browser/screen.mjs";
 import { fail } from "./common.mjs";
-import { ADMIN_SOCKET, PORT, SANDBOX_API, SANDBOX_DIR, SYSTEM_PATH, USAGE_SHOWN } from "./config.mjs";
+import { ADMIN_SOCKET, PORT, SANDBOX_API, SANDBOX_DIR, SKILL_EXCERPT, SYSTEM_PATH, USAGE_SHOWN } from "./config.mjs";
 import { sendContact } from "./contact.mjs";
 import { providerOf, proxyModel } from "./gateway/models.mjs";
 import { pipePlugin, pluginOf, proxyPlugin } from "./gateway/plugins.mjs";
@@ -32,7 +32,7 @@ import { addExtension, listExtensions, removeExtension } from "./settings/extens
 import { answerSignIn, signInStatus, startSignIn, stopSignIn } from "./settings/login.mjs";
 import { addPlugin, listPlugins, pluginStatus, removePlugin } from "./settings/plugins.mjs";
 import { listModels, listProviders, removeKey, saveKey, setEnabledModels, syncCompaction } from "./settings/providers.mjs";
-import { addSkills, listSkills, removeSkill, saveSkill } from "./settings/skills.mjs";
+import { addSkills, hasSkill, listSkills, planSkill, removeSkill, saveSkill } from "./settings/skills.mjs";
 import { manageSettings } from "./settings/manage.mjs";
 import { getUser, saveUser } from "./settings/user.mjs";
 import { setUpdateCheck, updateStatus } from "./update.mjs";
@@ -51,6 +51,7 @@ const route = (method, path, handler, { tool = null, audited = method !== "GET" 
   routes.push({ method, path, handler, tool, audited, scoped: path.startsWith("/api/agents/:id"), pattern: new RegExp(`^${path.replace(":id", "([^/]+)").replace(":rid", "([^/]+)")}$`) });
 const agentRoute = (method, path, tool, handler, options = {}) => route(method, path, handler, { tool, ...options });
 const quiet = { audited: false };
+const SAVE = "Save it";
 
 const forAll = (change) => async (req) => {
   const result = await change(req);
@@ -136,17 +137,21 @@ route("POST", "/api/agents/:id/browser/show", ({ id }) => showBrowser(id), quiet
 route("POST", "/api/agents/:id/browser/take-over", ({ id }) => takeOver(id), quiet);
 route("POST", "/api/agents/:id/browser/give-back", ({ id }) => giveBack(id), quiet);
 agentRoute("POST", "/api/agents/:id/skill", "skill", async ({ id, body }) => {
-  const { id: skill, folder } = await saveSkill(body);
+  const skill = planSkill(body);
   const agent = await getAgent(id);
-  await updateAgent(id, { skills: [...new Set([...agent.skills, skill])] });
+  const excerpt = skill.instructions.length > SKILL_EXCERPT ? `${skill.instructions.slice(0, SKILL_EXCERPT)}\n…` : skill.instructions;
+  const question = `${agent.name} asks to ${(await hasSkill(skill.id)) ? "change" : "save"} the skill "${skill.id}": ${skill.about}\n\n${excerpt}`;
+  if ((await askUser(id, question, [SAVE, "Don't"])) !== SAVE) return { text: "The user did not approve it: nothing was saved. Do not ask again unless they ask you to." };
+  const folder = await saveSkill(skill);
+  await updateAgent(id, { skills: [...new Set([...agent.skills, skill.id])] });
   await restart(id);
-  return { text: `Saved the skill "${skill}" in ${folder}/ (put any scripts or other files it needs there). It is on for you and loads when this reply ends. It shows under Skills in Settings.` };
+  return { text: `Saved the skill "${skill.id}" in ${folder}/ (put any scripts or other files it needs there). It is on for you and loads when this reply ends. It shows under Skills in Settings.` };
 });
 agentRoute("POST", "/api/agents/:id/manage_agents", "manage_agents", ({ id, body }) => manageAgents(id, body));
 agentRoute("POST", "/api/agents/:id/ask_agent", "ask_agent", ({ id, body }) => askAgent(id, body));
 agentRoute("POST", "/api/agents/:id/manage_settings", "manage_settings", ({ id, body }) => manageSettings(id, body));
 agentRoute("POST", "/api/agents/:id/memory", "memory", async ({ id, body }) => {
-  const confirm = (await getCurator()).ask && (async (what) => (await askUser(id, `${(await getAgent(id)).name} asks to ${what}`, ["Save it", "Don't"])) === "Save it");
+  const confirm = (await getCurator()).ask && (async (what) => (await askUser(id, `${(await getAgent(id)).name} asks to ${what}`, [SAVE, "Don't"])) === SAVE);
   return { text: await useMemory(body, confirm) };
 });
 agentRoute("POST", "/api/agents/:id/fetch_knowledge", "fetch_knowledge", async ({ body }) => ({ text: await fetchKnowledge(body) }), quiet);

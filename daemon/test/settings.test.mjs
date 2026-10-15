@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { planSettings } from "../settings/manage.mjs";
+import { planSkill } from "../settings/skills.mjs";
 
 const now = {
   enabled: ["a/one", "a/two"],
@@ -23,4 +24,13 @@ test("a request that would break an agent, or names what is not there, is refuse
   assert.throws(() => planSettings({ compaction: { "b/three": 20000 } }, now), /not known/);
   assert.throws(() => planSettings({ keys: [] }, now), /not keys/);
   assert.throws(() => planSettings({}, now), /Nothing would change/);
+});
+
+test("a skill is checked and written out before the user is asked", async () => {
+  const skill = planSkill({ name: "Book a Table", description: "When booking:  a restaurant.", instructions: "  1. Open the site.\n" });
+  assert.equal(skill.id, "book-a-table");
+  assert.equal(skill.about, "When booking: a restaurant.");
+  assert.equal(skill.text, '---\nname: book-a-table\ndescription: "When booking: a restaurant."\n---\n\n1. Open the site.\n');
+  assert.throws(() => planSkill({ name: "x", description: "", instructions: "y" }), /description/);
+  assert.throws(() => planSkill({ name: "x", description: "y", instructions: " " }), /instructions/);
 });
