@@ -17,18 +17,20 @@ export function kindOf(path: string): Kind {
   return BY_EXTENSION[ext] ?? (TEXT.includes(ext) ? "text" : "other");
 }
 
-const IN_WORKSPACE = /^\/home\/node\/\.pi\/workspace\/([^\s`]+\.[A-Za-z0-9]{1,8})$/;
+// A full path in the workspace or an isolated agent's folder, which the daemon takes as it is.
+const FULL = /^\/home\/node\/\.pi\/(?:workspace|isolated)\/([^\s`]+\.[A-Za-z0-9]{1,8})$/;
 // Agents work in their folder in the workspace, so "notes/plan.md" is a file there too: a folder (no dot in its name, which a web
 // address has) and a file of a kind the preview shows. A bare name may be in a folder the text named earlier.
 const RELATIVE = /^(?:\.\/)?([^\s`/:~.][^\s`/:.]*\/[^\s`:]*\.[A-Za-z0-9]{1,8})$/;
 
-/** A file in the workspace named in an agent's text, as a path from the agent's folder or the top of the workspace (the
+/** A file named in an agent's text: its full path, or a path from the agent's folder or the top of the workspace (the
  * daemon looks in both); null for anything else. */
 export function workspacePath(text: string): string | null {
   const t = text.trim();
-  const m = IN_WORKSPACE.exec(t) ?? RELATIVE.exec(t);
+  const full = FULL.exec(t);
+  const m = full ?? RELATIVE.exec(t);
   if (!m || m[1].split("/").includes("..")) return null;
-  return t.startsWith("/") || kindOf(m[1]) !== "other" ? m[1] : null;
+  return full ? t : kindOf(m[1]) !== "other" ? m[1] : null;
 }
 
 /** Rows of a comma (or tab) separated file; quoted cells may hold the separator, quotes ("") and line breaks. */

@@ -4,6 +4,7 @@ import type { Update } from "../../api/app";
 import { Avatar } from "../../components/ui/Avatar";
 import { Button, IconButton } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
+import { Tag } from "../../components/ui/Tag";
 import { plainText, shortWhen } from "../../lib/format";
 import { avatarOf } from "../agents/avatars";
 import { SearchBox, SearchResults } from "./ChatSearch";
@@ -57,6 +58,7 @@ export function Sidebar({ agents, unread, selected, update, onSelect, onFound, o
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline gap-2">
                     <span className={`min-w-0 flex-1 truncate text-[14px] ${unread.has(a.id) ? "font-semibold" : "font-medium"}`}>{a.name}</span>
+                    {a.isolated && <Tag>Isolated</Tag>}
                     {a.last && <span className={`shrink-0 text-[11px] ${unread.has(a.id) ? "font-medium text-unread" : "text-ink-3"}`}>{shortWhen(a.last.at)}</span>}
                   </span>
                   <span className="flex items-center gap-2">

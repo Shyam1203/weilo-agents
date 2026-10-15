@@ -24,7 +24,7 @@ export interface PiMessage {
   toolCallId?: string;
   toolName?: string;
   /** With role `toolResult`: what a tool of ours says about what it did. */
-  details?: { action?: string; title?: string };
+  details?: { action?: string; title?: string; note?: string };
   /** With role `compactionSummary`: pi's summary of the messages before it. */
   summary?: string;
 }
@@ -86,9 +86,9 @@ interface Conversation {
 
 export const empty: Conversation = { ready: false, messages: [], busy: false, open: false, asking: null, queued: [], earlier: [], more: false };
 
-// Your messages and the agent's, the answers to its questions (they show with the question), and where pi summarized the
-// conversation.
-const shows = (m: PiMessage) => m.role === "user" || m.role === "assistant" || m.role === "compactionSummary" || (m.role === "toolResult" && (m.toolName === "ask" || m.toolName === "routine"));
+// Your messages and the agent's, the answers to its questions (they show with the question), the results that make a line
+// (a routine, a change the agent may always make), and where pi summarized the conversation.
+const shows = (m: PiMessage) => m.role === "user" || m.role === "assistant" || m.role === "compactionSummary" || (m.role === "toolResult" && (m.toolName === "ask" || m.toolName === "routine" || m.toolName === "manage_agents"));
 
 const textOf = (content: PiMessage["content"] | undefined) => (typeof content === "string" ? content : (content ?? []).map((b) => b.text ?? "").join(""));
 
@@ -194,7 +194,7 @@ export interface Question {
   at: number | null;
 }
 
-/** Something that happened in the chat, in a line: a routine ran, or the agent changed one. */
+/** Something that happened in the chat, in a line: a routine ran, the agent changed one, or it changed itself as you always allow. */
 export interface Note {
   kind: "note";
   id: string;
@@ -288,6 +288,9 @@ export function itemsOf({ messages: live, earlier, open }: Conversation): Item[]
         const text = routineNote(b.id ? results.get(b.id)?.details : undefined);
         return text ? [{ kind: "note", id: `${i}.${j}`, role: "agent", text, at }] : [];
       }
+      // A change the agent made to itself without asking you (you allow it always) is a line, so you see it.
+      const note = b.type === "toolCall" && b.name === "manage_agents" && b.id ? results.get(b.id)?.details?.note : undefined;
+      if (note) return [{ kind: "note", id: `${i}.${j}`, role: "agent", text: note, at }];
       if (b.type === "toolCall" && b.name) return [{ kind: "steps", id: `${i}.${j}`, role: "agent", steps: [{ tool: b.name, detail: detailOf(b.name, b.arguments) }], at }];
       return [];
     });

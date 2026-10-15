@@ -22,7 +22,8 @@ export function AskCard({ question, options, answer, onAnswer }: Props) {
 
   return (
     <section className="w-full max-w-md rounded-2xl border border-line bg-page px-3.5 py-3">
-      <p className="max-h-80 overflow-y-auto text-[14.5px] font-medium whitespace-pre-line [overflow-wrap:anywhere]">{question}</p>
+      {/* All of it, as the agent or the app wrote it: a request to approve is read in full (it scrolls). */}
+      <p className="max-h-80 overflow-y-auto text-[14.5px] font-medium whitespace-pre-wrap [overflow-wrap:anywhere]">{question}</p>
       {options?.length ? (
         <>
           <div className="mt-2.5 flex flex-wrap gap-2">

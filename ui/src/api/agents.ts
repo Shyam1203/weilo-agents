@@ -18,8 +18,12 @@ export interface Agent {
   disabled: string[];
   instructions: string;
   avatar?: AvatarSpec;
-  /** Its home in the workspace, where it works: named when it was made, and kept when it is renamed. */
+  /** Its home folder, where it works (in the workspace, or with the isolated agents'): named when it was made, and kept when it is renamed. */
   folder: string;
+  /** It has only its own folder: not the workspace, memory, the skill library or the settings. Only you set it. */
+  isolated: boolean;
+  /** The safe changes it asks for to itself (instructions, thinking, skills) apply without asking you. Only you set it. */
+  trusted: boolean;
   /** The newest message of its conversation; `at` in seconds. */
   last?: { role: "user" | "assistant"; text: string; shown?: boolean; at: number } | null;
   /** It is in the middle of a run. */
@@ -32,7 +36,7 @@ export interface Agent {
 
 export type AgentInput = Omit<Agent, "id" | "folder" | "last" | "working" | "doing" | "taken">;
 
-const DOING: Record<string, string> = { read: "Reading files", bash: "Running a command", edit: "Editing files", write: "Editing files", grep: "Searching files", find: "Searching files", ls: "Searching files", show: "Preparing what to show", routine: "Setting up a routine", browser: "Using the browser", memory: "Saving to memory", fetch_knowledge: "Searching knowledge", ask: "Waiting for your answer", skill: "Saving a skill", manage_agents: "Setting up an agent" };
+const DOING: Record<string, string> = { read: "Reading files", bash: "Running a command", edit: "Editing files", write: "Editing files", grep: "Searching files", find: "Searching files", ls: "Searching files", show: "Preparing what to show", routine: "Setting up a routine", browser: "Using the browser", memory: "Saving to memory", fetch_knowledge: "Searching knowledge", ask: "Waiting for your answer", skill: "Saving a skill", manage_agents: "Setting up an agent", manage_settings: "Changing settings" };
 
 /** What an agent is doing, in a few words: a plugin's or extension's tools have many names. */
 export const doingText = (tool?: string | null) => (tool ? (DOING[tool] ?? "Using an add-on") : "Working");

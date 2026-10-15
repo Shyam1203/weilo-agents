@@ -56,7 +56,7 @@ interface Props {
 /** Creates an agent, or edits `agent`. */
 export function AgentForm({ agent, providers, skills, plugins, extensions, models, onAddProvider, onOpenSettings, hidden, onClose, onSaved, onDeleted }: Props) {
   const [draft, setDraft] = useState<Draft>(() =>
-    agent ? { name: agent.name, model: agent.model, thinking: agent.thinking, skills: agent.skills, plugins: agent.plugins, extensions: agent.extensions, disabled: agent.disabled, instructions: agent.instructions, avatar: avatarOf(agent) } : { name: "", model: "", thinking: "", skills: [], plugins: [], extensions: [], disabled: [], instructions: "", avatar: randomAvatar() },
+    agent ? { name: agent.name, model: agent.model, thinking: agent.thinking, skills: agent.skills, plugins: agent.plugins, extensions: agent.extensions, disabled: agent.disabled, instructions: agent.instructions, avatar: avatarOf(agent), isolated: agent.isolated, trusted: agent.trusted } : { name: "", model: "", thinking: "", skills: [], plugins: [], extensions: [], disabled: [], instructions: "", avatar: randomAvatar(), isolated: false, trusted: false },
   );
   // Which add-on list is open under its row.
   const [choosing, setChoosing] = useState<"skills" | "plugins" | "extensions" | null>(null);
@@ -92,7 +92,7 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
     <Modal title={agent ? "Edit agent" : "New agent"} hidden={hidden} onClose={onClose}>
       <form onSubmit={save} className="flex flex-col gap-4">
         <AvatarPicker value={draft.avatar} onChange={(avatar) => change({ avatar })} />
-        <Field label="Name" hint={agent && <>Works in its folder, <code>{agent.folder}/</code>, in the workspace.</>}>
+        <Field label="Name" hint={agent && (agent.isolated ? <>Works in its own folder, <code>isolated/{agent.folder}/</code>.</> : <>Works in its folder, <code>{agent.folder}/</code>, in the workspace.</>)}>
           <input autoFocus value={draft.name} onChange={(e) => change({ name: e.target.value })} placeholder="For example: Research assistant" className="input" />
         </Field>
         <Field label="Instructions">
@@ -156,6 +156,23 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
           >
             <Toggles label="extensions" items={added} empty="" value={draft.extensions} onChange={(extensions) => change({ extensions })} />
           </AddOn>
+        </Section>
+        <Section title="Access">
+          <Row
+            title="Isolated"
+            description={
+              <>
+                Only its own folder: no workspace, memory, skill library or settings, and no browser unless you turn it on. Other agents can still read and change its folder and search its chat.
+                {agent && draft.isolated !== agent.isolated && " Saving moves its folder and restarts it."}
+              </>
+            }
+          >
+            {/* An agent made isolated starts without the browser (its sign-ins are every agent's); you can turn it on again. */}
+            <Switch label="Isolated" checked={draft.isolated} onChange={(isolated) => change({ isolated, ...(isolated && !draft.disabled.includes("browser") && { disabled: [...draft.disabled, "browser"] }) })} />
+          </Row>
+          <Row title="Always allow its own changes" description="Changes it asks for to its own instructions, thinking or skills apply without asking you; the chat shows each one. Anything else still asks.">
+            <Switch label="Always allow its own changes" checked={draft.trusted} onChange={(trusted) => change({ trusted })} />
+          </Row>
         </Section>
         <ErrorText>{error}</ErrorText>
         {/* Stays in reach at the bottom of the dialog while the form scrolls. */}

@@ -7,6 +7,7 @@ import { Avatar } from "../../components/ui/Avatar";
 import { Button, IconButton } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
 import { Notice } from "../../components/ui/Notice";
+import { Tag } from "../../components/ui/Tag";
 import { TopBar } from "../../components/ui/TopBar";
 import { useFollowBottom } from "../../lib/useFollowBottom";
 import { useMedia } from "../../lib/useMedia";
@@ -131,7 +132,7 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
           onBack={onBack}
           leading={<Avatar spec={avatarOf(agent)} size={32} working={chat.busy} doing={chat.doing} />}
           title={agent.name}
-          subtitle={agent.model ? shortName(models?.find((m) => m.id === agent.model)?.name ?? agent.model) : "Choose a model"}
+          subtitle={<>{agent.isolated && <Tag>Isolated</Tag>}{agent.model ? shortName(models?.find((m) => m.id === agent.model)?.name ?? agent.model) : "Choose a model"}</>}
           onTitle={onEdit}
           actions={<><IconButton icon="search" label="Find in this chat" aria-pressed={finding} className={finding ? "bg-select text-ink" : ""} onClick={() => (finding ? closeFind() : setFinding(true))} /><IconButton icon="panel" label={sideOpen ? "Hide browser and routines" : "Show browser and routines"} aria-pressed={sideOpen} className={sideOpen ? "bg-select text-ink" : ""} onClick={toggleSide} /></>}
         />
