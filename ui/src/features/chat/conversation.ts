@@ -145,10 +145,12 @@ export function failureOf({ messages }: Conversation) {
   return last?.role === "assistant" && last.stopReason === "error" ? last.errorMessage : undefined;
 }
 
+export const NO_REPLY = "No reply came.";
+
 export function noteOf({ busy, exit, messages }: Conversation) {
   const last = messages.at(-1);
   if (busy || exit || !last) return undefined;
-  if (last.role === "user") return "No reply. Try again, or choose another model in Edit agent.";
+  if (last.role === "user") return NO_REPLY;
   return last.stopReason === "aborted" ? "Stopped." : undefined;
 }
 
