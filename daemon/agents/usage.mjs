@@ -3,8 +3,8 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { CHATS, openChat, readJson, USAGE, writePrivate } from "../common.mjs";
 import { USAGE_DAYS } from "../config.mjs";
-import { userZone } from "../routines/routines.mjs";
-import { dateIn } from "../routines/schedule.mjs";
+import { userZone } from "../actions/actions.mjs";
+import { dateIn } from "../actions/schedule.mjs";
 
 const dayOf = async (ms, back = 0) => dateIn(ms, await userZone(), -back);
 

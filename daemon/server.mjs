@@ -30,8 +30,7 @@ import { fetchKnowledge } from "./memory/fetch.mjs";
 import { memoryText, saveMemoryText, useMemory } from "./memory/memory.mjs";
 import { migrate } from "./migrate.mjs";
 import { addDevice, markSeen, pushStatus, removeDevice, removePaired, setMuted } from "./push.mjs";
-import { actionTool, forgetActions, listActions, removeAction, runAction } from "./actions/actions.mjs";
-import { addRoutine, forgetRoutines, listRoutines, noteZone, removeRoutine, startRoutines, updateRoutine } from "./routines/routines.mjs";
+import { actionTool, changeAction, forgetActions, listActions, noteZone, removeAction, runAction, skipAction, startActions } from "./actions/actions.mjs";
 import { addExtension, listExtensions, removeExtension } from "./settings/extensions.mjs";
 import { answerSignIn, signInStatus, startSignIn, stopSignIn } from "./settings/login.mjs";
 import { addPlugin, listPlugins, pluginStatus, removePlugin } from "./settings/plugins.mjs";
@@ -124,7 +123,6 @@ route("PUT", "/api/agents/:id", async ({ id, body }) => {
 route("DELETE", "/api/agents/:id", async ({ id, body }) => {
   const agent = await getAgent(id);
   await removeProfile(id);
-  await forgetRoutines(id);
   await forgetActions(id);
   await stop(id);
   await closeBrowser(id);
@@ -164,12 +162,10 @@ agentRoute("POST", "/api/agents/:id/memory", "memory", async ({ id, body }) => {
   return { text: await useMemory(body, confirm) };
 });
 agentRoute("POST", "/api/agents/:id/fetch_knowledge", "fetch_knowledge", async ({ body }) => ({ text: await fetchKnowledge(body) }), quiet);
-agentRoute("GET", "/api/agents/:id/routines", "routines", async ({ id, headers, who }) => (who.device && (await noteZone(headers["x-timezone"])), listRoutines(id)));
-agentRoute("POST", "/api/agents/:id/routines", "routines", ({ id, body, headers }) => addRoutine(id, body, headers["x-timezone"]));
-agentRoute("PUT", "/api/agents/:id/routines/:rid", "routines", ({ id, rid, body }) => updateRoutine(id, rid, body));
-agentRoute("DELETE", "/api/agents/:id/routines/:rid", "routines", ({ id, rid }) => removeRoutine(id, rid));
 agentRoute("POST", "/api/agents/:id/action", "action", ({ id, body }) => actionTool(id, body));
-route("GET", "/api/agents/:id/actions", ({ id }) => listActions(id));
+route("GET", "/api/agents/:id/actions", async ({ id, headers }) => (await noteZone(headers["x-timezone"]), listActions(id)));
+route("PUT", "/api/agents/:id/actions/:rid", ({ id, rid, body }) => changeAction(id, rid, body));
+route("POST", "/api/agents/:id/actions/:rid/skip", ({ id, rid }) => skipAction(id, rid));
 route("POST", "/api/agents/:id/actions/:rid/run", ({ id, rid, body }) => runAction(id, rid, body.input));
 route("DELETE", "/api/agents/:id/actions/:rid", ({ id, rid }) => removeAction(id, rid));
 
@@ -299,7 +295,7 @@ sandbox.listen(SANDBOX_API);
 
 void syncCompaction();
 void clearScratch();
-startRoutines();
+startActions();
 startCurator();
 
 watchdog(HUNG_MS);

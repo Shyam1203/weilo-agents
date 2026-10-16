@@ -88,7 +88,8 @@ async function* linesOf(file) {
   }
 }
 
-export const shown = (m) => m?.role === "user" || m?.role === "assistant" || m?.role === "compactionSummary" || (m?.role === "toolResult" && ["ask", "routine", "manage_agents"].includes(m.toolName));
+// "routine" was the tool for timed tasks in older versions: its results still show in their chats.
+export const shown = (m) => m?.role === "user" || m?.role === "assistant" || m?.role === "compactionSummary" || (m?.role === "toolResult" && ["ask", "action", "routine", "manage_agents"].includes(m.toolName));
 // Of a tool call the app draws a show card and an ask in full; of the others one line (the command,
 // the path, the address...), so their arguments are cut to those fields: a file an agent writes is
 // not sent to the app.

@@ -14,7 +14,7 @@ test("an isolated agent may not use what is shared", () => {
   }
   assert.equal(mayCall(isolated, "browser"), false);
   assert.equal(mayCall({ ...isolated, disabled: [] }, "browser"), true);
-  assert.equal(mayCall(isolated, "routines"), true);
+  assert.equal(mayCall(isolated, "actions"), true);
 });
 
 test("each kind of agent is its own user, and others only read an isolated folder", () => {

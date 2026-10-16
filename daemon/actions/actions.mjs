@@ -1,32 +1,81 @@
 import { randomUUID } from "node:crypto";
+import { rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { audit } from "../audit.mjs";
-import { ACTIONS, fail, readJson, updateJson } from "../common.mjs";
-import { ACTION_MS, ACTION_SHOWN, MAX_ACTION_ABOUT, MAX_ACTION_FIELDS, MAX_ACTION_OUTPUT, MAX_ACTION_REQUEST, MAX_ACTION_SCRIPT, MAX_ACTION_TITLE, MAX_ACTIONS, PORT } from "../config.mjs";
+import { ACTIONS, fail, OLD_SCHEDULES, readJson, updateJson } from "../common.mjs";
+import { ACTION_MS, ACTION_SHOWN, ACTIONS_EVERY_MS, LATE_MS, MAX_ACTION_ABOUT, MAX_ACTION_FIELDS, MAX_ACTION_OUTPUT, MAX_ACTION_REQUEST, MAX_ACTION_RUNS, MAX_ACTION_SCRIPT, MAX_ACTION_TITLE, MAX_ACTIONS, MAX_IN_MINUTES, MAX_TIMES, PORT } from "../config.mjs";
 import { dropScriptKey, scriptKey } from "../http/access.mjs";
 import { getAgent, homeOf, isIsolated, userHomeOf, userOf } from "../agents/agents.mjs";
-import { askUser, prompt } from "../agents/runner.mjs";
+import { askUser, prompt, tellChats } from "../agents/runner.mjs";
+import { notify } from "../push.mjs";
 import { passedOn, sharedTools, spawnAs } from "../users.mjs";
+import { DAYS, EVERY, MINUTES, dateIn, nextRun, timeIn, validZone } from "./schedule.mjs";
 
 export const KINDS = ["agent", "script"];
 export const ICONS = ["bolt", "package", "food", "cart", "truck", "calendar", "mail", "money", "search", "globe"];
 export const ACTION_MARK = "⚡ Action: ";
-// The app's chat hides this line under an action's message; keep the two in step.
+// A run the schedule started: its message's first line ends with this, and the agent is told the user is away.
+export const BY_ITSELF = " · ran by itself";
+// The app's chat hides these lines under an action's message; keep them in step with conversation.ts.
 export const CONFIRM_NOTE = "Before you pay, order, book or send anything, use ask to confirm the exact details with the user.";
-const SAVE = "Save it";
+export const AWAY_NOTE = "This action ran by itself at its time; the user is away and reads your reply later. Do it now. If a step needs the user's confirmation, use ask: they get a notification and answer when they can. Anything else that needs them, leave for the end. End with the result in a few lines.";
+const MISSED = "Missed: Weilo Agents was not running at that time";
 const RUNNER = fileURLToPath(new URL("./run.mjs", import.meta.url));
 
 let state;
 let loading;
-const load = () =>
-  (loading ??= readJson(ACTIONS).then(
-    (saved) => (state = { items: Array.isArray(saved.items) ? saved.items : [] }),
-    (err) => {
-      loading = undefined;
-      throw err;
-    },
-  ));
 const save = () => updateJson(ACTIONS, () => state);
+
+// Tasks older versions kept in their own file, with a time to run, become agent actions with a schedule.
+const fromOld = (r, zone) => ({
+  id: typeof r.id === "string" ? r.id : randomUUID(),
+  agentId: r.agentId,
+  title: String(r.title ?? "Task").slice(0, MAX_ACTION_TITLE),
+  about: "",
+  kind: "agent",
+  request: String(r.task ?? ""),
+  script: "",
+  fields: [],
+  confirm: false,
+  icon: "calendar",
+  schedule: r.nextRunAt === null && r.every === "once" ? null : { every: r.every, times: r.times ?? [], ...(r.every === "week" && { day: r.day }), ...(r.every === "once" && { date: r.date }), timezone: r.timezone ?? zone, nextRunAt: r.nextRunAt ?? null },
+  runs: r.lastError ? [{ at: Date.now(), ok: false, text: r.lastError, by: "schedule" }] : [],
+});
+
+const load = () =>
+  (loading ??= (async () => {
+    const saved = await readJson(ACTIONS);
+    state = { timezone: validZone(saved.timezone) ? saved.timezone : null, items: Array.isArray(saved.items) ? saved.items : [] };
+    const old = await readJson(OLD_SCHEDULES);
+    if (Array.isArray(old.items) || old.timezone) {
+      state.timezone ??= validZone(old.timezone) ? old.timezone : null;
+      for (const r of old.items ?? []) if (r?.agentId && r.task) state.items.push(fromOld(r, state.timezone ?? "UTC"));
+      state.timezone ??= "UTC";
+      await save();
+      await rm(OLD_SCHEDULES, { force: true });
+      await rm(`${OLD_SCHEDULES}.bak`, { force: true });
+    }
+    state.timezone ??= "UTC";
+  })().catch((err) => {
+    loading = undefined;
+    throw err;
+  }));
+
+export const userZone = async () => (await load(), state.timezone);
+
+/** The user's browser is in another time zone now: schedules on the old one move with it. */
+export async function noteZone(zone) {
+  await load();
+  if (!validZone(zone) || state.timezone === zone) return;
+  for (const a of state.items) {
+    const s = a.schedule;
+    if (!s || s.timezone !== state.timezone || s.every === "once" || s.nextRunAt === null) continue;
+    s.timezone = zone;
+    s.nextRunAt = nextRun(s, zone, Date.now());
+  }
+  state.timezone = zone;
+  await save();
+}
 
 const text = (value, max, what) => {
   if (value === undefined) return undefined;
@@ -50,8 +99,40 @@ function fieldsOf(list) {
   return fields;
 }
 
+/** When an action runs by itself, checked, with its next time; null for never. */
+export function scheduleOf(input, zone, now = Date.now()) {
+  if (input === null) return null;
+  if (typeof input !== "object") throw fail(400, "The schedule is not valid");
+  const { every } = input;
+  if (!EVERY.includes(every)) throw fail(400, "Choose how often: once, every few minutes, every hour, every day, weekdays or every week");
+  let times = Array.isArray(input.times) ? [...new Set(input.times)].sort() : every === "hour" ? ["00:00"] : [];
+  let date = input.date === "today" || input.date === "tomorrow" ? dateIn(now, zone, input.date === "tomorrow" ? 1 : 0) : input.date;
+  let at;
+  if (every === "once" && input.in_minutes !== undefined) {
+    const minutes = Math.floor(Number(input.in_minutes));
+    if (!(minutes >= 1 && minutes <= MAX_IN_MINUTES)) throw fail(400, `Give in_minutes from 1 to ${MAX_IN_MINUTES}`);
+    at = Math.floor((now + minutes * 60_000) / 60_000) * 60_000;
+    date = dateIn(at, zone);
+    times = [timeIn(at, zone)];
+  }
+  const minutes = every === "minutes" ? Number(input.minutes) : undefined;
+  if (every === "minutes") {
+    if (!MINUTES.includes(minutes)) throw fail(400, `Choose every ${MINUTES.join(", ")} minutes`);
+  } else if (!times.length || times.length > MAX_TIMES || !times.every((t) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t))) throw fail(400, `Give 1 to ${MAX_TIMES} times as HH:MM, for example 08:00`);
+  const day = every === "week" ? (typeof input.day === "number" ? input.day : DAYS.indexOf(String(input.day ?? "").slice(0, 3).toLowerCase())) : undefined;
+  if (every === "week" && !(day >= 0 && day <= 6)) throw fail(400, "Choose the day of the week");
+  if (every === "once" && !/^\d{4}-\d{2}-\d{2}$/.test(date ?? "")) throw fail(400, "Give the date as YYYY-MM-DD, today, tomorrow, or in_minutes");
+  const plan = { every, times: every === "minutes" ? [] : every === "hour" || every === "once" ? times.slice(0, 1) : times, ...(every === "week" && { day }), ...(every === "once" && { date }), ...(every === "minutes" && { minutes }), timezone: zone };
+  return { ...plan, nextRunAt: at ?? nextRun(plan, zone, now) };
+}
+
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+/** A schedule in a few plain words: "every day at 08:00". */
+export const when = (s) =>
+  s.every === "minutes" ? `every ${s.minutes} minutes` : s.every === "hour" ? `every hour at :${s.times[0].slice(3)}` : s.every === "once" ? `once, on ${s.date} at ${s.times[0]}` : `${s.every === "weekday" ? "on weekdays" : s.every === "week" ? `every ${DAY_NAMES[s.day]}` : "every day"} at ${s.times.join(" and ")}`;
+
 /** The action as it would be saved: input over what is there, checked. */
-export function planAction(input, current = {}, isolated = false) {
+export function planAction(input, current = {}, isolated = false, zone = "UTC") {
   const next = {
     title: text(input.title, MAX_ACTION_TITLE, "The title") ?? current.title,
     about: text(input.about, MAX_ACTION_ABOUT, "about") ?? current.about ?? "",
@@ -61,6 +142,7 @@ export function planAction(input, current = {}, isolated = false) {
     fields: fieldsOf(input.fields) ?? current.fields ?? [],
     confirm: typeof input.confirm === "boolean" ? input.confirm : (current.confirm ?? false),
     icon: input.icon ?? current.icon ?? "bolt",
+    schedule: input.schedule === undefined ? (current.schedule ?? null) : scheduleOf(input.schedule, zone),
   };
   if (!next.title) throw fail(400, "Give the action a short title");
   if (!KINDS.includes(next.kind)) throw fail(400, 'Choose the kind: "agent" (a request to you) or "script" (code that runs without you)');
@@ -78,6 +160,7 @@ export function planAction(input, current = {}, isolated = false) {
     if (!/export\s+default/.test(next.script)) throw fail(400, "The script must export a default async function: export default async function ({ input, browser }) { … }");
     next.request = "";
   }
+  if (next.schedule && next.fields.some((f) => !f.default)) throw fail(400, "An action that runs by itself needs a default for each field");
   return next;
 }
 
@@ -96,19 +179,21 @@ export function valuesOf(action, input = {}) {
 
 export const filled = (request, values) => request.replace(/\{([a-z][a-z0-9_]*)\}/g, (all, name) => values[name] ?? all);
 
-/** What a script returned, as text for the user: a string as it is, an object as one "name: value" line each. */
+/** What a script returned, as text for the user: a string as it is, an object as one "name: value" line each ("stop" left out). */
 export function shown(result) {
-  const out = typeof result === "string" ? result : result && typeof result === "object" ? Object.entries(result).map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`).join("\n") : result === undefined ? "Done." : JSON.stringify(result);
+  const out = typeof result === "string" ? result : result && typeof result === "object" ? Object.entries(result).filter(([k]) => k !== "stop").map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`).join("\n") : result === undefined ? "Done." : JSON.stringify(result);
   return out.length > ACTION_SHOWN ? `${out.slice(0, ACTION_SHOWN)}…` : out;
 }
 
-const view = ({ id, title, about, kind, request, fields, confirm, icon, last }) => ({ id, title, about, kind, request, fields, confirm, icon, last: last ?? null });
+const view = ({ id, title, about, kind, request, fields, confirm, icon, schedule, runs }) => ({ id, title, about, kind, request, fields, confirm, icon, schedule: schedule ?? null, runs: runs ?? [] });
 
 const find = (agentId, id) => {
   const action = state.items.find((a) => a.id === id && a.agentId === agentId);
   if (!action) throw fail(404, "This action does not exist");
   return action;
 };
+
+const record = (action, run) => (action.runs = [run, ...(action.runs ?? []).filter((r) => !(run.waiting === undefined && r.waiting))].slice(0, MAX_ACTION_RUNS));
 
 export async function listActions(agentId) {
   await load();
@@ -125,6 +210,28 @@ export async function removeAction(agentId, id) {
 export async function forgetActions(agentId) {
   await load();
   state.items = state.items.filter((a) => a.agentId !== agentId);
+  await save();
+}
+
+/** The user changes when an action runs by itself, or whether it asks first: theirs to decide, so no approval. */
+export async function changeAction(agentId, id, { schedule, confirm }) {
+  await load();
+  const action = find(agentId, id);
+  if (schedule !== undefined) {
+    const next = scheduleOf(schedule, state.timezone);
+    if (next && action.fields.some((f) => !f.default)) throw fail(400, "Tell the agent the usual values for this action first: it runs by itself only with them.");
+    action.schedule = next;
+  }
+  if (typeof confirm === "boolean") action.confirm = confirm;
+  await save();
+  return view(action);
+}
+
+/** The user said not this time to a run that waited for them. */
+export async function skipAction(agentId, id) {
+  await load();
+  const action = find(agentId, id);
+  action.runs = (action.runs ?? []).filter((r) => !r.waiting);
   await save();
 }
 
@@ -156,7 +263,8 @@ export async function runScript(agent, script, input) {
       child.stdin.on("error", () => {});
       child.stdin.end(JSON.stringify({ script, input }));
     });
-    return { ok: answer.ok === true, text: answer.ok === true ? shown(answer.result) : `Failed: ${String(answer.error ?? "no answer").slice(0, 500)}`, ms: Date.now() - started };
+    const ok = answer.ok === true;
+    return { ok, text: ok ? shown(answer.result) : `Failed: ${String(answer.error ?? "no answer").slice(0, 500)}`, ms: Date.now() - started, stop: ok && answer.result?.stop === true };
   } finally {
     dropScriptKey(key);
   }
@@ -164,41 +272,110 @@ export async function runScript(agent, script, input) {
 
 const running = new Set();
 
-/** The user tapped an action: an agent action goes to the agent as a message, a script runs here. */
-export async function runAction(agentId, id, input) {
-  await load();
-  const action = find(agentId, id);
-  const values = valuesOf(action, input);
-  if (action.kind === "agent") {
-    const request = filled(action.request, values);
-    await prompt(agentId, { text: `${ACTION_MARK}${action.title}\n\n${request}${action.confirm ? `\n\n${CONFIRM_NOTE}` : ""}` });
-    return { sent: true };
-  }
-  return runSaved(agentId, action, values);
-}
-
-async function runSaved(agentId, action, values) {
+async function runSaved(agentId, action, values, by) {
   if (running.has(action.id)) throw fail(409, `${action.title} is already running`);
   running.add(action.id);
   try {
     const result = await runScript(await getAgent(agentId), action.script, values);
-    action.last = { at: Date.now(), ok: result.ok, text: result.text.slice(0, 300) };
+    // A script may say it is done ({ stop: true }), like a delivery that arrived: then it stops running by itself.
+    const stopped = result.stop && action.schedule ? ((action.schedule = null), "\nStopped running by itself.") : "";
+    const run = { at: Date.now(), ok: result.ok, text: `${result.text}${stopped}`, by, ms: result.ms };
+    record(action, run);
     if (state.items.includes(action)) await save();
-    audit("action run", { agent: agentId, action: action.title, ok: result.ok });
-    return { ...result, at: action.last.at };
+    audit("action run", { agent: agentId, action: action.title, ok: result.ok, by });
+    return { ...run };
   } finally {
     running.delete(action.id);
   }
 }
 
-const describe = (a) =>
-  `${a.id}: "${a.title}" (${a.kind}${a.confirm ? ", confirms first" : ""})${a.about ? ` ${a.about}` : ""}${a.fields.length ? `. Fields: ${a.fields.map((f) => `${f.name}${f.options ? ` [${f.options.join(" | ")}]` : ""}${f.default ? ` = ${f.default}` : ""}`).join(", ")}` : ""}${a.kind === "agent" ? `. Request: ${a.request}` : `. Script:\n${a.script}`}${a.last ? `\nLast run: ${a.last.ok ? "ok" : "failed"}, ${a.last.text}` : ""}`;
+/** An action runs: an agent action goes to the agent as a message, a script runs here. by: "you" or "schedule". */
+export async function runAction(agentId, id, input, by = "you") {
+  await load();
+  const action = find(agentId, id);
+  const values = valuesOf(action, input);
+  if (action.kind === "agent") {
+    const away = by === "schedule";
+    const notes = [away && AWAY_NOTE, filled(action.request, values), action.confirm && CONFIRM_NOTE].filter(Boolean).join("\n\n");
+    await prompt(agentId, { text: `${ACTION_MARK}${action.title}${away ? BY_ITSELF : ""}\n\n${notes}` });
+    record(action, { at: Date.now(), ok: true, text: `Asked ${(await getAgent(agentId)).name}`, by, chat: true });
+    await save();
+    return { sent: true };
+  }
+  return runSaved(agentId, action, values, by);
+}
 
+// A due action runs as if tapped, with its fields' defaults. A script that asks first waits for the
+// user instead, with a notification; the agent asks with its own ask (which notifies too).
+async function runDue(action) {
+  const agent = await getAgent(action.agentId);
+  if (action.kind === "script" && action.confirm) {
+    record(action, { at: Date.now(), ok: true, text: "Ready to run. It asks you first.", by: "schedule", waiting: true });
+    await save();
+    void notify(agent, "ask", `${action.title} is ready to run. Open the app to confirm.`).catch(() => {});
+    return;
+  }
+  const result = await runAction(action.agentId, action.id, {}, "schedule");
+  if ("text" in result) void notify(agent, result.ok ? "reply" : "error", `${action.title}: ${result.text}`).catch(() => {});
+}
+
+let ticking = false;
+
+async function tick() {
+  if (ticking) return;
+  ticking = true;
+  try {
+    await load();
+    const now = Date.now();
+    const due = state.items.filter((a) => a.schedule?.nextRunAt != null && a.schedule.nextRunAt <= now);
+    const runs = [];
+    for (const action of due) {
+      const late = now - action.schedule.nextRunAt > LATE_MS;
+      // The next time is saved before the run starts: a crash skips a run, never repeats one.
+      if (action.schedule.every === "once") action.schedule = null;
+      else {
+        try {
+          action.schedule.nextRunAt = nextRun(action.schedule, action.schedule.timezone, now);
+        } catch {
+          action.schedule.nextRunAt = null;
+        }
+      }
+      if (late) record(action, { at: now, ok: false, text: MISSED, by: "schedule" });
+      else runs.push(action);
+    }
+    if (due.length) await save();
+    for (const action of runs)
+      void runDue(action)
+        .catch(async (err) => {
+          record(action, { at: Date.now(), ok: false, text: `Failed: ${String(err.message).slice(0, 300)}`, by: "schedule" });
+          await save();
+        })
+        .finally(() => tellChats(action.agentId, { type: "actions_changed" }));
+    for (const action of due) if (!runs.includes(action)) tellChats(action.agentId, { type: "actions_changed" });
+  } catch (err) {
+    console.error("actions:", err);
+  } finally {
+    ticking = false;
+  }
+}
+
+export function startActions() {
+  setInterval(() => void tick(), ACTIONS_EVERY_MS).unref();
+  void tick();
+}
+
+const describe = (a) =>
+  `${a.id}: "${a.title}" (${a.kind}${a.confirm ? ", asks first" : ""}${a.schedule ? `, runs by itself ${when(a.schedule)}` : ""})${a.about ? ` ${a.about}` : ""}${a.fields.length ? `. Fields: ${a.fields.map((f) => `${f.name}${f.options ? ` [${f.options.join(" | ")}]` : ""}${f.default ? ` = ${f.default}` : ""}`).join(", ")}` : ""}${a.kind === "agent" ? `. Request: ${a.request}` : `. Script:\n${a.script}`}${a.runs?.[0] ? `\nLast run: ${a.runs[0].ok ? "ok" : "failed"}, ${a.runs[0].text}` : ""}`;
+
+// What the user sees to approve, in plain words; the request or script is there for anyone who wants to look.
 function question(agentName, plan, changing) {
-  const fields = plan.fields.length ? `\n\nIt asks for: ${plan.fields.map((f) => f.label).join(", ")}.` : "";
-  const confirm = plan.confirm ? (plan.kind === "script" ? "\n\nIt asks you to confirm each time before it runs." : "\n\nIt asks you to confirm before it pays, orders or sends anything.") : "";
-  const body = plan.kind === "agent" ? `When you tap it, ${agentName} gets this request:\n\n${plan.request}` : `It runs this script, without the model (fast, no tokens), with the browser and your sign-ins:\n\n${plan.script}`;
-  return `${agentName} asks to ${changing ? "change" : "save"} the action "${plan.title}"${plan.about ? `: ${plan.about}` : ""}.${fields}${confirm}\n\n${body}`;
+  const lines = [changing ? `${agentName} would like to change "${plan.title}".` : `${agentName} would like to add a button: "${plan.title}".`];
+  if (plan.about) lines.push(plan.about);
+  if (plan.schedule) lines.push(`It would also run by itself ${when(plan.schedule)}.`);
+  if (plan.fields.length) lines.push(`It asks for: ${plan.fields.map((f) => f.label).join(", ")}.`);
+  if (plan.confirm) lines.push("It asks you before it pays, orders, books or sends anything.");
+  lines.push(plan.kind === "agent" ? `How it works: it asks ${agentName} to "${plan.request}".` : `How it works: a small program ${agentName} wrote runs in seconds, with ${agentName}'s browser and your sign-ins:\n\n${plan.script}`);
+  return lines.join("\n\n");
 }
 
 /** The agent's action tool: list, try, create, update, delete and run. */
@@ -210,14 +387,16 @@ export async function actionTool(agentId, { op, id, input, ...fields }) {
     return { text: mine.length ? mine.map(describe).join("\n\n") : "No actions yet." };
   }
   if (op === "try") {
-    const plan = planAction({ title: "Try", ...fields, kind: "script" }, {}, isIsolated(agent));
+    const plan = planAction({ title: "Try", ...fields, kind: "script", schedule: null }, {}, isIsolated(agent));
     const result = await runScript(agent, plan.script, valuesOf(plan, input));
     return { text: `${result.ok ? "It worked" : "It failed"} (${result.ms} ms):\n${result.text}` };
   }
   if (op === "run") {
     const action = find(agentId, id);
     if (action.kind === "agent") return { text: "This action is a request to you: do it yourself." };
-    return { text: (await runSaved(agentId, action, valuesOf(action, input))).text };
+    const result = await runSaved(agentId, action, valuesOf(action, input), "you");
+    tellChats(agentId, { type: "actions_changed" });
+    return { text: result.text };
   }
   if (op === "delete") {
     const action = find(agentId, id);
@@ -226,13 +405,23 @@ export async function actionTool(agentId, { op, id, input, ...fields }) {
   }
   if (op !== "create" && op !== "update") throw fail(400, "Unknown op");
   const current = op === "update" ? find(agentId, id) : undefined;
+  // Stopping an action from running by itself needs no approval: it only does less.
+  if (current && fields.schedule === null && Object.keys(fields).every((k) => k === "schedule")) {
+    current.schedule = null;
+    await save();
+    return { text: `"${current.title}" no longer runs by itself.`, details: { op, title: current.title } };
+  }
   if (!current && state.items.filter((a) => a.agentId === agentId).length >= MAX_ACTIONS) throw fail(400, `An agent can have ${MAX_ACTIONS} actions`);
-  const plan = planAction(fields, current, isIsolated(agent));
-  if ((await askUser(agentId, question(agent.name, plan, !!current), [SAVE, "Don't"])) !== SAVE) return { text: "The user did not approve it: nothing was saved. Do not ask again unless they ask you to." };
+  const plan = planAction(fields, current, isIsolated(agent), state.timezone);
+  const options = current ? ["Save the change", "No thanks"] : plan.schedule ? [`Add it, and run it ${when(plan.schedule)}`, "Add the button only", "No thanks"] : ["Add the button", "No thanks"];
+  const answer = await askUser(agentId, question(agent.name, plan, !!current), options);
+  if (!answer || answer === "No thanks") return { text: "The user did not want it: nothing was saved. Do not ask again unless they ask you to." };
+  if (answer === "Add the button only") plan.schedule = null;
   if (current) {
     if (!state.items.includes(current)) throw fail(409, "The action was deleted meanwhile");
-    Object.assign(current, plan, { last: null });
-  } else state.items.push({ id: randomUUID(), agentId, ...plan, last: null });
+    Object.assign(current, plan);
+  } else state.items.push({ id: randomUUID(), agentId, ...plan, runs: [] });
   await save();
-  return { text: `Saved. The user can tap "${plan.title}" in the app now.`, details: { op, title: plan.title } };
+  const scheduled = plan.schedule ? ` It runs by itself ${when(plan.schedule)}.` : "";
+  return { text: `Saved. The user can tap "${plan.title}" in the app now.${scheduled}`, details: { op, title: plan.title } };
 }

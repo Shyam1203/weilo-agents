@@ -1,16 +1,20 @@
 import { root } from "./root.mjs";
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
-import { actionTool, filled, planAction, runScript, shown, valuesOf } from "../actions/actions.mjs";
+import { actionTool, changeAction, filled, listActions, planAction, runScript, scheduleOf, shown, skipAction, valuesOf, when } from "../actions/actions.mjs";
+import { OLD_SCHEDULES } from "../common.mjs";
 import { profilePath } from "../agents/agents.mjs";
 import { dropScriptKey, identify, keyIn, scriptKey } from "../http/access.mjs";
 
 const uid = process.getuid?.() ?? 1000;
 const agent = { id: "act", name: "A", uid, folder: "act", isolated: false, disabled: [] };
 mkdirSync(join(root, "workspace", "act"), { recursive: true });
+// Tasks with a time from an older version, waiting to be moved into actions on first use.
+const soon = Date.now() + 3_600_000;
+writeFileSync(OLD_SCHEDULES, JSON.stringify({ timezone: "Europe/Berlin", items: [{ id: "r1", agentId: "act", title: "Inbox summary", task: "Summarize my inbox", every: "day", times: ["08:00"], timezone: "Europe/Berlin", nextRunAt: soon, lastError: null }] }));
 
 test("an agent action fills its blanks from its fields", () => {
   const plan = planAction({ title: "Track", kind: "agent", request: "Track {number} with {carrier}", fields: [{ name: "number" }, { name: "carrier", options: ["UPS", "DHL"], default: "UPS" }] });
@@ -87,5 +91,34 @@ test("an agent tries a script before saving it, without a title", async () => {
   writeFileSync(profilePath("act"), JSON.stringify(agent));
   const { text } = await actionTool("act", { op: "try", script: "export default async ({ input }) => `Tracking ${input.number}`;", fields: [{ name: "number" }], input: { number: "1Z" } });
   assert.match(text, /^It worked \(\d+ ms\):\nTracking 1Z$/);
-  assert.equal((await actionTool("act", { op: "list" })).text, "No actions yet.");
+  assert.doesNotMatch((await actionTool("act", { op: "list" })).text, /"Try"/);
+});
+
+test("tasks with a time from an older version become actions that run by themselves", async () => {
+  const [moved] = await listActions("act");
+  assert.equal(moved.title, "Inbox summary");
+  assert.equal(moved.kind, "agent");
+  assert.equal(moved.request, "Summarize my inbox");
+  assert.deepEqual(moved.schedule, { every: "day", times: ["08:00"], timezone: "Europe/Berlin", nextRunAt: soon });
+  assert.equal(existsSync(OLD_SCHEDULES), false);
+});
+
+test("a schedule is checked and says when it runs next", () => {
+  const now = Date.parse("2026-10-16T10:07:30Z");
+  assert.deepEqual(scheduleOf({ every: "minutes", minutes: 10 }, "UTC", now), { every: "minutes", times: [], minutes: 10, timezone: "UTC", nextRunAt: Date.parse("2026-10-16T10:17:00Z") });
+  assert.equal(scheduleOf({ every: "week", day: "mon", times: ["09:00"] }, "UTC", now).nextRunAt, Date.parse("2026-10-19T09:00:00Z"));
+  assert.equal(scheduleOf(null, "UTC"), null);
+  assert.throws(() => scheduleOf({ every: "minutes", minutes: 7 }, "UTC", now), /every 5, 10, 15, 30 minutes/);
+  assert.throws(() => scheduleOf({ every: "day", times: ["25:00"] }, "UTC", now), /HH:MM/);
+  assert.equal(when(scheduleOf({ every: "weekday", times: ["08:00"] }, "UTC", now)), "on weekdays at 08:00");
+  assert.equal(when({ every: "minutes", minutes: 10 }), "every 10 minutes");
+  assert.throws(() => planAction({ title: "T", kind: "agent", request: "Track {n}", fields: [{ name: "n" }], schedule: { every: "hour" } }), /default for each field/);
+});
+
+test("the user sets when an action runs by itself and whether it asks first, without the agent", async () => {
+  const changed = await changeAction("act", "r1", { schedule: { every: "minutes", minutes: 30 }, confirm: true });
+  assert.equal(changed.schedule.every, "minutes");
+  assert.equal(changed.confirm, true);
+  assert.equal((await changeAction("act", "r1", { schedule: null })).schedule, null);
+  await skipAction("act", "r1");
 });

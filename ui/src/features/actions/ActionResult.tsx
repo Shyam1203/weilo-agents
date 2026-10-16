@@ -1,49 +1,48 @@
-import type { Action } from "../../api/actions";
-import { Button, IconButton } from "../../components/ui/Button";
+import type { Action, ActionRun } from "../../api/actions";
+import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
 import { Time } from "../chat/ReplyActions";
 
-export interface Run {
-  key: number;
-  action: Action;
-  done: boolean;
-  ok?: boolean;
-  text?: string;
-  ms?: number;
-  at?: number;
-}
-
 interface Props {
-  run: Run;
+  action: Action;
+  /** Missing while it runs. */
+  run?: ActionRun;
+  /** The action's newest answer: only that one offers what to do next. */
+  latest: boolean;
   agentName: string;
   onAgain: () => void;
   onAsk: () => void;
   onFix: () => void;
-  onClose: () => void;
+  onSkip: () => void;
 }
 
-/** What a script action answered, in the chat. The agent does not see it unless you ask it about it. */
-export function ActionResult({ run, agentName, onAgain, onAsk, onFix, onClose }: Props) {
+/** An instant action's answer in the chat, kept with the chat's history. The agent does not see it unless you ask it about it. */
+export function ActionResult({ action, run, latest, agentName, onAgain, onAsk, onFix, onSkip }: Props) {
+  const failed = run && !run.ok;
   return (
-    <section aria-label={`${run.action.title}: result`} className="w-full max-w-[85%] animate-fade-in overflow-hidden rounded-2xl ring-1 ring-line">
-      <div className="flex items-center gap-2 border-b border-line bg-panel px-3.5 py-2 text-xs text-ink-3">
-        <Icon name="bolt" size={13} className="shrink-0 text-ink" />
-        <span className="font-medium text-ink">{run.action.title}</span>
-        <span className="min-w-0 flex-1 truncate">{run.done ? `script · ${((run.ms ?? 0) / 1000).toFixed(1)} s · no tokens` : "running…"}</span>
-        {run.at && <Time at={run.at / 1000} />}
-        <IconButton icon="close" label="Close" onClick={onClose} className="-my-1 -mr-2 size-7" />
+    <section aria-label={`${action.title}: answer`} className={`w-full max-w-[85%] animate-fade-in overflow-hidden rounded-2xl ring-1 ${failed ? "ring-bad/30" : "ring-line"}`}>
+      <div className={`flex items-center gap-2 border-b px-3.5 py-2 text-xs text-ink-3 ${failed ? "border-bad/20 bg-bad-soft" : "border-line bg-panel"}`}>
+        <Icon name={run?.by === "schedule" ? "clock" : action.icon} size={13} className="shrink-0 text-ink" />
+        <span className="font-medium text-ink">{action.title}</span>
+        <span className="min-w-0 flex-1 truncate">{!run ? "· working on it…" : run.by === "schedule" ? "· ran by itself" : "· you tapped it"}</span>
+        {run && <Time at={run.at / 1000} />}
       </div>
       <div className="flex flex-col gap-2.5 px-3.5 py-3">
-        {run.done ? (
-          <p className={`text-[14px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] ${run.ok ? "" : "text-bad"}`}>{run.text}</p>
-        ) : (
+        {!run ? (
           <p className="flex items-center gap-2 text-[14px] text-ink-3">
-            <Icon name="spinner" size={14} /> Running…
+            <Icon name="spinner" size={14} /> Working on it…
           </p>
+        ) : (
+          <p className={`text-[14px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] ${failed ? "text-bad" : ""}`}>{run.waiting ? "Ready to run. It asks you first." : run.text.replace(/^Failed: /, "Didn't work: ")}</p>
         )}
-        {run.done && (
+        {run && latest && (
           <div className="flex flex-wrap gap-1.5">
-            {run.ok ? (
+            {run.waiting ? (
+              <>
+                <Button size="sm" variant="primary" icon="play" onClick={onAgain}>Run it</Button>
+                <Button size="sm" onClick={onSkip}>Not this time</Button>
+              </>
+            ) : run.ok ? (
               <>
                 <Button size="sm" icon="retry" onClick={onAgain}>Run again</Button>
                 <Button size="sm" onClick={onAsk}>Ask {agentName} about it</Button>

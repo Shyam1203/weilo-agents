@@ -74,7 +74,7 @@
 <text class="ts" x="322" y="122" text-anchor="middle">UI, JSON API, live events</text>
 <text class="ts" x="322" y="142" text-anchor="middle">pairing, agent keys, approvals</text>
 <text class="ts" x="322" y="162" text-anchor="middle">key gateway: models, plugins</text>
-<text class="ts" x="322" y="182" text-anchor="middle">routines, curator, notifications</text>
+<text class="ts" x="322" y="182" text-anchor="middle">actions, curator, notifications</text>
 <path class="ar" d="M196 190 L162 318" marker-end="url(#i-a)"/>
 <rect class="box b-green" x="474" y="50" width="262" height="58" rx="10"/>
 <text class="tb" x="605" y="74" text-anchor="middle">pi: a regular agent</text>
@@ -125,7 +125,7 @@
 <div class="table"><table>
 <thead><tr><th>Page</th><th>What it covers</th></tr></thead>
 <tbody>
-<tr><td><a href="architecture.html">Architecture</a></td><td>Container layout, the processes and their users, what the daemon does, how a <code>pi</code> is started, events and chat files, routines, notifications, the browser, updates and data migration.</td></tr>
+<tr><td><a href="architecture.html">Architecture</a></td><td>Container layout, the processes and their users, what the daemon does, how a <code>pi</code> is started, events and chat files, actions, notifications, the browser, updates and data migration.</td></tr>
 <tr><td><a href="security.html">Security model</a></td><td>The threat model, every boundary and where the code enforces it, the key gateway, pairing, approvals, trusted agents, and the known limits.</td></tr>
 <tr><td><a href="agents.html">Agents</a></td><td>Regular, isolated and trusted agents side by side, the profile, folders and uploads, tools, <code>manage_agents</code>, <code>manage_settings</code>, skills, plugins and extensions.</td></tr>
 <tr><td><a href="memory-and-knowledge.html">Memory and knowledge</a></td><td>Hot memory (<code>MEMORY.md</code>, <code>USER.md</code>), the vault, the curator, <code>fetch_knowledge</code>, and what isolated agents get.</td></tr>
@@ -173,8 +173,8 @@
 <dt id="g-trusted">Trusted</dt><dd>"Always allow its own changes": an agent whose requests to change only its own instructions, thinking or skills apply without a question. Set only by you.</dd>
 <dt id="g-plugin">Plugin</dt><dd>An MCP server listed in <code>agent/mcp.json</code>, either a program (a command) or a web address. An agent gets only the plugins its profile names.</dd>
 <dt id="g-skill">Skill</dt><dd>A folder with a <code>SKILL.md</code> in the shared library <code>agent/skills/</code>. An agent loads the skills its profile names (<code>--skill</code>); typing <code>/</code> in the chat offers them.</dd>
-<dt id="g-extension">Extension</dt><dd>A pi extension with a <code>weilo.json</code> manifest that adds tools. Bundled ones (browser, routines) come with the app; added ones are uploaded as a <code>.zip</code> into <code>agent/extensions/</code>.</dd>
-<dt id="g-routine">Routine</dt><dd>Work an agent does on a schedule (once, hourly, daily, weekdays, weekly). Kept in <code>agent/routines.json</code>; a due routine is sent to the agent's chat as a message.</dd>
+<dt id="g-extension">Extension</dt><dd>A pi extension with a <code>weilo.json</code> manifest that adds tools. Bundled ones (browser, actions) come with the app; added ones are uploaded as a <code>.zip</code> into <code>agent/extensions/</code>.</dd>
+<dt id="g-action">Action</dt><dd>Something an agent does for you with one tap and, if you choose, by itself at set times (once, every few minutes, hourly, daily, weekdays, weekly). The agent proposes it and you approve it. Instant ones run a small program the agent wrote, without the model. Kept in <code>agent/actions.json</code>.</dd>
 </dl>
 </section>
 </div>

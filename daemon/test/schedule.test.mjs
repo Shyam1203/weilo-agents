@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { dateIn, nextRun } from "../routines/schedule.mjs";
+import { dateIn, nextRun } from "../actions/schedule.mjs";
 
 const at = (iso) => Date.parse(iso);
 
-test("daily and weekday routines run at the next local time", () => {
+test("daily and weekday schedules run at the next local time", () => {
   const monday = at("2026-10-12T10:00:00Z");
   assert.equal(new Date(nextRun({ every: "day", times: ["09:00", "18:30"] }, "UTC", monday)).toISOString(), "2026-10-12T18:30:00.000Z");
   const friday = at("2026-10-16T20:00:00Z");

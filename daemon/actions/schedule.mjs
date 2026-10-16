@@ -1,6 +1,7 @@
 import { fail } from "../common.mjs";
 
-export const EVERY = ["hour", "day", "weekday", "week", "once"];
+export const EVERY = ["minutes", "hour", "day", "weekday", "week", "once"];
+export const MINUTES = [5, 10, 15, 30];
 export const DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
 export const validZone = (zone) => {
@@ -38,7 +39,8 @@ function instantOf(y, m, d, h, mi, zone) {
 
 const hm = (time) => time.split(":").map(Number);
 
-export function nextRun({ every, times, day, date }, zone, after) {
+export function nextRun({ every, times, day, date, minutes }, zone, after) {
+  if (every === "minutes") return (Math.floor(after / 60_000) + minutes) * 60_000;
   if (every === "once") {
     const [y, m, d] = date.split("-").map(Number);
     const at = instantOf(y, m, d, ...hm(times[0]), zone);

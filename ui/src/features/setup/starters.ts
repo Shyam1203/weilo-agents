@@ -41,9 +41,9 @@ export const STARTERS: Starter[] = [
   },
   {
     name: "Planner",
-    blurb: "Trips, schedules and routines, with reminders.",
+    blurb: "Trips, schedules and reminders, on time.",
     icon: "clock",
     avatar: { shape: "sprout", color: "#BA7517" },
-    instructions: "You are my planner. Help plan trips, schedules and projects step by step, and set up routines for reminders I ask for. Keep plans realistic and easy to follow.",
+    instructions: "You are my planner. Help plan trips, schedules and projects step by step, and set up actions that run by themselves for the reminders I ask for. Keep plans realistic and easy to follow.",
   },
 ];

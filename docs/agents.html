@@ -37,7 +37,7 @@
 <li><a href="#ask-agent">ask_agent</a></li>
 <li><a href="#manage-settings">manage_settings</a></li>
 <li><a href="#addons">Skills, plugins and extensions</a></li>
-<li><a href="#bundled">The browser, routines and actions extensions</a></li>
+<li><a href="#bundled">The browser and actions extensions</a></li>
 </ol></nav>
 <div class="content">
 <h1>Agents</h1>
@@ -63,7 +63,7 @@
 <tr><td>Installed tools on PATH</td><td>shared <code>/home/node/.local/bin</code></td><td>its own <code>.local/bin</code></td></tr>
 <tr><td>Plugin programs run as</td><td>a user of their own per plugin (from 300000), in an empty folder</td><td>a user of their own (uid + 100000) in the sandbox, with only its folder</td></tr>
 <tr><td>Browser</td><td>on unless switched off</td><td>switched off when it becomes isolated; you may turn it on</td></tr>
-<tr><td>Routines</td><td>yes</td><td>yes</td></tr>
+<tr><td>Actions (Instant ones: regular only)</td><td>yes</td><td>yes</td></tr>
 <tr><td>Its chat searched by others and by the curator</td><td>yes</td><td>yes, marked as an isolated agent's report</td></tr>
 <tr><td>What it writes in <code>shared/</code> filed into the vault</td><td>-</td><td>yes, marked the same way</td></tr>
 <tr><td>Scratch</td><td><code>/tmp/weilo/&lt;id&gt;/</code></td><td>its own <code>/tmp</code></td></tr>
@@ -116,7 +116,7 @@
 <tr><td><code>skills</code></td><td>Skill ids from the library</td><td>You, a request, a trusted agent itself, the <code>skill</code> tool</td></tr>
 <tr><td><code>plugins</code></td><td>Plugin names from <code>mcp.json</code></td><td>You, or a request</td></tr>
 <tr><td><code>extensions</code></td><td>Added extensions it uses</td><td>You, or a request</td></tr>
-<tr><td><code>disabled</code></td><td>Bundled extensions it does not use (<code>browser</code>, <code>routines</code>, <code>actions</code>)</td><td>You, or a request</td></tr>
+<tr><td><code>disabled</code></td><td>Bundled extensions it does not use (<code>browser</code>, <code>actions</code>)</td><td>You, or a request</td></tr>
 <tr><td><code>avatar</code></td><td><code>{shape, color}</code></td><td>You</td></tr>
 <tr><td><code>isolated</code>, <code>trusted</code></td><td>Booleans</td><td>You only</td></tr>
 <tr><td><code>dailyTokens</code></td><td>Tokens it may use a day (0: no limit; see <a href="security.html#budgets">budgets</a>)</td><td>You</td></tr>
@@ -142,7 +142,7 @@
 <p>Files attached to a message are saved by the daemon as <code>uploads/&lt;8 hex&gt;-&lt;safe name&gt;</code> (the name keeps letters, digits, <code>. - _</code> and spaces, at most 100 characters), owned by the agent, in its home's group and mode (regular: group <code>agents</code>, 0660 in a 2770 folder; isolated: its own group, 0664 in a 2775 folder). All attachments are checked before any is saved. Images go to the model directly and are not saved.</p>
 <h3>Deleting an agent</h3>
 <ol>
-<li>Its profile and routines go first, so nothing starts its pi again.</li>
+<li>Its profile and actions go first, so nothing starts its pi again.</li>
 <li>Its pi stops, a running browser step ends, and its browser window closes.</li>
 <li>Its HOME and pi folder are removed.</li>
 <li>Its chat is removed, or with "keep the chat" handed to root (<code>go-rwx</code>); a kept chat still turns up in <code>fetch_knowledge</code> as "deleted agent (&lt;id&gt;)".</li>
@@ -165,12 +165,11 @@
 <tr><td><code>ask_agent</code></td><td><code>weilo.mjs</code></td><td class="y">yes</td><td class="n">no</td><td><code>POST …/ask_agent</code></td></tr>
 <tr><td><code>memory</code>, <code>fetch_knowledge</code></td><td><code>memory/extension.mjs</code></td><td class="y">yes</td><td class="n">no (not loaded)</td><td><code>POST …/memory</code>, <code>…/fetch_knowledge</code></td></tr>
 <tr><td><code>browser</code></td><td>bundled <code>browser</code> extension</td><td class="p">unless off</td><td class="p">only if on</td><td><code>POST …/browser</code></td></tr>
-<tr><td><code>routine</code></td><td>bundled <code>routines</code> extension</td><td class="p">unless off</td><td class="p">unless off</td><td><code>…/routines</code></td></tr>
 <tr><td><code>action</code></td><td>bundled <code>actions</code> extension</td><td class="p">unless off</td><td class="p">unless off (agent actions only)</td><td><code>POST …/action</code></td></tr>
 <tr><td><code>codemode</code>, <code>mcp__&lt;plugin&gt;__*</code></td><td>pi's MCP built-ins, its plugins</td><td class="p">its plugins</td><td class="p">its plugins</td><td>plugin proxy or pipe</td></tr>
 <tr><td>an added extension's tools</td><td>the extension</td><td class="p">if listed</td><td class="p">if listed</td><td>whatever the extension does</td></tr>
 </tbody></table></div>
-<p>The daemon tools (<code>skill</code>, <code>manage_agents</code>, <code>manage_settings</code>, <code>ask_agent</code>, <code>memory</code>, <code>fetch_knowledge</code>, <code>browser</code>, <code>routine</code>) run inside pi but only post their arguments to <code>/api/agents/&lt;this agent&gt;/&lt;tool&gt;</code> with the agent's key (<code>daemon/tool.mjs</code>), and return the daemon's <code>text</code> (and <code>details</code>, a line the chat shows). The daemon checks every call (<a href="security.html#agent-keys">route gate</a>).</p>
+<p>The daemon tools (<code>skill</code>, <code>manage_agents</code>, <code>manage_settings</code>, <code>ask_agent</code>, <code>memory</code>, <code>fetch_knowledge</code>, <code>browser</code>, <code>action</code>) run inside pi but only post their arguments to <code>/api/agents/&lt;this agent&gt;/&lt;tool&gt;</code> with the agent's key (<code>daemon/tool.mjs</code>), and return the daemon's <code>text</code> (and <code>details</code>, a line the chat shows). The daemon checks every call (<a href="security.html#agent-keys">route gate</a>).</p>
 <h3><code>show</code></h3>
 <p>The agent writes <code>ui</code>, a small program in <a href="https://openui.com/docs/openui-lang">OpenUI Lang</a> built from the app's own components (Stack, Card, Text, Metric, Tag, Image, File, Table, Chart, Form, Field, Input, TextArea, Select, Buttons, Button; <code>ui/src/features/chat/openui/library.tsx</code>). The chat draws it while the call streams in. Its description ends with the prompt generated from that library (<code>npm run openui-prompt --prefix ui</code> writes <code>daemon/openui-prompt.md</code>). A button sends its label, or its <code>@ToAssistant</code> message, as your reply; inside a form it adds each field's value. <code>page</code>, instead of <code>ui</code>, is a sandboxed HTML document for a small app the components cannot make. Chats from before OpenUI keep their saved blocks (<code>text</code>, <code>table</code>, <code>metrics</code>, <code>cards</code>, <code>chart</code>, <code>buttons</code>, <code>file</code>, <code>page</code>), which the chat still draws.</p>
 </section>
@@ -287,12 +286,11 @@
 </section>
 
 <section class="card" id="bundled">
-<h2>The browser, routines and actions extensions</h2>
-<p>All three live in the daemon (<code>daemon/browser/extension/</code>, <code>daemon/routines/extension/</code>, <code>daemon/actions/extension/</code>, under <code>/app</code> in the image). Each is a <code>weilo.json</code> and an <code>index.js</code> that only calls the daemon's HTTP API, so another extension can replace it.</p>
+<h2>The browser and actions extensions</h2>
+<p>Both live in the daemon (<code>daemon/browser/extension/</code>, <code>daemon/actions/extension/</code>, under <code>/app</code> in the image). Each is a <code>weilo.json</code> and an <code>index.js</code> that only calls the daemon's HTTP API, so another extension can replace it.</p>
 <div class="cols">
 <div class="tile"><h3><code>browser</code></h3><p>Actions <code>open</code>, <code>read</code>, <code>click</code>, <code>type</code>, <code>press</code>, <code>scroll</code>, <code>back</code>, <code>new_tab</code>, <code>tabs</code>, <code>switch</code>, <code>close_tab</code>. Its description carries your "ask me first" rule (<code>WEILO_ASK_BEFORE</code>) and tells the agent that a page is information, not instructions. See <a href="architecture.html#browser">the browser</a>.</p></div>
-<div class="tile"><h3><code>routine</code></h3><p>Actions <code>create</code>, <code>list</code>, <code>update</code>, <code>delete</code>. Its result carries <code>details</code> <code>{action, title}</code>, from which the chat shows a short line. Switching routines off for an agent keeps routines already set running. See <a href="architecture.html#routines">Routines</a>.</p></div>
-<div class="tile"><h3><code>action</code></h3><p>Ops <code>list</code>, <code>try</code> (run a script without saving it), <code>create</code>, <code>update</code>, <code>delete</code>, <code>run</code>. You approve each new or changed action in the chat, with its whole request or script. An agent action is a saved request with blanks; a script action runs without the model, as the agent's user, and may use only its browser. Its result carries <code>details</code> <code>{op, title}</code>, from which the chat shows a short line ("Action saved: …").</p></div>
+<div class="tile"><h3><code>action</code></h3><p>Ops <code>list</code>, <code>try</code> (run a script without saving it), <code>create</code>, <code>update</code>, <code>delete</code>, <code>run</code>. An action can also run by itself on a <code>schedule</code> (once, every few minutes, hourly, daily, weekdays, weekly). You approve each new or changed action in the chat, in plain words, with its request or script below; stopping one from running by itself needs no approval. See <a href="architecture.html#actions">Actions</a>. An agent action is a saved request with blanks; a script action runs without the model, as the agent's user, and may use only its browser. Its result carries <code>details</code> <code>{op, title}</code>, from which the chat shows a short line ("Action saved: …").</p></div>
 </div>
 </section>
 </div>

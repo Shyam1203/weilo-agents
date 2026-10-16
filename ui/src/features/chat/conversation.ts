@@ -227,21 +227,19 @@ const joined = (items: Item[]) =>
     return all;
   }, []);
 
-const ROUTINE_MARK = "⏰ Routine: ";
-// Kept in step with the daemon's ACTION_MARK and CONFIRM_NOTE (actions/actions.mjs).
+// Older versions sent timed tasks with this mark; they show like actions that ran by themselves.
+const OLD_SCHEDULED_MARK = "⏰ Routine: ";
+// Kept in step with the daemon's ACTION_MARK, CONFIRM_NOTE and BY_ITSELF (actions/actions.mjs).
 const ACTION_MARK = "⚡ Action: ";
 const CONFIRM_NOTE = "\n\nBefore you pay, order, book or send anything, use ask to confirm the exact details with the user.";
+const BY_ITSELF = " · ran by itself";
 
 function actionNote(details: PiMessage["details"]) {
   const verb = { create: "Action saved", update: "Action changed", delete: "Action deleted" }[details?.op ?? ""];
   return verb && details?.title ? `${verb}: ${details.title}` : null;
 }
 
-function routineNote(details: PiMessage["details"]) {
-  if (details?.action === "create") return `Routine added: ${details.title}`;
-  if (details?.action === "update") return `Routine changed: ${details.title}`;
-  return details?.action === "delete" ? "Routine deleted" : null;
-}
+
 
 // Items of a message that has arrived are kept, so a new event redraws only what changed: the
 // same item objects let the chat skip every other row.
@@ -269,9 +267,10 @@ function itemsFor(m: PiMessage, i: number, arriving: boolean, results: Map<strin
   if (m.role === "compactionSummary") return [{ kind: "summary", id: `${i}`, role: "agent", text: "Summarized for the agent", at }];
   if (m.role === "user") {
     const text = textOf(m.content);
-    if (text.startsWith(ROUTINE_MARK)) return [{ kind: "note", id: `${i}`, role: "agent", text: `Routine: ${text.slice(ROUTINE_MARK.length).split("\n")[0]}`, at }];
+    if (text.startsWith(OLD_SCHEDULED_MARK)) return [{ kind: "note", id: `${i}`, role: "agent", text: `${text.slice(OLD_SCHEDULED_MARK.length).split("\n")[0]} ran by itself`, at }];
     if (text.startsWith(ACTION_MARK)) {
       const [title, ...rest] = text.slice(ACTION_MARK.length).replace(CONFIRM_NOTE, "").split("\n\n");
+      if (title.endsWith(BY_ITSELF)) return [{ kind: "note", id: `${i}`, role: "agent", text: `${title.slice(0, -BY_ITSELF.length)} ran by itself`, at }];
       return [{ kind: "message", id: `${i}`, role: "human", text: rest.join("\n\n"), images: imagesOf(m.content), at, action: title }];
     }
     return [{ kind: "message", id: `${i}`, role: "human", text, images: imagesOf(m.content), at }];
@@ -290,8 +289,10 @@ function itemsFor(m: PiMessage, i: number, arriving: boolean, results: Map<strin
       const text = actionNote(b.id ? results.get(b.id)?.details : undefined);
       if (text) return [{ kind: "note", id: `${i}.${j}`, role: "agent", text, at }];
     }
+    // "routine" was the older tool for timed tasks: its results read like an action's.
     if (b.type === "toolCall" && b.name === "routine") {
-      const text = routineNote(b.id ? results.get(b.id)?.details : undefined);
+      const details = b.id ? results.get(b.id)?.details : undefined;
+      const text = actionNote(details && { op: details.action, title: details.title ?? "a timed task" });
       return text ? [{ kind: "note", id: `${i}.${j}`, role: "agent", text, at }] : [];
     }
     const note = b.type === "toolCall" && b.name === "manage_agents" && b.id ? results.get(b.id)?.details?.note : undefined;

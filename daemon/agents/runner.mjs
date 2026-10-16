@@ -55,6 +55,8 @@ const slimEvent = (run, event) => {
 };
 
 const emit = (run, event) => listenersOf(run.id).forEach((send) => send(event));
+/** Tell the app's open chats of an agent about something outside its pi (an action's answer, say). */
+export const tellChats = (id, event) => listenersOf(id).forEach((send) => send(event));
 
 const endAsk = (run) => {
   if (!run.asking) return;

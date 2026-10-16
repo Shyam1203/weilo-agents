@@ -26,14 +26,15 @@ export const PROFILES = join(AGENT_DIR, "profiles");
 export const ORDER = join(AGENT_DIR, "order.json");
 export const SKILLS = join(AGENT_DIR, "skills");
 export const EXTENSIONS = join(AGENT_DIR, "extensions");
-export const BUNDLED = Object.fromEntries(["browser", "routines", "actions"].map((id) => [id, fileURLToPath(new URL(`./${id}/extension`, import.meta.url))]));
+export const BUNDLED = Object.fromEntries(["browser", "actions"].map((id) => [id, fileURLToPath(new URL(`./${id}/extension`, import.meta.url))]));
 export const MCP = join(AGENT_DIR, "mcp.json");
 export const USER = join(AGENT_DIR, "USER.md");
 export const MEMORY = join(AGENT_DIR, "MEMORY.md");
 export const KNOWLEDGE = join(ROOT, "knowledge");
 export const APP = join(ROOT, "weilo.json");
 export const CURATOR = join(AGENT_DIR, "curator.json");
-export const ROUTINES = join(AGENT_DIR, "routines.json");
+// Where older versions kept tasks that run at set times; they are moved into actions.json once.
+export const OLD_SCHEDULES = join(AGENT_DIR, "routines.json");
 export const ACTIONS = join(AGENT_DIR, "actions.json");
 export const BROWSER = join(AGENT_DIR, "browser.json");
 export const PUSH = join(AGENT_DIR, "push.json");

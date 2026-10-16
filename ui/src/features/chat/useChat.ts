@@ -12,6 +12,7 @@ export function useChat(agentId: string) {
   const [compacting, setCompacting] = useState(false);
   const [doing, setDoing] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [actionsChanged, setActionsChanged] = useState(0);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const loading = useRef(false);
   const loadEarlier = async () => {
@@ -38,6 +39,7 @@ export function useChat(agentId: string) {
       if (event.type === "compaction_start") setCompacting(true);
       if (event.type === "compaction_end") (setCompacting(false), event.result && setStatus("The conversation was summarized."));
       if (event.type === "agent_start") setStatus(null);
+      if (event.type === "actions_changed") setActionsChanged((n) => n + 1);
       if (event.type === "tool_execution_start") setDoing(event.toolName ?? null);
       if (event.type === "tool_execution_end" || event.type === "agent_settled" || event.type === "exit") setDoing(null);
       if (event.type === "agent_settled" && reloading.current) (reloading.current = false, setStatus(RELOADED));
@@ -57,6 +59,8 @@ export function useChat(agentId: string) {
 
   return {
     context,
+    /** Counts the times an action ran by itself or answered, to read the actions again. */
+    actionsChanged,
     compacting,
     compact,
     ready: chat.ready,

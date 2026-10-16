@@ -24,12 +24,14 @@ interface Props {
   onEdit: (message: Draft) => void;
   queued: Queued[];
   onUnqueue: (queued: Queued) => Promise<void>;
+  /** Things to show among the messages by their time (an action's answers): at in seconds. */
+  extras?: { at: number; key: string; node: ReactNode }[];
   note?: ReactNode;
 }
 
 const draftOf = (m: Message): Draft => ({ text: m.text, images: m.images });
 
-export function MessageList({ messages, busy, asking, onAnswer, onReply, onRetry, onEdit, queued, onUnqueue, note }: Props) {
+export function MessageList({ messages, busy, asking, onAnswer, onReply, onRetry, onEdit, queued, onUnqueue, extras = [], note }: Props) {
   const shown = messages.filter((m) => (m.kind === "ask" ? m.answer !== undefined || !asking : m.kind === "show" || m.kind === "steps" || m.role === "human" || m.text.trim()));
   const replyTo = useRef(onReply);
   replyTo.current = onReply;
@@ -50,16 +52,25 @@ export function MessageList({ messages, busy, asking, onAnswer, onReply, onRetry
   const last = shown.findLast((m): m is Message => isHuman(m));
   const again = !busy && !asking && last && (last.text || last.images.length) ? last : undefined;
 
+  const later = [...extras].sort((a, b) => a.at - b.at);
+  let next = 0;
   let shownAt = 0;
   let said: string[] = [];
   return (
     <ol aria-live="polite" aria-relevant="additions" className="flex flex-col gap-1.5">
       {shown.map((item, i) => {
+        // An answer that came before this message goes above it.
+        const before: ReactNode[] = [];
+        while (next < later.length && item.at !== null && later[next].at <= item.at) {
+          const extra = later[next++];
+          before.push(<Extra key={extra.key}>{extra.node}</Extra>);
+        }
         const label = item.at && item.at - shownAt > GAP ? longWhen(item.at) : null;
         if (label) shownAt = item.at!;
         if (item.kind === "message") (item.role === "human" ? (said = []) : said.push(item.text.trim()));
         const ends = item.kind === "message" && item.role !== "human" && (i === shown.length - 1 ? !busy : isHuman(shown[i + 1]));
-        return (
+        return [
+          ...before,
           <Row
             key={item.id}
             item={item}
@@ -75,9 +86,12 @@ export function MessageList({ messages, busy, asking, onAnswer, onReply, onRetry
             onReply={reply}
             onRetry={retryWith}
             onEdit={edit}
-          />
-        );
+          />,
+        ];
       })}
+      {later.slice(next).map((x) => (
+        <Extra key={x.key}>{x.node}</Extra>
+      ))}
       {queued.map((q, i) => (
         <li key={`queued-${q.when}-${q.text}-${queued.slice(0, i).filter((x) => x.when === q.when && x.text === q.text).length}`} className="mt-1.5 animate-fade-in">
           <QueuedMessage queued={q} onRemove={() => onUnqueue(q)} onEdit={() => onUnqueue(q).then(() => onEdit({ text: q.text, images: [] }))} />
@@ -124,6 +138,8 @@ const Row = memo(function Row({ item, label, spaced, far, chosen, replyable, wor
     </li>
   );
 });
+
+const Extra = ({ children }: { children: ReactNode }) => <li className="mt-2.5 animate-fade-in">{children}</li>;
 
 export function LoadingChat() {
   const shapes = ["ml-auto h-10 w-1/2", "h-24 w-5/6", "ml-auto h-10 w-2/5", "h-16 w-2/3"];

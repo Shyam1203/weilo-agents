@@ -125,9 +125,9 @@ export const CURATOR_MAX_PIECES = 6;
 export const CURATOR_MAX_MESSAGE = 1500;
 export const CURATOR_MAX_FAILURES = 3;
 
-export const ROUTINES_EVERY_MS = 30_000;
-export const MAX_ROUTINES = 50;
-export const MAX_ACTIONS = 30;
+export const ACTIONS_EVERY_MS = 30_000;
+export const MAX_ACTIONS = 50;
+export const MAX_ACTION_RUNS = 20;
 export const MAX_ACTION_TITLE = 60;
 export const MAX_ACTION_ABOUT = 200;
 export const MAX_ACTION_REQUEST = 4000;
@@ -137,11 +137,8 @@ export const MAX_ACTION_OUTPUT = 64 * 1024;
 export const ACTION_SHOWN = 2000;
 export const ACTION_MS = 90_000;
 export const MAX_TIMES = 6;
-export const MAX_ROUTINE_TITLE = 80;
-export const MAX_ROUTINE_TASK = 4000;
 export const MAX_IN_MINUTES = 525_600;
 export const LATE_MS = 60 * MINUTE;
-export const SEND_MS = MINUTE;
 
 export const SCREEN = { width: 1280, height: 800 };
 export const SCREEN_RESTART_MS = 2000;
