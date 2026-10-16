@@ -2,9 +2,10 @@
   "apiVersion": 1,
   "name": "actions",
   "title": "Actions",
-  "description": "Things it does for you, with a tap or by itself at set times.",
+  "description": "Things it does for you, and pins it keeps up to date.",
   "entry": "index.js",
   "tools": [
-    "action"
+    "action",
+    "pin"
   ]
 }

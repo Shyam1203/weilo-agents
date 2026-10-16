@@ -104,14 +104,14 @@ export function MemoryPage({ providers, models }: Props) {
     });
 
   return (
-    <Page title="Memory" description="All agents share one memory. The notes about you are read when a chat starts; the knowledge vault is searched when an agent needs it.">
+    <Page title="Memory" description="What your agents remember about you.">
       <Card>
-        <Row title="Knowledge curator" description={model ? "Curated Knowledge from our conversations." : "Off. Choose a model to build the knowledge vault from your chats."}>
+        <Row title="Knowledge curator" description={model ? "Curated Knowledge from our conversations." : "Off. Pick a model to turn it on."}>
           <div className="pick w-full min-w-0 sm:w-56">
             <Select label="Knowledge curator model" value={model} disabled={!models || busy === "settings"} onChange={(v) => void change({ model: v })} options={options} />
           </div>
         </Row>
-        <Row title="Ask before saving" description="An agent asks you in its chat before it saves or forgets a note about you.">
+        <Row title="Ask before saving" description="Ask before saving a note about you.">
           <Switch label="Ask before saving" checked={settings.ask} onChange={(ask) => void change({ ask })} />
         </Row>
         <Row

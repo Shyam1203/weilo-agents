@@ -10,7 +10,7 @@ const POLL_MS = 2000;
 
 const pasteHint = (placeholder = "") =>
   /^https?:/.test(placeholder)
-    ? "When you have signed in, the browser goes to a page that does not open. That is expected: copy that page's address from the address bar and paste it here."
+    ? "Paste the address of the page you land on."
     : "When you have signed in, copy the code the page shows and paste it here.";
 
 export function SignIn({ provider, onDone, onCancel }: { provider: Provider; onDone: () => void; onCancel: () => void }) {

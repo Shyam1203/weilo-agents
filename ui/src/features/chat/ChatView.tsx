@@ -35,6 +35,10 @@ import { NewAction } from "../actions/NewAction";
 import { ActionsPanel } from "../actions/ActionsPanel";
 import { RunDialog } from "../actions/RunDialog";
 import { useActions } from "../actions/useActions";
+import { removePin, tickPin, type Pin } from "../../api/pins";
+import { PinCard } from "../pins/PinCard";
+import { SidePanel, type Tab } from "../pins/SidePanel";
+import { usePins } from "../pins/usePins";
 
 interface Props {
   agent: Agent;
@@ -54,7 +58,7 @@ interface Props {
 const TOP_PX = 400;
 
 type Panel = "actions" | "browser";
-const PANELS: Record<Panel, string> = { actions: "Actions", browser: "Browser" };
+const PANELS: Record<Panel, string> = { actions: "Actions & pins", browser: "Browser" };
 // Older versions kept "1" (open) or "0" (closed) here; open now means the actions panel.
 const savedPanel = (): Panel | null => {
   const saved = read(KEYS.sidebar);
@@ -80,7 +84,18 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
   };
   const browserBusy = !!agent.browserOpen || !!agent.taken;
   // Read the actions again when the chat shows one was saved or changed, or one ran by itself.
-  const acts = useActions(agent.id, chat.messages.filter((m) => m.kind === "note").length + chat.actionsChanged);
+  const notes = chat.messages.filter((m) => m.kind === "note").length;
+  const acts = useActions(agent.id, notes + chat.actionsChanged);
+  // Pins and actions share the bolt's panel, as two tabs: it opens on Pins when there are any.
+  const pinned = usePins(agent.id, notes + chat.pinsChanged);
+  const [chosenTab, setTab] = useState<Tab | null>(null);
+  const tab: Tab = chosenTab ?? (pinned.pins?.length ? "pins" : "actions");
+  const seeingPins = panel === "actions" && tab === "pins";
+  const { look } = pinned;
+  useEffect(() => {
+    if (seeingPins && pinned.fresh) look();
+  }, [seeingPins, pinned.fresh, look]);
+  const showPins = () => (setTab("pins"), panel !== "actions" && togglePanel("actions"));
   const [pending, setPending] = useState<{ key: number; action: Action }[]>([]);
   const scroller = useFollowBottom([chat.live, chat.asking, pending, acts.actions]);
   const { away, unseen, toBottom } = scroller;
@@ -173,7 +188,25 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
   };
   const start = (action: Action) => (setOpened(null), action.fields.length ? setAsked(action) : void go(action, {}));
   const remove = (action: Action) => removeAction(agent.id, action.id).then(() => (setOpened(null), acts.refresh()), (err) => failed(err, true));
-  const actionsPanel = <ActionsPanel agentName={agent.name} off={actionsOff} actions={acts.actions} error={acts.error} running={running} onRun={start} onOpen={(a) => setOpened(a.id)} onNew={() => (setSheet(null), setMaking(true))} titled={wide} />;
+  const tick = (pin: Pin, index: number, done: boolean) => {
+    pinned.setPins((list) => list && list.map((p) => (p.id === pin.id ? { ...p, items: p.items?.map((item, i) => (i === index ? { ...item, done } : item)) } : p)));
+    void tickPin(agent.id, pin.id, index, done).catch((err) => (failed(err, true), void pinned.refresh()));
+  };
+  const unpin = (pin: Pin) => void removePin(agent.id, pin.id).then(pinned.refresh, (err) => failed(err, true));
+  const actionsPanel = (
+    <SidePanel
+      tab={tab}
+      onTab={setTab}
+      pins={pinned.pins}
+      pinsError={pinned.error}
+      fresh={pinned.fresh}
+      actionCount={acts.actions?.length ?? 0}
+      agentName={agent.name}
+      onNew={actionsOff ? undefined : () => (setSheet(null), setMaking(true))}
+      cards={(pin) => <PinCard key={pin.id} pin={pin} action={acts.actions?.find((a) => a.id === pin.actionId)} onTick={(i, done) => tick(pin, i, done)} onRemove={() => unpin(pin)} onOpenAction={(a) => (setSheet(null), setOpened(a.id))} />}
+      actions={<ActionsPanel off={actionsOff} actions={acts.actions} error={acts.error} running={running} onRun={start} onOpen={(a) => setOpened(a.id)} onNew={() => (setSheet(null), setMaking(true))} />}
+    />
+  );
   const openedAction = acts.actions?.find((a) => a.id === opened);
   // Instant actions' answers sit in the chat by their time; ones older than the messages loaded wait for "Load earlier".
   const since = chat.more ? (chat.messages.find((m) => m.at !== null)?.at ?? Infinity) : 0;
@@ -225,14 +258,14 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
           title={agent.name}
           subtitle={<>{agent.isolated && <Tag>Isolated</Tag>}{modelMenu(false)}</>}
           onTitle={onEdit}
-          actions={<><IconButton icon="search" label="Find in this chat" aria-pressed={finding} className={finding ? "bg-select text-ink" : ""} onClick={() => (finding ? closeFind() : setFinding(true))} /><IconButton icon="bolt" label={panel === "actions" ? "Hide actions" : "Actions"} aria-pressed={panel === "actions"} className={panel === "actions" ? "bg-select text-ink" : ""} onClick={() => togglePanel("actions")} /><span className="relative flex"><IconButton icon="globe" label={panel === "browser" ? "Hide the browser" : browserBusy ? "Browser (open)" : "Browser"} aria-pressed={panel === "browser"} className={panel === "browser" ? "bg-select text-ink" : ""} onClick={() => togglePanel("browser")} />{browserBusy && panel !== "browser" && <span aria-hidden="true" className="pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-full bg-working ring-2 ring-page" />}</span></>}
+          actions={<><IconButton icon="search" label="Find in this chat" aria-pressed={finding} className={finding ? "bg-select text-ink" : ""} onClick={() => (finding ? closeFind() : setFinding(true))} /><span className="relative flex"><IconButton icon="bolt" label={panel === "actions" ? "Hide actions & pins" : pinned.fresh ? "Actions & pins (a pin changed)" : "Actions & pins"} aria-pressed={panel === "actions"} className={panel === "actions" ? "bg-select text-ink" : ""} onClick={() => (pinned.fresh && setTab("pins"), togglePanel("actions"))} />{pinned.fresh && !seeingPins && <span aria-hidden="true" className="pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-full bg-good ring-2 ring-page" />}</span><span className="relative flex"><IconButton icon="globe" label={panel === "browser" ? "Hide the browser" : browserBusy ? "Browser (open)" : "Browser"} aria-pressed={panel === "browser"} className={panel === "browser" ? "bg-select text-ink" : ""} onClick={() => togglePanel("browser")} />{browserBusy && panel !== "browser" && <span aria-hidden="true" className="pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-full bg-working ring-2 ring-page" />}</span></>}
         />
         {finding && <FindBar query={query} onQuery={setQuery} count={found.count} current={found.current} onNext={found.next} onPrevious={found.previous} onClose={closeFind} />}
         <div className="relative min-h-0 flex-1">
           <div ref={scroller.box} style={{ paddingBottom: room }} className="h-full overflow-y-auto">
             <div className="mx-auto w-full max-w-3xl px-4 py-5">
               {chat.more && <p className="flex items-center justify-center gap-2 pb-4 text-xs text-ink-3">{chat.loadingEarlier ? <><Icon name="spinner" size={12} /> Loading earlier messages…</> : <button type="button" onClick={() => void chat.loadEarlier()} className="underline">Load earlier messages</button>}</p>}
-              {!chat.ready ? <LoadingChat /> : fresh ? <EmptyChat name={agent.name} avatar={avatarOf(agent)} shortcuts={shortcuts} onPick={(text) => put({ text, images: [] })} /> : <MessageList messages={chat.messages} busy={chat.busy} asking={chat.asking} onAnswer={chat.answer} onReply={reply} onRetry={retry} onEdit={put} queued={chat.queued} onUnqueue={unqueue} extras={answers} note={chat.note === NO_REPLY ? problem("No reply came. Send your message again, or try another model.", ["retry", "model"], "info") : chat.note} />}
+              {!chat.ready ? <LoadingChat /> : fresh ? <EmptyChat name={agent.name} avatar={avatarOf(agent)} shortcuts={shortcuts} onPick={(text) => put({ text, images: [] })} /> : <MessageList messages={chat.messages} busy={chat.busy} asking={chat.asking} onAnswer={chat.answer} onReply={reply} onRetry={retry} onEdit={put} queued={chat.queued} onUnqueue={unqueue} onPins={showPins} extras={answers} note={chat.note === NO_REPLY ? problem("No reply came. Send your message again, or try another model.", ["retry", "model"], "info") : chat.note} />}
             </div>
           </div>
           <div ref={dock} className="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-page from-55% to-transparent pt-8">
@@ -277,16 +310,6 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
                 ))}
               <Composer
                 agentId={agent.id}
-                above={panel !== "actions" && !actionsOff && !!acts.actions?.length && (
-                  <div role="toolbar" aria-label="Actions" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
-                    {acts.actions.map((a) => (
-                      <button key={a.id} type="button" disabled={running.has(a.id)} onClick={() => start(a)} title={a.about || a.title} className="flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-page px-3 text-[13px] text-ink ring-1 ring-line-strong transition-colors hover:bg-select disabled:opacity-60">
-                        <Icon name={running.has(a.id) ? "spinner" : a.icon} size={13} className="text-ink-2" />
-                        {a.title}
-                      </button>
-                    ))}
-                  </div>
-                )}
                 fill={fill}
                 last={last}
                 onEdit={onEdit}

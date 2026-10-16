@@ -37,7 +37,7 @@ export function PluginsPage({ plugins, onChange }: Props) {
   return (
     <Page
       title="Plugins"
-      description="Plugins connect agents to other tools and services. Turn on plugins for each agent in Edit agent."
+      description="Connect agents to other apps."
       action={
         <Button size="sm" icon="plus" onClick={() => setAdding(true)}>
           Add
@@ -117,10 +117,10 @@ function AddPlugin({ onBack, onAdded }: { onBack: () => void; onAdded: () => voi
       />
       {kind === "command" ? (
         <>
-          <Field label="Command" hint="The command that starts the plugin. Copy it from the plugin documentation.">
+          <Field label="Command" hint="Copy it from the plugin's docs.">
             <input value={command} onChange={(e) => setCommand(e.target.value)} placeholder="npx -y @modelcontextprotocol/server-github" className="input font-mono text-[13px]" />
           </Field>
-          <Field label="Variables" hint="Values the plugin needs, one on each line. For example: GITHUB_TOKEN=abc. Optional.">
+          <Field label="Variables" hint="Optional. One per line, like TOKEN=abc.">
             <textarea value={variables} onChange={(e) => setVariables(e.target.value)} rows={3} className="input resize-y font-mono text-[13px]" />
           </Field>
         </>

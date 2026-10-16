@@ -58,7 +58,7 @@ export function UsagePage({ agents }: { agents: Agent[] }) {
   const active = hover === null ? null : stacks[hover];
 
   return (
-    <Page title="Usage" description={`Tokens each agent used in the last ${days.length} days: read and written, not context read again from the cache. Cost is an estimate at the provider's API prices; a sign-in plan bills differently.`}>
+    <Page title="Usage" description={`Use in the last ${days.length} days. Cost is an estimate.`}>
       <div className="grid grid-cols-3 gap-3">
         <Stat label="Today" value={tokens(todayTokens)} />
         <Stat label={`Last ${days.length} days`} value={tokens(rangeTokens)} />

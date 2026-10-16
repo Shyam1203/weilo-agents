@@ -39,15 +39,13 @@ interface Props {
   onSend: (message: Outgoing) => Promise<void>;
   onStop: () => void;
   meter?: ReactNode;
-  /** A row above the box (the agent's actions), under the working pill. */
-  above?: ReactNode;
   /** Put this in the box, replacing what is there (a new object each time). */
   fill?: Draft | null;
   /** What ↑ brings back in an empty box: your last message. */
   last?: Draft;
 }
 
-export function Composer({ agentId, onEdit, shortcuts, to, avatar, doing, busy, waiting, onAnswer, disabled, onSend, onStop, meter, fill, last, above }: Props) {
+export function Composer({ agentId, onEdit, shortcuts, to, avatar, doing, busy, waiting, onAnswer, disabled, onSend, onStop, meter, fill, last }: Props) {
   const [text, setText] = useState(() => read(draftKey(agentId)) ?? "");
   const [focused, setFocused] = useState(false);
   const [images, setImages] = useState<string[]>([]);
@@ -225,7 +223,6 @@ export function Composer({ agentId, onEdit, shortcuts, to, avatar, doing, busy, 
       onDrop={onDrop}
       className="relative flex flex-col"
     >
-      {above && <div className="mb-2">{above}</div>}
       {open && <CommandMenu shortcuts={offered} active={highlighted} onPick={pick} hint={hint} onEdit={shortcuts.length ? undefined : onEdit} />}
       {busy && (
         <p role="status" className="absolute bottom-full left-3 mb-1.5 flex animate-rise items-center gap-1.5 rounded-full bg-raised py-0.5 pr-2.5 pl-0.5 text-xs text-ink-2 ring-1 ring-line">

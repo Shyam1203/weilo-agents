@@ -21,7 +21,7 @@ export function ProvidersPage({ providers, models, onChange, onModels }: Props) 
   const others = providers.filter((p) => !p.connected);
   const row = (p: Provider) => <ProviderRow key={p.id} provider={p} models={models} onChange={onChange} onModels={onModels} />;
   return (
-    <Page title="Providers" description="Agents use your own account with a model provider: sign in with it, or add an API key. Keys and sign-ins stay on this computer.">
+    <Page title="Providers" description="Your model accounts. They stay on this computer.">
       {connected.length > 0 && (
         <Group title="In use">
           <List items={connected} empty="">

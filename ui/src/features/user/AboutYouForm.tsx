@@ -21,7 +21,7 @@ export function AboutYouForm({ user, onSaved, onSkip }: Props) {
       <Field label="Your name" hint="Agents use it to talk to you.">
         <input autoFocus value={draft.name} maxLength={MAX_NAME} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="input" />
       </Field>
-      <Field label="About you" hint="Optional. All agents read this. For example: your work, your city, how you like answers.">
+      <Field label="About you" hint="Optional. Your work, city, or how you like answers.">
         <textarea value={draft.about} maxLength={MAX_ABOUT} rows={4} onChange={(e) => setDraft({ ...draft, about: e.target.value })} className="input resize-none" />
       </Field>
       <ErrorText>{error}</ErrorText>

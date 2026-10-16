@@ -92,7 +92,7 @@ export function LiveView({ interactive = false }: { interactive?: boolean }) {
       )}
       {pasteError && (
         <p role="alert" className="absolute inset-x-2 bottom-2 rounded-lg bg-black/70 px-3 py-1.5 text-center text-xs text-white">
-          This browser would not let the app read what you copied. Allow it to read the clipboard, then try again.
+          Allow clipboard access, then try again.
         </p>
       )}
       {state !== "connected" && (

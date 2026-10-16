@@ -230,7 +230,7 @@
   [-e /app/browser/extension/index.js] [-e /app/actions/extension/index.js]
   [-e agent/extensions/&lt;name&gt;/&lt;entry&gt; ...]
   --no-skills [--skill agent/skills/&lt;skill&gt; ...]
-  --tools read,bash,edit,write,show,ask,manage_agents,skill,memory,fetch_knowledge,manage_settings,ask_agent[,browser][,action][,&lt;extension tools&gt;][,codemode,mcp__&lt;plugin&gt;__* ...]
+  --tools read,bash,edit,write,show,ask,manage_agents,skill,memory,fetch_knowledge,manage_settings,ask_agent[,browser][,action,pin][,&lt;extension tools&gt;][,codemode,mcp__&lt;plugin&gt;__* ...]
   --session-dir agent/sessions/&lt;id&gt; --session-id &lt;id&gt;</code></pre>
 <p>An isolated agent differs in six places: it starts in the sandbox (<code>spawnSandboxed</code>, with only its folder, chat, HOME and, read only, its skills and added extensions mounted); its profile is read from a copy in its pi folder; it gets <code>--no-context-files</code> instead of <code>USER.md</code> and <code>MEMORY.md</code>; it does not load <code>memory/extension.mjs</code>; its <code>--tools</code> leave out <code>skill</code>, <code>memory</code>, <code>fetch_knowledge</code>, <code>manage_settings</code> and <code>ask_agent</code>; and its chat is in <code>isolated-sessions/&lt;id&gt;</code>. Without plugins the list ends with <code>--no-mcp</code> instead of <code>codemode</code> and the plugin tools.</p>
 <ul>

@@ -36,6 +36,7 @@ export const CURATOR = join(AGENT_DIR, "curator.json");
 // Where older versions kept tasks that run at set times; they are moved into actions.json once.
 export const OLD_SCHEDULES = join(AGENT_DIR, "routines.json");
 export const ACTIONS = join(AGENT_DIR, "actions.json");
+export const PINS = join(AGENT_DIR, "pins.json");
 export const BROWSER = join(AGENT_DIR, "browser.json");
 export const PUSH = join(AGENT_DIR, "push.json");
 export const MODELS = join(AGENT_DIR, "models.json");

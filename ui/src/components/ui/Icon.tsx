@@ -1,5 +1,5 @@
 import {
-  CalendarDays, Package, Play, ShoppingCart, Truck, UtensilsCrossed, Wallet, Zap,
+  CalendarDays, Ellipsis, Package, Pin, Play, ShoppingCart, Tag, Truck, UtensilsCrossed, Wallet, Zap,
   ArrowDown, ArrowUp, Bell, Bot, ChartColumn, Brain, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Download, ExternalLink, FileText, Globe, Info, Key, List, LoaderCircle, Mail, Mic, MonitorSmartphone, MousePointer2,
   PanelRight, Paperclip, Pencil, Plug, Plus, Puzzle, RotateCcw, Search, Settings, Share, ShieldCheck, Sparkles, Square, TriangleAlert, User, X,
 } from "lucide-react";
@@ -52,6 +52,9 @@ const ICONS = {
   devices: MonitorSmartphone,
   shield: ShieldCheck,
   chart: ChartColumn,
+  tag: Tag,
+  pin: Pin,
+  more: Ellipsis,
 } as const;
 
 export type IconName = keyof typeof ICONS | "spinner" | "stop";

@@ -22,9 +22,9 @@ export function BrowserSettings() {
   const save = () => run("save", async () => (change(await saveRule(rule)), setSaved(true)));
 
   return (
-    <Page title="Browser" description="Agents use a browser on this computer. It keeps your logins, so agents can use sites you are signed in to. Agents follow the rule below, but it is a request to them, not a lock.">
+    <Page title="Browser" description="Agents use your sign-ins on this computer.">
       <Card>
-        <Row title="Ask me first" description="Ask before an agent does something it cannot undo.">
+        <Row title="Ask me first" description="Before anything it can't undo.">
           <Switch label="Ask me first" checked={rule.ask} onChange={(ask) => change({ ...rule, ask })} />
         </Row>
         {rule.ask && (
