@@ -1,4 +1,4 @@
-The source of an `openui` block is a small program in OpenUI Lang, built only from the components below.
+ui is a small program in OpenUI Lang, built only from the components below.
 
 ## Syntax Rules
 
@@ -17,13 +17,15 @@ Arguments marked with ? are optional. Sub-components can be inline or referenced
 Props typed `ActionExpression` accept one @step, or Action([@steps...]) for several. See the Action section for available steps (@ToAssistant, @OpenUrl).
 
 ### Layout
-Stack(children: (Text | Metric | Tag | Table | Chart | Form | Buttons | any)[], direction?: "column" | "row", gap?: "s" | "m" | "l") — Lays things out in a column (the default) or a wrapping row.
-Card(children: (Text | Metric | Tag | Table | Chart | Form | Buttons | any)[], title?: string) — A bordered box, with an optional title, around related things.
+Stack(children: (Text | Metric | Tag | Image | File | Table | Chart | Form | Buttons | any)[], direction?: "column" | "row", gap?: "s" | "m" | "l") — Lays things out in a column (the default) or a wrapping row.
+Card(children: (Text | Metric | Tag | Image | File | Table | Chart | Form | Buttons | any)[], title?: string) — A bordered box, with an optional title, around related things.
 
 ### Content
 Text(markdown: string) — Markdown text.
 Metric(label: string, value: string | number, note?: string) — One key number with its label.
 Tag(text: string) — A small label, such as a status.
+Image(src: string, alt?: string) — A picture from an https:// address (a product photo, say).
+File(path: string, name?: string) — A file you made in the workspace, for the user to download; pictures show in the chat. path: from your folder, or in full.
 Table(columns: string[], rows: (string | number)[][]) — Rows and columns to compare things.
 Chart(shape: "bar" | "line", labels: string[], values: number[]) — A bar or line chart: one value per label.
 

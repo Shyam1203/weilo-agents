@@ -20,6 +20,8 @@ import { Button as UiButton } from "../../../components/ui/Button";
 import { Select as UiSelect } from "../../../components/ui/Select";
 import { Tag as UiTag } from "../../../components/ui/Tag";
 import { CardText } from "../AgentText";
+import { link, workspacePath } from "../blockData";
+import { FileCard } from "../FileCard";
 import { Bars, Line } from "../Charts";
 
 // The components an agent may use in an `openui` show block. Each one renders with the app's own
@@ -58,6 +60,26 @@ const Tag = defineComponent({
   description: "A small label, such as a status.",
   props: z.object({ text: z.string() }),
   component: ({ props }) => <UiTag>{props.text}</UiTag>,
+});
+
+const Image = defineComponent({
+  name: "Image",
+  description: "A picture from an https:// address (a product photo, say).",
+  props: z.object({ src: z.string(), alt: z.string().optional() }),
+  component: ({ props }) => {
+    const src = link(props.src);
+    return src ? <img src={src} alt={props.alt ?? ""} loading="lazy" referrerPolicy="no-referrer" className="max-h-56 w-full rounded-xl bg-white object-contain p-2" /> : null;
+  },
+});
+
+const File = defineComponent({
+  name: "File",
+  description: "A file you made in the workspace, for the user to download; pictures show in the chat. path: from your folder, or in full.",
+  props: z.object({ path: z.string(), name: z.string().optional() }),
+  component: ({ props }) => {
+    const path = workspacePath(props.path);
+    return path ? <FileCard path={path} name={props.name || path.split("/").pop()!} /> : null;
+  },
 });
 
 const Table = defineComponent({
@@ -231,7 +253,7 @@ const Form = defineComponent({
   },
 });
 
-const children = z.array(z.union([Text.ref, Metric.ref, Tag.ref, Table.ref, Chart.ref, Form.ref, Buttons.ref, z.any()]));
+const children = z.array(z.union([Text.ref, Metric.ref, Tag.ref, Image.ref, File.ref, Table.ref, Chart.ref, Form.ref, Buttons.ref, z.any()]));
 
 const Card = defineComponent({
   name: "Card",
@@ -254,16 +276,16 @@ const Stack = defineComponent({
 
 export const library = createLibrary({
   root: "Stack",
-  components: [Stack, Card, Text, Metric, Tag, Table, Chart, Form, Field, Input, TextArea, Select, Buttons, Button],
+  components: [Stack, Card, Text, Metric, Tag, Image, File, Table, Chart, Form, Field, Input, TextArea, Select, Buttons, Button],
   componentGroups: [
     { name: "Layout", components: ["Stack", "Card"] },
-    { name: "Content", components: ["Text", "Metric", "Tag", "Table", "Chart"] },
+    { name: "Content", components: ["Text", "Metric", "Tag", "Image", "File", "Table", "Chart"] },
     { name: "Forms", components: ["Form", "Field", "Input", "TextArea", "Select", "Buttons", "Button"], notes: ["- Every field inside a Form needs a unique name; the reply lists each field's value by name."] },
   ],
 });
 
 export const PROMPT: PromptOptions = {
-  preamble: "The source of an `openui` block is a small program in OpenUI Lang, built only from the components below.",
+  preamble: "ui is a small program in OpenUI Lang, built only from the components below.",
   toolCalls: false,
   bindings: false,
   builtinFunctions: false,

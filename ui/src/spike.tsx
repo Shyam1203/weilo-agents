@@ -10,7 +10,7 @@ const SOURCE = `root = Stack([numbers, signup])
 numbers = Card([Stack([Metric("Open tickets", 42, "-8 this week"), Metric("Median reply", "1h 12m"), Metric("CSAT", "94%")], "row"), Chart("bar", ["Mon", "Tue", "Wed", "Thu", "Fri"], [12, 19, 9, 15, 7])], "Support this week")
 signup = Card([Form("escalate", [Field("Ticket", Input("ticket", "e.g. #4821", "text", {required: true})), Field("Team", Select("team", ["Billing", "Infra", "Product"], "Choose a team", {required: true})), Field("Note", TextArea("note", "Anything the team should know"))], Buttons([Button("Escalate"), Button("Cancel", "secondary")]))], "Escalate a ticket")`;
 
-const ARGS = JSON.stringify({ blocks: [{ type: "text", text: "Here is the week, and a form to escalate a ticket." }, { type: "openui", source: SOURCE }] });
+const ARGS = JSON.stringify({ ui: SOURCE });
 const params = new URLSearchParams(location.search);
 const stopAt = Number(params.get("stop") ?? 1);
 

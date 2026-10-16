@@ -1,9 +1,7 @@
 import { lazy, Suspense, useState, type ReactNode } from "react";
-import { Icon } from "../../components/ui/Icon";
-import { kindOf } from "../files/kinds";
-import { useFileUrl, usePreview } from "../files/PreviewContext";
 import { AgentText, CardText } from "./AgentText";
 import { Bars, Line } from "./Charts";
+import { FileCard } from "./FileCard";
 import type { Block } from "./blockData";
 import { PickButton } from "./PickButton";
 import { ShowPage } from "./ShowPage";
@@ -123,7 +121,7 @@ function One({ block, onReply, chosen, streaming = false }: Omit<Props, "blocks"
         </div>
       );
     case "file":
-      return <File path={block.path} name={block.name} />;
+      return <FileCard path={block.path} name={block.name} />;
     case "openui":
       return (
         <Suspense fallback={null}>
@@ -137,33 +135,6 @@ function One({ block, onReply, chosen, streaming = false }: Omit<Props, "blocks"
 
 function Choice({ label, done, message, chosen, onReply }: { label: string; done?: string; message: string; chosen?: string; onReply?: (message: string) => void }) {
   return <PickButton label={label} done={done} picked={chosen === message} onPick={onReply && (() => onReply(message))} />;
-}
-
-function File({ path, name }: { path: string; name: string }) {
-  const url = useFileUrl()(path);
-  const preview = usePreview();
-  const kind = kindOf(path);
-  return (
-    <div className={`${CARD} max-w-sm overflow-hidden`}>
-      {kind === "image" && (
-        <button type="button" onClick={() => preview(path, name)} aria-label={`Preview ${name}`} className="block w-full">
-          <img src={url} alt={name} className="max-h-72 w-full object-contain" />
-        </button>
-      )}
-      <div className="flex items-center gap-2.5 px-3.5 py-2.5">
-        <Icon name="attach" size={15} className="shrink-0 text-ink-3" />
-        <span className="min-w-0 flex-1 truncate text-[13.5px]">{name}</span>
-        {kind !== "other" && kind !== "image" && (
-          <button type="button" onClick={() => preview(path, name)} className="shrink-0 text-[13px] font-medium underline underline-offset-2">
-            Preview
-          </button>
-        )}
-        <a href={url} download={name} className="shrink-0 text-[13px] font-medium underline underline-offset-2">
-          Download
-        </a>
-      </div>
-    </div>
-  );
 }
 
 function Titled({ title, children }: { title: string; children: ReactNode }) {

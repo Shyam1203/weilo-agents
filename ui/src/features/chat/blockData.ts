@@ -14,7 +14,8 @@ type Raw = Record<string, unknown>;
 const record = (x: unknown): Raw => (x && typeof x === "object" ? (x as Raw) : {});
 const list = (x: unknown) => (Array.isArray(x) ? x : []);
 const str = (x: unknown) => (typeof x === "string" || typeof x === "number" ? String(x) : "");
-const link = (x: unknown) => (/^https?:\/\//i.test(str(x)) ? str(x) : "");
+export const workspacePath = (x: unknown) => str(x).replace(/^\/home\/node\/\.pi\/workspace\//, "").replace(/^\.?\/+/, "");
+export const link = (x: unknown) => (/^https?:\/\//i.test(str(x)) ? str(x) : "");
 
 function blockOf(raw: Raw): Block | null {
   switch (raw.type) {
@@ -42,7 +43,7 @@ function blockOf(raw: Raw): Block | null {
       return options.length ? { type: "buttons", options: options.map((o) => ({ label: str(o.label), message: str(o.message) || str(o.label) })) } : null;
     }
     case "file": {
-      const path = str(raw.path).replace(/^\/home\/node\/\.pi\/workspace\//, "").replace(/^\.?\/+/, "");
+      const path = workspacePath(raw.path);
       return path ? { type: "file", path, name: str(raw.name) || path.split("/").pop()! } : null;
     }
     case "openui":
@@ -54,4 +55,9 @@ function blockOf(raw: Raw): Block | null {
   }
 }
 
-export const blocksOf = (args: unknown): Block[] => list(record(args).blocks).flatMap((b) => blockOf(record(b)) ?? []);
+// A show call carries ui (OpenUI Lang) or page; chats from before OpenUI carry a list of blocks.
+export function blocksOf(args: unknown): Block[] {
+  const { blocks, ui, page } = record(args);
+  if (Array.isArray(blocks)) return blocks.flatMap((b) => blockOf(record(b)) ?? []);
+  return [blockOf({ type: "openui", source: ui }), blockOf({ type: "page", ...record(page) })].flatMap((b) => b ?? []);
+}
