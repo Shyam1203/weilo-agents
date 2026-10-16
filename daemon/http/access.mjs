@@ -70,9 +70,16 @@ export const dropAgentKey = (key) => agentKeys.delete(key);
 
 export const KEY_HEADERS = ["authorization", "x-api-key", "x-goog-api-key", "api-key"];
 
+const KEY_LENGTH = 43;
+
+// The key ends each token pi sends: on its own, or at the end of a placeholder shaped like the
+// provider's token (see placeholderFor). Look it up whole rather than search for it.
 export function keyIn({ headers }, query) {
-  const candidates = [...KEY_HEADERS.map((name) => headers[name]), query.get("key")].filter((c) => typeof c === "string");
-  for (const [key, agent] of agentKeys) if (candidates.some((c) => c.includes(key))) return { key, agent };
+  for (const candidate of [...KEY_HEADERS.map((name) => headers[name]), query.get("key")]) {
+    if (typeof candidate !== "string" || candidate.length < KEY_LENGTH) continue;
+    const key = candidate.slice(-KEY_LENGTH);
+    if (agentKeys.has(key)) return { key, agent: agentKeys.get(key) };
+  }
   return null;
 }
 

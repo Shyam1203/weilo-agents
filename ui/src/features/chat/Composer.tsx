@@ -6,7 +6,7 @@ import { Avatar, type AvatarSpec } from "../../components/ui/Avatar";
 import { Icon, type IconName } from "../../components/ui/Icon";
 import { Menu, MenuItem } from "../../components/ui/Menu";
 import { matches } from "../../components/ui/Search";
-import { base64Of, toImageDataUrl } from "../../lib/attachments";
+import { toImageDataUrl } from "../../lib/attachments";
 import { MAX_FILE_MB, MAX_FILES, MAX_IMAGES } from "../../lib/limits";
 import { useDictation } from "../../lib/useDictation";
 import { CameraDialog } from "./CameraDialog";
@@ -101,7 +101,7 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
     setError(null);
     try {
       if (onAnswer && sent.text && !images.length && !files.length) await onAnswer(sent.text);
-      else await onSend({ text: sent.text, images: sent.images, files: await Promise.all(sent.files.map(async (f) => ({ name: f.name, data: await base64Of(f) }))) });
+      else await onSend(sent);
       setText("");
       setImages([]);
       setFiles([]);

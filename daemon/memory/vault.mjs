@@ -31,10 +31,18 @@ function parsePage(path, raw) {
   };
 }
 
+// Pages are read again only when they change: each search of the vault looks at every page.
+let read = new Map();
 export async function pagesOf() {
-  const pages = [];
-  for await (const path of files(KNOWLEDGE)) pages.push(parsePage(path, await readFile(path, "utf8").catch(() => "")));
-  return pages;
+  const next = new Map();
+  for await (const path of files(KNOWLEDGE)) {
+    const info = await stat(path).catch(() => null);
+    const key = info ? `${info.ino}:${info.size}:${info.mtimeMs}` : "";
+    const was = read.get(path);
+    next.set(path, was?.key === key ? was : { key, page: parsePage(path, await readFile(path, "utf8").catch(() => "")) });
+  }
+  read = next;
+  return [...next.values()].map(({ page }) => page);
 }
 
 const REMOVED = { secret: "[removed: looked like a secret]", steering: "[removed: looked like an instruction]" };

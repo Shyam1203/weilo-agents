@@ -1,4 +1,5 @@
 import { createCipheriv, createECDH, createPrivateKey, generateKeyPairSync, hkdfSync, randomBytes, randomUUID, sign } from "node:crypto";
+import { watchingAgents } from "./agents/status.mjs";
 import { fail, plainText, PUSH, readJson, updateJson } from "./common.mjs";
 import { PUSH_BODY_CHARS, PUSH_SEEN_MS, PUSH_SUBJECT, PUSH_TIMEOUT_MS, PUSH_TTL_S } from "./config.mjs";
 
@@ -90,7 +91,7 @@ async function send(device, payload, keys) {
 }
 
 export async function notify(agent, kind, text) {
-  if (Date.now() - seen < PUSH_SEEN_MS) return;
+  if (watchingAgents() || Date.now() - seen < PUSH_SEEN_MS) return;
   const { devices = [], muted = [] } = await readJson(PUSH).catch(() => ({}));
   if (!devices.length || muted.includes(agent.id)) return;
   const said = plainText(text ?? "");

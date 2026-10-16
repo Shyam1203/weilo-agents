@@ -20,13 +20,31 @@ import { ownTools, passedOn, sharedTools, spawnAs } from "../users.mjs";
 import { chatDirOf, getAgent, homeOf, isIsolated, makeHome, mayCall, placesOf, profilePath, userHomeOf, userOf } from "./agents.mjs";
 import { piDirOf, piFiles, writePiDir } from "./pidir.mjs";
 import { piRpc } from "./pi.mjs";
+import { linkImages } from "./images.mjs";
 import { asTyped, chatFiles, shown, slim, textOf } from "./sessions.mjs";
-import { saveFiles, toImages } from "./uploads.mjs";
+import { agentsChanged } from "./status.mjs";
+import { toImages, uploadedFiles } from "./uploads.mjs";
 import { clearScratch, makeScratch, rulesOf, scratchOf } from "./workspace.mjs";
 
 const runs = new Map();
+// Who follows each agent's chat. They stay across runs, so an agent that went idle and stopped
+// carries on with the same listeners when it starts again.
+const watchers = new Map();
+const listenersOf = (id) => watchers.get(id) ?? new Set();
 
-const emit = (run, event) => run.listeners.forEach((send) => send(event));
+// The app draws neither tool arguments nor results, and only some messages.
+const TOOL_EVENT = /^tool_execution_/;
+const slimEvent = (event) => {
+  if (TOOL_EVENT.test(event.type)) {
+    const { args: _args, result: _result, partialResult: _partial, ...rest } = event;
+    return rest;
+  }
+  if (!event.message) return event;
+  const message = asTyped(event.message);
+  return { ...event, message: linkImages(message, shown(message)) };
+};
+
+const emit = (run, event) => listenersOf(run.id).forEach((send) => send(event));
 
 const endAsk = (run) => {
   if (!run.asking) return;
@@ -45,8 +63,9 @@ const close = (run) => {
 
 const touch = (run) => {
   clearTimeout(run.timer);
-  if (run.busy || run.listeners.size || runs.get(run.id) !== run) return;
-  run.timer = setTimeout(() => (close(run), void clearScratch(run.id)), run.used ? IDLE_MS : GLANCE_MS).unref();
+  if (run.busy || runs.get(run.id) !== run) return;
+  const watched = listenersOf(run.id).size > 0;
+  run.timer = setTimeout(() => ((run.asleep = true), close(run), void clearScratch(run.id)), run.used || watched ? IDLE_MS : GLANCE_MS).unref();
 };
 
 const [WEILO, MEMORY] = ["../weilo.mjs", "../memory/extension.mjs"].map((path) => fileURLToPath(new URL(path, import.meta.url)));
@@ -136,6 +155,7 @@ async function start(run) {
   run.done = new Promise((resolve) => {
     run.pi = piRpc(child, {
       onEvent(event) {
+        if (CHANGES.has(event.type)) agentsChanged();
         if (event.type === "agent_start") (run.busy = true), (run.used = true), (run.reply = null);
         if (event.type === "message_end" && event.message?.role === "assistant") (run.reply = event.message), void charge(run, event.message.usage).catch((err) => console.error("Usage:", err.message));
         if (event.type === "agent_settled") (run.busy = false), tell(run);
@@ -146,14 +166,16 @@ async function start(run) {
           else if (event.method === "confirm" || event.method === "editor") run.pi.reply({ type: "extension_ui_response", id: event.id, cancelled: true });
         }
         if ((event.type === "tool_execution_end" && !run.asking?.resolve) || !run.busy) endAsk(run);
-        emit(run, event.message ? { ...event, message: asTyped(event.message) } : event);
+        emit(run, slimEvent(event));
         if (run.stale && !run.busy) close(run);
         else touch(run);
       },
       onExit({ code, message }) {
         close(run);
         endAsk(run);
-        emit(run, { type: "exit", code, error: code ? message : "" });
+        agentsChanged();
+        // An agent that was idle stops quietly: the app keeps its chat and it starts again when needed.
+        if (!run.asleep || code) emit(run, { type: "exit", code, error: code ? message : "" });
         resolve(undefined);
       },
     });
@@ -161,11 +183,13 @@ async function start(run) {
   return run;
 }
 
+const CHANGES = new Set(["agent_start", "agent_settled", "tool_execution_start", "tool_execution_end", "message_end"]);
+
 const holds = new Map();
 
 const open = (id) => {
   if (!runs.has(id)) {
-    const run = { id, listeners: new Set(), busy: false, stale: false, timer: null };
+    const run = { id, busy: false, stale: false, asleep: false, timer: null };
     run.ready = start(run).catch((err) => {
       close(run);
       throw err;
@@ -177,18 +201,27 @@ const open = (id) => {
 
 const current = (id) => runs.get(id)?.ready.catch(() => null);
 
+const listen = (id, send) => {
+  if (!watchers.has(id)) watchers.set(id, new Set());
+  watchers.get(id).add(send);
+  return () => {
+    const set = watchers.get(id);
+    set?.delete(send);
+    if (set?.size === 0) watchers.delete(id);
+    void current(id)?.then((run) => run && touch(run));
+  };
+};
+
 export async function subscribe(id, send) {
   const run = await open(id);
   const older = (await chatFiles(id)).length > 1;
+  let off;
   await run.pi.send("get_messages", {}, ({ messages }) => {
-    send({ type: "history", messages: messages.map(asTyped).filter(shown).map(slim), more: older || messages[0]?.role === "compactionSummary", busy: run.busy, asking: run.asking });
-    run.listeners.add(send);
+    send({ type: "history", messages: messages.map(asTyped).filter(shown).map(slim).map((m) => linkImages(m)), more: older || messages[0]?.role === "compactionSummary", busy: run.busy, asking: run.asking });
+    off = listen(id, send);
   });
   touch(run);
-  return () => {
-    run.listeners.delete(send);
-    touch(run);
-  };
+  return off;
 }
 
 const refused = (err) => {
@@ -200,26 +233,25 @@ export async function prompt(id, { text = "", images = [], files = [] }) {
   const blocks = toImages(images);
   const agent = await getAgent(id);
   if (agent.dailyTokens && ((await usageToday())[id] ?? 0) >= agent.dailyTokens) throw fail(429, overLimit(agent));
+  const paths = await uploadedFiles(agent, files);
   const { pi } = await open(id);
-  const paths = await saveFiles(agent, files);
   const message = [text.trim(), ...paths.map((path) => `[Attached file: ${path}]`)].filter(Boolean).join("\n\n");
   if (!message && !blocks.length) throw fail(400, "The message is empty");
   return pi.send("prompt", { message, images: blocks, streamingBehavior: "steer" }).catch(refused);
 }
 
 export async function promptAndWait(id, text) {
-  const run = await open(id);
+  await open(id);
   let last = null;
-  let listen;
-  const stop = () => (run.listeners.delete(listen), touch(run));
+  let off;
+  const stop = () => off();
   const ended = new Promise((resolve) => {
-    listen = (event) => {
+    off = listen(id, (event) => {
       if (event.type === "message_end" && event.message?.role === "assistant") last = event.message;
       if (event.type !== "agent_settled" && event.type !== "exit") return;
       stop();
       resolve(last && last.stopReason !== "error" && last.stopReason !== "aborted" ? replyText(last) : null);
-    };
-    run.listeners.add(listen);
+    });
   });
   await prompt(id, { text }).catch((err) => {
     stop();

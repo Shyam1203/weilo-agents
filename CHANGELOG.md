@@ -4,6 +4,10 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 ## Unreleased
 
+- Lighter chats: images in a chat are sent to the app as links, not again in full each time it opens the chat, and files you attach go up as they are (not as text a third larger). The app hears when the agent list changes instead of asking every 2 to 5 seconds, and the stream of a chat stays open behind proxies such as Tailscale Serve. Agent profiles, today's usage and knowledge pages are read again only when they change, and the app's files are compressed when it is built, not when it starts. Older messages in a long chat are laid out only when they come near the screen.
+- A chat left open in a browser tab no longer keeps its agent running: it stops after 10 idle minutes and starts again with the next message.
+- Fixes: a one-time routine that fails after the first minute stays in the list with its error. Search shows a message that holds the words where they are not shown as text (in a link's address, say) instead of dropping it. An agent's key must match whole.
+
 - Search is fast right after an update: the chat search index is kept in the data folder (`agent/index/`) instead of inside the container, where every image update lost it, and the app brings it up to date when it starts.
 - Faster chats: "Load earlier messages" reads a long chat's earlier part once and serves the next pages from what it read, for the last 4 chats you opened. The app also loads the model runtime when it starts, so the first agent answers sooner, and Settings and the agent form load the first time you open them (the app's first load is 20 KB smaller compressed).
 - Lighter when idle: the browser starts the first time an agent uses it (or you take over), not with the app, and a chat you only looked at stops its agent after 90 seconds instead of 10 minutes.
