@@ -30,6 +30,7 @@ import { fetchKnowledge } from "./memory/fetch.mjs";
 import { memoryText, saveMemoryText, useMemory } from "./memory/memory.mjs";
 import { migrate } from "./migrate.mjs";
 import { addDevice, markSeen, pushStatus, removeDevice, removePaired, setMuted } from "./push.mjs";
+import { actionTool, forgetActions, listActions, removeAction, runAction } from "./actions/actions.mjs";
 import { addRoutine, forgetRoutines, listRoutines, noteZone, removeRoutine, startRoutines, updateRoutine } from "./routines/routines.mjs";
 import { addExtension, listExtensions, removeExtension } from "./settings/extensions.mjs";
 import { answerSignIn, signInStatus, startSignIn, stopSignIn } from "./settings/login.mjs";
@@ -124,6 +125,7 @@ route("DELETE", "/api/agents/:id", async ({ id, body }) => {
   const agent = await getAgent(id);
   await removeProfile(id);
   await forgetRoutines(id);
+  await forgetActions(id);
   await stop(id);
   await closeBrowser(id);
   await removeFiles(agent, { keepChat: body.keepChat === true, keepFiles: body.keepFiles === true });
@@ -166,6 +168,10 @@ agentRoute("GET", "/api/agents/:id/routines", "routines", async ({ id, headers, 
 agentRoute("POST", "/api/agents/:id/routines", "routines", ({ id, body, headers }) => addRoutine(id, body, headers["x-timezone"]));
 agentRoute("PUT", "/api/agents/:id/routines/:rid", "routines", ({ id, rid, body }) => updateRoutine(id, rid, body));
 agentRoute("DELETE", "/api/agents/:id/routines/:rid", "routines", ({ id, rid }) => removeRoutine(id, rid));
+agentRoute("POST", "/api/agents/:id/action", "action", ({ id, body }) => actionTool(id, body));
+route("GET", "/api/agents/:id/actions", ({ id }) => listActions(id));
+route("POST", "/api/agents/:id/actions/:rid/run", ({ id, rid, body }) => runAction(id, rid, body.input));
+route("DELETE", "/api/agents/:id/actions/:rid", ({ id, rid }) => removeAction(id, rid));
 
 // The agent a key belongs to. Isolated agents call only from the sandbox, the rest only from outside it.
 async function callerOf(req, url, sandboxed) {
@@ -227,6 +233,7 @@ async function handle(req, res, sandboxed) {
       if (!match) continue;
       const [, id, rid] = match;
       if (who.agent && !(tool && id === who.agent)) throw fail(403, "Not permitted");
+      if (who.script && tool !== "browser") throw fail(403, "Not permitted");
       const agent = scoped && (await getAgent(id));
       if (who.agent && !mayCall(agent, tool)) throw fail(403, "An isolated agent cannot use this. The user can change what it may use in its settings.");
       const result = await handler({ id, rid, body: await bodyOf(req), query: url.searchParams, headers: req.headers, who });

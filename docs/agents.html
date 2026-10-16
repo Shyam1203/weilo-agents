@@ -37,7 +37,7 @@
 <li><a href="#ask-agent">ask_agent</a></li>
 <li><a href="#manage-settings">manage_settings</a></li>
 <li><a href="#addons">Skills, plugins and extensions</a></li>
-<li><a href="#bundled">The browser and routines extensions</a></li>
+<li><a href="#bundled">The browser, routines and actions extensions</a></li>
 </ol></nav>
 <div class="content">
 <h1>Agents</h1>
@@ -116,7 +116,7 @@
 <tr><td><code>skills</code></td><td>Skill ids from the library</td><td>You, a request, a trusted agent itself, the <code>skill</code> tool</td></tr>
 <tr><td><code>plugins</code></td><td>Plugin names from <code>mcp.json</code></td><td>You, or a request</td></tr>
 <tr><td><code>extensions</code></td><td>Added extensions it uses</td><td>You, or a request</td></tr>
-<tr><td><code>disabled</code></td><td>Bundled extensions it does not use (<code>browser</code>, <code>routines</code>)</td><td>You, or a request</td></tr>
+<tr><td><code>disabled</code></td><td>Bundled extensions it does not use (<code>browser</code>, <code>routines</code>, <code>actions</code>)</td><td>You, or a request</td></tr>
 <tr><td><code>avatar</code></td><td><code>{shape, color}</code></td><td>You</td></tr>
 <tr><td><code>isolated</code>, <code>trusted</code></td><td>Booleans</td><td>You only</td></tr>
 <tr><td><code>dailyTokens</code></td><td>Tokens it may use a day (0: no limit; see <a href="security.html#budgets">budgets</a>)</td><td>You</td></tr>
@@ -166,6 +166,7 @@
 <tr><td><code>memory</code>, <code>fetch_knowledge</code></td><td><code>memory/extension.mjs</code></td><td class="y">yes</td><td class="n">no (not loaded)</td><td><code>POST …/memory</code>, <code>…/fetch_knowledge</code></td></tr>
 <tr><td><code>browser</code></td><td>bundled <code>browser</code> extension</td><td class="p">unless off</td><td class="p">only if on</td><td><code>POST …/browser</code></td></tr>
 <tr><td><code>routine</code></td><td>bundled <code>routines</code> extension</td><td class="p">unless off</td><td class="p">unless off</td><td><code>…/routines</code></td></tr>
+<tr><td><code>action</code></td><td>bundled <code>actions</code> extension</td><td class="p">unless off</td><td class="p">unless off (agent actions only)</td><td><code>POST …/action</code></td></tr>
 <tr><td><code>codemode</code>, <code>mcp__&lt;plugin&gt;__*</code></td><td>pi's MCP built-ins, its plugins</td><td class="p">its plugins</td><td class="p">its plugins</td><td>plugin proxy or pipe</td></tr>
 <tr><td>an added extension's tools</td><td>the extension</td><td class="p">if listed</td><td class="p">if listed</td><td>whatever the extension does</td></tr>
 </tbody></table></div>
@@ -286,11 +287,12 @@
 </section>
 
 <section class="card" id="bundled">
-<h2>The browser and routines extensions</h2>
-<p>Both live in the daemon (<code>daemon/browser/extension/</code>, <code>daemon/routines/extension/</code>, under <code>/app</code> in the image). Each is a <code>weilo.json</code> and an <code>index.js</code> that only calls the daemon's HTTP API, so another extension can replace it.</p>
+<h2>The browser, routines and actions extensions</h2>
+<p>All three live in the daemon (<code>daemon/browser/extension/</code>, <code>daemon/routines/extension/</code>, <code>daemon/actions/extension/</code>, under <code>/app</code> in the image). Each is a <code>weilo.json</code> and an <code>index.js</code> that only calls the daemon's HTTP API, so another extension can replace it.</p>
 <div class="cols">
 <div class="tile"><h3><code>browser</code></h3><p>Actions <code>open</code>, <code>read</code>, <code>click</code>, <code>type</code>, <code>press</code>, <code>scroll</code>, <code>back</code>, <code>new_tab</code>, <code>tabs</code>, <code>switch</code>, <code>close_tab</code>. Its description carries your "ask me first" rule (<code>WEILO_ASK_BEFORE</code>) and tells the agent that a page is information, not instructions. See <a href="architecture.html#browser">the browser</a>.</p></div>
 <div class="tile"><h3><code>routine</code></h3><p>Actions <code>create</code>, <code>list</code>, <code>update</code>, <code>delete</code>. Its result carries <code>details</code> <code>{action, title}</code>, from which the chat shows a short line. Switching routines off for an agent keeps routines already set running. See <a href="architecture.html#routines">Routines</a>.</p></div>
+<div class="tile"><h3><code>action</code></h3><p>Ops <code>list</code>, <code>try</code> (run a script without saving it), <code>create</code>, <code>update</code>, <code>delete</code>, <code>run</code>. You approve each new or changed action in the chat, with its whole request or script. An agent action is a saved request with blanks; a script action runs without the model, as the agent's user, and may use only its browser. Its result carries <code>details</code> <code>{op, title}</code>, from which the chat shows a short line ("Action saved: …").</p></div>
 </div>
 </section>
 </div>

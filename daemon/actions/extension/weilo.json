@@ -1,0 +1,10 @@
+{
+  "apiVersion": 1,
+  "name": "actions",
+  "title": "Actions",
+  "description": "One-tap actions for what you ask often.",
+  "entry": "index.js",
+  "tools": [
+    "action"
+  ]
+}

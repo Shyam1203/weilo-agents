@@ -21,7 +21,7 @@ export interface PiMessage {
   errorMessage?: string;
   toolCallId?: string;
   toolName?: string;
-  details?: { action?: string; title?: string; note?: string };
+  details?: { action?: string; op?: string; title?: string; note?: string };
   summary?: string;
 }
 
@@ -76,7 +76,7 @@ export interface Queued {
 
 export const empty: Conversation = { ready: false, messages: [], busy: false, open: false, asking: null, queued: [], earlier: [], more: false };
 
-const shows = (m: PiMessage) => m.role === "user" || m.role === "assistant" || m.role === "compactionSummary" || (m.role === "toolResult" && (m.toolName === "ask" || m.toolName === "routine" || m.toolName === "manage_agents"));
+const shows = (m: PiMessage) => m.role === "user" || m.role === "assistant" || m.role === "compactionSummary" || (m.role === "toolResult" && (m.toolName === "ask" || m.toolName === "routine" || m.toolName === "manage_agents" || m.toolName === "action"));
 
 const textOf = (content: PiMessage["content"] | undefined) => (typeof content === "string" ? content : (content ?? []).map((b) => b.text ?? "").join(""));
 
@@ -165,6 +165,8 @@ export interface Message extends ItemBase {
   role: "human" | "agent";
   text: string;
   images: string[];
+  /** Sent by tapping this action. */
+  action?: string;
 }
 
 const imagesOf = (content: PiMessage["content"]) => (typeof content === "string" ? [] : content.filter((b) => b.type === "image" && (b.url || b.data)).map((b) => b.url ?? `data:${b.mimeType};base64,${b.data}`));
@@ -226,6 +228,14 @@ const joined = (items: Item[]) =>
   }, []);
 
 const ROUTINE_MARK = "⏰ Routine: ";
+// Kept in step with the daemon's ACTION_MARK and CONFIRM_NOTE (actions/actions.mjs).
+const ACTION_MARK = "⚡ Action: ";
+const CONFIRM_NOTE = "\n\nBefore you pay, order, book or send anything, use ask to confirm the exact details with the user.";
+
+function actionNote(details: PiMessage["details"]) {
+  const verb = { create: "Action saved", update: "Action changed", delete: "Action deleted" }[details?.op ?? ""];
+  return verb && details?.title ? `${verb}: ${details.title}` : null;
+}
 
 function routineNote(details: PiMessage["details"]) {
   if (details?.action === "create") return `Routine added: ${details.title}`;
@@ -260,6 +270,10 @@ function itemsFor(m: PiMessage, i: number, arriving: boolean, results: Map<strin
   if (m.role === "user") {
     const text = textOf(m.content);
     if (text.startsWith(ROUTINE_MARK)) return [{ kind: "note", id: `${i}`, role: "agent", text: `Routine: ${text.slice(ROUTINE_MARK.length).split("\n")[0]}`, at }];
+    if (text.startsWith(ACTION_MARK)) {
+      const [title, ...rest] = text.slice(ACTION_MARK.length).replace(CONFIRM_NOTE, "").split("\n\n");
+      return [{ kind: "message", id: `${i}`, role: "human", text: rest.join("\n\n"), images: imagesOf(m.content), at, action: title }];
+    }
     return [{ kind: "message", id: `${i}`, role: "human", text, images: imagesOf(m.content), at }];
   }
   if (m.role !== "assistant" || typeof m.content === "string") return [];
@@ -271,6 +285,10 @@ function itemsFor(m: PiMessage, i: number, arriving: boolean, results: Map<strin
     if (b.type === "toolCall" && b.name === "ask") {
       const { question, options } = (b.arguments ?? {}) as { question?: unknown; options?: unknown };
       return [{ kind: "ask", id: `${i}.${j}`, role: "agent", question: String(question ?? ""), options: Array.isArray(options) ? options.map(String) : [], answer: b.id && results.has(b.id) ? textOf(results.get(b.id)!.content) : undefined, at }];
+    }
+    if (b.type === "toolCall" && b.name === "action") {
+      const text = actionNote(b.id ? results.get(b.id)?.details : undefined);
+      if (text) return [{ kind: "note", id: `${i}.${j}`, role: "agent", text, at }];
     }
     if (b.type === "toolCall" && b.name === "routine") {
       const text = routineNote(b.id ? results.get(b.id)?.details : undefined);

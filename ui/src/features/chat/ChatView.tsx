@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Agent } from "../../api/agents";
 import { listCommands, type Outgoing } from "../../api/chat";
 import { messageOf, RequestError } from "../../api/http";
@@ -29,6 +29,11 @@ import { BrowserPanel } from "../browser/BrowserPanel";
 import { RoutinesPanel } from "../routines/RoutinesPanel";
 import { Modal } from "../../components/ui/Modal";
 import { PreviewProvider } from "../files/PreviewContext";
+import { runAction, removeAction, type Action } from "../../api/actions";
+import { ActionResult, type Run } from "../actions/ActionResult";
+import { ActionsPanel } from "../actions/ActionsPanel";
+import { RunDialog } from "../actions/RunDialog";
+import { useActions } from "../actions/useActions";
 
 interface Props {
   agent: Agent;
@@ -59,7 +64,8 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
   const sideOpen = wide ? sidebar : sheet;
   const toggleSide = () => (wide ? (write(KEYS.sidebar, sidebar ? "0" : "1"), setSidebar(!sidebar)) : setSheet(!sheet));
   const routinesChanged = chat.messages.filter((m) => m.kind === "note").length;
-  const scroller = useFollowBottom([chat.live, chat.asking]);
+  const [runs, setRuns] = useState<Run[]>([]);
+  const scroller = useFollowBottom([chat.live, chat.asking, runs]);
   const { away, unseen, toBottom } = scroller;
 
   const load = useRef(chat.loadEarlier);
@@ -125,7 +131,33 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
       failed(err, true);
       throw err;
     });
-  const fresh = chat.ready && !chat.more && !chat.busy && !chat.messages.length && !chat.queued.length;
+  const acts = useActions(agent.id, routinesChanged);
+  const actionsOff = agent.disabled.includes("actions");
+  const [running, setRunning] = useState<Set<string>>(new Set());
+  const [asked, setAsked] = useState<Action | null>(null);
+  const settle = (key: number, patch: Partial<Run>) => setRuns((list) => list.map((r) => (r.key === key ? { ...r, done: true, ...patch } : r)));
+  const go = async (action: Action, input: Record<string, string>) => {
+    setAsked(null);
+    setSheet(false);
+    const key = Date.now();
+    // A script answers here; an agent action goes to the chat as your message, and the agent replies.
+    if (action.kind === "script") setRuns((list) => [...list.filter((r) => r.action.id !== action.id).slice(-2), { key, action, done: false }]);
+    setRunning((now) => new Set(now).add(action.id));
+    try {
+      const result = await runAction(agent.id, action.id, input);
+      if (!("sent" in result)) settle(key, result);
+    } catch (err) {
+      if (action.kind === "script") settle(key, { ok: false, text: messageOf(err) });
+      else failed(err);
+    } finally {
+      setRunning((now) => new Set([...now].filter((id) => id !== action.id)));
+      void acts.refresh();
+    }
+  };
+  const start = (action: Action) => (action.fields.length || (action.confirm && action.kind === "script") ? setAsked(action) : void go(action, {}));
+  const remove = (action: Action) => removeAction(agent.id, action.id).then(acts.refresh, (err) => failed(err, true));
+  const actionsPanel = <ActionsPanel agentName={agent.name} off={actionsOff} actions={acts.actions} error={acts.error} running={running} onRun={start} onRemove={remove} />;
+  const fresh = !runs.length && chat.ready && !chat.more && !chat.busy && !chat.messages.length && !chat.queued.length;
 
   const dock = useRef<HTMLDivElement>(null);
   const [room, setRoom] = useState(0);
@@ -154,7 +186,7 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
           title={agent.name}
           subtitle={<>{agent.isolated && <Tag>Isolated</Tag>}{modelMenu(false)}</>}
           onTitle={onEdit}
-          actions={<><IconButton icon="search" label="Find in this chat" aria-pressed={finding} className={finding ? "bg-select text-ink" : ""} onClick={() => (finding ? closeFind() : setFinding(true))} /><IconButton icon="panel" label={sideOpen ? "Hide browser and routines" : "Show browser and routines"} aria-pressed={sideOpen} className={sideOpen ? "bg-select text-ink" : ""} onClick={toggleSide} /></>}
+          actions={<><IconButton icon="search" label="Find in this chat" aria-pressed={finding} className={finding ? "bg-select text-ink" : ""} onClick={() => (finding ? closeFind() : setFinding(true))} /><IconButton icon="panel" label={sideOpen ? "Hide actions, browser and routines" : "Show actions, browser and routines"} aria-pressed={sideOpen} className={sideOpen ? "bg-select text-ink" : ""} onClick={toggleSide} /></>}
         />
         {finding && <FindBar query={query} onQuery={setQuery} count={found.count} current={found.current} onNext={found.next} onPrevious={found.previous} onClose={closeFind} />}
         <div className="relative min-h-0 flex-1">
@@ -162,6 +194,21 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
             <div className="mx-auto w-full max-w-3xl px-4 py-5">
               {chat.more && <p className="flex items-center justify-center gap-2 pb-4 text-xs text-ink-3">{chat.loadingEarlier ? <><Icon name="spinner" size={12} /> Loading earlier messages…</> : <button type="button" onClick={() => void chat.loadEarlier()} className="underline">Load earlier messages</button>}</p>}
               {!chat.ready ? <LoadingChat /> : fresh ? <EmptyChat name={agent.name} avatar={avatarOf(agent)} shortcuts={shortcuts} onPick={(text) => put({ text, images: [] })} /> : <MessageList messages={chat.messages} busy={chat.busy} asking={chat.asking} onAnswer={chat.answer} onReply={reply} onRetry={retry} onEdit={put} queued={chat.queued} onUnqueue={unqueue} note={chat.note === NO_REPLY ? problem("No reply came. Send your message again, or try another model.", ["retry", "model"], "info") : chat.note} />}
+              {runs.length > 0 && (
+                <div className="mt-3 flex flex-col gap-2">
+                  {runs.map((r) => (
+                    <ActionResult
+                      key={r.key}
+                      run={r}
+                      agentName={agent.name}
+                      onAgain={() => start(r.action)}
+                      onAsk={() => put({ text: `About "${r.action.title}" (it said: ${r.text}): `, images: [] })}
+                      onFix={() => void send({ text: `My action "${r.action.title}" failed: ${r.text}\nLook at its script (action list), find what changed, test a fix with try, and save it with action update.`, images: [], files: [] }).catch(() => {})}
+                      onClose={() => setRuns((list) => list.filter((x) => x.key !== r.key))}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           <div ref={dock} className="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-page from-55% to-transparent pt-8">
@@ -204,6 +251,16 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
                 ) : (
                   problem(chat.error, fixesFor(chat.error))
                 ))}
+              {!sideOpen && !actionsOff && !!acts.actions?.length && (
+                <div role="toolbar" aria-label="Actions" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
+                  {acts.actions.map((a) => (
+                    <button key={a.id} type="button" disabled={running.has(a.id)} onClick={() => start(a)} title={a.about || a.title} className="flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-page px-3 text-[13px] text-ink ring-1 ring-line-strong transition-colors hover:bg-select disabled:opacity-60">
+                      <Icon name={running.has(a.id) ? "spinner" : a.icon} size={13} className="text-ink-2" />
+                      {a.title}
+                    </button>
+                  ))}
+                </div>
+              )}
               <Composer
                 agentId={agent.id}
                 fill={fill}
@@ -225,15 +282,16 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
           </div>
         </div>
       </div>
+      {asked && <RunDialog action={asked} agentName={agent.name} onRun={(input) => void go(asked, input)} onClose={() => setAsked(null)} />}
       {sideOpen && wide && (
         <aside className="w-80 shrink-0 overflow-y-auto border-l border-line">
-          <Side agent={agent} routinesChanged={routinesChanged} onTaken={onActivity} />
+          <Side agent={agent} actions={actionsPanel} routinesChanged={routinesChanged} onTaken={onActivity} />
         </aside>
       )}
       {sideOpen && !wide && (
         <Modal title={agent.name} onClose={() => setSheet(false)} width="max-w-md">
           <div className="-mx-4 -mt-4 -mb-2">
-            <Side agent={agent} routinesChanged={routinesChanged} onTaken={onActivity} />
+            <Side agent={agent} actions={actionsPanel} routinesChanged={routinesChanged} onTaken={onActivity} />
           </div>
         </Modal>
       )}
@@ -242,8 +300,9 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
   );
 }
 
-const Side = ({ agent, routinesChanged, onTaken }: { agent: Agent; routinesChanged: number; onTaken: () => void }) => (
+const Side = ({ agent, actions, routinesChanged, onTaken }: { agent: Agent; actions: ReactNode; routinesChanged: number; onTaken: () => void }) => (
   <>
+    {actions}
     <BrowserPanel agentId={agent.id} agentName={agent.name} off={agent.disabled.includes("browser")} taken={!!agent.taken} open={!!agent.browserOpen} onTaken={onTaken} />
     <RoutinesPanel agentId={agent.id} agentName={agent.name} off={agent.disabled.includes("routines")} changed={routinesChanged} />
   </>

@@ -15,6 +15,7 @@ const KINDS: Record<string, { one: string; many: string; icon: IconName }> = {
   fetch_knowledge: { one: "Searched knowledge", many: "Searched knowledge # times", icon: "brain" },
   skill: { one: "Saved a skill", many: "Saved # skills", icon: "sparkle" },
   manage_agents: { one: "Worked on agents", many: "Worked on agents # times", icon: "agent" },
+  action: { one: "Worked on an action", many: "Worked on actions # times", icon: "bolt" },
 };
 const kindOf = (tool: string) => KINDS[tool] ?? { one: `Used ${tool}`, many: `Used ${tool} # times`, icon: "puzzle" as IconName };
 const SHOWN = 3;

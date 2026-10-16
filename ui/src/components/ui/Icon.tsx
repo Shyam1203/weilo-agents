@@ -1,4 +1,5 @@
 import {
+  CalendarDays, Package, Play, ShoppingCart, Truck, UtensilsCrossed, Wallet, Zap,
   ArrowDown, ArrowUp, Bell, Bot, ChartColumn, Brain, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Download, ExternalLink, FileText, Globe, Info, Key, List, LoaderCircle, Mail, Mic, MonitorSmartphone, MousePointer2,
   PanelRight, Paperclip, Pencil, Plug, Plus, Puzzle, RotateCcw, Search, Settings, Share, ShieldCheck, Sparkles, Square, TriangleAlert, User, X,
 } from "lucide-react";
@@ -40,6 +41,14 @@ const ICONS = {
   share: Share,
   retry: RotateCcw,
   edit: Pencil,
+  bolt: Zap,
+  play: Play,
+  package: Package,
+  food: UtensilsCrossed,
+  cart: ShoppingCart,
+  truck: Truck,
+  calendar: CalendarDays,
+  money: Wallet,
   devices: MonitorSmartphone,
   shield: ShieldCheck,
   chart: ChartColumn,
