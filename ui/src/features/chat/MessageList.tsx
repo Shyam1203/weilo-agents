@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef, useState } from "react";
+import { memo, useCallback, useRef, useState, type ReactNode } from "react";
 import { longWhen } from "../../lib/format";
 import { AgentText } from "./AgentText";
 import { AskCard } from "./AskCard";
@@ -24,7 +24,7 @@ interface Props {
   onEdit: (message: Draft) => void;
   queued: Queued[];
   onUnqueue: (queued: Queued) => Promise<void>;
-  note?: string;
+  note?: ReactNode;
 }
 
 const draftOf = (m: Message): Draft => ({ text: m.text, images: m.images });
@@ -90,7 +90,7 @@ export function MessageList({ messages, busy, asking, onAnswer, onReply, onRetry
       )}
       {note && (
         <li className="mt-2.5 animate-fade-in">
-          <p className="text-center text-xs text-ink-3">{note}</p>
+          {typeof note === "string" ? <p className="text-center text-xs text-ink-3">{note}</p> : note}
         </li>
       )}
     </ol>

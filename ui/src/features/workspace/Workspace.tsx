@@ -14,7 +14,8 @@ import { ChatView } from "../chat/ChatView";
 import type { SettingsPage } from "../settings/SettingsView";
 import { ContactDialog } from "../support/ContactDialog";
 import { Welcome } from "../user/Welcome";
-import { GetStarted } from "./GetStarted";
+import { recommendedModel } from "../../lib/models";
+import { Setup } from "../setup/Setup";
 import { Sidebar } from "./Sidebar";
 import { useUnread } from "./useUnread";
 
@@ -42,7 +43,7 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
   useEffect(() => {
     if (opened) history.replaceState(history.state, "", location.pathname);
   }, [opened]);
-  const [form, setForm] = useState<"new" | "edit" | null>(null);
+  const [form, setForm] = useState<"new" | "edit" | "limits" | null>(null);
   const [settings, setSettings] = useState<SettingsPage | "menu" | null>(null);
   const openSettings = (page: SettingsPage | "menu") => (void reload(), setSettings(page));
   const [contact, setContact] = useState(false);
@@ -95,6 +96,8 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
     return () => navigator.serviceWorker?.removeEventListener("message", onMessage);
   }, []);
 
+  // With no agent yet, the setup takes the screen, also on a phone.
+  const fresh = agents.length === 0;
   const covered = !wide && (showChat || settings !== null);
   const uncover = () => (setShowChat(false), setSettings(null));
   useBackStep(covered, uncover);
@@ -102,7 +105,7 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
 
   return (
     <div className="flex h-full">
-      <div className={`${showChat || settings ? "hidden" : "flex"} w-full md:flex md:w-auto`}>
+      <div className={`${showChat || settings || fresh ? "hidden" : "flex"} w-full md:flex md:w-auto`}>
         <Sidebar
           agents={agents.map((a) => (live && a.id === agent?.id ? { ...a, working: live.busy, doing: live.busy ? (live.doing ?? "") : null } : a))}
           unread={unread}
@@ -117,7 +120,7 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
           onContact={() => setContact(true)}
         />
       </div>
-      <main ref={swipe} className={`${showChat || settings ? "flex" : "hidden"} min-w-0 flex-1 md:flex`}>
+      <main ref={swipe} className={`${showChat || settings || fresh ? "flex" : "hidden"} min-w-0 flex-1 md:flex`}>
         {settings && (
           <Suspense>
             <SettingsView page={settings} agents={agents} providers={providers} skills={skills} plugins={plugins} extensions={extensions} user={user} models={models} onModels={onModels} onChange={reload} onClose={() => setSettings(null)} />
@@ -129,38 +132,51 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
               key={agent.id}
               agent={agent}
               models={models}
-              hasProvider={providers.some((p) => p.connected)}
+              providers={providers}
               onBack={() => setShowChat(false)}
               onEdit={() => setForm("edit")}
+              onEditLimits={() => setForm("limits")}
+              onOpenNotifications={() => openSettings("general")}
               onActivity={reloadAgents}
               onLive={setLive}
               find={find}
               onOpenSettings={() => openSettings("providers")}
             />
           ) : (
-            <GetStarted onCreateAgent={() => setForm("new")} />
+            <Setup
+              providers={providers}
+              models={models}
+              user={user}
+              onChange={reload}
+              onModels={onModels}
+              onCreated={async (made) => (write(KEYS.welcomed, "1"), setWelcome(false), await reloadAgents(), select(made.id))}
+              onFromScratch={() => setForm("new")}
+              onSettings={() => openSettings("menu")}
+            />
           )}
         </div>
       </main>
       {form && (
         <Suspense>
           <AgentForm
-            agent={form === "edit" ? agent : undefined}
+            agent={form === "new" ? undefined : agent}
+            showMore={form === "limits"}
             providers={providers}
             skills={skills}
             plugins={plugins}
             extensions={extensions}
             models={models}
+            defaultModel={recommendedModel(models, providers, agents)}
             hidden={settings !== null}
             onAddProvider={() => openSettings("providers")}
             onOpenSettings={openSettings}
             onClose={() => setForm(null)}
-            onSaved={async (saved) => (await reloadAgents(), select(saved.id), setForm(null))}
+            onSaved={async (saved) => (fresh && (write(KEYS.welcomed, "1"), setWelcome(false)), await reloadAgents(), select(saved.id), setForm(null))}
             onDeleted={() => (setForm(null), setShowChat(false), reloadAgents())}
           />
         </Suspense>
       )}
-      {welcome && <Welcome user={user} onDone={() => (write(KEYS.welcomed, "1"), setWelcome(false), reload())} />}
+      {welcome && !fresh && <Welcome user={user} onDone={() => (write(KEYS.welcomed, "1"), setWelcome(false), reload())} />}
       {contact && <ContactDialog name={user.name} onClose={() => setContact(false)} />}
     </div>
   );

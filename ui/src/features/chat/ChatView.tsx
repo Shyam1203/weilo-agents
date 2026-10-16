@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Agent } from "../../api/agents";
 import { listCommands, type Outgoing } from "../../api/chat";
-import { messageOf } from "../../api/http";
-import { shortName, type Model } from "../../api/providers";
+import { messageOf, RequestError } from "../../api/http";
+import type { Model, Provider } from "../../api/providers";
 import { Avatar } from "../../components/ui/Avatar";
 import { Button, IconButton } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
@@ -14,11 +14,14 @@ import { useMedia } from "../../lib/useMedia";
 import { read, write, KEYS } from "../../lib/storage";
 import { avatarOf } from "../agents/avatars";
 import { Composer, type Draft } from "./Composer";
+import { ModelMenu } from "./ModelMenu";
+import { fixesFor, Problem, type Fix } from "./Problem";
+import { useNotifyOffer } from "./useNotifyOffer";
 import { EmptyChat } from "./EmptyChat";
 import type { Shortcut } from "./CommandMenu";
 import { ContextMeter } from "./ContextMeter";
 import { FindBar } from "./FindBar";
-import type { Message } from "./conversation";
+import { NO_REPLY, type Message } from "./conversation";
 import { LoadingChat, MessageList } from "./MessageList";
 import { useFind } from "./useFind";
 import { useChat } from "./useChat";
@@ -30,19 +33,24 @@ import { PreviewProvider } from "../files/PreviewContext";
 interface Props {
   agent: Agent;
   models?: Model[];
-  hasProvider: boolean;
+  providers: Provider[];
   onBack: () => void;
   find?: { query: string; at: number } | null;
   onEdit: () => void;
+  /** Edit agent, opened at its daily limit. */
+  onEditLimits: () => void;
   onActivity: () => void;
   onLive: (live: { busy: boolean; doing: string | null } | null) => void;
   onOpenSettings: () => void;
+  onOpenNotifications: () => void;
 }
 
 const TOP_PX = 400;
 
-export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onActivity, onLive, onOpenSettings }: Props) {
+export function ChatView({ agent, models, providers, find, onBack, onEdit, onEditLimits, onActivity, onLive, onOpenSettings, onOpenNotifications }: Props) {
+  const hasProvider = providers.some((p) => p.connected);
   const chat = useChat(agent.id);
+  const notify = useNotifyOffer(chat.busy);
   useEffect(() => onLive({ busy: chat.busy, doing: chat.doing }), [chat.busy, chat.doing]);
   useEffect(() => () => onLive(null), []);
   const wide = useMedia("(min-width: 1024px)");
@@ -90,17 +98,31 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
   const found = useFind(scroller.box, finding ? query : "", [chat.messages, chat.ready], loadingFor ? null : find);
   const closeFind = () => (setFinding(false), setQuery(""));
 
-  const [replyError, setReplyError] = useState<string | null>(null);
-  const send = (message: Outgoing) => (setReplyError(null), chat.send(message));
-  const reply = (text: string) => void send({ text, images: [], files: [] }).catch((err) => setReplyError(messageOf(err)));
-  const retry = ({ text, images }: Draft) => void send({ text, images, files: [] }).catch((err) => setReplyError(messageOf(err)));
+  // plain: a problem that is not about a message (summarizing, a queued message, a model change), so no fixes.
+  const [replyError, setReplyErrorOf] = useState<{ message: string; status?: number; plain?: boolean } | null>(null);
+  const setReplyError = (message: string | null, plain = false) => setReplyErrorOf(message === null ? null : { message, plain });
+  const failed = (err: unknown, plain = false) => setReplyErrorOf({ message: messageOf(err), status: err instanceof RequestError ? err.status : undefined, plain });
+  const send = (message: Outgoing) =>
+    (setReplyError(null),
+    chat.send(message).catch((err) => {
+      failed(err);
+      throw Object.assign(err instanceof Error ? err : new Error(messageOf(err)), { shown: true });
+    }));
+  // A send that failed is old news once the agent works again.
+  useEffect(() => void (chat.busy && setReplyErrorOf(null)), [chat.busy]);
+  const reply = (text: string) => void send({ text, images: [], files: [] }).catch(() => {});
+  const retry = ({ text, images }: Draft) => void send({ text, images, files: [] }).catch(() => {});
   const [fill, setFill] = useState<Draft | null>(null);
   const put = (draft: Draft) => setFill({ ...draft });
   const lastMine = chat.messages.findLast((m): m is Message => m.kind === "message" && m.role === "human");
   const last = lastMine && { text: lastMine.text, images: lastMine.images };
+  const modelMenu = (button: boolean) => <ModelMenu agent={agent} models={models} providers={providers} busy={chat.busy} button={button} onChanged={() => (setReplyError(null), onActivity())} onError={(message) => setReplyError(message, true)} />;
+  const problem = (message: string, fixes: Fix[], tone?: "alert" | "info") => (
+    <Problem message={message} fixes={fixes} tone={tone} onRetry={last && !chat.busy ? () => (setReplyError(null), retry(last)) : undefined} modelPicker={modelMenu(true)} onProviders={onOpenSettings} onLimit={onEditLimits} />
+  );
   const unqueue = (q: Parameters<typeof chat.unqueue>[0]) =>
     chat.unqueue(q).catch((err) => {
-      setReplyError(messageOf(err));
+      failed(err, true);
       throw err;
     });
   const fresh = chat.ready && !chat.more && !chat.busy && !chat.messages.length && !chat.queued.length;
@@ -130,7 +152,7 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
           onBack={onBack}
           leading={<Avatar spec={avatarOf(agent)} size={32} working={chat.busy} doing={chat.doing} />}
           title={agent.name}
-          subtitle={<>{agent.isolated && <Tag>Isolated</Tag>}{agent.model ? shortName(models?.find((m) => m.id === agent.model)?.name ?? agent.model) : "Choose a model"}</>}
+          subtitle={<>{agent.isolated && <Tag>Isolated</Tag>}{modelMenu(false)}</>}
           onTitle={onEdit}
           actions={<><IconButton icon="search" label="Find in this chat" aria-pressed={finding} className={finding ? "bg-select text-ink" : ""} onClick={() => (finding ? closeFind() : setFinding(true))} /><IconButton icon="panel" label={sideOpen ? "Hide browser and routines" : "Show browser and routines"} aria-pressed={sideOpen} className={sideOpen ? "bg-select text-ink" : ""} onClick={toggleSide} /></>}
         />
@@ -139,7 +161,7 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
           <div ref={scroller.box} style={{ paddingBottom: room }} className="h-full overflow-y-auto">
             <div className="mx-auto w-full max-w-3xl px-4 py-5">
               {chat.more && <p className="flex items-center justify-center gap-2 pb-4 text-xs text-ink-3">{chat.loadingEarlier ? <><Icon name="spinner" size={12} /> Loading earlier messages…</> : <button type="button" onClick={() => void chat.loadEarlier()} className="underline">Load earlier messages</button>}</p>}
-              {!chat.ready ? <LoadingChat /> : fresh ? <EmptyChat name={agent.name} avatar={avatarOf(agent)} shortcuts={shortcuts} onPick={(text) => put({ text, images: [] })} /> : <MessageList messages={chat.messages} busy={chat.busy} asking={chat.asking} onAnswer={chat.answer} onReply={reply} onRetry={retry} onEdit={put} queued={chat.queued} onUnqueue={unqueue} note={chat.note} />}
+              {!chat.ready ? <LoadingChat /> : fresh ? <EmptyChat name={agent.name} avatar={avatarOf(agent)} shortcuts={shortcuts} onPick={(text) => put({ text, images: [] })} /> : <MessageList messages={chat.messages} busy={chat.busy} asking={chat.asking} onAnswer={chat.answer} onReply={reply} onRetry={retry} onEdit={put} queued={chat.queued} onUnqueue={unqueue} note={chat.note === NO_REPLY ? problem("No reply came. Send your message again, or try another model.", ["retry", "model"], "info") : chat.note} />}
             </div>
           </div>
           <div ref={dock} className="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-page from-55% to-transparent pt-8">
@@ -160,12 +182,28 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
                   Weilo Agents needs an API key to use a model.
                 </Notice>
               )}
-              {replyError && <Notice tone="alert">{replyError}</Notice>}
-              {chat.error && (
-                <Notice tone="alert" action={chat.stopped && <Button size="sm" onClick={chat.retry}>Try again</Button>}>
-                  {chat.error}
+              {notify.offer && (
+                <Notice
+                  title="Get a notification when an agent finishes?"
+                  action={
+                    <span className="flex shrink-0 gap-1.5">
+                      <Button size="sm" variant="ghost" onClick={notify.dismiss}>Not now</Button>
+                      <Button size="sm" variant="primary" onClick={() => void notify.accept()}>Turn on</Button>
+                    </span>
+                  }
+                >
+                  {notify.error ?? <>{agent.name} finished while you were away. <button type="button" onClick={onOpenNotifications} className="underline underline-offset-2">Settings</button></>}
                 </Notice>
               )}
+              {replyError && problem(replyError.message, replyError.plain ? [] : fixesFor(replyError.message, replyError.status))}
+              {chat.error &&
+                (chat.stopped ? (
+                  <Notice tone="alert" action={<Button size="sm" onClick={chat.retry}>Try again</Button>}>
+                    {chat.error}
+                  </Notice>
+                ) : (
+                  problem(chat.error, fixesFor(chat.error))
+                ))}
               <Composer
                 agentId={agent.id}
                 fill={fill}
@@ -181,7 +219,7 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
                 disabled={!hasProvider}
                 onSend={send}
                 onStop={chat.stop}
-                meter={chat.context && <ContextMeter context={chat.context} compacting={chat.compacting} busy={chat.busy} onCompact={() => void chat.compact().catch((err) => setReplyError(messageOf(err)))} />}
+                meter={chat.context && <ContextMeter context={chat.context} compacting={chat.compacting} busy={chat.busy} onCompact={() => void chat.compact().catch((err) => failed(err, true))} />}
               />
             </div>
           </div>

@@ -5,16 +5,18 @@ import { Icon, type IconName } from "./Icon";
 
 interface Props {
   trigger: (props: { open: boolean; toggle: () => void }) => ReactNode;
-  placement?: "below-end" | "above-start";
+  placement?: "below-end" | "below-start" | "above-start";
+  wide?: boolean;
   children: (close: () => void) => ReactNode;
 }
 
 const PLACEMENT = {
   "below-end": "top-full right-0 mt-1 origin-top-right",
+  "below-start": "top-full left-0 mt-1 origin-top-left",
   "above-start": "bottom-full left-0 mb-1 origin-bottom-left",
 };
 
-export function Menu({ trigger, placement = "below-end", children }: Props) {
+export function Menu({ trigger, placement = "below-end", wide = false, children }: Props) {
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
   const ref = useDismiss<HTMLDivElement>(open, close);
@@ -39,7 +41,7 @@ export function Menu({ trigger, placement = "below-end", children }: Props) {
     <div ref={ref} className="relative">
       {trigger({ open, toggle: () => setOpen((v) => !v) })}
       {shown && (
-        <div role="menu" onKeyDown={onKeyDown} className={`absolute z-30 ${closing ? "pointer-events-none animate-pop-out" : "animate-pop"} max-h-56 overflow-y-auto rounded-xl border border-line bg-raised p-1 shadow-pop w-52 ${PLACEMENT[placement]}`}>
+        <div role="menu" onKeyDown={onKeyDown} className={`absolute z-30 ${closing ? "pointer-events-none animate-pop-out" : "animate-pop"} max-h-56 overflow-y-auto rounded-xl border border-line bg-raised p-1 shadow-pop ${wide ? "w-72 max-w-[calc(100vw-2rem)]" : "w-52"} ${PLACEMENT[placement]}`}>
           {children(close)}
         </div>
       )}

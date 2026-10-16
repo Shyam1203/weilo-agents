@@ -45,7 +45,7 @@ const Group = ({ title, children }: { title: string; children: ReactNode }) => (
   </section>
 );
 
-function ProviderRow({ provider, models, onChange, onModels }: { provider: Provider; models?: Model[]; onChange: () => void; onModels: (ids: string[]) => void }) {
+export function ProviderRow({ provider, models, onChange, onModels }: { provider: Provider; models?: Model[]; onChange: () => void; onModels: (ids: string[]) => void }) {
   const [open, setOpen] = useState(false);
   const [picking, setPicking] = useState(false);
   const [signingIn, setSigningIn] = useState(false);

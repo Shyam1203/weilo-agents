@@ -4,6 +4,11 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 ## Unreleased
 
+- A simpler start: with no agent yet, the app opens on a setup with two steps, also on a phone. Connect a model (sign in, or add a key) right there, then pick a ready-made agent (Assistant, Researcher, Writer, Coder or Planner) or start from scratch; one tap makes it and opens its chat. Telling your agents your name is an optional line on the same page, not a pop-up first.
+- A new agent starts with a model already chosen: the one your agents use most, or else a current, capable model of your provider (a Sonnet on Anthropic, say). The new agent form can start from the same ready-made agents, and keeps thinking, the daily limit, browser and routines, skills, plugins, extensions and access under More options.
+- Change an agent's model from the chat's top bar: its model name opens a list of your models.
+- Problems in a chat say what to do and have a button for it: Try again (sends your message again), Change model, Open Providers (for a key or sign-in that does not work) or Raise limit (for an agent at its daily limit). "No reply" has the same buttons.
+- When an agent finishes while the app is in the background, the chat offers once to turn on notifications.
 - Chatting is smoother. A new chat greets you with the agent and a few ways to start (its skills and plugins); one tap puts it in the message box. The message box takes the focus when you open a chat, and typing anywhere in the chat goes into it. What you were writing is kept per agent, through switching agents and reloading. ↑ in an empty box brings back your last message, and each of your messages has Copy and Edit. "Send again" works for messages with photos too.
 - Each of your messages and each of the agent's replies shows the time it was sent; hover it for the full date.
 - While an agent works, you choose when it reads your message: Enter tells it now (before its next step), Alt+Enter or the clock button sends it when it finishes. A queued message can be edited or taken back. Esc in the message box stops the agent, and the working pill has a Stop button, so you can stop it while typing.

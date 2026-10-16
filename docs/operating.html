@@ -127,7 +127,7 @@
 <tr><td>Log: "The data folder was made by a newer Weilo Agents"</td><td>You ran an older app on a newer folder. Update the app, or restore a backup from before.</td></tr>
 <tr><td>The app shows "Pair this device"</td><td>The browser is not paired, or its cookie was cleared or removed. Pair it again.</td></tr>
 <tr><td>"Too many wrong codes"</td><td>Wait 10 minutes, make a new code.</td></tr>
-<tr><td>A chat shows pi's error and Try again</td><td>Pi exited with an error, shown as its last line (for example a model that does not exist). Choose another model in Edit agent, or fix the provider.</td></tr>
+<tr><td>A chat shows pi's error and Try again</td><td>Pi exited with an error, shown as its last line (for example a model that does not exist). Choose another model (the model name in the chat's top bar, or Change model under the error), or fix the provider.</td></tr>
 <tr><td>"There is no key or sign-in for … Add one in Settings"</td><td>The agent's model's provider has no key or sign-in, or an account sign-in's token could not be renewed: sign in again in Settings &gt; Providers.</td></tr>
 <tr><td>A plugin does not work</td><td>Settings &gt; Plugins shows each plugin's status (it starts them all; takes a few seconds). A plugin program must be installed where root's folders or the shared tools find it.</td></tr>
 <tr><td>The browser panel stays empty</td><td>The browser starts the first time an agent uses it (or you take over), not with the app, so before that there is nothing to show. If it stays empty after: <code>docker logs weilo-core</code> lines starting with <code>[screen]</code> show which program stopped; each is restarted after 2 seconds. "The browser did not start in time" means it took over 20 seconds.</td></tr>

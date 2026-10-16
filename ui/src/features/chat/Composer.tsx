@@ -140,7 +140,8 @@ export function Composer({ agentId, onEdit, shortcuts, to, avatar, doing, busy, 
       setImages([]);
       setFiles([]);
     } catch (e) {
-      setError(messageOf(e));
+      // The chat shows a failed send with what can fix it; the box only keeps the message.
+      if (!(e as { shown?: boolean }).shown) setError(messageOf(e));
     } finally {
       setSending(false);
       box.current?.focus();

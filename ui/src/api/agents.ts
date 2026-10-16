@@ -38,5 +38,7 @@ export const AGENT_STATUS_URL = "/api/agents/status";
 export const listAgents = () => request<Agent[]>("GET", document.visibilityState === "visible" ? "/api/agents?seen" : "/api/agents");
 export const createAgent = (input: AgentInput) => request<Agent>("POST", "/api/agents", input);
 export const updateAgent = (id: string, input: AgentInput) => request<Agent>("PUT", `/api/agents/${id}`, input);
+/** Change only some fields: the daemon keeps the rest. */
+export const changeAgent = (id: string, patch: Partial<AgentInput>) => request<Agent>("PUT", `/api/agents/${id}`, patch);
 export const reorderAgents = (ids: string[]) => request("PUT", "/api/agents", { order: ids });
 export const deleteAgent = (id: string, keep: { keepChat: boolean; keepFiles: boolean }) => request("DELETE", `/api/agents/${id}`, keep);

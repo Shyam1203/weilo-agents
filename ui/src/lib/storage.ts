@@ -21,6 +21,7 @@ export const KEYS = {
   welcomed: "weilo.welcomed",
   sidebar: "weilo.sidebar",
   device: "weilo.device",
+  notifyAsked: "weilo.notifyAsked",
 } as const;
 
 export const draftKey = (agentId: string) => `weilo.draft.${agentId}`;
