@@ -21,7 +21,7 @@ import { AboutPage } from "./AboutPage";
 import { NotificationsPage } from "./NotificationsPage";
 import { Appearance } from "./Appearance";
 import { ProvidersPage } from "./ProvidersPage";
-import { ChecksPage } from "./ChecksPage";
+import { ActivityPage } from "./ActivityPage";
 import { UsagePage } from "./UsagePage";
 
 export type SettingsPage = "you" | "memory" | "providers" | "usage" | "skills" | "plugins" | "extensions" | "browser" | "devices" | "general";
@@ -142,7 +142,7 @@ export function SettingsView({ page: first, agents, providers, skills, plugins, 
               ) : page === "devices" ? (
                 <Sections>
                   <DevicesPage section />
-                  <ChecksPage agents={agents} section />
+                  <ActivityPage agents={agents} section />
                 </Sections>
               ) : page === "general" ? (
                 <Sections>

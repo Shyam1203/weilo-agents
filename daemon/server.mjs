@@ -16,7 +16,7 @@ import { closeBrowser, giveBack, hasWindow, isTaken, showBrowser, takeOver, useB
 import { getRule, saveRule } from "./browser/rule.mjs";
 import { cdpUpgrade, isCdpPath, viewUpgrade } from "./browser/screen.mjs";
 import { fail, settled } from "./common.mjs";
-import { ADMIN_SOCKET, MAX_UPLOAD, PORT, SANDBOX_API, SANDBOX_DIR, HUNG_MS, MAX_PAIR_BODY, SHUTDOWN_MS, SYSTEM_PATH, USAGE_SHOWN } from "./config.mjs";
+import { ADMIN_SOCKET, MAX_UPLOAD, PORT, SANDBOX_API, SANDBOX_DIR, HUNG_MS, MAX_PAIR_BODY, SHUTDOWN_MS, SYSTEM_PATH, USAGE_SHOWN, ACTIVITY_SHOWN } from "./config.mjs";
 import { sendContact } from "./contact.mjs";
 import { providerOf, proxyModel, warmModels } from "./gateway/models.mjs";
 import { pipePlugin, pluginOf, proxyPlugin } from "./gateway/plugins.mjs";
@@ -40,10 +40,9 @@ import { addSkills, hasSkill, listSkills, planSkill, removeSkill, saveSkill } fr
 import { manageSettings } from "./settings/manage.mjs";
 import { getUser, saveUser } from "./settings/user.mjs";
 import { setUpdateCheck, updateStatus } from "./update.mjs";
-import { audit, audited } from "./audit.mjs";
+import { audit, audited, recentAudit } from "./audit.mjs";
 import { syncIndex } from "./agents/chats.mjs";
 import { watchdog } from "./watchdog.mjs";
-import { securityReport } from "./security.mjs";
 import { secure } from "./users.mjs";
 import { BUILD } from "./version.mjs";
 
@@ -68,7 +67,7 @@ const forAll = (change) => async (req) => {
 };
 
 route("GET", "/api/version", () => BUILD);
-route("GET", "/api/security", () => securityReport());
+route("GET", "/api/activity", () => recentAudit(ACTIVITY_SHOWN));
 route("GET", "/api/usage", () => usageHistory(USAGE_SHOWN));
 route("GET", "/api/devices", async ({ who }) => {
   const [devices, notified] = await Promise.all([pairedDevices(who.device), notifiedDevices()]);
