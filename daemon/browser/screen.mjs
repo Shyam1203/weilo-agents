@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { join } from "node:path";
-import { BIN, MAX_VIEW_MESSAGE, SCREEN, SCREEN_RESTART_MS, SCREEN_WAKE_MS } from "../config.mjs";
+import { BIN, BROWSER_CACHE_BYTES, MAX_VIEW_MESSAGE, SCREEN, SCREEN_RESTART_MS, SCREEN_WAKE_MS } from "../config.mjs";
 import { splitOn } from "../common.mjs";
 import { accept, frame, readMessages } from "../http/websocket.mjs";
 import { BROWSER, folder, setOwner, spawnAs } from "../users.mjs";
@@ -12,6 +12,10 @@ const PRIVATE = "/tmp/weilo-screen";
 const SOCKET = join(PRIVATE, "vnc.sock");
 const XAUTHORITY = join(PRIVATE, "Xauthority");
 const PROFILE = "/home/node/.browser";
+// The cache is in the container, not the profile's volume: the volume keeps only sign-ins and
+// site data, and an update starts with an empty cache.
+const CACHE = "/home/node/.cache/weilo-browser";
+const PROFILE_CACHES = ["Cache", "Code Cache", "GPUCache", "DawnGraphiteCache", "DawnWebGPUCache"];
 const ENV = { ...process.env, DISPLAY, XAUTHORITY, HOME: "/home/node" };
 
 const log = (...args) => console.log("[screen]", ...args);
@@ -77,6 +81,8 @@ async function startScreen() {
   rmSync("/tmp/.X11-unix/X1", { force: true });
   rmSync(PRIVATE, { recursive: true, force: true });
   for (const file of existsSync(PROFILE) ? readdirSync(PROFILE).filter((f) => f.startsWith("Singleton")) : []) rmSync(join(PROFILE, file), { force: true });
+  for (const cache of PROFILE_CACHES) rmSync(join(PROFILE, "Default", cache), { recursive: true, force: true });
+  await folder(CACHE, BROWSER.uid, BROWSER.gid, 0o700);
   await folder(PRIVATE, BROWSER.uid, BROWSER.gid, 0o700);
   writeFileSync(XAUTHORITY, xauthority(randomBytes(16)), { mode: 0o600 });
   await setOwner(XAUTHORITY, BROWSER.uid, BROWSER.gid, 0o600);
@@ -92,7 +98,7 @@ async function startScreen() {
       "--test-type", "--disable-background-networking", "--disable-sync", "--disable-component-update", "--no-pings", "--disable-domain-reliability",
       "--disable-features=CalculateNativeWinOcclusion,OptimizationHints,MediaRouter,Translate,PushMessaging",
       "--host-resolver-rules=MAP android.clients.google.com ~NOTFOUND, MAP mtalk.google.com ~NOTFOUND",
-      `--user-data-dir=${PROFILE}`, "--remote-debugging-pipe",
+      `--user-data-dir=${PROFILE}`, `--disk-cache-dir=${CACHE}`, `--disk-cache-size=${BROWSER_CACHE_BYTES}`, "--remote-debugging-pipe",
       "--start-maximized", "about:blank",
     ],
     { delay: 2000, stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"], started: attachPipe },
