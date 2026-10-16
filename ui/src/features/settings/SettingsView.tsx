@@ -146,9 +146,9 @@ export function SettingsView({ page: first, agents, providers, skills, plugins, 
                 </Sections>
               ) : page === "general" ? (
                 <Sections>
-                  <Appearance section />
+                  <Appearance />
                   <NotificationsPage agents={agents} section />
-                  <AboutPage section />
+                  <AboutPage />
                 </Sections>
               ) : page === "you" ? (
                 <Page title="About you" description="Agents use this to talk to you.">
