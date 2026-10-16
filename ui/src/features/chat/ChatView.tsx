@@ -52,6 +52,14 @@ interface Props {
 
 const TOP_PX = 400;
 
+type Panel = "actions" | "browser";
+const PANELS: Record<Panel, string> = { actions: "Actions and routines", browser: "Browser" };
+// Older versions kept "1" (open) or "0" (closed) here; open now means the actions panel.
+const savedPanel = (): Panel | null => {
+  const saved = read(KEYS.sidebar);
+  return saved === "0" ? null : saved === "browser" ? "browser" : "actions";
+};
+
 export function ChatView({ agent, models, providers, find, onBack, onEdit, onEditLimits, onActivity, onLive, onOpenSettings, onOpenNotifications }: Props) {
   const hasProvider = providers.some((p) => p.connected);
   const chat = useChat(agent.id);
@@ -59,10 +67,17 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
   useEffect(() => onLive({ busy: chat.busy, doing: chat.doing }), [chat.busy, chat.doing]);
   useEffect(() => () => onLive(null), []);
   const wide = useMedia("(min-width: 1024px)");
-  const [sidebar, setSidebar] = useState(() => read(KEYS.sidebar) !== "0");
-  const [sheet, setSheet] = useState(false);
-  const sideOpen = wide ? sidebar : sheet;
-  const toggleSide = () => (wide ? (write(KEYS.sidebar, sidebar ? "0" : "1"), setSidebar(!sidebar)) : setSheet(!sheet));
+  // One panel on the right at a time: on a wide screen it stays as you left it, on a narrow one it opens over the chat.
+  const [docked, setDocked] = useState<Panel | null>(savedPanel);
+  const [sheet, setSheet] = useState<Panel | null>(null);
+  const panel = wide ? docked : sheet;
+  const togglePanel = (which: Panel) => {
+    const next = panel === which ? null : which;
+    if (!wide) return setSheet(next);
+    write(KEYS.sidebar, next ?? "0");
+    setDocked(next);
+  };
+  const browserBusy = !!agent.browserOpen || !!agent.taken;
   const routinesChanged = chat.messages.filter((m) => m.kind === "note").length;
   const [runs, setRuns] = useState<Run[]>([]);
   const scroller = useFollowBottom([chat.live, chat.asking, runs]);
@@ -138,7 +153,7 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
   const settle = (key: number, patch: Partial<Run>) => setRuns((list) => list.map((r) => (r.key === key ? { ...r, done: true, ...patch } : r)));
   const go = async (action: Action, input: Record<string, string>) => {
     setAsked(null);
-    setSheet(false);
+    setSheet(null);
     const key = Date.now();
     // A script answers here; an agent action goes to the chat as your message, and the agent replies.
     if (action.kind === "script") setRuns((list) => [...list.filter((r) => r.action.id !== action.id).slice(-2), { key, action, done: false }]);
@@ -186,7 +201,7 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
           title={agent.name}
           subtitle={<>{agent.isolated && <Tag>Isolated</Tag>}{modelMenu(false)}</>}
           onTitle={onEdit}
-          actions={<><IconButton icon="search" label="Find in this chat" aria-pressed={finding} className={finding ? "bg-select text-ink" : ""} onClick={() => (finding ? closeFind() : setFinding(true))} /><IconButton icon="panel" label={sideOpen ? "Hide actions, browser and routines" : "Show actions, browser and routines"} aria-pressed={sideOpen} className={sideOpen ? "bg-select text-ink" : ""} onClick={toggleSide} /></>}
+          actions={<><IconButton icon="search" label="Find in this chat" aria-pressed={finding} className={finding ? "bg-select text-ink" : ""} onClick={() => (finding ? closeFind() : setFinding(true))} /><IconButton icon="bolt" label={panel === "actions" ? "Hide actions and routines" : "Actions and routines"} aria-pressed={panel === "actions"} className={panel === "actions" ? "bg-select text-ink" : ""} onClick={() => togglePanel("actions")} /><span className="relative flex"><IconButton icon="globe" label={panel === "browser" ? "Hide the browser" : browserBusy ? "Browser (open)" : "Browser"} aria-pressed={panel === "browser"} className={panel === "browser" ? "bg-select text-ink" : ""} onClick={() => togglePanel("browser")} />{browserBusy && panel !== "browser" && <span aria-hidden="true" className="pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-full bg-working ring-2 ring-page" />}</span></>}
         />
         {finding && <FindBar query={query} onQuery={setQuery} count={found.count} current={found.current} onNext={found.next} onPrevious={found.previous} onClose={closeFind} />}
         <div className="relative min-h-0 flex-1">
@@ -251,18 +266,18 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
                 ) : (
                   problem(chat.error, fixesFor(chat.error))
                 ))}
-              {!sideOpen && !actionsOff && !!acts.actions?.length && (
-                <div role="toolbar" aria-label="Actions" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
-                  {acts.actions.map((a) => (
-                    <button key={a.id} type="button" disabled={running.has(a.id)} onClick={() => start(a)} title={a.about || a.title} className="flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-page px-3 text-[13px] text-ink ring-1 ring-line-strong transition-colors hover:bg-select disabled:opacity-60">
-                      <Icon name={running.has(a.id) ? "spinner" : a.icon} size={13} className="text-ink-2" />
-                      {a.title}
-                    </button>
-                  ))}
-                </div>
-              )}
               <Composer
                 agentId={agent.id}
+                above={panel !== "actions" && !actionsOff && !!acts.actions?.length && (
+                  <div role="toolbar" aria-label="Actions" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
+                    {acts.actions.map((a) => (
+                      <button key={a.id} type="button" disabled={running.has(a.id)} onClick={() => start(a)} title={a.about || a.title} className="flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-page px-3 text-[13px] text-ink ring-1 ring-line-strong transition-colors hover:bg-select disabled:opacity-60">
+                        <Icon name={running.has(a.id) ? "spinner" : a.icon} size={13} className="text-ink-2" />
+                        {a.title}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 fill={fill}
                 last={last}
                 onEdit={onEdit}
@@ -283,15 +298,15 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
         </div>
       </div>
       {asked && <RunDialog action={asked} agentName={agent.name} onRun={(input) => void go(asked, input)} onClose={() => setAsked(null)} />}
-      {sideOpen && wide && (
-        <aside className="w-80 shrink-0 overflow-y-auto border-l border-line">
-          <Side agent={agent} actions={actionsPanel} routinesChanged={routinesChanged} onTaken={onActivity} />
+      {panel && wide && (
+        <aside aria-label={PANELS[panel]} className="w-80 shrink-0 overflow-y-auto border-l border-line">
+          <Side panel={panel} agent={agent} actions={actionsPanel} routinesChanged={routinesChanged} onTaken={onActivity} />
         </aside>
       )}
-      {sideOpen && !wide && (
-        <Modal title={agent.name} onClose={() => setSheet(false)} width="max-w-md">
+      {panel && !wide && (
+        <Modal title={PANELS[panel]} onClose={() => setSheet(null)} width="max-w-md">
           <div className="-mx-4 -mt-4 -mb-2">
-            <Side agent={agent} actions={actionsPanel} routinesChanged={routinesChanged} onTaken={onActivity} />
+            <Side panel={panel} agent={agent} actions={actionsPanel} routinesChanged={routinesChanged} onTaken={onActivity} />
           </div>
         </Modal>
       )}
@@ -300,10 +315,13 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
   );
 }
 
-const Side = ({ agent, actions, routinesChanged, onTaken }: { agent: Agent; actions: ReactNode; routinesChanged: number; onTaken: () => void }) => (
-  <>
-    {actions}
+// What the agent does for you without a back-and-forth (on a tap, on a schedule) is one panel; its browser, a live screen, is the other.
+const Side = ({ panel, agent, actions, routinesChanged, onTaken }: { panel: Panel; agent: Agent; actions: ReactNode; routinesChanged: number; onTaken: () => void }) =>
+  panel === "actions" ? (
+    <>
+      {actions}
+      <RoutinesPanel agentId={agent.id} agentName={agent.name} off={agent.disabled.includes("routines")} changed={routinesChanged} />
+    </>
+  ) : (
     <BrowserPanel agentId={agent.id} agentName={agent.name} off={agent.disabled.includes("browser")} taken={!!agent.taken} open={!!agent.browserOpen} onTaken={onTaken} />
-    <RoutinesPanel agentId={agent.id} agentName={agent.name} off={agent.disabled.includes("routines")} changed={routinesChanged} />
-  </>
-);
+  );
