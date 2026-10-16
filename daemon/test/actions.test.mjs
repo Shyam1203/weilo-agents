@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
-import { actionTool, addAction, changeAction, filled, listActions, planAction, runScript, scheduleOf, shown, skipAction, valuesOf, when } from "../actions/actions.mjs";
+import { actionTool, addAction, changeAction, filled, listActions, planAction, runScript, scheduleOf, shown, valuesOf, when } from "../actions/actions.mjs";
 import { OLD_SCHEDULES } from "../common.mjs";
 import { profilePath } from "../agents/agents.mjs";
 import { dropScriptKey, identify, keyIn, scriptKey } from "../http/access.mjs";
@@ -32,8 +32,8 @@ test("an action is checked before it is saved", () => {
   assert.throws(() => planAction({ title: "T", kind: "script", script: "return 1" }), /export a default/);
   assert.throws(() => planAction({ title: "T", kind: "script", script: "export default async () => 1" }, {}, true), /isolated agent/);
   assert.throws(() => planAction({ title: "T", kind: "agent", request: "x", fields: [{ name: "A b" }] }), /lowercase/);
-  const changed = planAction({ confirm: true }, planAction({ title: "T", kind: "agent", request: "Hi", icon: "nope" }));
-  assert.equal(changed.confirm, true);
+  const changed = planAction({ about: "Says hi" }, planAction({ title: "T", kind: "agent", request: "Hi", icon: "nope" }));
+  assert.equal(changed.about, "Says hi");
   assert.equal(changed.icon, "bolt");
   assert.equal(changed.request, "Hi");
 });
@@ -115,12 +115,11 @@ test("a schedule is checked and says when it runs next", () => {
   assert.throws(() => planAction({ title: "T", kind: "agent", request: "Track {n}", fields: [{ name: "n" }], schedule: { every: "hour" } }), /default for each field/);
 });
 
-test("the user sets when an action runs by itself and whether it asks first, without the agent", async () => {
-  const changed = await changeAction("act", "r1", { schedule: { every: "minutes", minutes: 30 }, confirm: true });
+test("the user sets when an action runs by itself, without the agent", async () => {
+  const changed = await changeAction("act", "r1", { schedule: { every: "minutes", minutes: 30 } });
   assert.equal(changed.schedule.every, "minutes");
-  assert.equal(changed.confirm, true);
+  assert.equal("confirm" in changed, false);
   assert.equal((await changeAction("act", "r1", { schedule: null })).schedule, null);
-  await skipAction("act", "r1");
 });
 
 test("the user makes an action and edits it, without the agent", async () => {

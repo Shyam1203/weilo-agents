@@ -1,4 +1,4 @@
-import { describeSchedule, lastRun, type Action } from "../../api/actions";
+import { describeSchedule, type Action } from "../../api/actions";
 import { Button, IconButton } from "../../components/ui/Button";
 import { ErrorText } from "../../components/ui/Field";
 import { Icon } from "../../components/ui/Icon";
@@ -38,8 +38,7 @@ export function ActionsPanel({ agentName, off, actions, error, running, onRun, o
           {actions.length > 0 && (
             <ul className="flex flex-col overflow-hidden rounded-xl ring-1 ring-line">
               {actions.map((a) => {
-                const last = lastRun(a);
-                const waiting = a.runs[0]?.waiting;
+                const last = a.runs[0];
                 const busy = running.has(a.id);
                 return (
                   <li key={a.id} className={`flex items-center gap-2.5 border-b border-line px-3 py-2.5 last:border-b-0 ${busy ? "bg-panel" : ""}`}>
@@ -52,8 +51,8 @@ export function ActionsPanel({ agentName, off, actions, error, running, onRun, o
                           <span className="truncate text-[13.5px] font-medium">{a.title}</span>
                           {a.kind === "script" && <span className="shrink-0 rounded-md bg-card px-1.5 text-[11px] text-ink-2">Instant</span>}
                         </span>
-                        <span className={`truncate text-xs ${waiting ? "font-medium text-ink" : last && !last.ok ? "text-bad" : "text-ink-3"}`} title={last?.text ?? a.about}>
-                          {busy ? "Working on it…" : waiting ? "Ready to run: it asks you first" : last ? `${last.text.split("\n")[0].replace(/^Failed: /, "Didn't work: ")} · ${shortWhen(last.at / 1000)}` : a.confirm ? "Asks you first" : a.about || "Not run yet"}
+                        <span className={`truncate text-xs ${last && !last.ok ? "text-bad" : "text-ink-3"}`} title={last?.text ?? a.about}>
+                          {busy ? "Working on it…" : last ? `${last.text.split("\n")[0].replace(/^Failed: /, "Didn't work: ")} · ${shortWhen(last.at / 1000)}` : a.about || "Not run yet"}
                         </span>
                         {a.schedule && (
                           <span className="flex items-center gap-1 truncate text-xs text-ink-2">

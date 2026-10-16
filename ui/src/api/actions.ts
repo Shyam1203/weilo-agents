@@ -31,8 +31,6 @@ export interface ActionRun {
   ms?: number;
   /** An agent action's run: its answer is the agent's reply in the chat. */
   chat?: boolean;
-  /** It ran by itself and waits for you to confirm before it goes ahead. */
-  waiting?: boolean;
 }
 
 export interface Action {
@@ -43,8 +41,6 @@ export interface Action {
   kind: "agent" | "script";
   request: string;
   fields: ActionField[];
-  /** Ask the user first, before it pays, orders, books or sends. */
-  confirm: boolean;
   icon: IconName;
   /** When it also runs by itself. */
   schedule: Schedule | null;
@@ -57,8 +53,7 @@ export type RunResult = { sent: true } | ActionRun;
 export const listActions = (agentId: string) => request<Action[]>("GET", `/api/agents/${agentId}/actions`);
 export const runAction = (agentId: string, id: string, input: Record<string, string>) => request<RunResult>("POST", `/api/agents/${agentId}/actions/${id}/run`, { input });
 export const addAction = (agentId: string, action: { title: string; request: string }) => request<Action>("POST", `/api/agents/${agentId}/actions`, action);
-export const changeAction = (agentId: string, id: string, change: { title?: string; request?: string; schedule?: ScheduleInput | null; confirm?: boolean }) => request<Action>("PUT", `/api/agents/${agentId}/actions/${id}`, change);
-export const skipAction = (agentId: string, id: string) => request("POST", `/api/agents/${agentId}/actions/${id}/skip`);
+export const changeAction = (agentId: string, id: string, change: { title?: string; request?: string; schedule?: ScheduleInput | null }) => request<Action>("PUT", `/api/agents/${agentId}/actions/${id}`, change);
 export const removeAction = (agentId: string, id: string) => request("DELETE", `/api/agents/${agentId}/actions/${id}`);
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -75,6 +70,3 @@ export function describeSchedule(s: Schedule) {
   const [y, m, d] = (s.date ?? "").split("-").map(Number);
   return `Once, ${new Date(y, m - 1, d).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })} at ${at}`;
 }
-
-/** The last run that finished (not one waiting for you). */
-export const lastRun = (a: Action) => a.runs.find((r) => !r.waiting);

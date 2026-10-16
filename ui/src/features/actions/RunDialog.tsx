@@ -18,13 +18,12 @@ function lastValues(action: Action): Record<string, string> {
 
 interface Props {
   action: Action;
-  agentName: string;
   onRun: (input: Record<string, string>) => void;
   onClose: () => void;
 }
 
-/** What an action needs before it runs: its fields (last values filled in), and a confirmation where it asks for one. */
-export function RunDialog({ action, agentName, onRun, onClose }: Props) {
+/** What an action needs before it runs: its fields, with the last values filled in. */
+export function RunDialog({ action, onRun, onClose }: Props) {
   const [values, setValues] = useState(() => lastValues(action));
   const ready = action.fields.every((f) => values[f.name]?.trim());
   const run = (e: FormEvent) => {
@@ -33,7 +32,6 @@ export function RunDialog({ action, agentName, onRun, onClose }: Props) {
     write(lastKey(action.id), JSON.stringify(values));
     onRun(values);
   };
-  const confirmScript = action.confirm && action.kind === "script";
   return (
     <Modal title={action.title} onClose={onClose} width="max-w-md">
       <form onSubmit={run} className="flex flex-col gap-4">
@@ -47,15 +45,10 @@ export function RunDialog({ action, agentName, onRun, onClose }: Props) {
             )}
           </Field>
         ))}
-        {action.confirm && (
-          <p className="rounded-xl bg-card px-3 py-2.5 text-[13px] text-ink-2">
-            {confirmScript ? "This can pay or send something." : `${agentName} asks you before paying or sending.`}
-          </p>
-        )}
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
           <Button type="submit" variant="primary" icon="play" disabled={!ready}>
-            {confirmScript ? "Confirm and run" : "Run"}
+            Run
           </Button>
         </div>
       </form>

@@ -17,6 +17,7 @@ export const ACTION_MARK = "⚡ Action: ";
 // A run the schedule started: its message's first line ends with this, and the agent is told the user is away.
 export const BY_ITSELF = " · ran by itself";
 // The app's chat hides these lines under an action's message; keep them in step with conversation.ts.
+// Every agent action carries CONFIRM_NOTE: the agent asks before it pays or sends, tapped or by itself.
 export const CONFIRM_NOTE = "Before you pay, order, book or send anything, use ask to confirm the exact details with the user.";
 export const AWAY_NOTE = "This action ran by itself at its time; the user is away and reads your reply later. Do it now. If a step needs the user's confirmation, use ask: they get a notification and answer when they can. Anything else that needs them, leave for the end. End with the result in a few lines.";
 const MISSED = "Missed: Weilo Agents was not running at that time";
@@ -36,7 +37,6 @@ const fromOld = (r, zone) => ({
   request: String(r.task ?? ""),
   script: "",
   fields: [],
-  confirm: false,
   icon: "calendar",
   schedule: r.nextRunAt === null && r.every === "once" ? null : { every: r.every, times: r.times ?? [], ...(r.every === "week" && { day: r.day }), ...(r.every === "once" && { date: r.date }), timezone: r.timezone ?? zone, nextRunAt: r.nextRunAt ?? null },
   runs: r.lastError ? [{ at: Date.now(), ok: false, text: r.lastError, by: "schedule" }] : [],
@@ -140,7 +140,6 @@ export function planAction(input, current = {}, isolated = false, zone = "UTC") 
     request: text(input.request, MAX_ACTION_REQUEST, "The request") ?? current.request ?? "",
     script: input.script === undefined ? (current.script ?? "") : typeof input.script === "string" ? input.script : null,
     fields: fieldsOf(input.fields) ?? current.fields ?? [],
-    confirm: typeof input.confirm === "boolean" ? input.confirm : (current.confirm ?? false),
     icon: input.icon ?? current.icon ?? "bolt",
     schedule: input.schedule === undefined ? (current.schedule ?? null) : scheduleOf(input.schedule, zone),
   };
@@ -185,7 +184,8 @@ export function shown(result) {
   return out.length > ACTION_SHOWN ? `${out.slice(0, ACTION_SHOWN)}…` : out;
 }
 
-const view = ({ id, title, about, kind, request, fields, confirm, icon, schedule, runs }) => ({ id, title, about, kind, request, fields, confirm, icon, schedule: schedule ?? null, runs: runs ?? [] });
+// Runs that waited for the user, from an older version, are left out.
+const view = ({ id, title, about, kind, request, fields, icon, schedule, runs }) => ({ id, title, about, kind, request, fields, icon, schedule: schedule ?? null, runs: (runs ?? []).filter((r) => !r.waiting) });
 
 const find = (agentId, id) => {
   const action = state.items.find((a) => a.id === id && a.agentId === agentId);
@@ -193,7 +193,7 @@ const find = (agentId, id) => {
   return action;
 };
 
-const record = (action, run) => (action.runs = [run, ...(action.runs ?? []).filter((r) => !(run.waiting === undefined && r.waiting))].slice(0, MAX_ACTION_RUNS));
+const record = (action, run) => (action.runs = [run, ...(action.runs ?? []).filter((r) => !r.waiting)].slice(0, MAX_ACTION_RUNS));
 
 export async function listActions(agentId) {
   await load();
@@ -224,8 +224,8 @@ export async function addAction(agentId, { title, request }) {
   return view(action);
 }
 
-/** The user renames an action, changes what it asks for, when it runs by itself, or whether it asks first: theirs to decide, so no approval. */
-export async function changeAction(agentId, id, { title, request, schedule, confirm }) {
+/** The user renames an action, changes what it asks for, or when it runs by itself: theirs to decide, so no approval. */
+export async function changeAction(agentId, id, { title, request, schedule }) {
   await load();
   const action = find(agentId, id);
   if (request !== undefined && action.kind === "script") throw fail(400, `Ask the agent to change how "${action.title}" works`);
@@ -235,17 +235,8 @@ export async function changeAction(agentId, id, { title, request, schedule, conf
     if (next && action.fields.some((f) => !f.default)) throw fail(400, "Tell the agent the usual values for this action first: it runs by itself only with them.");
     action.schedule = next;
   }
-  if (typeof confirm === "boolean") action.confirm = confirm;
   await save();
   return view(action);
-}
-
-/** The user said not this time to a run that waited for them. */
-export async function skipAction(agentId, id) {
-  await load();
-  const action = find(agentId, id);
-  action.runs = (action.runs ?? []).filter((r) => !r.waiting);
-  await save();
 }
 
 // Runs a script as the agent's own user, with a key that reaches only its browser. Its last line on
@@ -309,7 +300,7 @@ export async function runAction(agentId, id, input, by = "you") {
   const values = valuesOf(action, input);
   if (action.kind === "agent") {
     const away = by === "schedule";
-    const notes = [away && AWAY_NOTE, filled(action.request, values), action.confirm && CONFIRM_NOTE].filter(Boolean).join("\n\n");
+    const notes = [away && AWAY_NOTE, filled(action.request, values), CONFIRM_NOTE].filter(Boolean).join("\n\n");
     await prompt(agentId, { text: `${ACTION_MARK}${action.title}${away ? BY_ITSELF : ""}\n\n${notes}` });
     record(action, { at: Date.now(), ok: true, text: `Asked ${(await getAgent(agentId)).name}`, by, chat: true });
     await save();
@@ -318,16 +309,9 @@ export async function runAction(agentId, id, input, by = "you") {
   return runSaved(agentId, action, values, by);
 }
 
-// A due action runs as if tapped, with its fields' defaults. A script that asks first waits for the
-// user instead, with a notification; the agent asks with its own ask (which notifies too).
+// A due action runs as if tapped, with its fields' defaults. An agent action asks with its own ask (which notifies).
 async function runDue(action) {
   const agent = await getAgent(action.agentId);
-  if (action.kind === "script" && action.confirm) {
-    record(action, { at: Date.now(), ok: true, text: "Ready to run. It asks you first.", by: "schedule", waiting: true });
-    await save();
-    void notify(agent, "ask", `${action.title} is ready to run. Open the app to confirm.`).catch(() => {});
-    return;
-  }
   const result = await runAction(action.agentId, action.id, {}, "schedule");
   if ("text" in result) void notify(agent, result.ok ? "reply" : "error", `${action.title}: ${result.text}`).catch(() => {});
 }
@@ -378,7 +362,7 @@ export function startActions() {
 }
 
 const describe = (a) =>
-  `${a.id}: "${a.title}" (${a.kind}${a.confirm ? ", asks first" : ""}${a.schedule ? `, runs by itself ${when(a.schedule)}` : ""})${a.about ? ` ${a.about}` : ""}${a.fields.length ? `. Fields: ${a.fields.map((f) => `${f.name}${f.options ? ` [${f.options.join(" | ")}]` : ""}${f.default ? ` = ${f.default}` : ""}`).join(", ")}` : ""}${a.kind === "agent" ? `. Request: ${a.request}` : `. Script:\n${a.script}`}${a.runs?.[0] ? `\nLast run: ${a.runs[0].ok ? "ok" : "failed"}, ${a.runs[0].text}` : ""}`;
+  `${a.id}: "${a.title}" (${a.kind}${a.schedule ? `, runs by itself ${when(a.schedule)}` : ""})${a.about ? ` ${a.about}` : ""}${a.fields.length ? `. Fields: ${a.fields.map((f) => `${f.name}${f.options ? ` [${f.options.join(" | ")}]` : ""}${f.default ? ` = ${f.default}` : ""}`).join(", ")}` : ""}${a.kind === "agent" ? `. Request: ${a.request}` : `. Script:\n${a.script}`}${a.runs?.[0] ? `\nLast run: ${a.runs[0].ok ? "ok" : "failed"}, ${a.runs[0].text}` : ""}`;
 
 // What the user sees to approve, in plain words; the request or script is there for anyone who wants to look.
 function question(agentName, plan, changing) {
@@ -386,7 +370,6 @@ function question(agentName, plan, changing) {
   if (plan.about) lines.push(plan.about);
   if (plan.schedule) lines.push(`It would also run by itself ${when(plan.schedule)}.`);
   if (plan.fields.length) lines.push(`It asks for: ${plan.fields.map((f) => f.label).join(", ")}.`);
-  if (plan.confirm) lines.push("It asks you before it pays, orders, books or sends anything.");
   lines.push(plan.kind === "agent" ? `How it works: it asks ${agentName} to "${plan.request}".` : `How it works: a small program ${agentName} wrote runs in seconds, with ${agentName}'s browser and your sign-ins:\n\n${plan.script}`);
   return lines.join("\n\n");
 }

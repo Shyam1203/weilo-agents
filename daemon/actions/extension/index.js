@@ -7,10 +7,10 @@ Two kinds:
 - agent: a saved request that comes to you as a message when it runs. Put {name} blanks for what changes each time, with a field for each. For tasks that need judgment or differ each time. When it runs by itself the user is away: write the request to stand alone.
 - script: JavaScript that runs without you, in seconds and without tokens: for a lookup or step that is the same every time. Write an ES module: export default async function ({ input, browser }) { … return result }. input holds the fields' values. await browser({ action: "open", url }) and the other actions of your browser tool return the page as text, with the user's sign-ins. node: modules work; nothing else can be imported. It has 90 seconds. Return a short string, or an object of a few named values, for the user to read; return { …, stop: true } when what it watches for is over (the order arrived), and it stops running by itself. Always test it with try first, and save it only once it works.
 schedule (optional): when it also runs by itself. every: once (with date today, tomorrow or YYYY-MM-DD and times, or in_minutes), minutes (with minutes: ${MINUTES.join(", ")}), hour (times: one HH:MM, for its minutes), day, weekday, or week (with day); times are one or more HH:MM in the user's time. An action that runs by itself needs a default for each field.
-Set confirm: true for anything that pays, orders, books or sends. It then asks the user first, the same whether they tap it or it runs by itself (then by a notification): a script waits for them before it runs; an agent action tells you to confirm with ask before the last step.
+Anything that pays, orders, books or sends must be an agent action, never a script: when it runs, you confirm the details with ask first (the user gets a notification when it runs by itself).
 - op list: your actions, with ids, schedules and scripts.
 - op try: run a script with input, without saving it.
-- op create: title (a few words), about (one line), kind, request or script, fields (name, label, options, default), confirm, icon, schedule.
+- op create: title (a few words), about (one line), kind, request or script, fields (name, label, options, default), icon, schedule.
 - op update: id, and only what changes. Use it to fix a script that fails. schedule: null alone stops it running by itself, without asking the user.
 - op delete: id.
 - op run: id and input: run a saved script yourself.
@@ -34,7 +34,6 @@ export default function (pi) {
         ...list(object({ name: note("lowercase_with_underscores"), label: str, options: { ...list(str), description: "Choices, if the value is one of a few." }, default: str }, ["name"])),
         description: "What the user fills in before it runs.",
       },
-      confirm: { type: "boolean", description: "Ask the user first, before it pays, orders, books or sends." },
       icon: { type: "string", enum: ["bolt", "package", "food", "cart", "truck", "calendar", "mail", "money", "search", "globe"] },
       schedule: {
         anyOf: [

@@ -145,13 +145,6 @@ export function ActionDetail({ action, agentId, agentName, onRun, onChanged, onR
           )}
         </section>
 
-        <section className="flex items-center justify-between gap-3 rounded-xl p-3.5 ring-1 ring-line">
-          <span className="flex flex-col">
-            <span className="text-[14px] font-medium">Ask me first</span>
-            <span className="text-xs text-ink-3">Before paying or sending.</span>
-          </span>
-          <Switch label="Ask me first" checked={action.confirm} onChange={(confirm) => save({ confirm })} />
-        </section>
         <ErrorText>{error}</ErrorText>
 
         {action.runs.length > 0 && (
