@@ -98,7 +98,7 @@ updated: 2026-10-12
 
 <section class="card" id="curator">
 <h2>The curator</h2>
-<p>Off until you choose its model in Settings &gt; Memory (<code>PUT /api/memory/curator</code>, kept in <code>agent/curator.json</code> with, per agent, the last message read, the last shared note filed and the last run). It reads chats from the chat index, not the files.</p>
+<p>Off until you choose its model in Settings &gt; Memory (<code>PUT /api/memory/curator</code>, kept in <code>agent/curator.json</code> with, per agent, the last message read, the last shared note filed and the last run). It reads chats from the chat index, not the files, and takes at most as many new messages as its input budget (6 pieces of 24000 characters) can hold, so a long backlog is not loaded whole; the rest waits for the next run.</p>
 <figure>
 <div class="fig">
 <svg viewBox="0 0 760 520" role="img" aria-labelledby="cu-t cu-d">

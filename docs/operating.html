@@ -39,7 +39,7 @@
 </ol></nav>
 <div class="content">
 <h1>Operating Weilo Agents</h1>
-<p class="lede">Installing, starting, updating, pairing devices, backing up, and finding out what went wrong. The last section is the manual check maintainers run before a release, since the repository has no automated tests.</p>
+<p class="lede">Installing, starting, updating, pairing devices, backing up, and finding out what went wrong. The last section is the manual check maintainers run before a release, for what the automated checks cannot see.</p>
 
 <section class="card" id="install">
 <h2>Install</h2>
@@ -57,11 +57,13 @@
 <ol>
 <li>Checks it is in the folder with <code>compose.yaml</code> and that Docker answers (<code>docker info</code>).</li>
 <li><code>start.sh</code> makes <code>~/.weilo-agents</code> first, so Docker does not make it as root.</li>
-<li>Sets <code>WEILO_VERSION</code> from <code>VERSION</code> and runs <code>docker compose pull</code>; if the pull fails it builds the image here (<code>docker compose build</code>), which takes longer.</li>
+<li>Sets <code>WEILO_VERSION</code> from <code>VERSION</code> and runs <code>docker compose pull</code>. If the pull fails (no internet, say) and that image is already on the computer, it starts that copy. Otherwise it builds the image here (<code>docker compose build</code>, which takes longer), but only in a checkout, where <code>image/Dockerfile</code> exists; from the release zip it stops and says to check the internet connection.</li>
 <li><code>docker compose up -d</code>, then waits up to 90 seconds for <code>http://localhost:3210</code>.</li>
 <li>Runs <code>docker exec weilo-core node /app/pair.mjs</code> for a pairing link and opens it (macOS <code>open</code>, Linux <code>xdg-open</code>, Windows <code>start</code>). An already paired browser just opens the app.</li>
 </ol>
-<p>The container restarts by itself after a reboot (<code>restart: unless-stopped</code>) once Docker runs. Stop it with <code>docker compose down</code> in the folder; your data stays.</p>
+<p>The containers restart by themselves after a reboot (<code>restart: unless-stopped</code>) once Docker runs, and after a crash: if the app stops responding for 2 minutes, its watchdog stops it and Docker starts it again. Stop it with <code>docker compose down</code> in the folder; your data stays. It shuts down cleanly within 8 seconds: agents are stopped and pending saves are written first.</p>
+<h3 id="limits">Memory and process limits</h3>
+<p><code>compose.yaml</code> caps each container: the app at 4096 processes and 8 GB of memory, the sandbox at 2048 and 4 GB. To change them, set <code>WEILO_CORE_PIDS</code>, <code>WEILO_CORE_MEMORY</code>, <code>WEILO_SANDBOX_PIDS</code> or <code>WEILO_SANDBOX_MEMORY</code> (for example <code>WEILO_CORE_MEMORY=12g</code>) in the shell or in a <code>.env</code> file beside <code>compose.yaml</code>, then run the start script again.</p>
 </section>
 
 <section class="card" id="pairing">
@@ -110,6 +112,7 @@
 <li>Copy the whole folder, keeping owners and modes. On Linux the files belong to numeric users (2001 and up, 1100, root), so use root and an archiver that keeps them, for example <code>sudo tar -cpzf weilo-backup.tgz -C ~ .weilo-agents</code>.</li>
 <li>Restore by unpacking it in the same place (with <code>sudo tar -xpzf</code>), then start the app. The daemon sets the top-level owners and modes again at start.</li>
 </ol>
+<p>The chat search index (<code>agent/index/chats.db</code>) is in the folder too; you may leave it out of a backup, and the app builds it again from the chats at start. The <code>.bak</code> files in <code>agent/</code> are the previous version of each settings file, which the app reads if a file is damaged.</p>
 <p>Two Docker volumes are not in the folder: <code>tools</code> (what agents installed with npm and pip; they can install again) and <code>browser</code> (the browser's logins; you sign in again). The backup holds your keys and paired devices: keep it as private as the folder.</p>
 </section>
 
@@ -119,6 +122,7 @@
 <thead><tr><th>Symptom</th><th>Likely cause and fix</th></tr></thead>
 <tbody>
 <tr><td>"Docker is not running"</td><td>Start Docker Desktop or the Docker service, then run the script again.</td></tr>
+<tr><td>"Could not download it, and there is no copy on this computer"</td><td>The image could not be pulled and none is on the computer yet. Check the internet connection (and that Docker can reach <code>ghcr.io</code>), then run the script again.</td></tr>
 <tr><td>"Weilo Agents did not start"</td><td>Read <code>docker compose logs</code> in the folder. Another program on port 3210 stops the container from starting.</td></tr>
 <tr><td>Log: "The data folder was made by a newer Weilo Agents"</td><td>You ran an older app on a newer folder. Update the app, or restore a backup from before.</td></tr>
 <tr><td>The app shows "Pair this device"</td><td>The browser is not paired, or its cookie was cleared or removed. Pair it again.</td></tr>
@@ -126,7 +130,11 @@
 <tr><td>A chat shows pi's error and Try again</td><td>Pi exited with an error, shown as its last line (for example a model that does not exist). Choose another model in Edit agent, or fix the provider.</td></tr>
 <tr><td>"There is no key or sign-in for … Add one in Settings"</td><td>The agent's model's provider has no key or sign-in, or an account sign-in's token could not be renewed: sign in again in Settings &gt; Providers.</td></tr>
 <tr><td>A plugin does not work</td><td>Settings &gt; Plugins shows each plugin's status (it starts them all; takes a few seconds). A plugin program must be installed where root's folders or the shared tools find it.</td></tr>
-<tr><td>The browser panel stays empty</td><td><code>docker logs weilo-core</code> lines starting with <code>[screen]</code> show which program stopped; each is restarted after 2 seconds.</td></tr>
+<tr><td>The browser panel stays empty</td><td>The browser starts the first time an agent uses it (or you take over), not with the app, so before that there is nothing to show. If it stays empty after: <code>docker logs weilo-core</code> lines starting with <code>[screen]</code> show which program stopped; each is restarted after 2 seconds. "The browser did not start in time" means it took over 20 seconds.</td></tr>
+<tr><td>Log: "The app stopped responding for 120 s; restarting it"</td><td>The daemon was stuck and the watchdog stopped it; Docker starts it again. If it repeats, keep the lines before it from <code>docker logs weilo-core</code> and report them.</td></tr>
+<tr><td>Log: "… is not valid JSON; using its last good copy"</td><td>A settings file in <code>agent/</code> was damaged (a disk error, a hand edit); the app read its <code>.bak</code> instead and saves a good file at the next change. "… is not valid JSON" alone means the <code>.bak</code> is bad too: fix the file or restore it from a backup.</td></tr>
+<tr><td>The app or an agent is killed, or "fork: Resource temporarily unavailable"</td><td>A container hit its memory or process limit (<code>docker inspect weilo-core</code> shows <code>OOMKilled</code>). Raise the limit (<a href="#limits">Memory and process limits</a>) or find the agent's program that runs away.</td></tr>
+<tr><td>Log: "The chat index cannot be built" or search finds nothing</td><td>Stop the app, delete <code>agent/index/chats.db</code> in the data folder, and start it again: the index is built anew from the chats.</td></tr>
 <tr><td>An agent says "An isolated agent cannot use this"</td><td>It is isolated; change its access in Edit agent, or give it what it needs through its own folder.</td></tr>
 <tr><td>Saving Isolated fails with "… already exists"</td><td>A folder with the agent's name is already in the place it moves to. Rename or remove that folder, then save again.</td></tr>
 <tr><td>A change to memory or skills has no effect</td><td>Pis read them when they start. Send <code>/reload</code> in the chat.</td></tr>
@@ -137,7 +145,7 @@
 
 <section class="card" id="release-check">
 <h2>Before you release: the manual check</h2>
-<p>CI type-checks and tests the daemon, builds the UI and the image, and checks that the sandbox makes namespaces. What only a real install shows is checked by hand before tagging a release: a maintainer builds the image and exercises the boundaries. Run it on Linux, and on Docker Desktop for Windows and for macOS when the release touches users, modes, folders or the start scripts.</p>
+<p>CI type-checks and tests the daemon, builds the UI and the image, and runs a smoke test (<code>.github/scripts/smoke.sh</code>: <code>/api/health</code> answers, the sandbox makes namespaces, the UI is sent compressed); the release workflow runs the same smoke test on the image it is about to push, and checks the arm64 image has <code>node:sqlite</code>, the daemon and pi. What only a real install shows is checked by hand before tagging a release: a maintainer builds the image and exercises the boundaries. Run it on Linux, and on Docker Desktop for Windows and for macOS when the release touches users, modes, folders or the start scripts.</p>
 <h3>How to act as an agent</h3>
 <p>Probes run a command as an agent's user. Take the uid from the agent's profile:</p>
 <pre><code>docker exec weilo-core cat /home/node/.pi/agent/profiles/&lt;id&gt;/agent.json   # "uid": 2001
@@ -160,8 +168,9 @@ docker exec weilo-core setpriv --reuid=2001 --regid=2001 --groups=2000 \
 <li><strong>PATH and full paths.</strong> As a regular agent put an executable named <code>node</code>, <code>pi</code> and <code>setpriv</code> in <code>/home/node/.local/bin</code> that writes a marker file. Restart agents, list plugins status, run the curator: no marker appears. Remove them afterwards.</li>
 <li><strong>Memory.</strong> The <code>memory</code> tool refuses a note with <code>password: x</code> and one that says "ignore your instructions"; a saved note lands under the heading of its kind in <code>MEMORY.md</code>. With Ask before saving on, a note waits for your answer in the chat. With a curator model set, after a quiet chat a page appears in <code>knowledge/</code> owned by 1100, and <code>fetch_knowledge</code> finds it; a note an isolated agent writes in <code>shared/</code> is filed with an <code>isolated:</code> source, and a link there to <code>agent/auth.json</code> is not read.</li>
 <li><strong>Agents' questions and limits.</strong> A regular agent's <code>ask_agent</code> to an isolated one asks you, and the answer comes back marked as its report. An agent with a daily token limit of 1000 stops after its first answer and refuses the next message. Settings &gt; Security &amp; devices lists the changes you made.</li>
-<li><strong>Browser.</strong> Take over and give back work; an agent cannot open <code>http://localhost:3210</code> in the browser; the live view needs a paired device.</li>
-<li><strong>Routines and notifications.</strong> A routine in 2 minutes runs and shows "Routine: …"; with the app closed, a phone with notifications on gets one.</li>
+<li><strong>Browser.</strong> After a start, <code>ps -e</code> in <code>weilo-core</code> shows no Xvnc or Chromium until an agent uses the browser; then the screen shows. Take over and give back work; an agent cannot open <code>http://localhost:3210</code> in the browser; the live view needs a paired device.</li>
+<li><strong>Routines and notifications.</strong> A routine in 2 minutes runs and shows "Routine: …"; with the app closed, a phone with notifications on gets one. A daily routine whose time passed more than an hour while the app was stopped shows "Missed: …" (not "Last run failed") and keeps its next time.</li>
+<li><strong>Restarts.</strong> <code>docker compose restart core</code> stops within 8 seconds; chats, settings and search are there after it, and search answers at once (the index is kept in <code>agent/index/</code>).</li>
 <li><strong>Update.</strong> From the previous release's folder, <code>update.sh</code> and <code>update.cmd</code> bring the new version, keep the data, and Settings &gt; General shows it.</li>
 <li><strong>Docker Desktop for Windows and macOS.</strong> On the bind-mounted data folder, check inside the container that <code>ls -ln /home/node/.pi</code> shows the owners and modes from <a href="data-and-permissions.html#tree">the tree</a>, then run the permission probes. If owners or modes are not kept there, the agent boundaries do not hold on that platform: say so in the release notes.</li>
 </ol>

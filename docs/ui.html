@@ -49,13 +49,14 @@
 <tr><td>API client</td><td><code>src/api/*.ts</code></td><td>One thin module per area over <code>request()</code> in <code>api/http.ts</code>, which sends <code>X-Timezone</code> with every call.</td></tr>
 <tr><td>Workspace</td><td><code>features/workspace/</code></td><td>Sidebar (agent list, search, drag to reorder, unread dots), the main area, polling of the agent list.</td></tr>
 <tr><td>Chat</td><td><code>features/chat/</code></td><td><code>useChat.ts</code> (the event stream), <code>conversation.ts</code> (the reducer, pi messages to bubbles), <code>MessageList</code>, <code>Composer</code>, <code>AskCard</code>, <code>ShowBlocks</code>, <code>ShowPage</code>, <code>StepsLine</code>, <code>ContextMeter</code>, <code>FindBar</code>.</td></tr>
-<tr><td>Agents</td><td><code>features/agents/</code></td><td>The agent form, avatars, the delete dialog.</td></tr>
-<tr><td>Settings</td><td><code>features/settings/</code> and the add-on pages</td><td>One view with a menu in four groups (You, Models, What agents can use, App) and pages built from rows (<code>components/ui/Row.tsx</code>); Security &amp; devices and General each put several sections on one page. Usage is <code>UsagePage.tsx</code> over <code>api/usage.ts</code>.</td></tr>
-<tr><td>Side panel</td><td><code>features/browser/</code>, <code>features/routines/</code></td><td>Live view of the agent's browser window (noVNC, loaded on first use), take over, routines.</td></tr>
+<tr><td>Agents</td><td><code>features/agents/</code></td><td>The agent form (loaded on first open), avatars, the delete dialog.</td></tr>
+<tr><td>Settings</td><td><code>features/settings/</code> and the add-on pages</td><td>One view with a menu in four groups (You, Models, What agents can use, App) and pages built from rows (<code>components/ui/Row.tsx</code>); Security &amp; devices and General each put several sections on one page. Usage is <code>UsagePage.tsx</code> over <code>api/usage.ts</code>. Loaded on first open.</td></tr>
+<tr><td>Side panel</td><td><code>features/browser/</code>, <code>features/routines/</code></td><td>Live view of the agent's browser window (noVNC, loaded on first use), take over, routines (each with its next time, or its last error; a run missed while the app was off shows as "Missed: …", not as a failed run).</td></tr>
 <tr><td>Files</td><td><code>features/files/</code></td><td>Preview of pictures, PDFs, Markdown, CSV/TSV, JSON, HTML (sandboxed) and text.</td></tr>
 <tr><td>Kit</td><td><code>components/ui/</code>, <code>styles/index.css</code>, <code>lib/</code></td><td>Buttons, rows, modals, menus; colour tokens; small hooks (media queries, back step, edge swipe, dictation).</td></tr>
 </tbody></table></div>
 <p>Dependencies beyond React: <code>react-markdown</code> with <code>remark-gfm</code>, <code>lucide-react</code> icons, the Geist fonts and noVNC.</p>
+<p>Settings and the agent form are separate chunks, loaded the first time they open (<code>lazy</code> in <code>Workspace.tsx</code>), so the first load is smaller: the main bundle went from 533 KB to 456 KB (gzip 161 KB to 141 KB).</p>
 </section>
 
 <section class="card" id="layout">

@@ -4,6 +4,18 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 ## Unreleased
 
+- Search is fast right after an update: the chat search index is kept in the data folder (`agent/index/`) instead of inside the container, where every image update lost it, and the app brings it up to date when it starts.
+- Faster chats: "Load earlier messages" reads a long chat's earlier part once and serves the next pages from what it read, for the last 4 chats you opened. The app also loads the model runtime when it starts, so the first agent answers sooner, and Settings and the agent form load the first time you open them (the app's first load is 20 KB smaller compressed).
+- Lighter when idle: the browser starts the first time an agent uses it (or you take over), not with the app, and a chat you only looked at stops its agent after 90 seconds instead of 10 minutes.
+- Settings are safer from crashes and power cuts: each file is flushed to disk before it replaces the old one, and the previous version is kept as a `.bak`. If a file is damaged, the app uses that copy and says so in its log.
+- Stopping the app (`docker compose down`, a restart, an update) is clean: agents are stopped and pending saves are written first, within 8 seconds. If the app ever stops responding for 2 minutes, it restarts itself.
+- Both containers have limits on processes and memory (the app 4096 and 8 GB, the sandbox 2048 and 4 GB), so a runaway program cannot take the computer down. Change them with `WEILO_CORE_PIDS`, `WEILO_CORE_MEMORY`, `WEILO_SANDBOX_PIDS` and `WEILO_SANDBOX_MEMORY`.
+- Routines: a daily or weekly routine that was skipped because the app was not running now says "Missed: …", as a one-time one did, and the routines panel shows it plainly instead of as a failed run. When your time zone changes, your recurring routines move to it. A routine whose agent is slow to start is no longer marked failed after a minute (a real failure later is still shown).
+- The start script works offline: if the download fails but the app is already on the computer, it starts that copy. From the release zip it no longer tries to build the app; it says to check the internet connection.
+- Releases are checked before they are published: the image is started and tested as on every pull request, and the arm64 image is checked too. The build tools are pinned to exact versions.
+- Security: agents get only a short list of the app's environment variables (language, time zone, proxies, certificates, version), not all of them. A download checks the file it actually opened, so a folder swapped for a link at the last moment is refused. A link put among an agent's chat files is skipped, not read. The app's pages tell other sites nothing about where a link came from, and the pairing request takes at most 1 KB.
+- The knowledge curator reads only as many new messages as it can file in one run, so a very long chat no longer loads whole.
+
 - Security: each plugin that runs as a program has a Linux user of its own, so one plugin can no longer read another's secrets. Settings > Plugins checks each plugin on its own, as that plugin's user.
 - Security: the app no longer follows a link an agent put in place of a folder when it hands a folder to an agent, moves one (to or from isolated) or saves an approved skill; it leaves the link alone or refuses. An agent can no longer rename or delete another agent's folder in the workspace, or a skill it does not own.
 - Saving or removing a provider key while a signed-in account's token is being renewed no longer loses the new key or brings back the removed one.
