@@ -2,7 +2,7 @@ import { useState } from "react";
 import { changeAction, type Action, type Every, type ScheduleInput } from "../../api/actions";
 import { messageOf } from "../../api/http";
 import { Button } from "../../components/ui/Button";
-import { ErrorText } from "../../components/ui/Field";
+import { ErrorText, Field } from "../../components/ui/Field";
 import { Icon } from "../../components/ui/Icon";
 import { Modal } from "../../components/ui/Modal";
 import { Switch } from "../../components/ui/Switch";
@@ -35,6 +35,9 @@ export function ActionDetail({ action, agentId, agentName, onRun, onChanged, onR
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(action.title);
+  const [request, setRequest] = useState(action.request);
   const s = action.schedule;
   const draft: ScheduleInput = s ? { every: s.every, times: s.times, minutes: s.minutes, day: s.day, date: s.date } : { every: "day", times: ["08:00"] };
   const needsDefaults = action.fields.some((f) => !f.default);
@@ -58,7 +61,33 @@ export function ActionDetail({ action, agentId, agentName, onRun, onChanged, onR
   return (
     <Modal title={action.title} onClose={onClose} width="max-w-md">
       <div className="flex flex-col gap-4">
-        {action.about && <p className="-mt-2 text-[13.5px] leading-relaxed text-ink-2">{action.about}</p>}
+        {editing ? (
+          <section className="flex flex-col gap-3">
+            <Field label="Name">
+              <input autoFocus value={title} maxLength={60} onChange={(e) => setTitle(e.target.value)} className="input" />
+            </Field>
+            {action.kind === "agent" ? (
+              <Field label={`What should ${agentName} do?`}>
+                <textarea value={request} rows={3} onChange={(e) => setRequest(e.target.value)} className="input resize-none" />
+              </Field>
+            ) : (
+              <p className="text-[13px] text-ink-3">To change how it works, ask {agentName} in the chat.</p>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button size="sm" onClick={() => (setEditing(false), setTitle(action.title), setRequest(action.request))}>Cancel</Button>
+              <Button size="sm" variant="primary" disabled={saving || !title.trim() || (action.kind === "agent" && !request.trim())} onClick={() => (save(action.kind === "agent" ? { title, request } : { title }), setEditing(false))}>
+                Save
+              </Button>
+            </div>
+          </section>
+        ) : (
+          <div className="-mt-2 flex items-start justify-between gap-3">
+            <p className="min-w-0 text-[13.5px] text-ink-2">{action.kind === "agent" ? action.request : action.about || "Instant"}</p>
+            <Button size="sm" variant="ghost" icon="edit" onClick={() => setEditing(true)} className="-mr-2 shrink-0">
+              Edit
+            </Button>
+          </div>
+        )}
         <Button variant="primary" size="lg" icon="play" onClick={onRun} className="w-full">
           Run now
         </Button>
@@ -67,7 +96,7 @@ export function ActionDetail({ action, agentId, agentName, onRun, onChanged, onR
           <div className="flex items-center justify-between gap-3">
             <span className="flex flex-col">
               <span className="text-[14px] font-medium">Run by itself</span>
-              <span className="text-xs text-ink-3">{needsDefaults ? `Ask ${agentName} to set the usual values first.` : `${agentName} does it at the times you choose, even when you are away.`}</span>
+              <span className="text-xs text-ink-3">{needsDefaults ? "Needs its usual values first." : "At times you pick."}</span>
             </span>
             <Switch label="Run by itself" checked={!!s} onChange={(on) => (on ? schedule({}) : save({ schedule: null }))} />
           </div>
@@ -111,18 +140,11 @@ export function ActionDetail({ action, agentId, agentName, onRun, onChanged, onR
                   </>
                 )}
               </div>
-              <span className="text-[13px] text-ink-2">{s.nextRunAt ? `Next: ${nextWhen(s.nextRunAt)}` : "It has no next time."}</span>
+              <span className="text-[13px] text-ink-2">{s.nextRunAt ? `Next: ${nextWhen(s.nextRunAt)}` : "No next time."}</span>
             </>
           )}
         </section>
 
-        <section className="flex items-center justify-between gap-3 rounded-xl p-3.5 ring-1 ring-line">
-          <span className="flex flex-col">
-            <span className="text-[14px] font-medium">Ask me first</span>
-            <span className="text-xs leading-relaxed text-ink-3">Before it pays, orders or sends anything. The same when you tap it and when it runs by itself (then you get a notification).</span>
-          </span>
-          <Switch label="Ask me first" checked={action.confirm} onChange={(confirm) => save({ confirm })} />
-        </section>
         <ErrorText>{error}</ErrorText>
 
         {action.runs.length > 0 && (

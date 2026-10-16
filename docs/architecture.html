@@ -336,7 +336,7 @@
 <li>A due action moves to its next time, and that is saved, before it runs: a crash skips one run and never repeats one. A once schedule ends after it runs.</li>
 <li>One missed by more than an hour (the computer was off) waits for its next time and is noted as <code>Missed: …</code> in its runs.</li>
 <li>When the user's time zone changes, recurring schedules on the old zone move to the new one, and their next time is worked out again.</li>
-<li>A due action runs as if tapped, with its fields' defaults. An agent action goes to the chat as a message that starts with <code>⚡ Action: &lt;title&gt; · ran by itself</code>, with a note that the user is away: do it now, confirm with <code>ask</code> (a notification), leave the rest that needs them for the end. A script runs at once, and its answer is a notification; one that asks first waits for the user instead, with a notification.</li>
+<li>A due action runs as if tapped, with its fields' defaults. An agent action goes to the chat as a message that starts with <code>⚡ Action: &lt;title&gt; · ran by itself</code>, with a note that the user is away: do it now, confirm with <code>ask</code> (a notification), leave the rest that needs them for the end. A script runs at once, and its answer is a notification.</li>
 <li>Agents propose and change their actions with the <code>action</code> tool of the bundled actions extension; the user approves each in the chat.</li>
 </ul>
 </section>

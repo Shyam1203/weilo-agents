@@ -28,9 +28,10 @@ import { useChat } from "./useChat";
 import { BrowserPanel } from "../browser/BrowserPanel";
 import { Modal } from "../../components/ui/Modal";
 import { PreviewProvider } from "../files/PreviewContext";
-import { removeAction, runAction, skipAction, type Action, type ActionRun } from "../../api/actions";
+import { removeAction, runAction, type Action, type ActionRun } from "../../api/actions";
 import { ActionResult } from "../actions/ActionResult";
 import { ActionDetail } from "../actions/ActionDetail";
+import { NewAction } from "../actions/NewAction";
 import { ActionsPanel } from "../actions/ActionsPanel";
 import { RunDialog } from "../actions/RunDialog";
 import { useActions } from "../actions/useActions";
@@ -151,6 +152,7 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
   const [running, setRunning] = useState<Set<string>>(new Set());
   const [asked, setAsked] = useState<Action | null>(null);
   const [opened, setOpened] = useState<string | null>(null);
+  const [making, setMaking] = useState(false);
   const go = async (action: Action, input: Record<string, string>) => {
     setAsked(null);
     setOpened(null);
@@ -169,10 +171,9 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
       setRunning((now) => new Set([...now].filter((id) => id !== action.id)));
     }
   };
-  const start = (action: Action) => (setOpened(null), action.fields.length || (action.confirm && action.kind === "script") ? setAsked(action) : void go(action, {}));
+  const start = (action: Action) => (setOpened(null), action.fields.length ? setAsked(action) : void go(action, {}));
   const remove = (action: Action) => removeAction(agent.id, action.id).then(() => (setOpened(null), acts.refresh()), (err) => failed(err, true));
-  const skip = (action: Action) => void skipAction(agent.id, action.id).then(acts.refresh, (err) => failed(err, true));
-  const actionsPanel = <ActionsPanel agentName={agent.name} off={actionsOff} actions={acts.actions} error={acts.error} running={running} onRun={start} onOpen={(a) => setOpened(a.id)} titled={wide} />;
+  const actionsPanel = <ActionsPanel agentName={agent.name} off={actionsOff} actions={acts.actions} error={acts.error} running={running} onRun={start} onOpen={(a) => setOpened(a.id)} onNew={() => (setSheet(null), setMaking(true))} titled={wide} />;
   const openedAction = acts.actions?.find((a) => a.id === opened);
   // Instant actions' answers sit in the chat by their time; ones older than the messages loaded wait for "Load earlier".
   const since = chat.more ? (chat.messages.find((m) => m.at !== null)?.at ?? Infinity) : 0;
@@ -185,7 +186,6 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
       onAgain={() => start(action)}
       onAsk={() => put({ text: `About "${action.title}" (it said: ${run?.text}): `, images: [] })}
       onFix={() => void send({ text: `My action "${action.title}" did not work: ${run?.text}\nLook at its script (action list), find what changed, test a fix with try, and save it with action update.`, images: [], files: [] }).catch(() => {})}
-      onSkip={() => skip(action)}
     />
   );
   const answers = [
@@ -307,7 +307,8 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
         </div>
       </div>
       {openedAction && <ActionDetail action={openedAction} agentId={agent.id} agentName={agent.name} onRun={() => start(openedAction)} onChanged={() => void acts.refresh()} onRemove={() => remove(openedAction)} onClose={() => setOpened(null)} />}
-      {asked && <RunDialog action={asked} agentName={agent.name} onRun={(input) => void go(asked, input)} onClose={() => setAsked(null)} />}
+      {making && <NewAction agentId={agent.id} agentName={agent.name} onMade={(made) => (setMaking(false), void acts.refresh().then(() => setOpened(made.id)))} onClose={() => setMaking(false)} />}
+      {asked && <RunDialog action={asked} onRun={(input) => void go(asked, input)} onClose={() => setAsked(null)} />}
       {panel && wide && (
         <aside aria-label={PANELS[panel]} className="w-80 shrink-0 overflow-y-auto border-l border-line">
           <Side panel={panel} agent={agent} actions={actionsPanel} onTaken={onActivity} />

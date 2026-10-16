@@ -13,11 +13,10 @@ interface Props {
   onAgain: () => void;
   onAsk: () => void;
   onFix: () => void;
-  onSkip: () => void;
 }
 
 /** An instant action's answer in the chat, kept with the chat's history. The agent does not see it unless you ask it about it. */
-export function ActionResult({ action, run, latest, agentName, onAgain, onAsk, onFix, onSkip }: Props) {
+export function ActionResult({ action, run, latest, agentName, onAgain, onAsk, onFix }: Props) {
   const failed = run && !run.ok;
   return (
     <section aria-label={`${action.title}: answer`} className={`w-full max-w-[85%] animate-fade-in overflow-hidden rounded-2xl ring-1 ${failed ? "ring-bad/30" : "ring-line"}`}>
@@ -33,16 +32,11 @@ export function ActionResult({ action, run, latest, agentName, onAgain, onAsk, o
             <Icon name="spinner" size={14} /> Working on it…
           </p>
         ) : (
-          <p className={`text-[14px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] ${failed ? "text-bad" : ""}`}>{run.waiting ? "Ready to run. It asks you first." : run.text.replace(/^Failed: /, "Didn't work: ")}</p>
+          <p className={`text-[14px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] ${failed ? "text-bad" : ""}`}>{run.text.replace(/^Failed: /, "Didn't work: ")}</p>
         )}
         {run && latest && (
           <div className="flex flex-wrap gap-1.5">
-            {run.waiting ? (
-              <>
-                <Button size="sm" variant="primary" icon="play" onClick={onAgain}>Run it</Button>
-                <Button size="sm" onClick={onSkip}>Not this time</Button>
-              </>
-            ) : run.ok ? (
+            {run.ok ? (
               <>
                 <Button size="sm" icon="retry" onClick={onAgain}>Run again</Button>
                 <Button size="sm" onClick={onAsk}>Ask {agentName} about it</Button>
