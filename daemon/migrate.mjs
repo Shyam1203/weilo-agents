@@ -8,7 +8,7 @@ import { AGENTS_GID, BIN, CURATOR_UID, FIRST_AGENT_UID } from "./config.mjs";
 import { tree } from "./users.mjs";
 import { BUILD } from "./version.mjs";
 
-export const DATA_VERSION = 5;
+const DATA_VERSION = 5;
 const STEPS = {
   async 1() {
     const taken = [];

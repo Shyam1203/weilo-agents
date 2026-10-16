@@ -22,7 +22,7 @@ import { Tag as UiTag } from "../../../components/ui/Tag";
 import { CardText } from "../AgentText";
 import { link, workspacePath } from "../blockData";
 import { FileCard } from "../FileCard";
-import { Bars, Line } from "../Charts";
+import { Bars, DataTable, Line } from "../Charts";
 
 // The components an agent may use in an `openui` show block. Each one renders with the app's own
 // components and Tailwind tokens; the prompt the agent sees is generated from these schemas
@@ -86,32 +86,7 @@ const Table = defineComponent({
   name: "Table",
   description: "Rows and columns to compare things.",
   props: z.object({ columns: z.array(z.string()), rows: z.array(z.array(z.union([z.string(), z.number()]))) }),
-  component: ({ props }) => (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-left text-[13.5px]">
-        <thead>
-          <tr>
-            {props.columns.map((c, i) => (
-              <th key={i} className="px-3.5 py-2 text-xs font-medium whitespace-nowrap text-ink-3">
-                {c}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {(props.rows ?? []).map((row, r) => (
-            <tr key={r} className="border-t border-line">
-              {props.columns.map((_, c) => (
-                <td key={c} className="px-3.5 py-2 align-top">
-                  {row?.[c]}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  ),
+  component: ({ props }) => <DataTable columns={props.columns} rows={props.rows ?? []} />,
 });
 
 const Chart = defineComponent({

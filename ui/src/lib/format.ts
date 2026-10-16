@@ -6,23 +6,20 @@ const time = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "numeri
 export const clockTime = (at: number) => time(at * 1000);
 export const fullWhen = (at: number) => new Date(at * 1000).toLocaleString([], { dateStyle: "full", timeStyle: "short" });
 
-export function longWhen(at: number) {
-  const ms = at * 1000;
-  const days = Math.round((startOfDay(Date.now()) - startOfDay(ms)) / DAY);
+const daysApart = (from: number, to: number) => Math.round((startOfDay(to) - startOfDay(from)) / DAY);
+
+// "Today 9:30", "Yesterday 9:30" or "Tomorrow 9:30" (the word for one day away), else the date and time.
+function dayAndTime(ms: number, days: number, oneDay: string) {
   if (days <= 0) return `Today ${time(ms)}`;
-  if (days === 1) return `Yesterday ${time(ms)}`;
+  if (days === 1) return `${oneDay} ${time(ms)}`;
   return `${new Date(ms).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}, ${time(ms)}`;
 }
 
-export function nextWhen(ms: number) {
-  const days = Math.round((startOfDay(ms) - startOfDay(Date.now())) / DAY);
-  if (days <= 0) return `Today ${time(ms)}`;
-  if (days === 1) return `Tomorrow ${time(ms)}`;
-  return `${new Date(ms).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}, ${time(ms)}`;
-}
+export const longWhen = (at: number) => dayAndTime(at * 1000, daysApart(at * 1000, Date.now()), "Yesterday");
+export const nextWhen = (ms: number) => dayAndTime(ms, daysApart(Date.now(), ms), "Tomorrow");
 
 export function aheadOf(ms: number) {
-  const days = Math.round((startOfDay(ms) - startOfDay(Date.now())) / DAY);
+  const days = daysApart(Date.now(), ms);
   if (days <= 0) return "Today";
   if (days === 1) return "Tomorrow";
   const untilSunday = (7 - new Date().getDay()) % 7;

@@ -1,6 +1,6 @@
 const format = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
-export type Points = { label: string; value: number }[];
+type Points = { label: string; value: number }[];
 
 export function Bars({ points }: { points: Points }) {
   const low = Math.min(0, ...points.map((p) => p.value));
@@ -46,5 +46,34 @@ export function Line({ points }: { points: Points }) {
         <span className="truncate">{points.at(-1)!.label}</span>
       </figcaption>
     </figure>
+  );
+}
+
+export function DataTable({ columns, rows }: { columns: string[]; rows: (string | number)[][] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-left text-[13.5px]">
+        <thead>
+          <tr>
+            {columns.map((c, i) => (
+              <th key={i} className="px-3.5 py-2 text-xs font-medium whitespace-nowrap text-ink-3">
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, r) => (
+            <tr key={r} className="border-t border-line">
+              {columns.map((_, c) => (
+                <td key={c} className="px-3.5 py-2 align-top">
+                  {row?.[c]}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

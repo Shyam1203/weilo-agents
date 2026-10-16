@@ -167,9 +167,16 @@ agentRoute("POST", "/api/agents/:id/routines", "routines", ({ id, body, headers 
 agentRoute("PUT", "/api/agents/:id/routines/:rid", "routines", ({ id, rid, body }) => updateRoutine(id, rid, body));
 agentRoute("DELETE", "/api/agents/:id/routines/:rid", "routines", ({ id, rid }) => removeRoutine(id, rid));
 
-async function checkPlace(agent, sandboxed) {
-  const isolated = agent !== CURATOR_KEY && isIsolated(await getAgent(agent));
+// The agent a key belongs to. Isolated agents call only from the sandbox, the rest only from outside it.
+async function callerOf(req, url, sandboxed) {
+  const caller = keyIn(req, url.searchParams);
+  if (!caller) {
+    if (sandboxed) throw fail(403, "Not permitted");
+    return null;
+  }
+  const isolated = caller.agent !== CURATOR_KEY && isIsolated(await getAgent(caller.agent));
   if (isolated !== sandboxed) throw fail(403, "Not permitted");
+  return caller;
 }
 
 async function handle(req, res, sandboxed) {
@@ -177,9 +184,7 @@ async function handle(req, res, sandboxed) {
     const url = new URL(req.url, "http://localhost");
     const path = url.pathname;
     guard(req, path);
-    const caller = keyIn(req, url.searchParams);
-    if (caller) await checkPlace(caller.agent, sandboxed);
-    else if (sandboxed) throw fail(403, "Not permitted");
+    const caller = await callerOf(req, url, sandboxed);
     if (!sandboxed && path === "/api/health") return reply(res, 200, { ok: true });
     if (!sandboxed && !path.startsWith("/api/")) return await serveUi(req, res);
     const proxied = path.match(/^\/api\/(model|plugin)-proxy\/([\w.-]+)(\/.*)?$/);
@@ -252,9 +257,7 @@ async function upgrade(req, socket, head, sandboxed) {
   try {
     const url = new URL(req.url, "http://localhost");
     guard(req, url.pathname);
-    const caller = keyIn(req, url.searchParams);
-    if (caller) await checkPlace(caller.agent, sandboxed);
-    else if (sandboxed) throw fail(403, "Not permitted");
+    const caller = await callerOf(req, url, sandboxed);
     if (!sandboxed && url.pathname === "/api/browser/view" && (await identify(req))?.device && viewUpgrade(req, socket, head)) return;
     if (!sandboxed && isCdpPath(url.pathname) && cdpUpgrade(req, socket, head)) return;
     const pipe = url.pathname.match(/^\/api\/plugin-pipe\/([\w-]+)$/);

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, type ReactNode } from "react";
 import { AgentText, CardText } from "./AgentText";
-import { Bars, Line } from "./Charts";
+import { Bars, DataTable, Line } from "./Charts";
 import { FileCard } from "./FileCard";
 import type { Block } from "./blockData";
 import { PickButton } from "./PickButton";
@@ -44,30 +44,7 @@ function One({ block, onReply, chosen, streaming = false }: Omit<Props, "blocks"
     case "table":
       return (
         <Titled title={block.title}>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-[13.5px]">
-              <thead>
-                <tr>
-                  {block.columns.map((c, i) => (
-                    <th key={i} className="px-3.5 py-2 text-xs font-medium whitespace-nowrap text-ink-3">
-                      {c}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {block.rows.map((row, r) => (
-                  <tr key={r} className="border-t border-line">
-                    {block.columns.map((_, c) => (
-                      <td key={c} className="px-3.5 py-2 align-top">
-                        {row[c]}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable columns={block.columns} rows={block.rows} />
         </Titled>
       );
     case "metrics":

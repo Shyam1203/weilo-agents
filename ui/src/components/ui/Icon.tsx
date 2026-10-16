@@ -1,6 +1,6 @@
 import {
   ArrowDown, ArrowUp, Bell, Bot, ChartColumn, Brain, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Download, ExternalLink, FileText, Globe, Info, Key, List, LoaderCircle, Mail, Mic, MonitorSmartphone, MousePointer2,
-  PanelRight, Paperclip, Pencil, Plug, Plus, Puzzle, RotateCcw, Search, Settings, Share, ShieldCheck, Sparkles, Square, Sun, TriangleAlert, User, X,
+  PanelRight, Paperclip, Pencil, Plug, Plus, Puzzle, RotateCcw, Search, Settings, Share, ShieldCheck, Sparkles, Square, TriangleAlert, User, X,
 } from "lucide-react";
 
 const ICONS = {
@@ -28,7 +28,6 @@ const ICONS = {
   mic: Mic,
   alert: TriangleAlert,
   info: Info,
-  sun: Sun,
   key: Key,
   brain: Brain,
   user: User,

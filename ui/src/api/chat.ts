@@ -1,5 +1,5 @@
 import { imageDataUrl } from "../lib/attachments";
-import { request, RequestError } from "./http";
+import { fetchJson, request } from "./http";
 
 export interface Outgoing {
   text: string;
@@ -24,15 +24,9 @@ export interface Context {
 
 // Each file goes up as it is, then the message names where it was saved.
 async function upload(agentId: string, file: File) {
-  let res: Response;
-  try {
-    res = await fetch(`/api/agents/${agentId}/uploads?name=${encodeURIComponent(file.name)}`, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
-  } catch {
-    throw new Error("Cannot connect to Weilo Agents. Make sure it is running.");
-  }
-  const data = await res.json().catch(() => null);
-  if (!res.ok) throw new RequestError(data?.error || `${file.name} was not sent (${res.status}).`, res.status, data?.pair === true);
-  return (data as { path: string }).path;
+  const url = `/api/agents/${agentId}/uploads?name=${encodeURIComponent(file.name)}`;
+  const data = await fetchJson<{ path: string }>(url, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file }, `${file.name} was not sent`);
+  return data.path;
 }
 
 export async function send(agentId: string, { text, images, files, when }: Outgoing) {
