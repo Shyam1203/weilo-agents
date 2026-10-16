@@ -6,6 +6,8 @@ export interface PairedDevice {
   added: string;
   seen: string;
   current: boolean;
+  /** It gets notifications. */
+  notifications: boolean;
 }
 
 export const listDevices = () => request<PairedDevice[]>("GET", "/api/devices");

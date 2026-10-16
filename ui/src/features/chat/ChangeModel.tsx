@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { changeAgent, type Agent } from "../../api/agents";
 import { messageOf } from "../../api/http";
-import { shortName, type Model, type Provider } from "../../api/providers";
+import type { Model, Provider } from "../../api/providers";
 import { Button } from "../../components/ui/Button";
-import { Icon } from "../../components/ui/Icon";
 import { Menu, MenuItem } from "../../components/ui/Menu";
 import { modelChoices } from "../../lib/models";
 
@@ -14,16 +13,12 @@ interface Props {
   busy: boolean;
   onChanged: () => void;
   onError: (message: string) => void;
-  /** Show it as a "Change model" button (in a problem notice) instead of the model's name. */
-  button?: boolean;
 }
 
-/** The agent's model in the chat header: pick another without opening Edit agent. */
-export function ModelMenu({ agent, models, providers, busy, onChanged, onError, button = false }: Props) {
+/** "Change model" in a problem notice: pick another model without opening Edit agent. */
+export function ChangeModel({ agent, models, providers, busy, onChanged, onError }: Props) {
   const [saving, setSaving] = useState<string | null>(null);
   const choices = modelChoices(models, providers);
-  const current = saving ?? agent.model;
-  const name = current ? shortName(models?.find((m) => m.id === current)?.name ?? current) : "Choose a model";
   const pick = (model: string) => {
     if (model === agent.model) return;
     setSaving(model);
@@ -31,20 +26,13 @@ export function ModelMenu({ agent, models, providers, busy, onChanged, onError, 
   };
   return (
     <Menu
-      placement={button ? "above-start" : "below-start"}
+      placement="above-start"
       wide
-      trigger={({ open, toggle }) =>
-        button ? (
-          <Button size="sm" icon="chevronDown" busy={!!saving} aria-expanded={open} aria-haspopup="menu" onClick={toggle}>
-            Change model
-          </Button>
-        ) : (
-          <button type="button" onClick={toggle} aria-expanded={open} aria-haspopup="menu" title="Change the model" className="-mx-1 flex min-w-0 items-center gap-0.5 rounded px-1 transition-colors hover:bg-select hover:text-ink">
-            <span className="truncate">{name}</span>
-            {saving ? <Icon name="spinner" size={11} className="shrink-0" /> : <Icon name="chevronDown" size={12} className="shrink-0" />}
-          </button>
-        )
-      }
+      trigger={({ open, toggle }) => (
+        <Button size="sm" icon="chevronDown" busy={!!saving} aria-expanded={open} aria-haspopup="menu" onClick={toggle}>
+          Change model
+        </Button>
+      )}
     >
       {(close) => (
         <>

@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import type { Agent } from "../../api/agents";
 import { messageOf } from "../../api/http";
-import { getPush, removeDevice, setMuted, type PushStatus } from "../../api/push";
+import { getPush, setMuted, type PushStatus } from "../../api/push";
 import { Avatar } from "../../components/ui/Avatar";
-import { Button } from "../../components/ui/Button";
 import { ErrorText } from "../../components/ui/Field";
 import { Loading } from "../../components/ui/List";
 import { Notice } from "../../components/ui/Notice";
@@ -16,14 +15,14 @@ import { avatarOf } from "../agents/avatars";
 export function NotificationsPage({ agents, section }: { agents: Agent[]; section?: boolean }) {
   const [status, setStatus] = useState<PushStatus | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const { busy, error, run } = useAction();
+  const { error, run } = useAction();
   const load = () => getPush().then(setStatus, (e) => setLoadError(messageOf(e)));
   useEffect(() => void load(), []);
   if (!status) return loadError ? <ErrorText>{loadError}</ErrorText> : <Loading />;
 
   const why = unsupported();
   const mine = thisDevice();
-  const on = !!mine && status.devices.some((d) => d.id === mine);
+  const on = !!mine && status.devices.includes(mine);
   const toggle = (next: boolean) => run("device", async () => (next ? await turnOn(status.publicKey) : await turnOff(), await load()));
   const mute = (id: string, sends: boolean) => {
     const muted = sends ? status.muted.filter((m) => m !== id) : [...status.muted, id];
@@ -43,17 +42,6 @@ export function NotificationsPage({ agents, section }: { agents: Agent[]; sectio
         </Card>
       )}
       <ErrorText>{error}</ErrorText>
-      {status.devices.length > 0 && (
-        <Card>
-          {status.devices.map((d) => (
-            <Row key={d.id} title={d.id === mine ? `${d.label || "This device"} (this one)` : d.label || "A device"} description={`Since ${new Date(d.added).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}`}>
-              <Button size="sm" busy={busy === d.id} onClick={() => void run(d.id, async () => (d.id === mine ? await turnOff() : await removeDevice(d.id), await load()))}>
-                Remove
-              </Button>
-            </Row>
-          ))}
-        </Card>
-      )}
       {status.devices.length > 0 && agents.length > 0 && (
         <Card>
           {agents.map((a) => (

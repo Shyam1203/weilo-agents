@@ -262,7 +262,8 @@ export function itemsOf({ messages: live, earlier, open }: Conversation): Item[]
     const i = n - earlier.length;
     const arriving = open && n === messages.length - 1;
     if (arriving) return itemsFor(m, i, true, results);
-    const deps = typeof m.content === "string" ? [] : m.content.flatMap((b) => (b.type === "toolCall" && b.id ? [results.get(b.id)] : []));
+    // A summary has no content, only its summary.
+    const deps = !Array.isArray(m.content) ? [] : m.content.flatMap((b) => (b.type === "toolCall" && b.id ? [results.get(b.id)] : []));
     const was = kept.get(m);
     if (was && was.i === i && same(was.deps, deps)) return was.items;
     const items = itemsFor(m, i, false, results);

@@ -21,10 +21,10 @@ import { AboutPage } from "./AboutPage";
 import { NotificationsPage } from "./NotificationsPage";
 import { Appearance } from "./Appearance";
 import { ProvidersPage } from "./ProvidersPage";
-import { SecurityPage } from "./SecurityPage";
+import { ChecksPage } from "./ChecksPage";
 import { UsagePage } from "./UsagePage";
 
-export type SettingsPage = "you" | "memory" | "providers" | "usage" | "skills" | "plugins" | "extensions" | "browser" | "security" | "general";
+export type SettingsPage = "you" | "memory" | "providers" | "usage" | "skills" | "plugins" | "extensions" | "browser" | "devices" | "general";
 
 const MENU: { group: string; pages: { value: SettingsPage; label: string; icon: IconName }[] }[] = [
   {
@@ -53,7 +53,7 @@ const MENU: { group: string; pages: { value: SettingsPage; label: string; icon: 
   {
     group: "App",
     pages: [
-      { value: "security", label: "Security & devices", icon: "shield" },
+      { value: "devices", label: "Devices", icon: "devices" },
       { value: "general", label: "General", icon: "settings" },
     ],
   },
@@ -139,10 +139,10 @@ export function SettingsView({ page: first, agents, providers, skills, plugins, 
                 <ProvidersPage providers={providers} models={models} onChange={onChange} onModels={onModels} />
               ) : page === "usage" ? (
                 <UsagePage agents={agents} />
-              ) : page === "security" ? (
+              ) : page === "devices" ? (
                 <Sections>
                   <DevicesPage section />
-                  <SecurityPage agents={agents} section />
+                  <ChecksPage agents={agents} section />
                 </Sections>
               ) : page === "general" ? (
                 <Sections>

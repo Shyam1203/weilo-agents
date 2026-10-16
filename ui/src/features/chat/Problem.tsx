@@ -19,13 +19,13 @@ interface Props {
   tone?: "alert" | "info";
   onRetry?: () => void;
   /** The control that changes the model, already set up as a button. */
-  modelPicker: ReactNode;
+  changeModel: ReactNode;
   onProviders: () => void;
   onLimit: () => void;
 }
 
 /** A problem in the chat, with buttons for what can fix it. */
-export function Problem({ message, fixes, tone = "alert", onRetry, modelPicker, onProviders, onLimit }: Props) {
+export function Problem({ message, fixes, tone = "alert", onRetry, changeModel, onProviders, onLimit }: Props) {
   return (
     <div role={tone === "alert" ? "alert" : "status"} className="flex gap-2.5 rounded-xl bg-card px-3.5 py-3 text-[13px] text-ink-2 ring-1 ring-line ring-inset">
       <Icon name={tone === "alert" ? "alert" : "info"} size={15} className={`mt-0.5 shrink-0 ${tone === "alert" ? "text-bad" : "text-ink-3"}`} />
@@ -41,7 +41,7 @@ export function Problem({ message, fixes, tone = "alert", onRetry, modelPicker, 
                   </Button>
                 )
               ) : fix === "model" ? (
-                <span key={fix}>{modelPicker}</span>
+                <span key={fix}>{changeModel}</span>
               ) : fix === "providers" ? (
                 <Button key={fix} size="sm" icon="key" onClick={onProviders}>
                   Open Providers

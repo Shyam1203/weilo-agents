@@ -36,7 +36,7 @@ export function DevicesPage({ section }: { section?: boolean }) {
       <ErrorText>{error}</ErrorText>
       <Card>
         {devices.map((d) => (
-          <Row key={d.id} icon="devices" title={d.current ? `${d.name} (this one)` : d.name} description={`Paired ${day(d.added)} · last used ${day(d.seen)}`}>
+          <Row key={d.id} icon="devices" title={d.current ? `${d.name} (this one)` : d.name} description={<>Paired {day(d.added)} · last used {day(d.seen)}{d.notifications && <> · <Icon name="bell" size={11} className="inline align-[-0.05em]" /> Notifications on</>}</>}>
             <Button size="sm" busy={busy === d.id} onClick={() => void remove(d)}>
               Remove
             </Button>

@@ -29,7 +29,7 @@ import { CURATOR_KEY, getCurator, setCurator, startCurator } from "./memory/cura
 import { fetchKnowledge } from "./memory/fetch.mjs";
 import { memoryText, saveMemoryText, useMemory } from "./memory/memory.mjs";
 import { migrate } from "./migrate.mjs";
-import { addDevice, markSeen, pushStatus, removeDevice, removePaired, setMuted } from "./push.mjs";
+import { addDevice, markSeen, notifiedDevices, pushStatus, removeDevice, removePaired, setMuted } from "./push.mjs";
 import { actionTool, addAction, changeAction, forgetActions, listActions, noteZone, removeAction, runAction, startActions } from "./actions/actions.mjs";
 import { forgetPins, listPins, pinTool, removePin, tickPin } from "./actions/pins.mjs";
 import { addExtension, listExtensions, removeExtension } from "./settings/extensions.mjs";
@@ -70,7 +70,10 @@ const forAll = (change) => async (req) => {
 route("GET", "/api/version", () => BUILD);
 route("GET", "/api/security", () => securityReport());
 route("GET", "/api/usage", () => usageHistory(USAGE_SHOWN));
-route("GET", "/api/devices", ({ who }) => pairedDevices(who.device));
+route("GET", "/api/devices", async ({ who }) => {
+  const [devices, notified] = await Promise.all([pairedDevices(who.device), notifiedDevices()]);
+  return devices.map((d) => ({ ...d, notifications: notified.has(d.id) }));
+});
 route("POST", "/api/devices/code", () => newCode());
 route("DELETE", "/api/devices/:id", async ({ id }) => (await unpair(id), await removePaired(id), undefined));
 route("GET", "/api/update", () => updateStatus());

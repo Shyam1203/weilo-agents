@@ -21,23 +21,29 @@ async function vapid() {
   ).vapid;
 }
 
+// A browser's notifications belong to a paired device; one from before pairing waits until that browser opens the app and links it.
+const linked = (devices = []) => devices.filter((d) => d.paired);
+
 export async function pushStatus() {
   const { publicKey } = await vapid();
-  const { devices = [], muted = [] } = await readJson(PUSH);
-  return { publicKey, devices: devices.map(({ id, label, added }) => ({ id, label, added })), muted };
+  const { devices, muted = [] } = await readJson(PUSH);
+  return { publicKey, devices: linked(devices).map((d) => d.id), muted };
 }
 
-// A browser's notifications belong to the paired device that turned them on: unpairing it stops them.
-export async function addDevice({ subscription, label }, paired) {
+// Unpairing a device stops its notifications.
+export async function addDevice({ subscription }, paired) {
   const { endpoint, keys } = subscription ?? {};
   if (typeof endpoint !== "string" || !PUSH_SERVICE.test(endpoint) || typeof keys?.p256dh !== "string" || typeof keys?.auth !== "string") throw fail(400, "This browser's notification address is not valid");
   const { devices } = await updateJson(PUSH, (data) => {
     const was = (data.devices ?? []).find((d) => d.endpoint === endpoint);
-    const device = { id: was?.id ?? randomUUID(), endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth }, label: typeof label === "string" ? label.slice(0, 80) : "", added: was?.added ?? Date.now(), paired };
+    const device = { id: was?.id ?? randomUUID(), endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth }, paired };
     return { ...data, devices: [...(data.devices ?? []).filter((d) => d.endpoint !== endpoint), device] };
   });
   return { id: devices.find((d) => d.endpoint === endpoint).id };
 }
+
+/** The paired devices that get notifications. */
+export const notifiedDevices = async () => new Set(linked((await readJson(PUSH)).devices).map((d) => d.paired));
 
 export const removeDevice = (id) => updateJson(PUSH, (data) => ({ ...data, devices: (data.devices ?? []).filter((d) => d.id !== id) }));
 export const removePaired = (paired) => updateJson(PUSH, (data) => ({ ...data, devices: (data.devices ?? []).filter((d) => d.paired !== paired) }));
@@ -92,7 +98,8 @@ async function send(device, payload, keys) {
 
 export async function notify(agent, kind, text) {
   if (watchingAgents() || Date.now() - seen < PUSH_SEEN_MS) return;
-  const { devices = [], muted = [] } = await readJson(PUSH).catch(() => ({}));
+  const { devices: all, muted = [] } = await readJson(PUSH).catch(() => ({}));
+  const devices = linked(all);
   if (!devices.length || muted.includes(agent.id)) return;
   const said = plainText(text ?? "");
   const body = kind === "ask" ? `Asks you: ${said}` : kind === "error" ? `Stopped with a problem${said ? `: ${said}` : "."}` : said || "Replied.";
