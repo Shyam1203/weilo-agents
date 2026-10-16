@@ -118,11 +118,15 @@ const failed = (routine, err) => {
   if (err.status === 404) state.items = state.items.filter((r) => r !== routine);
 };
 
+// A routine that is done once is removed only when its message was taken: if that fails after the
+// wait, it stays, with the error, for the user to see.
 const sendWithin = (routine, text) => {
   let timer;
-  const sent = prompt(routine.agentId, { text });
+  const sent = prompt(routine.agentId, { text }).then(() => {
+    if (routine.every === "once") state.items = state.items.filter((r) => r !== routine);
+  });
   const late = new Promise((resolve) => (timer = setTimeout(resolve, SEND_MS)));
-  late.then(() => void sent.catch((err) => (failed(routine, err), save())));
+  late.then(() => void sent.then(save, (err) => (failed(routine, err), save())));
   return Promise.race([sent, late]).finally(() => clearTimeout(timer));
 };
 
@@ -152,7 +156,6 @@ async function tick() {
       try {
         routine.lastError = null;
         await sendWithin(routine, `⏰ Routine: ${routine.title}\n\n${NOTE}\n\n${routine.task}`);
-        if (routine.every === "once") state.items = state.items.filter((r) => r !== routine);
       } catch (err) {
         failed(routine, err);
       }

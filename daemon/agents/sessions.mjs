@@ -1,6 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { CHATS, openChat } from "../common.mjs";
+import { linkImages } from "./images.mjs";
 import { CHAT_CHUNK, CHAT_TAIL, EARLIER_KEPT, EARLIER_KEPT_MS, EARLIER_PAGE, PREVIEW_CHARS, PREVIEW_TAIL } from "../config.mjs";
 
 export const textOf = (content, between = "") => (typeof content === "string" ? content : (content ?? []).filter((b) => b.type === "text").map((b) => b.text).join(between));
@@ -88,7 +89,19 @@ async function* linesOf(file) {
 }
 
 export const shown = (m) => m?.role === "user" || m?.role === "assistant" || m?.role === "compactionSummary" || (m?.role === "toolResult" && ["ask", "routine", "manage_agents"].includes(m.toolName));
-export const slim = (m) => (Array.isArray(m.content) && m.role === "assistant" ? { ...m, content: m.content.filter((b) => b.type !== "thinking") } : m);
+// Of a tool call the app draws a show card and an ask in full; of the others one line (the command,
+// the path, the address...), so their arguments are cut to those fields: a file an agent writes is
+// not sent to the app.
+const DRAWN = new Set(["show", "ask"]);
+const DETAIL = ["command", "action", "url", "text", "path", "file_path", "pattern", "query", "name"];
+const DETAIL_CHARS = 300;
+export function briefCall(block) {
+  if (block?.type !== "toolCall" || DRAWN.has(block.name) || !block.arguments || typeof block.arguments !== "object") return block;
+  const kept = DETAIL.flatMap((key) => (typeof block.arguments[key] === "string" ? [[key, block.arguments[key].slice(0, DETAIL_CHARS)]] : []));
+  return { ...block, arguments: Object.fromEntries(kept) };
+}
+
+export const slim = (m) => (Array.isArray(m.content) && m.role === "assistant" ? { ...m, content: m.content.filter((b) => b.type !== "thinking").map(briefCall) } : m);
 
 async function readEarlier(files) {
   const entries = [];
@@ -106,7 +119,7 @@ async function readEarlier(files) {
         continue;
       }
       if (entry.type === "compaction") kept = entry.firstKeptEntryId;
-      else entries.push({ id: entry.id, message: shown(entry.message) ? slim(asTyped(entry.message)) : null });
+      else entries.push({ id: entry.id, message: shown(entry.message) ? linkImages(slim(asTyped(entry.message))) : null });
     }
   }
   const end = kept ? entries.findIndex((e, i) => i >= before && e.id === kept) : before;

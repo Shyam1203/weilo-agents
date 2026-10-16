@@ -6,21 +6,24 @@ import { createAgent, filesOf, getAgent, isIsolated, mayCall, profiles, listAgen
 import { abort, activityOf, answer, askUser, compact, contextOf, holding, prompt, restart, restartAll, skillCommands, stop, stopAll, unqueue } from "./agents/runner.mjs";
 import { askAgent, manageAgents } from "./agents/manage.mjs";
 import { searchChats } from "./agents/search.mjs";
-import { backfillUsage, usageHistory, usageToday } from "./agents/usage.mjs";
+import { backfillUsage, usageHistory, usageSaved, usageToday } from "./agents/usage.mjs";
 import { earlierOf } from "./agents/sessions.mjs";
+import { serveImage } from "./agents/images.mjs";
+import { agentsChanged } from "./agents/status.mjs";
+import { saveUpload } from "./agents/uploads.mjs";
 import { clearScratch } from "./agents/workspace.mjs";
-import { closeBrowser, giveBack, hasWindow, isTaken, showBrowser, takeOver, useBrowser } from "./browser/browser.mjs";
+import { closeBrowser, giveBack, hasWindow, isTaken, showBrowser, takeOver, useBrowser, windowOpen } from "./browser/browser.mjs";
 import { getRule, saveRule } from "./browser/rule.mjs";
 import { cdpUpgrade, isCdpPath, viewUpgrade } from "./browser/screen.mjs";
 import { fail, settled } from "./common.mjs";
-import { ADMIN_SOCKET, PORT, SANDBOX_API, SANDBOX_DIR, HUNG_MS, MAX_PAIR_BODY, SHUTDOWN_MS, SYSTEM_PATH, USAGE_SHOWN } from "./config.mjs";
+import { ADMIN_SOCKET, MAX_UPLOAD, PORT, SANDBOX_API, SANDBOX_DIR, HUNG_MS, MAX_PAIR_BODY, SHUTDOWN_MS, SYSTEM_PATH, USAGE_SHOWN } from "./config.mjs";
 import { sendContact } from "./contact.mjs";
 import { providerOf, proxyModel, warmModels } from "./gateway/models.mjs";
 import { pipePlugin, pluginOf, proxyPlugin } from "./gateway/plugins.mjs";
 import { cookieFor, identify, keyIn, newCode, pair, pairedDevices, unpair } from "./http/access.mjs";
-import { events } from "./http/events.mjs";
+import { agentStatus, events } from "./http/events.mjs";
 import { serveFile } from "./http/files.mjs";
-import { bodyOf, guard, reply } from "./http/request.mjs";
+import { bodyOf, guard, rawBodyOf, reply } from "./http/request.mjs";
 import { serveUi } from "./http/static.mjs";
 import { CURATOR_KEY, getCurator, setCurator, startCurator } from "./memory/curator.mjs";
 import { fetchKnowledge } from "./memory/fetch.mjs";
@@ -107,7 +110,7 @@ route("GET", "/api/search", ({ query }) => searchChats(query.get("q")));
 route("GET", "/api/agents", async ({ query }) => {
   if (query.has("seen")) markSeen();
   const [agents, used] = await Promise.all([listAgents(), usageToday()]);
-  return agents.map((agent) => ({ ...agent, used: used[agent.id] ?? 0, working: activityOf(agent.id) !== null, doing: activityOf(agent.id), taken: isTaken(agent.id) }));
+  return agents.map((agent) => ({ ...agent, used: used[agent.id] ?? 0, working: activityOf(agent.id) !== null, doing: activityOf(agent.id), taken: isTaken(agent.id), browserOpen: windowOpen(agent.id) }));
 });
 route("POST", "/api/agents", ({ body }) => createAgent(body));
 route("PUT", "/api/agents", ({ body }) => setOrder(body.order), quiet);
@@ -206,6 +209,14 @@ async function handle(req, res, sandboxed) {
     if (file && req.method === "GET" && who.device) return await serveFile(res, filesOf(await getAgent(file[1])), file[2], url.searchParams.has("view"));
     const stream = path.match(/^\/api\/agents\/([^/]+)\/events$/);
     if (stream && req.method === "GET" && who.device) return await events(req, res, stream[1]);
+    if (path === "/api/agents/status" && req.method === "GET" && who.device) return agentStatus(req, res);
+    const image = path.match(/^\/api\/images\/([^/]+)$/);
+    if (image && req.method === "GET" && who.device) return await serveImage(res, image[1]);
+    const upload = path.match(/^\/api\/agents\/([^/]+)\/uploads$/);
+    if (upload && req.method === "POST" && who.device) {
+      const agent = await getAgent(upload[1]);
+      return reply(res, 200, { path: await saveUpload(agent, url.searchParams.get("name") ?? "", await rawBodyOf(req, MAX_UPLOAD)) });
+    }
     for (const { method, path: name, pattern, handler, scoped, tool, audited } of routes) {
       const match = req.method === method && path.match(pattern);
       if (!match) continue;
@@ -214,6 +225,7 @@ async function handle(req, res, sandboxed) {
       const agent = scoped && (await getAgent(id));
       if (who.agent && !mayCall(agent, tool)) throw fail(403, "An isolated agent cannot use this. The user can change what it may use in its settings.");
       const result = await handler({ id, rid, body: await bodyOf(req), query: url.searchParams, headers: req.headers, who });
+      if (method !== "GET" && name.startsWith("/api/agents") && (who.device || tool === "manage_agents")) agentsChanged();
       if (audited) audit(`${method} ${name}`, { by: who.device ? `device ${who.device}` : `agent ${who.agent}`, ...(id && { id }), ...(rid && { rid }) });
       return result === undefined ? reply(res, 204) : reply(res, 200, result);
     }
@@ -290,7 +302,7 @@ const shutDown = () => {
   sandbox.close();
   setTimeout(() => process.exit(0), SHUTDOWN_MS).unref();
   void stopAll()
-    .then(() => Promise.all([settled(), audited()]))
+    .then(() => Promise.all([settled(), audited(), usageSaved()]))
     .finally(() => process.exit(0));
 };
 for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, shutDown);

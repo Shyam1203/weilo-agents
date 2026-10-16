@@ -3,10 +3,9 @@ import { abort, answerAsk, compactChat, eventsUrl, getContext, getEarlier, reloa
 import { empty, failureOf, itemsOf, noteOf, reduce, type PiEvent, type PiMessage, type Queued } from "./conversation";
 
 const RELOADED = "Reloaded: skills, instructions and notes were read again.";
-const ACTIVITY = ["agent_start", "agent_settled", "tool_execution_start", "tool_execution_end"];
 const MEASURE = ["history", "agent_settled", "compaction_end"];
 
-export function useChat(agentId: string, onActivity: () => void) {
+export function useChat(agentId: string) {
   const [chat, dispatch] = useReducer(reduce, empty);
   const [attempt, setAttempt] = useState(0);
   const [context, setContext] = useState<Context | null>(null);
@@ -29,8 +28,6 @@ export function useChat(agentId: string, onActivity: () => void) {
     }
   };
   const reloading = useRef(false);
-  const activity = useRef(onActivity);
-  activity.current = onActivity;
 
   useEffect(() => {
     const source = new EventSource(eventsUrl(agentId));
@@ -45,7 +42,6 @@ export function useChat(agentId: string, onActivity: () => void) {
       if (event.type === "tool_execution_end" || event.type === "agent_settled" || event.type === "exit") setDoing(null);
       if (event.type === "agent_settled" && reloading.current) (reloading.current = false, setStatus(RELOADED));
       if (MEASURE.includes(event.type)) void getContext(agentId).then(setContext, () => {});
-      if (ACTIVITY.includes(event.type)) activity.current();
     };
     return () => source.close();
   }, [agentId, attempt]);

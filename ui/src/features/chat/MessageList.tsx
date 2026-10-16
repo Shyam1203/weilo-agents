@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useCallback, useRef, useState } from "react";
 import { longWhen } from "../../lib/format";
 import { AgentText } from "./AgentText";
 import { AskCard } from "./AskCard";
@@ -11,6 +11,8 @@ import { StepsLine } from "./StepsLine";
 import type { Asking, Item, Message, Queued } from "./conversation";
 
 const GAP = 30 * 60;
+// The browser lays out and draws older messages only when they come near the screen.
+const DRAWN = 12;
 
 interface Props {
   messages: Item[];
@@ -29,40 +31,51 @@ const draftOf = (m: Message): Draft => ({ text: m.text, images: m.images });
 
 export function MessageList({ messages, busy, asking, onAnswer, onReply, onRetry, onEdit, queued, onUnqueue, note }: Props) {
   const shown = messages.filter((m) => (m.kind === "ask" ? m.answer !== undefined || !asking : m.kind === "show" || m.kind === "steps" || m.role === "human" || m.text.trim()));
-  let shownAt = 0;
-
-  const answerTo = (i: number) => {
-    const chosen = shown.slice(i + 1).find((m): m is Message => m.kind === "message" && m.role === "human")?.text;
-    return { chosen, onReply: chosen === undefined && !busy ? onReply : undefined };
-  };
+  const replyTo = useRef(onReply);
+  replyTo.current = onReply;
+  const reply = useCallback((text: string) => replyTo.current(text), []);
+  // Kept stable like reply, so a row still draws again only when its own message changes.
+  const actions = useRef({ onRetry, onEdit });
+  actions.current = { onRetry, onEdit };
+  const retryWith = useCallback((m: Message) => actions.current.onRetry(draftOf(m)), []);
+  const edit = useCallback((m: Message) => actions.current.onEdit(draftOf(m)), []);
 
   const isHuman = (m?: Item) => m?.kind === "message" && m.role === "human";
-  const endsReply = (i: number) => shown[i].kind === "message" && !isHuman(shown[i]) && (i === shown.length - 1 ? !busy : isHuman(shown[i + 1]));
-  const replyText = (i: number) => {
-    const parts: string[] = [];
-    for (let j = i; j >= 0; j--) {
-      const m = shown[j];
-      if (m.kind !== "message") continue;
-      if (m.role === "human") break;
-      parts.unshift(m.text.trim());
-    }
-    return parts.join("\n\n");
-  };
-  const last = shown.findLast((m): m is Message => m.kind === "message" && m.role === "human");
+  // What the user said after each item (the choice made on a card), from the end back.
+  const chosen: (string | undefined)[] = [];
+  for (let i = shown.length - 1, after: string | undefined; i >= 0; i--) {
+    chosen[i] = after;
+    if (isHuman(shown[i])) after = (shown[i] as Message).text;
+  }
+  const last = shown.findLast((m): m is Message => isHuman(m));
   const again = !busy && !asking && last && (last.text || last.images.length) ? last : undefined;
 
+  let shownAt = 0;
+  let said: string[] = [];
   return (
     <ol aria-live="polite" aria-relevant="additions" className="flex flex-col gap-1.5">
-      {shown.map((message, i) => {
-        const label = message.at && message.at - shownAt > GAP ? longWhen(message.at) : null;
-        if (label) shownAt = message.at!;
-        const sameSide = shown[i - 1]?.role === message.role;
+      {shown.map((item, i) => {
+        const label = item.at && item.at - shownAt > GAP ? longWhen(item.at) : null;
+        if (label) shownAt = item.at!;
+        if (item.kind === "message") (item.role === "human" ? (said = []) : said.push(item.text.trim()));
+        const ends = item.kind === "message" && item.role !== "human" && (i === shown.length - 1 ? !busy : isHuman(shown[i + 1]));
         return (
-          <li key={message.id} data-at={message.at ?? undefined} className={`animate-fade-in ${sameSide || label ? "" : "mt-2.5"}`}>
-            {label && <p className="mt-4 mb-2.5 text-center text-xs font-medium text-ink-3">{label}</p>}
-            {message.kind === "ask" ? <AskCard question={message.question} options={message.options} answer={message.answer} /> : message.kind === "note" ? <p className="flex items-center justify-center gap-1.5 py-1 text-xs text-ink-3"><Icon name="clock" size={12} /> {message.text}</p> : message.kind === "summary" ? <p title="The agent now has a summary of the messages above, not the messages themselves." className="flex items-center gap-3 py-1 text-xs text-ink-3 before:h-px before:flex-1 before:bg-line after:h-px after:flex-1 after:bg-line">{message.text}</p> : message.kind === "steps" ? <StepsLine steps={message.steps} working={busy && i === shown.length - 1} /> : message.kind === "show" ? <ShowBlocks blocks={message.blocks} streaming={message.streaming} {...answerTo(i)} /> : message.role === "human" ? <HumanMessage message={message} latest={message === last} onEdit={() => onEdit(draftOf(message))} /> : <AgentText text={message.text} />}
-            {endsReply(i) && <ReplyActions text={replyText(i)} at={message.at} onRetry={i === shown.length - 1 && again ? () => onRetry(draftOf(again)) : undefined} />}
-          </li>
+          <Row
+            key={item.id}
+            item={item}
+            label={label}
+            spaced={!(shown[i - 1]?.role === item.role || label)}
+            far={i < shown.length - DRAWN}
+            chosen={chosen[i]}
+            replyable={chosen[i] === undefined && !busy}
+            working={busy && i === shown.length - 1 && item.kind === "steps"}
+            ending={ends ? said.join("\n\n") : undefined}
+            retry={ends && i === shown.length - 1 ? again : undefined}
+            latest={item === last}
+            onReply={reply}
+            onRetry={retryWith}
+            onEdit={edit}
+          />
         );
       })}
       {queued.map((q, i) => (
@@ -83,6 +96,34 @@ export function MessageList({ messages, busy, asking, onAnswer, onReply, onRetry
     </ol>
   );
 }
+
+interface RowProps {
+  item: Item;
+  label: string | null;
+  spaced: boolean;
+  far: boolean;
+  chosen?: string;
+  replyable: boolean;
+  working: boolean;
+  ending?: string;
+  retry?: Message;
+  latest: boolean;
+  onReply: (message: string) => void;
+  onRetry: (message: Message) => void;
+  onEdit: (message: Message) => void;
+}
+
+// A row draws again only when its own props change, so a new event redraws the newest message, not
+// the whole chat.
+const Row = memo(function Row({ item, label, spaced, far, chosen, replyable, working, ending, retry, latest, onReply, onRetry, onEdit }: RowProps) {
+  return (
+    <li data-at={item.at ?? undefined} className={`animate-fade-in ${spaced ? "mt-2.5" : ""} ${far ? "[content-visibility:auto] [contain-intrinsic-size:auto_120px]" : ""}`}>
+      {label && <p className="mt-4 mb-2.5 text-center text-xs font-medium text-ink-3">{label}</p>}
+      {item.kind === "ask" ? <AskCard question={item.question} options={item.options} answer={item.answer} /> : item.kind === "note" ? <p className="flex items-center justify-center gap-1.5 py-1 text-xs text-ink-3"><Icon name="clock" size={12} /> {item.text}</p> : item.kind === "summary" ? <p title="The agent now has a summary of the messages above, not the messages themselves." className="flex items-center gap-3 py-1 text-xs text-ink-3 before:h-px before:flex-1 before:bg-line after:h-px after:flex-1 after:bg-line">{item.text}</p> : item.kind === "steps" ? <StepsLine steps={item.steps} working={working} /> : item.kind === "show" ? <ShowBlocks blocks={item.blocks} streaming={item.streaming} chosen={chosen} onReply={replyable ? onReply : undefined} /> : item.role === "human" ? <HumanMessage message={item} latest={latest} onEdit={() => onEdit(item)} /> : <AgentText text={item.text} />}
+      {ending !== undefined && <ReplyActions text={ending} at={item.at} onRetry={retry ? () => onRetry(retry) : undefined} />}
+    </li>
+  );
+});
 
 export function LoadingChat() {
   const shapes = ["ml-auto h-10 w-1/2", "h-24 w-5/6", "ml-auto h-10 w-2/5", "h-16 w-2/3"];

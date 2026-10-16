@@ -19,7 +19,9 @@ const files = new Map();
 const load = (file) => {
   if (!files.has(file)) {
     const loading = readFile(file).then(async (data) => {
-      const small = SQUEEZE.has(extname(file)) ? { br: await squeeze.br(data), gzip: await squeeze.gzip(data) } : {};
+      // The build leaves compressed copies next to each file; compress here only when they are missing.
+      const built = (end) => readFile(`${file}${end}`).catch(() => null);
+      const small = SQUEEZE.has(extname(file)) ? { br: (await built(".br")) ?? (await squeeze.br(data)), gzip: (await built(".gz")) ?? (await squeeze.gzip(data)) } : {};
       return { data, ...small, etag: `"${createHash("sha256").update(data).digest("base64url").slice(0, 16)}"` };
     });
     files.set(file, loading);

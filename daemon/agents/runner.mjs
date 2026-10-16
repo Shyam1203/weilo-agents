@@ -20,13 +20,41 @@ import { ownTools, passedOn, sharedTools, spawnAs } from "../users.mjs";
 import { chatDirOf, getAgent, homeOf, isIsolated, makeHome, mayCall, placesOf, profilePath, userHomeOf, userOf } from "./agents.mjs";
 import { piDirOf, piFiles, writePiDir } from "./pidir.mjs";
 import { piRpc } from "./pi.mjs";
-import { asTyped, chatFiles, shown, slim, textOf } from "./sessions.mjs";
-import { saveFiles, toImages } from "./uploads.mjs";
+import { linkImages } from "./images.mjs";
+import { asTyped, briefCall, chatFiles, shown, slim, textOf } from "./sessions.mjs";
+import { agentsChanged, tellAgent } from "./status.mjs";
+import { toImages, uploadedFiles } from "./uploads.mjs";
 import { clearScratch, makeScratch, rulesOf, scratchOf } from "./workspace.mjs";
 
 const runs = new Map();
+// Who follows each agent's chat. They stay across runs, so an agent that went idle and stopped
+// carries on with the same listeners when it starts again.
+const watchers = new Map();
+const listenersOf = (id) => watchers.get(id) ?? new Set();
 
-const emit = (run, event) => run.listeners.forEach((send) => send(event));
+// Only what the app draws goes to it. pi's other events repeat what the app already has or
+// never shows: agent_end holds the whole run, turn_end its tool results (and most tool results are
+// not drawn: a file that was read, a command's output), and the text and thinking
+// of a reply arrive in full with message_end. Of a reply as it is written, only a show card is
+// drawn, so only tool calls go out, and of their deltas only a show card's.
+const RELAYED = new Set(["queue_update", "extension_ui_request", "agent_start", "agent_settled", "message_start", "message_update", "message_end", "compaction_start", "compaction_end", "tool_execution_start", "tool_execution_end"]);
+const slimEvent = (run, event) => {
+  if (!RELAYED.has(event.type)) return null;
+  if (event.type === "tool_execution_start" || event.type === "tool_execution_end") return { type: event.type, toolCallId: event.toolCallId, toolName: event.toolName };
+  if (event.type === "compaction_end") return { type: event.type, result: Boolean(event.result) };
+  if (event.type === "message_update") {
+    const step = event.assistantMessageEvent ?? {};
+    if (step.type === "toolcall_start" && step.toolName === "show") run.showing.add(step.contentIndex);
+    if (!/^toolcall_/.test(step.type ?? "") || (step.type === "toolcall_delta" && !run.showing.has(step.contentIndex))) return null;
+    return { type: event.type, assistantMessageEvent: step.toolCall ? { ...step, toolCall: briefCall(step.toolCall) } : step };
+  }
+  if (event.type === "message_start") run.showing.clear();
+  if (!event.message) return event;
+  const message = asTyped(event.message);
+  return shown(message) ? { ...event, message: linkImages(slim(message)) } : null;
+};
+
+const emit = (run, event) => listenersOf(run.id).forEach((send) => send(event));
 
 const endAsk = (run) => {
   if (!run.asking) return;
@@ -45,8 +73,9 @@ const close = (run) => {
 
 const touch = (run) => {
   clearTimeout(run.timer);
-  if (run.busy || run.listeners.size || runs.get(run.id) !== run) return;
-  run.timer = setTimeout(() => (close(run), void clearScratch(run.id)), run.used ? IDLE_MS : GLANCE_MS).unref();
+  if (run.busy || runs.get(run.id) !== run) return;
+  const watched = listenersOf(run.id).size > 0;
+  run.timer = setTimeout(() => ((run.asleep = true), close(run), void clearScratch(run.id)), run.used || watched ? IDLE_MS : GLANCE_MS).unref();
 };
 
 const [WEILO, MEMORY] = ["../weilo.mjs", "../memory/extension.mjs"].map((path) => fileURLToPath(new URL(path, import.meta.url)));
@@ -147,14 +176,19 @@ async function start(run) {
           else if (event.method === "confirm" || event.method === "editor") run.pi.reply({ type: "extension_ui_response", id: event.id, cancelled: true });
         }
         if ((event.type === "tool_execution_end" && !run.asking?.resolve) || !run.busy) endAsk(run);
-        emit(run, event.message ? { ...event, message: asTyped(event.message) } : event);
+        if (ACTIVITY.has(event.type)) tellAgent(run.id, { working: run.busy, doing: run.busy ? (run.doing ?? "") : null });
+        if (event.type === "message_end" && (event.message?.role === "assistant" || event.message?.role === "user")) agentsChanged();
+        const relayed = slimEvent(run, event);
+        if (relayed) emit(run, relayed);
         if (run.stale && !run.busy) close(run);
         else touch(run);
       },
       onExit({ code, message }) {
         close(run);
         endAsk(run);
-        emit(run, { type: "exit", code, error: code ? message : "" });
+        tellAgent(run.id, { working: false, doing: null });
+        // An agent that was idle stops quietly: the app keeps its chat and it starts again when needed.
+        if (!run.asleep || code) emit(run, { type: "exit", code, error: code ? message : "" });
         resolve(undefined);
       },
     });
@@ -162,11 +196,13 @@ async function start(run) {
   return run;
 }
 
+const ACTIVITY = new Set(["agent_start", "agent_settled", "tool_execution_start", "tool_execution_end"]);
+
 const holds = new Map();
 
 const open = (id) => {
   if (!runs.has(id)) {
-    const run = { id, listeners: new Set(), busy: false, stale: false, timer: null, held: new Map() };
+    const run = { id, busy: false, stale: false, asleep: false, timer: null, showing: new Set(), held: new Map() };
     run.ready = start(run).catch((err) => {
       close(run);
       throw err;
@@ -178,18 +214,27 @@ const open = (id) => {
 
 const current = (id) => runs.get(id)?.ready.catch(() => null);
 
+const listen = (id, send) => {
+  if (!watchers.has(id)) watchers.set(id, new Set());
+  watchers.get(id).add(send);
+  return () => {
+    const set = watchers.get(id);
+    set?.delete(send);
+    if (set?.size === 0) watchers.delete(id);
+    void current(id)?.then((run) => run && touch(run));
+  };
+};
+
 export async function subscribe(id, send) {
   const run = await open(id);
   const older = (await chatFiles(id)).length > 1;
+  let off;
   await run.pi.send("get_messages", {}, ({ messages }) => {
-    send({ type: "history", messages: messages.map(asTyped).filter(shown).map(slim), more: older || messages[0]?.role === "compactionSummary", busy: run.busy, asking: run.asking });
-    run.listeners.add(send);
+    send({ type: "history", messages: messages.map(asTyped).filter(shown).map(slim).map((m) => linkImages(m)), more: older || messages[0]?.role === "compactionSummary", busy: run.busy, asking: run.asking });
+    off = listen(id, send);
   });
   touch(run);
-  return () => {
-    run.listeners.delete(send);
-    touch(run);
-  };
+  return off;
 }
 
 const refused = (err) => {
@@ -205,8 +250,8 @@ export async function prompt(id, { text = "", images = [], files = [], when = "n
   const blocks = toImages(images);
   const agent = await getAgent(id);
   if (agent.dailyTokens && ((await usageToday())[id] ?? 0) >= agent.dailyTokens) throw fail(429, overLimit(agent));
+  const paths = await uploadedFiles(agent, files);
   const run = await open(id);
-  const paths = await saveFiles(agent, files);
   const message = [text.trim(), ...paths.map((path) => `[Attached file: ${path}]`)].filter(Boolean).join("\n\n");
   if (!message && !blocks.length) throw fail(400, "The message is empty");
   if (run.busy && blocks.length) run.held.set(message, blocks);
@@ -238,18 +283,17 @@ async function requeueWithout(run, text, when) {
 }
 
 export async function promptAndWait(id, text) {
-  const run = await open(id);
+  await open(id);
   let last = null;
-  let listen;
-  const stop = () => (run.listeners.delete(listen), touch(run));
+  let off;
+  const stop = () => off();
   const ended = new Promise((resolve) => {
-    listen = (event) => {
+    off = listen(id, (event) => {
       if (event.type === "message_end" && event.message?.role === "assistant") last = event.message;
       if (event.type !== "agent_settled" && event.type !== "exit") return;
       stop();
       resolve(last && last.stopReason !== "error" && last.stopReason !== "aborted" ? replyText(last) : null);
-    };
-    run.listeners.add(listen);
+    });
   });
   await prompt(id, { text }).catch((err) => {
     stop();

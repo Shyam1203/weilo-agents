@@ -1,5 +1,5 @@
 import { getAgent } from "../agents/agents.mjs";
-import { agentsWithChats, newest, onDate, withAny } from "../agents/chats.mjs";
+import { agentsWithChats, newest, onDate, ranked } from "../agents/chats.mjs";
 import { fail } from "../common.mjs";
 import { FETCH_EXCERPT, FETCH_MAX_CHARS, FETCH_TOP } from "../config.mjs";
 import { pagesOf } from "./vault.mjs";
@@ -58,7 +58,7 @@ function render(blocks) {
   return `${out}\n</found>`;
 }
 
-const CANDIDATES = 2000;
+const CANDIDATES = 300;
 
 export async function fetchKnowledge({ query, agent, source }) {
   const who = typeof agent === "string" ? agent.trim() : "";
@@ -89,7 +89,7 @@ export async function fetchKnowledge({ query, agent, source }) {
   if (!who) {
     for (const page of await pagesOf()) docs.push({ at: "", score: score(words, tokens, { title: `${page.title} ${page.rel}`, body: page.body }), text: () => `Vault ${page.rel} "${page.title}"${page.sources.length ? ` (sources: ${page.sources.join(", ")})` : ""}: ${excerpt(page.body, tokens)}` });
   }
-  const found = await withAny(tokens, who ? scoped.map((f) => f.id) : null, CANDIDATES);
+  const found = await ranked(tokens, who ? scoped.map((f) => f.id) : null, CANDIDATES);
   for (const m of found) docs.push({ at: m.date, score: score(words, tokens, m), text: () => `${label(m)}${excerpt(m.body, tokens)}` });
   const top = docs.filter((d) => d.score > 0).sort((a, b) => b.score - a.score || b.at.localeCompare(a.at)).slice(0, FETCH_TOP);
   return render(top.map((d) => d.text()));

@@ -6,6 +6,7 @@ interface Block {
   text?: string;
   data?: string;
   mimeType?: string;
+  url?: string;
   id?: string;
   name?: string;
   arguments?: unknown;
@@ -84,6 +85,8 @@ function stream(messages: PiMessage[], e: StreamEvent): PiMessage[] {
   if (last?.role !== "assistant" || typeof last.content === "string") return messages;
   const [kind, step] = e.type.split("_");
   const content = [...last.content];
+  // The app is sent only tool calls as a reply is written; the text before one comes with message_end.
+  while (content.length < e.contentIndex) content.push({ type: "text", text: "" });
   const block = content[e.contentIndex];
   if (kind === "toolcall") {
     // Only show is drawn while its arguments arrive; other tools wait for the whole call.
@@ -121,8 +124,10 @@ export function reduce(state: Conversation, e: PiEvent): Conversation {
     case "message_start":
       if (!message || !shows(message) || has(state.messages, message)) return state;
       return { ...state, messages: [...state.messages, message], busy: state.busy || message.role === "user", open: true };
-    case "message_update":
-      return state.open && e.assistantMessageEvent ? { ...state, messages: stream(state.messages, e.assistantMessageEvent) } : state;
+    case "message_update": {
+      const messages = state.open && e.assistantMessageEvent ? stream(state.messages, e.assistantMessageEvent) : state.messages;
+      return messages === state.messages ? state : { ...state, messages };
+    }
     case "message_end": {
       if (!message || !shows(message)) return state;
       const messages = state.open ? state.messages.slice(0, -1) : state.messages;
@@ -156,7 +161,7 @@ export interface Message {
   at: number | null;
 }
 
-const imagesOf = (content: PiMessage["content"]) => (typeof content === "string" ? [] : content.filter((b) => b.type === "image").map((b) => `data:${b.mimeType};base64,${b.data}`));
+const imagesOf = (content: PiMessage["content"]) => (typeof content === "string" ? [] : content.filter((b) => b.type === "image" && (b.url || b.data)).map((b) => b.url ?? `data:${b.mimeType};base64,${b.data}`));
 
 interface ShownBlocks {
   kind: "show";
@@ -232,37 +237,52 @@ function routineNote(details: PiMessage["details"]) {
   return details?.action === "delete" ? "Routine deleted" : null;
 }
 
+// Items of a message that has arrived are kept, so a new event redraws only what changed: the
+// same item objects let the chat skip every other row.
+const kept = new WeakMap<PiMessage, { i: number; deps: unknown[]; items: Item[] }>();
+const same = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((x, k) => x === b[k]);
+
 export function itemsOf({ messages: live, earlier, open }: Conversation): Item[] {
   const messages = [...earlier, ...live];
   const results = new Map(messages.flatMap((m) => (m.role === "toolResult" && m.toolCallId ? [[m.toolCallId, m] as const] : [])));
   return joined(messages.flatMap((m, n): Item[] => {
     const i = n - earlier.length;
-    const at = m.timestamp ? m.timestamp / 1000 : null;
-    if (m.role === "compactionSummary") return [{ kind: "summary", id: `${i}`, role: "agent", text: "Summarized for the agent", at }];
-    if (m.role === "user") {
-      const text = textOf(m.content);
-      if (text.startsWith(ROUTINE_MARK)) return [{ kind: "note", id: `${i}`, role: "agent", text: `Routine: ${text.slice(ROUTINE_MARK.length).split("\n")[0]}`, at }];
-      return [{ kind: "message", id: `${i}`, role: "human", text, images: imagesOf(m.content), at }];
-    }
-    if (m.role !== "assistant" || typeof m.content === "string") return [];
     const arriving = open && n === messages.length - 1;
-    const working = arriving || m.content.some((b) => b.type === "toolCall" && b.name !== "show" && b.name !== "ask");
-    return m.content.flatMap((b, j): Item[] => {
-      if (b.type === "text" && working && !arriving && b.text?.trim()) return [{ kind: "steps", id: `${i}.${j}`, role: "agent", steps: [{ tool: "say", detail: b.text.trim() }], at }];
-      if (b.type === "text") return working ? [] : [{ kind: "message", id: `${i}.${j}`, role: "agent", text: b.text ?? "", images: [], at }];
-      if (b.type === "toolCall" && b.name === "show") return [{ kind: "show", id: `${i}.${j}`, role: "agent", blocks: blocksOf(b.arguments), streaming: arriving, at }];
-      if (b.type === "toolCall" && b.name === "ask") {
-        const { question, options } = (b.arguments ?? {}) as { question?: unknown; options?: unknown };
-        return [{ kind: "ask", id: `${i}.${j}`, role: "agent", question: String(question ?? ""), options: Array.isArray(options) ? options.map(String) : [], answer: b.id && results.has(b.id) ? textOf(results.get(b.id)!.content) : undefined, at }];
-      }
-      if (b.type === "toolCall" && b.name === "routine") {
-        const text = routineNote(b.id ? results.get(b.id)?.details : undefined);
-        return text ? [{ kind: "note", id: `${i}.${j}`, role: "agent", text, at }] : [];
-      }
-      const note = b.type === "toolCall" && b.name === "manage_agents" && b.id ? results.get(b.id)?.details?.note : undefined;
-      if (note) return [{ kind: "note", id: `${i}.${j}`, role: "agent", text: note, at }];
-      if (b.type === "toolCall" && b.name) return [{ kind: "steps", id: `${i}.${j}`, role: "agent", steps: [{ tool: b.name, detail: detailOf(b.name, b.arguments) }], at }];
-      return [];
-    });
+    if (arriving) return itemsFor(m, i, true, results);
+    const deps = typeof m.content === "string" ? [] : m.content.flatMap((b) => (b.type === "toolCall" && b.id ? [results.get(b.id)] : []));
+    const was = kept.get(m);
+    if (was && was.i === i && same(was.deps, deps)) return was.items;
+    const items = itemsFor(m, i, false, results);
+    kept.set(m, { i, deps, items });
+    return items;
   }));
+}
+
+function itemsFor(m: PiMessage, i: number, arriving: boolean, results: Map<string, PiMessage>): Item[] {
+  const at = m.timestamp ? m.timestamp / 1000 : null;
+  if (m.role === "compactionSummary") return [{ kind: "summary", id: `${i}`, role: "agent", text: "Summarized for the agent", at }];
+  if (m.role === "user") {
+    const text = textOf(m.content);
+    if (text.startsWith(ROUTINE_MARK)) return [{ kind: "note", id: `${i}`, role: "agent", text: `Routine: ${text.slice(ROUTINE_MARK.length).split("\n")[0]}`, at }];
+    return [{ kind: "message", id: `${i}`, role: "human", text, images: imagesOf(m.content), at }];
+  }
+  if (m.role !== "assistant" || typeof m.content === "string") return [];
+  const working = arriving || m.content.some((b) => b.type === "toolCall" && b.name !== "show" && b.name !== "ask");
+  return m.content.flatMap((b, j): Item[] => {
+    if (b.type === "text" && working && !arriving && b.text?.trim()) return [{ kind: "steps", id: `${i}.${j}`, role: "agent", steps: [{ tool: "say", detail: b.text.trim() }], at }];
+    if (b.type === "text") return working ? [] : [{ kind: "message", id: `${i}.${j}`, role: "agent", text: b.text ?? "", images: [], at }];
+    if (b.type === "toolCall" && b.name === "show") return [{ kind: "show", id: `${i}.${j}`, role: "agent", blocks: blocksOf(b.arguments), streaming: arriving, at }];
+    if (b.type === "toolCall" && b.name === "ask") {
+      const { question, options } = (b.arguments ?? {}) as { question?: unknown; options?: unknown };
+      return [{ kind: "ask", id: `${i}.${j}`, role: "agent", question: String(question ?? ""), options: Array.isArray(options) ? options.map(String) : [], answer: b.id && results.has(b.id) ? textOf(results.get(b.id)!.content) : undefined, at }];
+    }
+    if (b.type === "toolCall" && b.name === "routine") {
+      const text = routineNote(b.id ? results.get(b.id)?.details : undefined);
+      return text ? [{ kind: "note", id: `${i}.${j}`, role: "agent", text, at }] : [];
+    }
+    const note = b.type === "toolCall" && b.name === "manage_agents" && b.id ? results.get(b.id)?.details?.note : undefined;
+    if (note) return [{ kind: "note", id: `${i}.${j}`, role: "agent", text: note, at }];
+    if (b.type === "toolCall" && b.name) return [{ kind: "steps", id: `${i}.${j}`, role: "agent", steps: [{ tool: b.name, detail: detailOf(b.name, b.arguments) }], at }];
+    return [];
+  });
 }

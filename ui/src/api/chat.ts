@@ -1,9 +1,10 @@
-import { request } from "./http";
+import { imageDataUrl } from "../lib/attachments";
+import { request, RequestError } from "./http";
 
 export interface Outgoing {
   text: string;
   images: string[];
-  files: { name: string; data: string }[];
+  files: File[];
   /** While the agent works: "now" tells it before its next step, "later" waits until it finishes. */
   when?: "now" | "later";
 }
@@ -21,7 +22,25 @@ export interface Context {
   point: number;
 }
 
-export const send = (agentId: string, message: Outgoing) => request("POST", `/api/agents/${agentId}/message`, message);
+// Each file goes up as it is, then the message names where it was saved.
+async function upload(agentId: string, file: File) {
+  let res: Response;
+  try {
+    res = await fetch(`/api/agents/${agentId}/uploads?name=${encodeURIComponent(file.name)}`, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
+  } catch {
+    throw new Error("Cannot connect to Weilo Agents. Make sure it is running.");
+  }
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new RequestError(data?.error || `${file.name} was not sent (${res.status}).`, res.status, data?.pair === true);
+  return (data as { path: string }).path;
+}
+
+export async function send(agentId: string, { text, images, files, when }: Outgoing) {
+  const paths = await Promise.all(files.map((file) => upload(agentId, file)));
+  // A message sent again or edited can hold a chat image, which the app has as a link.
+  const pictures = await Promise.all(images.map(imageDataUrl));
+  return request("POST", `/api/agents/${agentId}/message`, { text, images: pictures, files: paths, when });
+}
 export const answerAsk = (agentId: string, requestId: string, value?: string) => request("POST", `/api/agents/${agentId}/answer`, { request: requestId, value });
 
 export const unqueue = (agentId: string, text: string, when: "now" | "later") => request("POST", `/api/agents/${agentId}/unqueue`, { text, when });

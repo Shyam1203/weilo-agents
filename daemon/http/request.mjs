@@ -20,7 +20,8 @@ export function guard({ headers }, path) {
   if (site && site !== "same-origin" && site !== "none" && !link) throw fail(403, "Not permitted");
 }
 
-export async function bodyOf(req, max = MAX_BODY) {
+export async function rawBodyOf(req, max = MAX_BODY) {
+  if (Number(req.headers["content-length"]) > max) throw fail(413, "The request is too large");
   const chunks = [];
   let size = 0;
   for await (const chunk of req) {
@@ -28,7 +29,11 @@ export async function bodyOf(req, max = MAX_BODY) {
     if (size > max) throw fail(413, "The request is too large");
     chunks.push(chunk);
   }
-  const text = Buffer.concat(chunks).toString("utf8");
+  return Buffer.concat(chunks, size);
+}
+
+export async function bodyOf(req, max = MAX_BODY) {
+  const text = (await rawBodyOf(req, max)).toString("utf8");
   try {
     const body = text ? JSON.parse(text) : {};
     return body && typeof body === "object" ? body : {};

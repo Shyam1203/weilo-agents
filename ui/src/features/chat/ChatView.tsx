@@ -42,7 +42,7 @@ interface Props {
 const TOP_PX = 400;
 
 export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onActivity, onLive, onOpenSettings }: Props) {
-  const chat = useChat(agent.id, onActivity);
+  const chat = useChat(agent.id);
   useEffect(() => onLive({ busy: chat.busy, doing: chat.doing }), [chat.busy, chat.doing]);
   useEffect(() => () => onLive(null), []);
   const wide = useMedia("(min-width: 1024px)");
@@ -206,7 +206,7 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
 
 const Side = ({ agent, routinesChanged, onTaken }: { agent: Agent; routinesChanged: number; onTaken: () => void }) => (
   <>
-    <BrowserPanel agentId={agent.id} agentName={agent.name} off={agent.disabled.includes("browser")} onTaken={onTaken} />
+    <BrowserPanel agentId={agent.id} agentName={agent.name} off={agent.disabled.includes("browser")} taken={!!agent.taken} open={!!agent.browserOpen} onTaken={onTaken} />
     <RoutinesPanel agentId={agent.id} agentName={agent.name} off={agent.disabled.includes("routines")} changed={routinesChanged} />
   </>
 );

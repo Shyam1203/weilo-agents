@@ -11,6 +11,15 @@ const readAsDataUrl = (blob: Blob) =>
 
 export const base64Of = async (file: File) => (await readAsDataUrl(file)).split(",")[1];
 
+/** An image as a data URL: one already is; a link (an image from the chat) is fetched first. */
+export async function imageDataUrl(url: string) {
+  if (url.startsWith("data:")) return url;
+  const res = await fetch(url).catch(() => null);
+  if (!res?.ok) throw new Error("An image of that message is no longer there. Remove it and try again.");
+  const blob = await res.blob();
+  return toImageDataUrl(new File([blob], "image", { type: blob.type }));
+}
+
 export async function toImageDataUrl(file: File): Promise<string> {
   let bitmap: ImageBitmap;
   try {

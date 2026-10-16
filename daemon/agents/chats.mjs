@@ -159,6 +159,19 @@ export function withAny(words, agents, limit) {
   return query(`SELECT ${COLUMNS} FROM messages WHERE ${where} ${of} ORDER BY at DESC LIMIT ?`, ...params, ...(agents ?? []), limit);
 }
 
+// The messages that best match the words (SQLite's bm25), for fetch_knowledge to score: not the
+// newest that hold any of them, which leave out an older and better match.
+export function ranked(words, agents, limit) {
+  const long = words.filter((w) => w.length >= 3);
+  if (!long.length) return withAny(words, agents, limit);
+  if (agents?.length === 0) return Promise.resolve([]);
+  const of = agents ? `AND m.agent IN (${agents.map(() => "?").join(", ")})` : "";
+  return query(
+    `SELECT m.agent, m.speaker, m.at, substr(m.at, 1, 10) AS date, m.body, m.isolated FROM words JOIN messages m ON m.id = words.rowid WHERE words MATCH ? ${of} ORDER BY bm25(words) LIMIT ?`,
+    long.map(phrase).join(" OR "), ...(agents ?? []), limit,
+  );
+}
+
 export const onDate = (agent, date) => query(`SELECT ${COLUMNS} FROM messages WHERE agent = ? AND at >= ? AND at < ? ORDER BY at`, agent, date, `${date}~`);
 export const newest = async (agent, limit) => (await query(`SELECT ${COLUMNS} FROM messages WHERE agent = ? ORDER BY at DESC LIMIT ?`, agent, limit)).reverse();
 export const latest = (agent) => read("SELECT max(at) AS at FROM messages WHERE agent = ?", agent)[0]?.at ?? null;
