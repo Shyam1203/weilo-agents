@@ -3,6 +3,7 @@ import { existsSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { join } from "node:path";
 import { BIN, MAX_VIEW_MESSAGE, SCREEN, SCREEN_RESTART_MS } from "../config.mjs";
+import { splitOn } from "../common.mjs";
 import { accept, frame, readMessages } from "../http/websocket.mjs";
 import { BROWSER, folder, setOwner, spawnAs } from "../users.mjs";
 
@@ -92,12 +93,7 @@ function attachPipe(child) {
   const [, , , input, output] = child.stdio;
   input.on("error", () => {});
   chromium = { write: (text) => input.write(`${text}\0`) };
-  let pending = "";
-  output.setEncoding("utf8").on("data", (chunk) => {
-    const messages = (pending + chunk).split("\0");
-    pending = messages.pop();
-    for (const message of messages) client?.write(frame(Buffer.from(message), 0x1));
-  });
+  output.setEncoding("utf8").on("data", splitOn("\0", (message) => client?.write(frame(Buffer.from(message), 0x1))));
   child.on("exit", () => {
     chromium = null;
     client?.destroy();

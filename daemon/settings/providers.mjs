@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { piRpc } from "../agents/pi.mjs";
 import { AGENT_DIR, AUTH, fail, PI_ENV, readJson, SETTINGS, updateJson } from "../common.mjs";
-import { BIN, MODELS_FOR_MS, MODELS_TIMEOUT_MS, PROVIDERS } from "../config.mjs";
+import { BIN, MODELS_FOR_MS, MODELS_TIMEOUT_MS, PI_PACKAGE, PROVIDERS } from "../config.mjs";
 import { forgetAuth } from "../gateway/models.mjs";
 import { setReserves } from "./compaction.mjs";
 
@@ -18,17 +18,22 @@ export async function listProviders() {
   return [...known, ...others];
 }
 
+async function changeAuth(change) {
+  const { FileAuthStorageBackend } = await import(`${PI_PACKAGE}/dist/core/auth-storage.js`);
+  await new FileAuthStorageBackend(AUTH).withLockAsync(async (text) => ({ result: undefined, next: JSON.stringify(change(text ? JSON.parse(text) : {}), null, 2) }));
+}
+
 export async function saveKey(id, key) {
   check(id);
   if (typeof key !== "string" || !key.trim()) throw fail(400, "Type a key");
-  await updateJson(AUTH, (auth) => ({ ...auth, [id]: { type: "api_key", key: key.trim() } }));
+  await changeAuth((auth) => ({ ...auth, [id]: { type: "api_key", key: key.trim() } }));
   forgetModels();
   void syncCompaction();
 }
 
 export async function removeKey(id) {
   check(id);
-  await updateJson(AUTH, ({ [id]: _removed, ...rest }) => rest);
+  await changeAuth(({ [id]: _removed, ...rest }) => rest);
   forgetModels();
 }
 

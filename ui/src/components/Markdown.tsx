@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -14,10 +15,13 @@ const BASE: Components = {
   ),
 };
 
-export function Markdown({ text, components }: { text: string; components?: Components }) {
+const PLUGINS = [remarkGfm];
+
+export const Markdown = memo(function Markdown({ text, components }: { text: string; components?: Components }) {
+  const all = useMemo(() => (components ? { ...BASE, ...components } : BASE), [components]);
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components ? { ...BASE, ...components } : BASE}>
+    <ReactMarkdown remarkPlugins={PLUGINS} components={all}>
       {text}
     </ReactMarkdown>
   );
-}
+});

@@ -33,7 +33,7 @@ export function RoutinesPanel({ agentId, agentName, off, changed }: Props) {
   const refresh = useCallback(() => listRoutines(agentId).then((list) => (setRoutines(list), setError(null)), (err) => setError(err.message)), [agentId]);
   useEffect(() => {
     void refresh();
-    const timer = setInterval(() => void refresh(), POLL_MS);
+    const timer = setInterval(() => document.visibilityState === "visible" && void refresh(), POLL_MS);
     return () => clearInterval(timer);
   }, [refresh, changed]);
 

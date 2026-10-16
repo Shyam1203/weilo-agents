@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { access, readdir, readFile, rename, rm } from "node:fs/promises";
+import { access, lstat, readdir, readFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { APP, BUNDLED, fail, HOMES, ISOLATED, ISOLATED_HOMES, ISOLATED_SESSIONS, ORDER, PROFILES, readJson, RUN, SESSIONS, slug, updateJson, WORKSPACE } from "../common.mjs";
 import { AGENTS_GID, FIRST_AGENT_UID, ISOLATED_HOME, REGULAR_HOME, SHARED_TOOLS } from "../config.mjs";
@@ -68,6 +68,7 @@ async function move(before, after) {
   for (const [, to] of pairs) {
     if (await access(to).then(() => true, () => false)) throw fail(409, `${to} already exists. Rename or remove it, then save again.`);
   }
+  for (const [from] of pairs) if ((await lstat(from).catch(() => null))?.isSymbolicLink()) throw fail(409, `${from} is a link, not a folder. Remove it, then save again.`);
   for (const [from, to] of pairs) await rename(from, to).catch((err) => err.code === "ENOENT" || Promise.reject(err));
   await tree(homeOf(after), after.uid, homeGroupOf(after), homeKindOf(after).tree);
 }
@@ -119,9 +120,20 @@ export async function createAgent(input) {
   return getAgent(id);
 }
 
-export async function updateAgent(id, patch) {
+const changing = new Map();
+export function updateAgent(id, patch, asked) {
+  const run = (changing.get(id) ?? Promise.resolve()).then(() => change(id, patch, asked));
+  const tail = run.catch(() => {});
+  changing.set(id, tail);
+  void tail.then(() => changing.get(id) === tail && changing.delete(id));
+  return run;
+}
+
+async function change(id, patch, asked) {
   const saved = await getAgent(id);
-  const agent = withoutBrowser(clean({ ...saved, ...patch }), saved);
+  const next = typeof patch === "function" ? patch(saved) : patch;
+  if (asked && Object.keys(next).some((f) => JSON.stringify(saved[f]) !== JSON.stringify(asked[f]))) throw fail(409, `${saved.name} was changed while the user was asked. Look again, and ask again if it is still needed.`);
+  const agent = withoutBrowser(clean({ ...saved, ...next }), saved);
   await extensionsOf(agent);
   if (agent.isolated !== saved.isolated) await move(saved, { ...saved, isolated: agent.isolated });
   await save(id, { ...agent, folder: saved.folder, uid: saved.uid });

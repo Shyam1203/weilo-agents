@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { test } from "node:test";
+import { splitOn } from "../common.mjs";
 import { frame, readMessages } from "../http/websocket.mjs";
 
 const masked = (payload, opcode, fin = true) => {
@@ -37,4 +38,25 @@ test("frames carry their length in the right form", () => {
   assert.deepEqual([...frame(Buffer.from("ab")).subarray(0, 2)], [0x82, 2]);
   assert.deepEqual([...frame(Buffer.alloc(300)).subarray(0, 4)], [0x82, 126, 1, 44]);
   assert.equal(frame(Buffer.alloc(70000)).readBigUInt64BE(2), 70000n);
+});
+
+test("every split of the bytes gives the same messages, one byte at a time too", () => {
+  const bytes = Buffer.concat([masked(Buffer.from("one"), 0x1), masked(Buffer.alloc(60000, 98), 0x2), masked(Buffer.from("two"), 0x1)]);
+  for (const step of [1, 2, 3, 9, 4096, bytes.length]) {
+    const s = socket();
+    const got = [];
+    readMessages(s, bytes.subarray(0, 1), 1 << 20, (m) => got.push(m.length), () => got.push("closed"));
+    for (let i = 1; i < bytes.length; i += step) s.emit("data", bytes.subarray(i, i + step));
+    assert.deepEqual(got, [3, 60000, 3], `step ${step}`);
+  }
+});
+
+test("lines are split however the text arrives", () => {
+  const text = "a\n\nbc\nd" + "e".repeat(5000) + "\nf";
+  for (const step of [1, 2, 7, 4096, text.length]) {
+    const got = [];
+    const feed = splitOn("\n", (line) => got.push(line));
+    for (let i = 0; i < text.length; i += step) feed(text.slice(i, i + step));
+    assert.deepEqual(got, ["a", "", "bc", `d${"e".repeat(5000)}`], `step ${step}`);
+  }
 });

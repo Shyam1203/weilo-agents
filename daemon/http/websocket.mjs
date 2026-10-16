@@ -20,10 +20,12 @@ export function frame(payload, opcode = 0x2) {
 }
 
 export function readMessages(socket, head, max, onMessage, onClose) {
-  let buffer = head?.length ? Buffer.from(head) : Buffer.alloc(0);
+  let chunks = head?.length ? [Buffer.from(head)] : [];
+  let held = head?.length ?? 0;
+  let need = 2;
   let parts = [];
   let size = 0;
-  const read = () => {
+  const next = (buffer) => {
     while (buffer.length >= 2) {
       const fin = (buffer[0] & 0x80) !== 0;
       const opcode = buffer[0] & 0x0f;
@@ -31,16 +33,16 @@ export function readMessages(socket, head, max, onMessage, onClose) {
       let at = 2;
       if (length === 126) (length = buffer.length >= 4 ? buffer.readUInt16BE(2) : -1), (at = 4);
       else if (length === 127) (length = buffer.length >= 10 ? Number(buffer.readBigUInt64BE(2)) : -1), (at = 10);
-      if (length < 0) return;
-      if (size + length > max) return onClose();
+      if (length < 0) return [buffer, at];
+      if (size + length > max) return (onClose(), null);
       const masked = (buffer[1] & 0x80) !== 0;
       const after = at + (masked ? 4 : 0) + length;
-      if (buffer.length < after) return;
+      if (buffer.length < after) return [buffer, after];
       const mask = masked ? buffer.subarray(at, at + 4) : null;
       const payload = Buffer.from(buffer.subarray(at + (masked ? 4 : 0), after));
       if (mask) for (let i = 0; i < payload.length; i++) payload[i] ^= mask[i & 3];
       buffer = buffer.subarray(after);
-      if (opcode === 0x8) return onClose();
+      if (opcode === 0x8) return (onClose(), null);
       if (opcode === 0x9) socket.write(frame(payload, 0xa));
       else if (opcode <= 0x2) {
         parts.push(payload);
@@ -52,10 +54,17 @@ export function readMessages(socket, head, max, onMessage, onClose) {
         }
       }
     }
+    return [buffer, 2];
+  };
+  const read = () => {
+    const left = next(chunks.length === 1 ? chunks[0] : Buffer.concat(chunks, held));
+    if (!left) return void ([chunks, held, need] = [[], 0, Infinity]);
+    [chunks, held, need] = [[left[0]], left[0].length, left[1]];
   };
   socket.on("data", (data) => {
-    buffer = Buffer.concat([buffer, data]);
-    read();
+    chunks.push(data);
+    held += data.length;
+    if (held >= need) read();
   });
   read();
 }

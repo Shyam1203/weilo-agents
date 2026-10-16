@@ -32,7 +32,14 @@ export function App() {
     reload();
   }, [reload]);
 
-  const reloadAgents = useCallback(() => listAgents().then((agents) => setData((d) => d && { ...d, agents }), () => {}), []);
+  const running = useRef<Promise<void>>(Promise.resolve());
+  const queued = useRef<Promise<void> | null>(null);
+  const loadAgents = () =>
+    listAgents().then((agents) => {
+      const json = JSON.stringify(agents);
+      setData((d) => (d && JSON.stringify(d.agents) !== json ? { ...d, agents } : d));
+    }, () => {});
+  const reloadAgents = useCallback(() => (queued.current ??= running.current.then(() => ((queued.current = null), (running.current = loadAgents())))), []);
 
   const keys = data?.providers.filter((p) => p.connected).map((p) => p.id).join();
   useEffect(() => {

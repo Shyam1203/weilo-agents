@@ -1,17 +1,16 @@
 import { execFile, spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { chmod, chown, lstat, mkdir, open, readdir, stat } from "node:fs/promises";
+import { chmod, chown, lstat, mkdir, open, readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { AGENT_DIR, EXTENSIONS, HOMES, ISOLATED, ISOLATED_HOMES, ISOLATED_SESSIONS, PLUGINS_CWD, PLUGINS_HOME, KNOWLEDGE, PROFILES, ROOT, RUN, SCRATCH, SESSIONS, SKILLS, TOOLS, WORKSPACE } from "./common.mjs";
-import { AGENTS_GID, BIN, BROWSER_UID, CURATOR_UID, ISOLATED_HOME, PLUGINS_UID, SYSTEM_PATH } from "./config.mjs";
+import { AGENT_DIR, EXTENSIONS, HOMES, ISOLATED, ISOLATED_HOMES, ISOLATED_SESSIONS, PLUGIN_USERS, PLUGINS_CWD, PLUGINS_HOME, KNOWLEDGE, PROFILES, ROOT, RUN, SCRATCH, SESSIONS, SKILLS, TOOLS, updateJson, WORKSPACE } from "./common.mjs";
+import { AGENTS_GID, BIN, BROWSER_UID, CURATOR_UID, ISOLATED_HOME, PLUGIN_USERS_FROM, SYSTEM_PATH } from "./config.mjs";
 
 const run = promisify(execFile);
 export const isRoot = process.getuid?.() === 0;
 
 export const BROWSER = { uid: BROWSER_UID, gid: BROWSER_UID, groups: [] };
 export const CURATOR = { uid: CURATOR_UID, gid: CURATOR_UID, groups: [] };
-export const PLUGINS = { uid: PLUGINS_UID, gid: PLUGINS_UID, groups: [AGENTS_GID] };
 
 export const sharedTools = { PATH: `${SYSTEM_PATH}:${TOOLS}/bin`, npm_config_prefix: TOOLS, PYTHONUSERBASE: TOOLS };
 export const ownTools = (home) => ({ PATH: `${SYSTEM_PATH}:${home}/.local/bin`, npm_config_prefix: `${home}/.local`, PYTHONUSERBASE: `${home}/.local` });
@@ -47,11 +46,43 @@ export const setOwner = (path, uid, gid, mode) => (isRoot ? chown(path, uid, gid
 
 export const shareWithAgents = (path) => setOwner(path, 0, AGENTS_GID, 0o640);
 
+export async function inFolder(path, job) {
+  const handle = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  try {
+    return await job(`/proc/${process.pid}/fd/${handle.fd}/`);
+  } finally {
+    await handle.close();
+  }
+}
+
+export const writeIn = (dir, name, data, uid, gid, mode) =>
+  inFolder(dir, async (at) => {
+    const handle = await open(`${at}${name}`, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, mode);
+    try {
+      await handle.writeFile(data);
+      if (isRoot) await handle.chown(uid, gid);
+      await handle.chmod(mode);
+    } finally {
+      await handle.close();
+    }
+  });
+
 export async function tree(path, uid, gid, mode) {
   if (!isRoot) return;
-  await run(BIN.chown, ["-R", `${uid}:${gid}`, path]).catch(() => {});
-  await run(BIN.chmod, ["-R", mode, path]).catch(() => {});
-  await run(BIN.find, [path, "-type", "d", "-exec", BIN.chmod, "g+s", "{}", "+"]).catch(() => {});
+  await inFolder(path, async (at) => {
+    await run(BIN.chown, ["-R", `${uid}:${gid}`, at]).catch(() => {});
+    await run(BIN.chmod, ["-R", mode, at]).catch(() => {});
+    await run(BIN.find, [at, "-type", "d", "-exec", BIN.chmod, "g+s", "{}", "+"]).catch(() => {});
+  }).catch(() => {});
+}
+
+export async function pluginUser(name) {
+  if (!/^[\w-]+$/.test(name)) throw new Error(`Not a plugin name: ${name}`);
+  const numbers = await updateJson(PLUGIN_USERS, (all) => (Object.hasOwn(all, name) ? all : { ...all, [name]: Math.max(-1, ...Object.values(all)) + 1 }));
+  const uid = PLUGIN_USERS_FROM + numbers[name];
+  const home = join(PLUGINS_HOME, name);
+  await folder(home, uid, uid, 0o700);
+  return { user: { uid, gid: uid, groups: [AGENTS_GID] }, home };
 }
 
 export async function secure(agents) {
@@ -66,13 +97,13 @@ export async function secure(agents) {
   }
   await folder(PROFILES, 0, AGENTS_GID, 0o750);
   await folder(SESSIONS, 0, AGENTS_GID, 0o750);
-  await folder(SKILLS, 0, AGENTS_GID, 0o2770);
+  await folder(SKILLS, 0, AGENTS_GID, 0o3770);
   await folder(EXTENSIONS, 0, AGENTS_GID, 0o2750);
   for (const agent of agents) {
     await folder(join(PROFILES, agent.id), 0, agent.uid, 0o750);
     await setOwner(join(PROFILES, agent.id, "agent.json"), 0, agent.uid, 0o640);
   }
-  await folder(WORKSPACE, 0, AGENTS_GID, 0o2770);
+  await folder(WORKSPACE, 0, AGENTS_GID, 0o3770);
   await folder(ISOLATED, 0, AGENTS_GID, 0o750);
   await folder(ISOLATED_SESSIONS, 0, 0, 0o711);
   await folder(ISOLATED_HOMES, 0, 0, 0o711);
@@ -88,7 +119,8 @@ export async function secure(agents) {
   await folder(SCRATCH, 0, AGENTS_GID, 0o751);
   await folder(RUN, 0, AGENTS_GID, 0o751);
   await folder(join(RUN, "pi"), 0, AGENTS_GID, 0o751);
-  await folder(PLUGINS_HOME, PLUGINS_UID, PLUGINS_UID, 0o700);
+  await folder(PLUGINS_HOME, 0, 0, 0o711);
+  await rm(join(PLUGINS_HOME, "mcp.json"), { force: true });
   await folder(PLUGINS_CWD, 0, 0, 0o755);
   const tools = await stat(TOOLS).catch(() => null);
   if (tools && tools.gid !== AGENTS_GID) await tree(TOOLS, 0, AGENTS_GID, "g+rwX,o+rX");

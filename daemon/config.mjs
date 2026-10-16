@@ -34,10 +34,10 @@ export const USAGE_SHOWN = 14;
 
 export const BROWSER_UID = 1000;
 export const CURATOR_UID = 1100;
-export const PLUGINS_UID = 1200;
 export const AGENTS_GID = 2000;
 export const FIRST_AGENT_UID = 2001;
 export const PLUGIN_UID_OFFSET = 100_000;
+export const PLUGIN_USERS_FROM = 300_000;
 export const REGULAR_HOME = { mode: 0o2770, tree: "ug+rwX,o-rwx", file: 0o660 };
 export const ISOLATED_HOME = { mode: 0o2775, tree: "ug+rwX,o+rX,o-w", file: 0o664 };
 export const SYSTEM_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";

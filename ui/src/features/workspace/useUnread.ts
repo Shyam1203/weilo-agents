@@ -23,7 +23,8 @@ export function useUnread(agents: Agent[], open?: string) {
   for (const { id, last } of agents) {
     if (seen.current[id] === undefined || (visible && id === open)) seen.current[id] = last?.at ?? 0;
   }
-  useEffect(() => write(KEYS.seen, JSON.stringify(seen.current)));
+  const json = JSON.stringify(seen.current);
+  useEffect(() => write(KEYS.seen, json), [json]);
 
   return new Set(agents.filter(({ id, last }) => last?.role === "assistant" && last.at > seen.current[id]).map((a) => a.id));
 }

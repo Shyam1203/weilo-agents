@@ -4,7 +4,7 @@ Weilo Agents runs AI agents on your own computer with your keys and your data, s
 
 - The app listens on `127.0.0.1` only, checks `Host`, `Origin` and `Sec-Fetch-Site`, and answers only paired devices.
 - No agent holds a provider's API key, an account sign-in's token or a plugin's secret: the app adds them to the agent's requests.
-- Each agent is a Linux user of its own. Isolated agents, and the plugins they use, run in a separate sandbox container, each in namespaces of its own (processes, mounts, `/tmp`), with only their own folder. Set `WEILO_SANDBOX_RUNTIME=runsc` to give the sandbox gVisor's kernel.
+- Each agent is a Linux user of its own, and so is each plugin program a regular agent uses, so one plugin cannot read another's secrets. Root never follows a link an agent put in place of a folder. Isolated agents, and the plugins they use, run in a separate sandbox container, each in namespaces of its own (processes, mounts, `/tmp`), with only their own folder. Set `WEILO_SANDBOX_RUNTIME=runsc` to give the sandbox gVisor's kernel.
 - Every change made through the API, and every question an agent asks you, is recorded in `~/.weilo-agents/agent/audit.jsonl` (Settings > Security & devices).
 
 ## Reporting a vulnerability

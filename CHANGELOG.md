@@ -4,6 +4,13 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 ## Unreleased
 
+- Security: each plugin that runs as a program has a Linux user of its own, so one plugin can no longer read another's secrets. Settings > Plugins checks each plugin on its own, as that plugin's user.
+- Security: the app no longer follows a link an agent put in place of a folder when it hands a folder to an agent, moves one (to or from isolated) or saves an approved skill; it leaves the link alone or refuses. An agent can no longer rename or delete another agent's folder in the workspace, or a skill it does not own.
+- Saving or removing a provider key while a signed-in account's token is being renewed no longer loses the new key or brings back the removed one.
+- A connection dropped at the wrong moment no longer stops the app.
+- What you approve is what happens: changes to an agent apply one at a time, and a change you approved is refused, not applied over a newer one, if the agent or the settings changed while you were deciding. A skill an agent saves no longer undoes a change made to its skills meanwhile.
+- Faster chats: a long chat opens with less to load (no thinking or tool details it does not show), each reply's text is formatted once instead of on every streamed word (a long chat no longer freezes while the agent writes), and very large messages and browser frames are handled in a fraction of the time. The browser and routines panels stop checking while the app is in the background.
+- Faster first load: the app's files are sent compressed and only when they changed.
 - Agents never see your account sign-ins any more. An agent on a provider you signed in to with an account (Claude Pro or Max, ChatGPT, GitHub Copilot) gets a stand-in made from its own key, and the app swaps in the real token, kept fresh, as each request passes through it. Adding or removing a key, or signing in, restarts the agents as their replies end, so they pick it up. Isolated agents can use those providers safely now, and Settings no longer warns about them.
 - Settings > Usage: tokens today and over the last 14 days with their estimated cost, a chart of each day's tokens by agent, and a row per agent with today's tokens, its daily limit, 14 days' tokens and cost. The cost is an estimate at the provider's API prices; a sign-in plan bills differently.
 - Settings is grouped: You (About you, Memory), Models (Providers, Usage), What agents can use (Skills, Plugins, Extensions, Browser) and App. Security & devices has the paired devices, the checks and the activity on one page; General has the appearance, notifications and About.
