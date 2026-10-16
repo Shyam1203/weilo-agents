@@ -17,7 +17,7 @@ const DECLINE = "Don't";
 const pick = (body) => Object.fromEntries(FIELDS.filter((f) => body[f] !== undefined).map((f) => [f, body[f]]));
 const list = (items) => (items.length ? items.join(", ") : "none");
 
-export const extensionsIn = (agent) => [...Object.keys(BUNDLED).filter((id) => !agent.disabled.includes(id)), ...agent.extensions];
+const extensionsIn = (agent) => [...Object.keys(BUNDLED).filter((id) => !agent.disabled.includes(id)), ...agent.extensions];
 /** @param {{ extensions?: string[], [field: string]: any }} request */
 const asProfile = ({ extensions, ...rest }) =>
   extensions === undefined ? rest : { ...rest, extensions: extensions.filter((id) => !Object.hasOwn(BUNDLED, id)), disabled: Object.keys(BUNDLED).filter((id) => !extensions.includes(id)) };
@@ -47,7 +47,7 @@ async function known(request) {
   if (missing.length) throw fail(400, `There is no skill, plugin or extension ${list(missing)}. List the agents to see them.`);
 }
 
-export function more(asker, agent, before) {
+function more(asker, agent, before) {
   const extra = [];
   if (providerOf(agent.model) !== providerOf(asker.model)) extra.push(`the provider ${providerOf(agent.model)}`);
   const plugins = agent.plugins.filter((p) => !asker.plugins.includes(p));

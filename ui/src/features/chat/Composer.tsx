@@ -17,6 +17,8 @@ import { continueList } from "./lists";
 
 const MAX_HEIGHT = 200;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
+// Dictated words go after what is typed, with a space between.
+const joined = (typed: string, heard: string) => (typed && !/\s$/.test(typed) ? `${typed} ${heard}` : typed + heard);
 
 export interface Draft {
   text: string;
@@ -60,8 +62,9 @@ export function Composer({ agentId, onEdit, shortcuts, to, avatar, doing, busy, 
   const typing = /^\/([^\s/]*)$/.exec(text)?.[1];
   const open = typing !== undefined && closedFor !== text;
   const offered = open ? shortcuts.filter((s) => matches(typing.replace(/^skill:/, ""), s.label, s.group)) : [];
+  const highlighted = Math.min(active, offered.length - 1);
   const hint = open && !offered.length ? (shortcuts.length ? "No match." : "No skills or plugins are on for this agent.") : undefined;
-  const dictation = useDictation((heard) => setText((current) => (current && !/\s$/.test(current) ? `${current} ${heard}` : current + heard)));
+  const dictation = useDictation((heard) => setText((current) => joined(current, heard)));
 
   useLayoutEffect(() => {
     const el = box.current;
@@ -159,7 +162,7 @@ export function Composer({ agentId, onEdit, shortcuts, to, avatar, doing, busy, 
         event.preventDefault();
         return setActive((i) => (i + step + offered.length) % offered.length);
       }
-      const chosen = offered[Math.min(active, offered.length - 1)];
+      const chosen = offered[highlighted];
       const typedOut = event.key === "Enter" && text.trim() === chosen.insert.trim();
       if ((event.key === "Enter" || event.key === "Tab") && !typedOut) {
         event.preventDefault();
@@ -219,7 +222,7 @@ export function Composer({ agentId, onEdit, shortcuts, to, avatar, doing, busy, 
       onDrop={onDrop}
       className="relative flex flex-col"
     >
-      {open && <CommandMenu shortcuts={offered} active={Math.min(active, offered.length - 1)} onPick={pick} hint={hint} onEdit={shortcuts.length ? undefined : onEdit} />}
+      {open && <CommandMenu shortcuts={offered} active={highlighted} onPick={pick} hint={hint} onEdit={shortcuts.length ? undefined : onEdit} />}
       {busy && (
         <p role="status" className="absolute bottom-full left-3 mb-1.5 flex animate-rise items-center gap-1.5 rounded-full bg-raised py-0.5 pr-2.5 pl-0.5 text-xs text-ink-2 ring-1 ring-line">
           <Avatar spec={avatar} size={26} working doing={doing} />
@@ -276,7 +279,7 @@ export function Composer({ agentId, onEdit, shortcuts, to, avatar, doing, busy, 
           <textarea
             ref={box}
             rows={1}
-            value={dictation.listening && dictation.interim ? `${text}${text && !/\s$/.test(text) ? " " : ""}${dictation.interim}` : text}
+            value={dictation.listening && dictation.interim ? joined(text, dictation.interim) : text}
             onChange={(e) => (setText(e.target.value), setActive(0), setError(null))}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
@@ -289,7 +292,7 @@ export function Composer({ agentId, onEdit, shortcuts, to, avatar, doing, busy, 
             role="combobox"
             aria-expanded={offered.length > 0}
             aria-controls={offered.length ? COMMAND_LIST : undefined}
-            aria-activedescendant={offered.length ? `${COMMAND_LIST}-${Math.min(active, offered.length - 1)}` : undefined}
+            aria-activedescendant={offered.length ? `${COMMAND_LIST}-${highlighted}` : undefined}
             className="block min-w-0 flex-1 resize-none bg-transparent px-1 py-1.5 text-[15px] leading-6 outline-none placeholder:truncate placeholder:text-ink-3 focus-visible:outline-none"
           />
           {meter}

@@ -17,7 +17,10 @@ const of = (agent) => agents.get(agent) ?? agents.set(agent, { window: null, tak
 
 let connecting;
 let current = null;
-const forgetWindows = () => {
+// The browser went away: connect afresh next time, and no agent has a window any more.
+const forget = () => {
+  current = null;
+  connecting = undefined;
   for (const [agent, record] of agents) if (record.window) (record.window = null), tellAgent(agent, { browserOpen: false });
 };
 const connected = () =>
@@ -32,10 +35,7 @@ async function connect() {
   const browser = await playwright().chromium.connectOverCDP(cdpAddress(PORT), { timeout: CONNECT_TIMEOUT_MS });
   current = browser;
   browser.on("disconnected", () => {
-    if (current !== browser) return;
-    current = null;
-    connecting = undefined;
-    forgetWindows();
+    if (current === browser) forget();
   });
   return { ctx: browser.contexts()[0], root: await browser.newBrowserCDPSession() };
 }
@@ -292,9 +292,7 @@ async function sweep() {
   const last = Math.max(lastUse, ...records.map((r) => r.used));
   if (Date.now() - last <= BROWSER_IDLE_MS || records.some((r) => r.taken !== undefined)) return;
   sleepScreen();
-  current = null;
-  connecting = undefined;
-  forgetWindows();
+  forget();
 }
 
 let sweeping = false;

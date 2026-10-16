@@ -46,7 +46,7 @@ export function openIndex(path = join(AGENT_DIR, "index", "chats.db")) {
 }
 
 
-export function said(line) {
+function said(line) {
   if (!ROLE.test(line.slice(0, 300))) return null;
   let entry;
   try {

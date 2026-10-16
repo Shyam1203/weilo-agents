@@ -34,8 +34,8 @@ export async function folder(path, uid, gid, mode) {
   }
 }
 
-export async function newFile(path, data, uid, gid, mode) {
-  const handle = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, mode);
+async function writeOwned(path, flag, data, uid, gid, mode) {
+  const handle = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW | flag, mode);
   try {
     await handle.writeFile(data);
     if (isRoot) await handle.chown(uid, gid);
@@ -45,11 +45,13 @@ export async function newFile(path, data, uid, gid, mode) {
   }
 }
 
+export const newFile = (path, data, uid, gid, mode) => writeOwned(path, constants.O_EXCL, data, uid, gid, mode);
+
 export const setOwner = (path, uid, gid, mode) => (isRoot ? chown(path, uid, gid).then(() => chmod(path, mode), () => {}) : Promise.resolve());
 
 export const shareWithAgents = (path) => setOwner(path, 0, AGENTS_GID, 0o640);
 
-export async function inFolder(path, job) {
+async function inFolder(path, job) {
   const handle = await open(path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
   try {
     return await job(`/proc/${process.pid}/fd/${handle.fd}/`);
@@ -58,17 +60,7 @@ export async function inFolder(path, job) {
   }
 }
 
-export const writeIn = (dir, name, data, uid, gid, mode) =>
-  inFolder(dir, async (at) => {
-    const handle = await open(`${at}${name}`, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, mode);
-    try {
-      await handle.writeFile(data);
-      if (isRoot) await handle.chown(uid, gid);
-      await handle.chmod(mode);
-    } finally {
-      await handle.close();
-    }
-  });
+export const writeIn = (dir, name, data, uid, gid, mode) => inFolder(dir, (at) => writeOwned(`${at}${name}`, constants.O_TRUNC, data, uid, gid, mode));
 
 export async function tree(path, uid, gid, mode) {
   if (!isRoot) return;
