@@ -1,4 +1,8 @@
+import { readFileSync } from "node:fs";
 import { daemonTool, list, note, object, str } from "./tool.mjs";
+
+// Generated from the UI's component library: npm run openui-prompt --prefix ui
+const OPENUI = readFileSync(new URL("./openui-prompt.md", import.meta.url), "utf8");
 
 const cell = { anyOf: [{ type: "string" }, { type: "number" }] };
 const kind = (name) => ({ type: "string", enum: [name] });
@@ -18,6 +22,7 @@ const BLOCKS = [
   object({ type: kind("buttons"), options: list(object({ label: str, message: note("Sent as the user's reply when pressed. Defaults to the label.") }, ["label"])) }, ["type", "options"]),
   object({ type: kind("file"), path: note("A file you made: its path from your folder, or in full."), name: note("Shown instead of the file's name.") }, ["type", "path"]),
   object({ type: kind("page"), title: str, html: note("One complete HTML document, with its CSS and JavaScript inline.") }, ["type", "html"]),
+  object({ type: kind("openui"), source: note("An OpenUI Lang program; see below.") }, ["type", "source"]),
 ];
 
 const DESCRIPTION = `Show the user something to look at or use, instead of describing it in text. Blocks appear in the chat in order; add a short text reply as well.
@@ -27,8 +32,11 @@ const DESCRIPTION = `Show the user something to look at or use, instead of descr
 - chart: bar or line, one value per label.
 - buttons: short choices; pressing one sends its message as the user's reply. When you end a reply by offering a few next steps ("Want me to add X, or compare Y?"), show them as buttons too, so the user can tap one instead of typing.
 - file: a file you made in the workspace, for the user to download (pictures show in the chat).
+- openui: a layout of the app's own components (cards, metrics, tables, charts, forms, buttons) written in OpenUI Lang. Use it for a form the user fills in, or several of those things laid out together; it draws while you write it.
 - page: a small app of your own (calculator, form, game, visual) as one self-contained HTML document. It runs in a sandbox: it can load scripts, styles, fonts, images and data from https:// addresses (maps, chart libraries...), but cannot reach the app, the workspace or the user's files, and cannot open frames. Never put the user's private information into an address. Call weilo.reply("text") from a click handler to send the user's reply to you.
-When the blocks let the user choose (cards with a message, or buttons), end your turn right after the show and wait for the choice: do not ask another question or carry on, or the choice can no longer be made.`;
+When the blocks let the user choose (cards with a message, buttons, or an openui block with a form or buttons), end your turn right after the show and wait for the choice: do not ask another question or carry on, or the choice can no longer be made.
+
+${OPENUI}`;
 
 const ASK = `Ask the user a question and wait for the answer. Give options when the answer is one of a few choices (they pick one); leave them out to let the user type a short answer. Ask only when you cannot continue without the answer.`;
 
@@ -96,7 +104,7 @@ export default function (pi) {
     description: DESCRIPTION,
     parameters: object({ blocks: { ...list({ anyOf: BLOCKS }), description: "What to show, top to bottom." } }, ["blocks"]),
     async execute(_id, { blocks }) {
-      const choice = blocks.some((b) => (b.type === "cards" && b.items.some((i) => i.message)) || b.type === "buttons");
+      const choice = blocks.some((b) => (b.type === "cards" && b.items.some((i) => i.message)) || b.type === "buttons" || (b.type === "openui" && /(Form|Button)\(/.test(b.source)));
       return { content: [{ type: "text", text: choice ? "Shown to the user. They choose from it now: end your turn and wait for their reply." : "Shown to the user." }] };
     },
   });
