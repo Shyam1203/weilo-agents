@@ -152,58 +152,52 @@ export function noteOf({ busy, exit, messages }: Conversation) {
   return last.stopReason === "aborted" ? "Stopped." : undefined;
 }
 
-export interface Message {
-  kind: "message";
+// What every row of the chat has.
+interface ItemBase {
   id: string;
+  at: number | null;
+}
+
+export interface Message extends ItemBase {
+  kind: "message";
   role: "human" | "agent";
   text: string;
   images: string[];
-  at: number | null;
 }
 
 const imagesOf = (content: PiMessage["content"]) => (typeof content === "string" ? [] : content.filter((b) => b.type === "image" && (b.url || b.data)).map((b) => b.url ?? `data:${b.mimeType};base64,${b.data}`));
 
-interface ShownBlocks {
+interface ShownBlocks extends ItemBase {
   kind: "show";
-  id: string;
   role: "agent";
   blocks: Shown[];
   streaming: boolean;
-  at: number | null;
 }
 
-export interface Question {
+export interface Question extends ItemBase {
   kind: "ask";
-  id: string;
   role: "agent";
   question: string;
   options: string[];
   answer?: string;
-  at: number | null;
 }
 
-export interface Note {
+export interface Note extends ItemBase {
   kind: "note";
-  id: string;
   role: "agent";
   text: string;
-  at: number | null;
 }
 
-interface Summary {
+interface Summary extends ItemBase {
   kind: "summary";
-  id: string;
   role: "agent";
   text: string;
-  at: number | null;
 }
 
-interface Steps {
+interface Steps extends ItemBase {
   kind: "steps";
-  id: string;
   role: "agent";
   steps: Step[];
-  at: number | null;
 }
 
 export interface Step {

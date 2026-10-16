@@ -145,7 +145,7 @@ route("POST", "/api/agents/:id/browser/give-back", ({ id }) => giveBack(id), qui
 agentRoute("POST", "/api/agents/:id/skill", "skill", async ({ id, body }) => {
   const skill = planSkill(body);
   const agent = await getAgent(id);
-  const users = (await listAgents()).filter((a) => a.id !== id && a.skills.includes(skill.id)).map((a) => a.name);
+  const users = (await profiles()).filter((a) => a.id !== id && a.skills.includes(skill.id)).map((a) => a.name);
   const change = (await hasSkill(skill.id)) ? `change the skill "${skill.id}"${users.length ? ` (also used by ${users.join(", ")})` : ""}` : `save the skill "${skill.id}"`;
   const question = `${agent.name} asks to ${change}: ${skill.about}\n\n${skill.instructions}`;
   if ((await askUser(id, question, [SAVE, "Don't"])) !== SAVE) return { text: "The user did not approve it: nothing was saved. Do not ask again unless they ask you to." };
