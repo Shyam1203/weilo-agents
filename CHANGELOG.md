@@ -4,6 +4,7 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 ## Unreleased
 
+- The home screen icon on iPhone and iPad no longer shows white corners when the app opens or closes: the icon is now square and opaque, and iOS rounds it. Remove the app from the home screen and add it again to get the new icon.
 - Much lighter chats: the app is sent only what it draws. A reply no longer arrives three or four times (as each step ends, as the turn ends and again as the run ends) with every file the agent read and every command's output, and its thinking and its text as it is written no longer stream to the app, which shows them only when they are done. A file an agent writes is no longer sent to the app either: a step shows its path. While a reply is written, only the newest message is drawn again, not the whole chat.
 - The browser rests: an agent's window closes when it has not used it for 10 minutes and is not working, and the browser stops after 20 minutes with nothing using it (it starts again with the next step, signed in as before). Tabs left open no longer use the computer's CPU and memory for good.
 - The agent list and the browser panel are told what changed instead of asking: an agent's working state and its browser come straight from the app, and the list is read again at most once a second.
