@@ -5,7 +5,7 @@ import { AskCard } from "./AskCard";
 import { Icon } from "../../components/ui/Icon";
 import { useCopy } from "../../lib/useCopy";
 import type { Draft } from "./Composer";
-import { Action, ReplyActions } from "./ReplyActions";
+import { Action, ReplyActions, Time } from "./ReplyActions";
 import { ShowBlocks } from "./ShowBlocks";
 import { StepsLine } from "./StepsLine";
 import type { Asking, Item, Message, Queued } from "./conversation";
@@ -61,7 +61,7 @@ export function MessageList({ messages, busy, asking, onAnswer, onReply, onRetry
           <li key={message.id} data-at={message.at ?? undefined} className={`animate-fade-in ${sameSide || label ? "" : "mt-2.5"}`}>
             {label && <p className="mt-4 mb-2.5 text-center text-xs font-medium text-ink-3">{label}</p>}
             {message.kind === "ask" ? <AskCard question={message.question} options={message.options} answer={message.answer} /> : message.kind === "note" ? <p className="flex items-center justify-center gap-1.5 py-1 text-xs text-ink-3"><Icon name="clock" size={12} /> {message.text}</p> : message.kind === "summary" ? <p title="The agent now has a summary of the messages above, not the messages themselves." className="flex items-center gap-3 py-1 text-xs text-ink-3 before:h-px before:flex-1 before:bg-line after:h-px after:flex-1 after:bg-line">{message.text}</p> : message.kind === "steps" ? <StepsLine steps={message.steps} working={busy && i === shown.length - 1} /> : message.kind === "show" ? <ShowBlocks blocks={message.blocks} streaming={message.streaming} {...answerTo(i)} /> : message.role === "human" ? <HumanMessage message={message} latest={message === last} onEdit={() => onEdit(draftOf(message))} /> : <AgentText text={message.text} />}
-            {endsReply(i) && <ReplyActions text={replyText(i)} onRetry={i === shown.length - 1 && again ? () => onRetry(draftOf(again)) : undefined} />}
+            {endsReply(i) && <ReplyActions text={replyText(i)} at={message.at} onRetry={i === shown.length - 1 && again ? () => onRetry(draftOf(again)) : undefined} />}
           </li>
         );
       })}
@@ -124,9 +124,12 @@ function HumanMessage({ message, latest, onEdit }: { message: Message; latest: b
         </div>
       )}
       {message.text && <p className="max-w-[85%] rounded-2xl bg-bubble-me px-3.5 py-2 text-[14.5px] leading-relaxed whitespace-pre-wrap text-on-bubble-me [overflow-wrap:anywhere]">{message.text}</p>}
-      <div className={`-mt-1 flex gap-0.5 text-ink-3 transition-opacity focus-within:opacity-100 ${latest ? "" : "opacity-0 group-hover:opacity-100"}`}>
-        {message.text && <Action icon={copied ? "check" : "copy"} label={copied ? "Copied" : "Copy"} onClick={() => void copy(message.text)} />}
-        <Action icon="edit" label="Edit in the message box" onClick={onEdit} />
+      <div className="-mt-1 flex items-center gap-0.5 text-ink-3">
+        <span className={`flex gap-0.5 transition-opacity focus-within:opacity-100 ${latest ? "" : "opacity-0 group-hover:opacity-100"}`}>
+          {message.text && <Action icon={copied ? "check" : "copy"} label={copied ? "Copied" : "Copy"} onClick={() => void copy(message.text)} />}
+          <Action icon="edit" label="Edit in the message box" onClick={onEdit} />
+        </span>
+        {message.at ? <Time at={message.at} className="ml-1 pr-1" /> : null}
       </div>
     </div>
   );
