@@ -49,7 +49,7 @@ export function RunDialog({ action, agentName, onRun, onClose }: Props) {
         ))}
         {action.confirm && (
           <p className="rounded-xl bg-card px-3 py-2.5 text-[13px] text-ink-2">
-            {confirmScript ? "This action can pay, order, book or send something. Run it only if you mean to." : `${agentName} asks you to confirm before it pays, orders or sends anything.`}
+            {confirmScript ? "This can pay or send something." : `${agentName} asks you before paying or sending.`}
           </p>
         )}
         <div className="flex justify-end gap-2">

@@ -56,7 +56,8 @@ export type RunResult = { sent: true } | ActionRun;
 
 export const listActions = (agentId: string) => request<Action[]>("GET", `/api/agents/${agentId}/actions`);
 export const runAction = (agentId: string, id: string, input: Record<string, string>) => request<RunResult>("POST", `/api/agents/${agentId}/actions/${id}/run`, { input });
-export const changeAction = (agentId: string, id: string, change: { schedule?: ScheduleInput | null; confirm?: boolean }) => request<Action>("PUT", `/api/agents/${agentId}/actions/${id}`, change);
+export const addAction = (agentId: string, action: { title: string; request: string }) => request<Action>("POST", `/api/agents/${agentId}/actions`, action);
+export const changeAction = (agentId: string, id: string, change: { title?: string; request?: string; schedule?: ScheduleInput | null; confirm?: boolean }) => request<Action>("PUT", `/api/agents/${agentId}/actions/${id}`, change);
 export const skipAction = (agentId: string, id: string) => request("POST", `/api/agents/${agentId}/actions/${id}/skip`);
 export const removeAction = (agentId: string, id: string) => request("DELETE", `/api/agents/${agentId}/actions/${id}`);
 

@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
-import { actionTool, changeAction, filled, listActions, planAction, runScript, scheduleOf, shown, skipAction, valuesOf, when } from "../actions/actions.mjs";
+import { actionTool, addAction, changeAction, filled, listActions, planAction, runScript, scheduleOf, shown, skipAction, valuesOf, when } from "../actions/actions.mjs";
 import { OLD_SCHEDULES } from "../common.mjs";
 import { profilePath } from "../agents/agents.mjs";
 import { dropScriptKey, identify, keyIn, scriptKey } from "../http/access.mjs";
@@ -121,4 +121,14 @@ test("the user sets when an action runs by itself and whether it asks first, wit
   assert.equal(changed.confirm, true);
   assert.equal((await changeAction("act", "r1", { schedule: null })).schedule, null);
   await skipAction("act", "r1");
+});
+
+test("the user makes an action and edits it, without the agent", async () => {
+  const made = await addAction("act", { title: "Weather", request: "Tell me today's weather" });
+  assert.equal(made.kind, "agent");
+  assert.equal(made.request, "Tell me today's weather");
+  const edited = await changeAction("act", made.id, { title: "Morning weather", request: "Weather for today and tomorrow" });
+  assert.deepEqual([edited.title, edited.request], ["Morning weather", "Weather for today and tomorrow"]);
+  await assert.rejects(addAction("act", { title: "", request: "x" }), /title/);
+  await assert.rejects(changeAction("act", made.id, { request: "Use {city}" }), /no field has that name/);
 });

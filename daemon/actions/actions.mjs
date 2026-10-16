@@ -213,10 +213,23 @@ export async function forgetActions(agentId) {
   await save();
 }
 
-/** The user changes when an action runs by itself, or whether it asks first: theirs to decide, so no approval. */
-export async function changeAction(agentId, id, { schedule, confirm }) {
+/** The user makes an action themselves: a request to the agent, theirs, so no approval. */
+export async function addAction(agentId, { title, request }) {
+  await load();
+  if (state.items.filter((a) => a.agentId === agentId).length >= MAX_ACTIONS) throw fail(400, `An agent can have ${MAX_ACTIONS} actions`);
+  const plan = planAction({ title, request, kind: "agent", icon: "bolt" }, {}, isIsolated(await getAgent(agentId)), state.timezone);
+  const action = { id: randomUUID(), agentId, ...plan, runs: [] };
+  state.items.push(action);
+  await save();
+  return view(action);
+}
+
+/** The user renames an action, changes what it asks for, when it runs by itself, or whether it asks first: theirs to decide, so no approval. */
+export async function changeAction(agentId, id, { title, request, schedule, confirm }) {
   await load();
   const action = find(agentId, id);
+  if (request !== undefined && action.kind === "script") throw fail(400, `Ask the agent to change how "${action.title}" works`);
+  if (title !== undefined || request !== undefined) Object.assign(action, planAction({ title, request }, action, false, state.timezone));
   if (schedule !== undefined) {
     const next = scheduleOf(schedule, state.timezone);
     if (next && action.fields.some((f) => !f.default)) throw fail(400, "Tell the agent the usual values for this action first: it runs by itself only with them.");
