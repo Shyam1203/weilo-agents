@@ -18,15 +18,6 @@ function dayAndTime(ms: number, days: number, oneDay: string) {
 export const longWhen = (at: number) => dayAndTime(at * 1000, daysApart(at * 1000, Date.now()), "Yesterday");
 export const nextWhen = (ms: number) => dayAndTime(ms, daysApart(Date.now(), ms), "Tomorrow");
 
-export function aheadOf(ms: number) {
-  const days = daysApart(Date.now(), ms);
-  if (days <= 0) return "Today";
-  if (days === 1) return "Tomorrow";
-  const untilSunday = (7 - new Date().getDay()) % 7;
-  if (days <= untilSunday) return "This week";
-  return days <= untilSunday + 7 ? "Next week" : "Later";
-}
-
 export function inHowLong(ms: number) {
   const minutes = Math.ceil((ms - Date.now()) / 60_000);
   if (minutes < 1) return "in under 1 min";
