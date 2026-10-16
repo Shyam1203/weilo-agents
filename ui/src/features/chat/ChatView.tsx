@@ -13,10 +13,12 @@ import { useFollowBottom } from "../../lib/useFollowBottom";
 import { useMedia } from "../../lib/useMedia";
 import { read, write, KEYS } from "../../lib/storage";
 import { avatarOf } from "../agents/avatars";
-import { Composer } from "./Composer";
+import { Composer, type Draft } from "./Composer";
+import { EmptyChat } from "./EmptyChat";
 import type { Shortcut } from "./CommandMenu";
 import { ContextMeter } from "./ContextMeter";
 import { FindBar } from "./FindBar";
+import type { Message } from "./conversation";
 import { LoadingChat, MessageList } from "./MessageList";
 import { useFind } from "./useFind";
 import { useChat } from "./useChat";
@@ -91,6 +93,17 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
   const [replyError, setReplyError] = useState<string | null>(null);
   const send = (message: Outgoing) => (setReplyError(null), chat.send(message));
   const reply = (text: string) => void send({ text, images: [], files: [] }).catch((err) => setReplyError(messageOf(err)));
+  const retry = ({ text, images }: Draft) => void send({ text, images, files: [] }).catch((err) => setReplyError(messageOf(err)));
+  const [fill, setFill] = useState<Draft | null>(null);
+  const put = (draft: Draft) => setFill({ ...draft });
+  const lastMine = chat.messages.findLast((m): m is Message => m.kind === "message" && m.role === "human");
+  const last = lastMine && { text: lastMine.text, images: lastMine.images };
+  const unqueue = (q: Parameters<typeof chat.unqueue>[0]) =>
+    chat.unqueue(q).catch((err) => {
+      setReplyError(messageOf(err));
+      throw err;
+    });
+  const fresh = chat.ready && !chat.more && !chat.busy && !chat.messages.length && !chat.queued.length;
 
   const dock = useRef<HTMLDivElement>(null);
   const [room, setRoom] = useState(0);
@@ -126,7 +139,7 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
           <div ref={scroller.box} style={{ paddingBottom: room }} className="h-full overflow-y-auto">
             <div className="mx-auto w-full max-w-3xl px-4 py-5">
               {chat.more && <p className="flex items-center justify-center gap-2 pb-4 text-xs text-ink-3">{chat.loadingEarlier ? <><Icon name="spinner" size={12} /> Loading earlier messages…</> : <button type="button" onClick={() => void chat.loadEarlier()} className="underline">Load earlier messages</button>}</p>}
-              {chat.ready ? <MessageList messages={chat.messages} busy={chat.busy} asking={chat.asking} onAnswer={chat.answer} onReply={reply} queued={chat.queued} note={chat.note} /> : <LoadingChat />}
+              {!chat.ready ? <LoadingChat /> : fresh ? <EmptyChat name={agent.name} avatar={avatarOf(agent)} shortcuts={shortcuts} onPick={(text) => put({ text, images: [] })} /> : <MessageList messages={chat.messages} busy={chat.busy} asking={chat.asking} onAnswer={chat.answer} onReply={reply} onRetry={retry} onEdit={put} queued={chat.queued} onUnqueue={unqueue} note={chat.note} />}
             </div>
           </div>
           <div ref={dock} className="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-page from-55% to-transparent pt-8">
@@ -154,6 +167,9 @@ export function ChatView({ agent, models, hasProvider, find, onBack, onEdit, onA
                 </Notice>
               )}
               <Composer
+                agentId={agent.id}
+                fill={fill}
+                last={last}
                 onEdit={onEdit}
                 shortcuts={shortcuts}
                 to={agent.name}

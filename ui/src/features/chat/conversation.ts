@@ -62,10 +62,15 @@ interface Conversation {
   busy: boolean;
   open: boolean;
   asking: Asking | null;
-  queued: string[];
+  queued: Queued[];
   exit?: string;
   earlier: PiMessage[];
   more: boolean;
+}
+
+export interface Queued {
+  text: string;
+  when: "now" | "later";
 }
 
 export const empty: Conversation = { ready: false, messages: [], busy: false, open: false, asking: null, queued: [], earlier: [], more: false };
@@ -104,7 +109,7 @@ export function reduce(state: Conversation, e: PiEvent): Conversation {
     case "earlier":
       return { ...state, earlier: [...(e.messages ?? []), ...state.earlier], more: !!e.more };
     case "queue_update":
-      return { ...state, queued: [...(e.steering ?? []), ...(e.followUp ?? [])] };
+      return { ...state, queued: [...(e.steering ?? []).map((text): Queued => ({ text, when: "now" })), ...(e.followUp ?? []).map((text): Queued => ({ text, when: "later" }))] };
     case "extension_ui_request":
       return (e.method === "select" || e.method === "input") && e.id ? { ...state, asking: { id: e.id, title: e.title ?? "", options: e.options } } : state;
     case "ask_end":

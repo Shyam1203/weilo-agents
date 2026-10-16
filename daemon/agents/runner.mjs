@@ -137,6 +137,7 @@ async function start(run) {
     run.pi = piRpc(child, {
       onEvent(event) {
         if (event.type === "agent_start") (run.busy = true), (run.used = true), (run.reply = null);
+        if (event.type === "queue_update") for (const text of run.held.keys()) if (!event.steering?.includes(text) && !event.followUp?.includes(text)) run.held.delete(text);
         if (event.type === "message_end" && event.message?.role === "assistant") (run.reply = event.message), void charge(run, event.message.usage).catch((err) => console.error("Usage:", err.message));
         if (event.type === "agent_settled") (run.busy = false), tell(run);
         if (event.type === "tool_execution_start") run.doing = event.toolName;
@@ -165,7 +166,7 @@ const holds = new Map();
 
 const open = (id) => {
   if (!runs.has(id)) {
-    const run = { id, listeners: new Set(), busy: false, stale: false, timer: null };
+    const run = { id, listeners: new Set(), busy: false, stale: false, timer: null, held: new Map() };
     run.ready = start(run).catch((err) => {
       close(run);
       throw err;
@@ -195,16 +196,45 @@ const refused = (err) => {
   throw fail(409, err.message);
 };
 
-export async function prompt(id, { text = "", images = [], files = [] }) {
-  if (typeof text !== "string") throw fail(400, "The message is not valid");
+const BEHAVIOR = { now: "steer", later: "followUp" };
+const behaviorOf = (when) => (Object.hasOwn(BEHAVIOR, when) ? BEHAVIOR[when] : null);
+
+export async function prompt(id, { text = "", images = [], files = [], when = "now" }) {
+  const behavior = behaviorOf(when);
+  if (typeof text !== "string" || !behavior) throw fail(400, "The message is not valid");
   const blocks = toImages(images);
   const agent = await getAgent(id);
   if (agent.dailyTokens && ((await usageToday())[id] ?? 0) >= agent.dailyTokens) throw fail(429, overLimit(agent));
-  const { pi } = await open(id);
+  const run = await open(id);
   const paths = await saveFiles(agent, files);
   const message = [text.trim(), ...paths.map((path) => `[Attached file: ${path}]`)].filter(Boolean).join("\n\n");
   if (!message && !blocks.length) throw fail(400, "The message is empty");
-  return pi.send("prompt", { message, images: blocks, streamingBehavior: "steer" }).catch(refused);
+  if (run.busy && blocks.length) run.held.set(message, blocks);
+  return run.pi.send("prompt", { message, images: blocks, streamingBehavior: behavior }).catch(refused);
+}
+
+// pi clears its queue only as a whole: take it, drop the one message, and queue the rest again in order.
+// One at a time per agent, so two quick takebacks do not lose each other's messages.
+export async function unqueue(id, { text, when = "now" }) {
+  if (typeof text !== "string" || !behaviorOf(when)) throw fail(400, "The message is not valid");
+  const run = await current(id);
+  if (!run) return;
+  const done = (run.unqueuing ?? Promise.resolve()).then(() => requeueWithout(run, text, when));
+  run.unqueuing = done.catch(() => {});
+  return done;
+}
+
+async function requeueWithout(run, text, when) {
+  const held = new Map(run.held);
+  const { steering, followUp } = await run.pi.send("clear_queue").catch(refused);
+  const list = when === "later" ? followUp : steering;
+  if (list.includes(text)) list.splice(list.indexOf(text), 1);
+  for (const [behavior, messages] of [["steer", steering], ["followUp", followUp]])
+    for (const message of messages) {
+      const images = held.get(message) ?? [];
+      if (images.length) run.held.set(message, images);
+      await run.pi.send("prompt", { message, images, streamingBehavior: behavior }).catch(refused);
+    }
 }
 
 export async function promptAndWait(id, text) {

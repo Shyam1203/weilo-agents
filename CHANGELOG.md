@@ -4,6 +4,9 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 ## Unreleased
 
+- Chatting is smoother. A new chat greets you with the agent and a few ways to start (its skills and plugins); one tap puts it in the message box. The message box takes the focus when you open a chat, and typing anywhere in the chat goes into it. What you were writing is kept per agent, through switching agents and reloading. ↑ in an empty box brings back your last message, and each of your messages has Copy and Edit. "Send again" works for messages with photos too.
+- While an agent works, you choose when it reads your message: Enter tells it now (before its next step), Alt+Enter or the clock button sends it when it finishes. A queued message can be edited or taken back. Esc in the message box stops the agent, and the working pill has a Stop button, so you can stop it while typing.
+- A question from an agent stands out, says you can type your own answer, and its options have number keys (1 to 9). A hint under the message box lists the keys.
 - Search is fast right after an update: the chat search index is kept in the data folder (`agent/index/`) instead of inside the container, where every image update lost it, and the app brings it up to date when it starts.
 - Faster chats: "Load earlier messages" reads a long chat's earlier part once and serves the next pages from what it read, for the last 4 chats you opened. The app also loads the model runtime when it starts, so the first agent answers sooner, and Settings and the agent form load the first time you open them (the app's first load is 20 KB smaller compressed).
 - Lighter when idle: the browser starts the first time an agent uses it (or you take over), not with the app, and a chat you only looked at stops its agent after 90 seconds instead of 10 minutes.

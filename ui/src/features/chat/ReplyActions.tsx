@@ -18,7 +18,7 @@ export function ReplyActions({ text, onRetry }: Props) {
   );
 }
 
-function Action({ icon, label, onClick }: { icon: IconName; label: string; onClick: () => void }) {
+export function Action({ icon, label, onClick }: { icon: IconName; label: string; onClick: () => void }) {
   return (
     <button type="button" onClick={onClick} aria-label={label} title={label} className="rounded-md p-1.5 transition-colors hover:bg-select hover:text-ink">
       <Icon name={icon} size={15} />

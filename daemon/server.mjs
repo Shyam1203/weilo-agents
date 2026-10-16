@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { createServer as createSocketServer } from "node:net";
 import { dirname } from "node:path";
 import { createAgent, filesOf, getAgent, isIsolated, mayCall, profiles, listAgents, removeFiles, removeProfile, setOrder, updateAgent } from "./agents/agents.mjs";
-import { abort, activityOf, answer, askUser, compact, contextOf, holding, prompt, restart, restartAll, skillCommands, stop, stopAll } from "./agents/runner.mjs";
+import { abort, activityOf, answer, askUser, compact, contextOf, holding, prompt, restart, restartAll, skillCommands, stop, stopAll, unqueue } from "./agents/runner.mjs";
 import { askAgent, manageAgents } from "./agents/manage.mjs";
 import { searchChats } from "./agents/search.mjs";
 import { backfillUsage, usageHistory, usageToday } from "./agents/usage.mjs";
@@ -126,6 +126,7 @@ route("DELETE", "/api/agents/:id", async ({ id, body }) => {
   await removeFiles(agent, { keepChat: body.keepChat === true, keepFiles: body.keepFiles === true });
 });
 route("POST", "/api/agents/:id/message", ({ id, body }) => prompt(id, body), quiet);
+route("POST", "/api/agents/:id/unqueue", ({ id, body }) => unqueue(id, body), quiet);
 route("POST", "/api/agents/:id/abort", ({ id }) => abort(id), quiet);
 route("POST", "/api/agents/:id/answer", ({ id, body }) => answer(id, body), quiet);
 route("GET", "/api/agents/:id/commands", ({ id }) => skillCommands(id));

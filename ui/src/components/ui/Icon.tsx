@@ -1,6 +1,6 @@
 import {
   ArrowDown, ArrowUp, Bell, Bot, ChartColumn, Brain, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Download, ExternalLink, FileText, Globe, Info, Key, List, LoaderCircle, Mail, Mic, MonitorSmartphone, MousePointer2,
-  PanelRight, Paperclip, Plug, Plus, Puzzle, RotateCcw, Search, Settings, Share, ShieldCheck, Sparkles, Square, Sun, TriangleAlert, User, X,
+  PanelRight, Paperclip, Pencil, Plug, Plus, Puzzle, RotateCcw, Search, Settings, Share, ShieldCheck, Sparkles, Square, Sun, TriangleAlert, User, X,
 } from "lucide-react";
 
 const ICONS = {
@@ -40,6 +40,7 @@ const ICONS = {
   copy: Copy,
   share: Share,
   retry: RotateCcw,
+  edit: Pencil,
   devices: MonitorSmartphone,
   shield: ShieldCheck,
   chart: ChartColumn,
