@@ -34,6 +34,9 @@ const DOING: Record<string, string> = { read: "Reading files", bash: "Running a 
 
 export const doingText = (tool?: string | null) => (tool ? (DOING[tool] ?? "Using an add-on") : "Working");
 
+/** A new agent with nothing added: no skills, plugins or extensions, and no limits. */
+export const newAgent = (fields: Pick<AgentInput, "name" | "model" | "instructions" | "avatar">): AgentInput => ({ thinking: "", skills: [], plugins: [], extensions: [], disabled: [], isolated: false, trusted: false, dailyTokens: 0, ...fields });
+
 export const AGENT_STATUS_URL = "/api/agents/status";
 export const listAgents = () => request<Agent[]>("GET", document.visibilityState === "visible" ? "/api/agents?seen" : "/api/agents");
 export const createAgent = (input: AgentInput) => request<Agent>("POST", "/api/agents", input);

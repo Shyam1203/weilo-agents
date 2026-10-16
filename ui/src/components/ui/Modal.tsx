@@ -9,13 +9,12 @@ interface Props {
   onClose: () => void;
   width?: string;
   hidden?: boolean;
-  flush?: boolean;
   children: ReactNode;
 }
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function Modal({ title, onBack, onClose, width = "max-w-lg", hidden = false, flush = false, children }: Props) {
+export function Modal({ title, onBack, onClose, width = "max-w-lg", hidden = false, children }: Props) {
   const dialog = useRef<HTMLDivElement>(null);
   const [closing, setClosing] = useState(false);
   const dismiss = () => {
@@ -70,7 +69,7 @@ export function Modal({ title, onBack, onClose, width = "max-w-lg", hidden = fal
           <h2 className="min-w-0 flex-1 text-[17px] font-semibold tracking-tight">{title}</h2>
           <IconButton icon="close" label="Close" onClick={dismiss} className="-mt-1 -mr-2" />
         </header>
-        <div className={`min-h-0 flex-1 ${flush ? "flex" : "overflow-y-auto px-6 pt-4 pb-6"}`}>{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-4 pb-6">{children}</div>
       </div>
     </div>,
     document.body,

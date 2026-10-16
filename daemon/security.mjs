@@ -1,4 +1,4 @@
-import { isIsolated, profiles } from "./agents/agents.mjs";
+import { isIsolated, mayCall, profiles } from "./agents/agents.mjs";
 import { recentAudit } from "./audit.mjs";
 import { pairedDevices } from "./http/access.mjs";
 import { sandboxStatus } from "./sandbox/client.mjs";
@@ -10,7 +10,7 @@ const names = (agents) => agents.map((a) => a.name).join(", ");
 export async function securityReport() {
   const [sandbox, agents, devices, update, activity] = await Promise.all([sandboxStatus(), profiles(), pairedDevices(), updateStatus().catch(() => null), recentAudit(50)]);
   const isolated = agents.filter(isIsolated);
-  const browsing = isolated.filter((a) => !a.disabled.includes("browser"));
+  const browsing = isolated.filter((a) => mayCall(a, "browser"));
   const stale = devices.filter((d) => Date.now() - Date.parse(d.seen) > STALE_DEVICE_DAYS * 864e5);
   const checks = [
     {

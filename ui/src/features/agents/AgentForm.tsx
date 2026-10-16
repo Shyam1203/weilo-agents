@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { createAgent, deleteAgent, updateAgent, type Agent, type AgentInput } from "../../api/agents";
+import { createAgent, deleteAgent, newAgent, updateAgent, type Agent, type AgentInput } from "../../api/agents";
 import { choosableOf, providerOf, shortName, type Model, type Provider } from "../../api/providers";
 import type { Extension } from "../../api/extensions";
 import type { Plugin } from "../../api/plugins";
@@ -45,7 +45,6 @@ interface Props {
   defaultModel?: string;
   /** Open with More options shown (to change the daily limit, say). */
   showMore?: boolean;
-  onAddProvider: () => void;
   onOpenSettings: (page: SettingsPage) => void;
   hidden?: boolean;
   onClose: () => void;
@@ -53,9 +52,9 @@ interface Props {
   onDeleted: () => void;
 }
 
-export function AgentForm({ agent, providers, skills, plugins, extensions, models, defaultModel = "", showMore = false, onAddProvider, onOpenSettings, hidden, onClose, onSaved, onDeleted }: Props) {
+export function AgentForm({ agent, providers, skills, plugins, extensions, models, defaultModel = "", showMore = false, onOpenSettings, hidden, onClose, onSaved, onDeleted }: Props) {
   const [draft, setDraft] = useState<Draft>(() =>
-    agent ? { name: agent.name, model: agent.model, thinking: agent.thinking, skills: agent.skills, plugins: agent.plugins, extensions: agent.extensions, disabled: agent.disabled, instructions: agent.instructions, avatar: avatarOf(agent), isolated: agent.isolated, trusted: agent.trusted, dailyTokens: agent.dailyTokens } : { name: "", model: defaultModel, thinking: "", skills: [], plugins: [], extensions: [], disabled: [], instructions: "", avatar: randomAvatar(), isolated: false, trusted: false, dailyTokens: 0 },
+    agent ? { name: agent.name, model: agent.model, thinking: agent.thinking, skills: agent.skills, plugins: agent.plugins, extensions: agent.extensions, disabled: agent.disabled, instructions: agent.instructions, avatar: avatarOf(agent), isolated: agent.isolated, trusted: agent.trusted, dailyTokens: agent.dailyTokens } : { ...newAgent({ name: "", model: defaultModel, instructions: "" }), avatar: randomAvatar() },
   );
   const [choosing, setChoosing] = useState<"skills" | "plugins" | "extensions" | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -70,7 +69,7 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
   const providerOptions = [...providers.filter((p) => p.connected || p.id === providerId).map((p) => ({ value: p.id, label: p.name })), { value: ADD, label: "+ Add provider" }];
   const modelOptions = [...(draft.model && !ofProvider.some((m) => m.id === draft.model) ? [{ value: draft.model, label: draft.model }] : []), ...ofProvider.map((m) => ({ value: m.id, label: shortName(m.name) }))];
   const pickProvider = (id: string) => {
-    if (id === ADD) return onAddProvider();
+    if (id === ADD) return onOpenSettings("providers");
     setProviderId(id);
     change({ model: "" });
   };
