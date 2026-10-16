@@ -26,7 +26,7 @@ import { bodyOf, guard, rawBodyOf, reply } from "./http/request.mjs";
 import { serveUi } from "./http/static.mjs";
 import { CURATOR_KEY, getCurator, setCurator, startCurator } from "./memory/curator.mjs";
 import { fetchKnowledge } from "./memory/fetch.mjs";
-import { memoryText, saveMemoryText, useMemory } from "./memory/memory.mjs";
+import { useMemory } from "./memory/memory.mjs";
 import { migrate } from "./migrate.mjs";
 import { addDevice, markSeen, notifiedDevices, pushStatus, removeDevice, removePaired, setMuted } from "./push.mjs";
 import { actionTool, addAction, changeAction, forgetActions, listActions, noteZone, removeAction, runAction, startActions } from "./actions/actions.mjs";
@@ -98,12 +98,13 @@ route("POST", "/api/extensions", forAll(({ body }) => addExtension(body)));
 route("DELETE", "/api/extensions/:id", forAll(({ id }) => removeExtension(id)));
 route("GET", "/api/user", () => getUser());
 route("PUT", "/api/user", forAll(({ body }) => saveUser(body)));
-route("GET", "/api/memory", async () => {
-  const [text, curator] = await Promise.all([memoryText(), getCurator()]);
-  return { text, ...curator };
+route("GET", "/api/memory", () => getCurator());
+route("PUT", "/api/memory", async ({ body }) => {
+  const was = await getCurator();
+  const now = await setCurator(body);
+  if (now.notes !== was.notes) await restartAll();
+  return now;
 });
-route("PUT", "/api/memory", forAll(async ({ body }) => ({ text: await saveMemoryText(body.text) })));
-route("PUT", "/api/memory/curator", ({ body }) => setCurator(body));
 route("GET", "/api/push", () => pushStatus());
 route("POST", "/api/push/devices", ({ body, who }) => addDevice(body, who.device));
 route("DELETE", "/api/push/devices/:id", ({ id }) => removeDevice(id));
@@ -165,9 +166,9 @@ agentRoute("POST", "/api/agents/:id/skill", "skill", async ({ id, body }) => {
 agentRoute("POST", "/api/agents/:id/manage_agents", "manage_agents", ({ id, body }) => manageAgents(id, body));
 agentRoute("POST", "/api/agents/:id/ask_agent", "ask_agent", ({ id, body }) => askAgent(id, body));
 agentRoute("POST", "/api/agents/:id/manage_settings", "manage_settings", ({ id, body }) => manageSettings(id, body));
-agentRoute("POST", "/api/agents/:id/memory", "memory", async ({ id, body }) => {
-  const confirm = (await getCurator()).ask && (async (what) => (await askUser(id, `${(await getAgent(id)).name} asks to ${what}`, [SAVE, "Don't"])) === SAVE);
-  return { text: await useMemory(body, confirm) };
+agentRoute("POST", "/api/agents/:id/memory", "memory", async ({ body }) => {
+  if (!(await getCurator()).notes) throw fail(403, "Notes about the user are off in Settings > Memory.");
+  return { text: await useMemory(body) };
 });
 agentRoute("POST", "/api/agents/:id/fetch_knowledge", "fetch_knowledge", async ({ body }) => ({ text: await fetchKnowledge(body) }), quiet);
 agentRoute("POST", "/api/agents/:id/action", "action", ({ id, body }) => actionTool(id, body));

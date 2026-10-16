@@ -1,14 +1,11 @@
 import { request } from "./http";
 
 export interface MemorySettings {
+  /** The Knowledge curator's model, or "" when it is off. */
   model: string;
-  ask: boolean;
+  /** Agents save notes about the user, and every agent gets them. */
+  notes: boolean;
 }
 
-export interface Memory extends MemorySettings {
-  text: string;
-}
-
-export const getMemory = () => request<Memory>("GET", "/api/memory");
-export const saveMemory = (text: string) => request<{ text: string }>("PUT", "/api/memory", { text });
-export const setMemorySettings = (change: Partial<MemorySettings>) => request<MemorySettings>("PUT", "/api/memory/curator", change);
+export const getMemory = () => request<MemorySettings>("GET", "/api/memory");
+export const setMemory = (change: Partial<MemorySettings>) => request<MemorySettings>("PUT", "/api/memory", change);
