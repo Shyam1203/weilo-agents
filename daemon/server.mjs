@@ -53,10 +53,12 @@ delete process.env.npm_config_prefix;
 delete process.env.PYTHONUSERBASE;
 
 const routes = [];
-const route = (method, path, handler, { tool = null, audited = method !== "GET" } = {}) =>
-  routes.push({ method, path, handler, tool, audited, scoped: path.startsWith("/api/agents/:id"), pattern: new RegExp(`^${path.replace(":id", "([^/]+)").replace(":rid", "([^/]+)")}$`) });
+// A route without a tool is for people only (paired devices). A stream route writes its own reply.
+const route = (method, path, handler, { tool = null, audited = method !== "GET", stream = false } = {}) =>
+  routes.push({ method, path, handler, tool, audited, stream, scoped: path.startsWith("/api/agents/:id"), pattern: new RegExp(`^${path.replace(":id", "(?<id>[^/]+)").replace(":rid", "(?<rid>[^/]+)").replace("*", "(?<rest>.+)")}$`) });
 const agentRoute = (method, path, tool, handler, options = {}) => route(method, path, handler, { tool, ...options });
 const quiet = { audited: false };
+const streamed = { audited: false, stream: true };
 const SAVE = "Save it";
 
 const forAll = (change) => async (req) => {
@@ -108,6 +110,11 @@ route("PUT", "/api/push/muted", ({ body }) => setMuted(body.muted));
 route("GET", "/api/browser/rule", () => getRule());
 route("PUT", "/api/browser/rule", forAll(({ body }) => saveRule(body)));
 route("GET", "/api/search", ({ query }) => searchChats(query.get("q")));
+route("GET", "/api/images/:id", ({ id, res }) => serveImage(res, id), streamed);
+route("GET", "/api/agents/status", ({ req, res }) => agentStatus(req, res), streamed);
+route("GET", "/api/agents/:id/events", ({ id, req, res }) => events(req, res, id), streamed);
+route("GET", "/api/agents/:id/files/*", ({ agent, rest, query, res }) => serveFile(res, filesOf(agent), rest, query.has("view")), streamed);
+route("POST", "/api/agents/:id/uploads", async ({ agent, query, req, res }) => reply(res, 200, { path: await saveUpload(agent, query.get("name") ?? "", await rawBodyOf(req, MAX_UPLOAD)) }), streamed);
 route("GET", "/api/agents", async ({ query }) => {
   if (query.has("seen")) markSeen();
   const [agents, used] = await Promise.all([listAgents(), usageToday()]);
@@ -218,27 +225,17 @@ async function handle(req, res, sandboxed) {
     }
     const who = await identify(req);
     if (!who) return reply(res, 401, { error: "Pair this device to use Weilo Agents.", pair: true });
-    const file = path.match(/^\/api\/agents\/([^/]+)\/files\/(.+)$/);
-    if (file && req.method === "GET" && who.device) return await serveFile(res, filesOf(await getAgent(file[1])), file[2], url.searchParams.has("view"));
-    const stream = path.match(/^\/api\/agents\/([^/]+)\/events$/);
-    if (stream && req.method === "GET" && who.device) return await events(req, res, stream[1]);
-    if (path === "/api/agents/status" && req.method === "GET" && who.device) return agentStatus(req, res);
-    const image = path.match(/^\/api\/images\/([^/]+)$/);
-    if (image && req.method === "GET" && who.device) return await serveImage(res, image[1]);
-    const upload = path.match(/^\/api\/agents\/([^/]+)\/uploads$/);
-    if (upload && req.method === "POST" && who.device) {
-      const agent = await getAgent(upload[1]);
-      return reply(res, 200, { path: await saveUpload(agent, url.searchParams.get("name") ?? "", await rawBodyOf(req, MAX_UPLOAD)) });
-    }
-    for (const { method, path: name, pattern, handler, scoped, tool, audited } of routes) {
+    for (const { method, path: name, pattern, handler, scoped, tool, audited, stream } of routes) {
       const match = req.method === method && path.match(pattern);
       if (!match) continue;
-      const [, id, rid] = match;
+      const { id, rid, rest } = match.groups ?? {};
       if (who.agent && !(tool && id === who.agent)) throw fail(403, "Not permitted");
       if (who.script && tool !== "browser") throw fail(403, "Not permitted");
       const agent = scoped && (await getAgent(id));
       if (who.agent && !mayCall(agent, tool)) throw fail(403, "An isolated agent cannot use this. The user can change what it may use in its settings.");
-      const result = await handler({ id, rid, body: await bodyOf(req), query: url.searchParams, headers: req.headers, who });
+      const args = { id, rid, rest, agent, query: url.searchParams, headers: req.headers, who };
+      if (stream) return await handler({ ...args, req, res });
+      const result = await handler({ ...args, body: await bodyOf(req) });
       if (method !== "GET" && name.startsWith("/api/agents") && (who.device || tool === "manage_agents")) agentsChanged();
       if (audited) audit(`${method} ${name}`, { by: who.device ? `device ${who.device}` : `agent ${who.agent}`, ...(id && { id }), ...(rid && { rid }) });
       return result === undefined ? reply(res, 204) : reply(res, 200, result);
