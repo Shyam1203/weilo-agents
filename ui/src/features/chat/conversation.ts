@@ -190,8 +190,8 @@ export interface Note extends ItemBase {
   kind: "note";
   role: "agent";
   text: string;
-  /** A line about a pin: it opens the pins. */
-  pins?: true;
+  /** A line about a pin, with its title: it opens the pins and shows that one. */
+  pin?: string;
 }
 
 interface Summary extends ItemBase {
@@ -299,8 +299,9 @@ function itemsFor(m: PiMessage, i: number, arriving: boolean, results: Map<strin
       if (text) return [{ kind: "note", id: `${i}.${j}`, role: "agent", text, at }];
     }
     if (b.type === "toolCall" && b.name === "pin") {
-      const text = pinNote(b.id ? results.get(b.id)?.details : undefined);
-      if (text) return [{ kind: "note", id: `${i}.${j}`, role: "agent", text, at, pins: true }];
+      const details = b.id ? results.get(b.id)?.details : undefined;
+      const text = pinNote(details);
+      if (text) return [{ kind: "note", id: `${i}.${j}`, role: "agent", text, at, pin: details!.title }];
     }
     // "routine" was the older tool for timed tasks: its results read like an action's.
     if (b.type === "toolCall" && b.name === "routine") {

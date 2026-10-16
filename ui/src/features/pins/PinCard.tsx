@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { describeSchedule, type Action } from "../../api/actions";
 import type { Pin } from "../../api/pins";
 import { Icon } from "../../components/ui/Icon";
@@ -6,6 +7,8 @@ import { shortWhen } from "../../lib/format";
 
 interface Props {
   pin: Pin;
+  /** Stands out, scrolled into view: the chat just pointed at it. */
+  lit?: boolean;
   /** The action that keeps it fresh, if any. */
   action?: Action;
   onTick: (index: number, done: boolean) => void;
@@ -26,11 +29,15 @@ function Trend({ points, tone }: { points: number[]; tone: Pin["tone"] }) {
 }
 
 /** A pin on the Pins tab: a value that changes (with a small chart or steps), or a list to tick. */
-export function PinCard({ pin, action, onTick, onRemove, onOpenAction }: Props) {
+export function PinCard({ pin, lit, action, onTick, onRemove, onOpenAction }: Props) {
+  const card = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (lit) card.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [lit]);
   const left = pin.items?.filter((i) => !i.done).length ?? 0;
   const tone = pin.tone === "good" ? "text-good" : pin.tone === "bad" ? "text-bad" : "text-ink-2";
   return (
-    <article aria-label={pin.title} className="flex flex-col gap-2 rounded-xl px-3.5 py-3 ring-1 ring-line">
+    <article ref={card} aria-label={pin.title} className={`flex flex-col gap-2 rounded-xl px-3.5 py-3 transition-[box-shadow,background-color] duration-500 ${lit ? "bg-select ring-2 ring-ink" : "ring-1 ring-line"}`}>
       <header className="flex items-center gap-2">
         <Icon name={pin.icon} size={14} className="shrink-0 text-ink-2" />
         <h3 className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{pin.title}</h3>

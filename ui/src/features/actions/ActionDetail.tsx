@@ -30,7 +30,7 @@ interface Props {
   onClose: () => void;
 }
 
-/** One action: run it now, have it run by itself, ask first, what it did lately. Changes save as you make them. */
+/** One action: run it now, put it on a schedule, what it did lately. Changes save as you make them. */
 export function ActionDetail({ action, agentId, agentName, onRun, onChanged, onRemove, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -38,6 +38,8 @@ export function ActionDetail({ action, agentId, agentName, onRun, onChanged, onR
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(action.title);
   const [request, setRequest] = useState(action.request);
+  const [expanded, setExpanded] = useState(false);
+  const about = action.kind === "agent" ? action.request : action.about || "Instant";
   const s = action.schedule;
   const draft: ScheduleInput = s ? { every: s.every, times: s.times, minutes: s.minutes, day: s.day, date: s.date } : { every: "day", times: ["08:00"] };
   const needsDefaults = action.fields.some((f) => !f.default);
@@ -82,7 +84,14 @@ export function ActionDetail({ action, agentId, agentName, onRun, onChanged, onR
           </section>
         ) : (
           <div className="-mt-2 flex items-start justify-between gap-3">
-            <p className="min-w-0 text-[13.5px] text-ink-2">{action.kind === "agent" ? action.request : action.about || "Instant"}</p>
+            <div className="min-w-0 text-[13.5px] text-ink-2">
+              <p className={`[overflow-wrap:anywhere] ${expanded ? "" : "line-clamp-3"}`}>{about}</p>
+              {about.length > 140 && (
+                <button type="button" onClick={() => setExpanded(!expanded)} className="mt-0.5 text-[13px] text-ink underline underline-offset-2">
+                  {expanded ? "Show less" : "Show more"}
+                </button>
+              )}
+            </div>
             <Button size="sm" variant="ghost" icon="edit" onClick={() => setEditing(true)} className="-mr-2 shrink-0">
               Edit
             </Button>
@@ -95,10 +104,10 @@ export function ActionDetail({ action, agentId, agentName, onRun, onChanged, onR
         <section className="flex flex-col gap-3 rounded-xl p-3.5 ring-1 ring-line">
           <div className="flex items-center justify-between gap-3">
             <span className="flex flex-col">
-              <span className="text-[14px] font-medium">Run by itself</span>
-              <span className="text-xs text-ink-3">{needsDefaults ? "Needs its usual values first." : "At times you pick."}</span>
+              <span className="text-[14px] font-medium">Schedule</span>
+              <span className="text-xs text-ink-3">{needsDefaults ? "Needs its usual values first." : "Runs at times you pick."}</span>
             </span>
-            <Switch label="Run by itself" checked={!!s} onChange={(on) => (on ? schedule({}) : save({ schedule: null }))} />
+            <Switch label="Schedule" checked={!!s} onChange={(on) => (on ? schedule({}) : save({ schedule: null }))} />
           </div>
           {s && (
             <>
@@ -164,7 +173,7 @@ export function ActionDetail({ action, agentId, agentName, onRun, onChanged, onR
           </section>
         )}
 
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
           {removing ? (
             <span className="flex flex-1 items-center gap-2 text-[13px] text-ink-2">
               Delete "{action.title}"?
@@ -177,12 +186,9 @@ export function ActionDetail({ action, agentId, agentName, onRun, onChanged, onR
               </Button>
             </span>
           ) : (
-            <>
-              <Button variant="ghost" size="sm" onClick={() => setRemoving(true)} className="-ml-2.5 text-bad">
-                Delete action
-              </Button>
-              <Button onClick={onClose}>Done</Button>
-            </>
+            <Button variant="ghost" size="sm" onClick={() => setRemoving(true)} className="-ml-2.5 text-bad">
+              Delete action
+            </Button>
           )}
         </div>
       </div>
