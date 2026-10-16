@@ -35,7 +35,7 @@
 <li><a href="#restarts">When pis stop and start anew</a></li>
 <li><a href="#turn">A chat turn, end to end</a></li>
 <li><a href="#events">Events and chat files</a></li>
-<li><a href="#routines">Routines</a></li>
+<li><a href="#actions">Actions</a></li>
 <li><a href="#push">Notifications</a></li>
 <li><a href="#browser">The browser</a></li>
 <li><a href="#versions">Versions, updates and data</a></li>
@@ -88,7 +88,7 @@
 <text class="ts" x="40" y="124">HTTP on 0.0.0.0:3210 in the container</text>
 <text class="ts" x="40" y="146">umask 007; PATH = root's folders only</text>
 <text class="ts" x="40" y="168">admin socket /tmp/weilo-admin/</text>
-<text class="ts" x="40" y="190">routines every 30 s, curator every 5 min</text>
+<text class="ts" x="40" y="190">actions every 30 s, curator every 5 min</text>
 <text class="ts" x="40" y="212">pi registry for keys and sign-ins</text>
 <text class="ts" x="40" y="234">Playwright over Chromium's pipe</text>
 <rect class="box b-green" x="400" y="48" width="336" height="76" rx="10"/>
@@ -153,8 +153,8 @@
 <div class="cols">
 <div class="tile"><h3>Serves</h3><p>The built UI (<code>http/static.mjs</code>, with <code>frame-ancestors 'none'</code>; compressed with brotli or gzip once and kept in memory, with an ETag for a 304; a missing <code>/assets/</code> file is a 404), the JSON API, the live event stream (SSE), files the chats name (<code>http/files.mjs</code>), and two WebSockets: the screen's live view and its own debugging channel to Chromium.</p></div>
 <div class="tile"><h3>Guards</h3><p>Host, Origin and <code>Sec-Fetch-Site</code> checks (<code>http/request.mjs</code>), paired devices and agent keys (<code>http/access.mjs</code>), the per-route tool gate and <code>mayCall</code> (<code>server.mjs</code>). See <a href="security.html#boundaries">Security</a>.</p></div>
-<div class="tile"><h3>Keeps</h3><p>Keys, plugin secrets, paired devices, profiles, settings, routines, notification keys: all in <code>agent/</code>, root's. It writes JSON files whole and one change at a time per file (<code>updateJson</code> in <code>common.mjs</code>): a temporary file of its own, flushed to disk (<code>fsync</code>), the previous version kept as <code>&lt;file&gt;.bak</code>, then a rename. A file that is not valid JSON is read from its <code>.bak</code>, with a line in the log.</p></div>
-<div class="tile"><h3>Runs</h3><p>One pi per open agent (<code>agents/runner.mjs</code>; an isolated one through the sandbox), the routines clock, the curator, the browser's screen, and the notifications. It owns owners and modes too (<code>secure()</code> at every start).</p></div>
+<div class="tile"><h3>Keeps</h3><p>Keys, plugin secrets, paired devices, profiles, settings, actions, notification keys: all in <code>agent/</code>, root's. It writes JSON files whole and one change at a time per file (<code>updateJson</code> in <code>common.mjs</code>): a temporary file of its own, flushed to disk (<code>fsync</code>), the previous version kept as <code>&lt;file&gt;.bak</code>, then a rename. A file that is not valid JSON is read from its <code>.bak</code>, with a line in the log.</p></div>
+<div class="tile"><h3>Runs</h3><p>One pi per open agent (<code>agents/runner.mjs</code>; an isolated one through the sandbox), the actions clock, the curator, the browser's screen, and the notifications. It owns owners and modes too (<code>secure()</code> at every start).</p></div>
 </div>
 <h3 id="startup">Start order</h3>
 <ol>
@@ -162,7 +162,7 @@
 <li>The admin socket <code>/tmp/weilo-admin/admin.sock</code> (folder 0700, root's) starts: whoever connects gets a new pairing code. Only root in the container can open it (<code>docker exec weilo-core node /app/pair.mjs</code>).</li>
 <li><code>migrate()</code> brings the data folder to this app's data version, or stops the start if the folder is newer (<a href="#versions">Versions and data</a>).</li>
 <li><code>secure(profiles)</code> sets owner and mode of the top of every place (<a href="data-and-permissions.html#tree">the tree</a>).</li>
-<li>The server listens on port 3210, and on <code>/run/weilo-sandbox/api.sock</code> for the sandbox. Then, in the background: compaction settings are written for the models in use, every scratch folder is emptied, routines start, the curator's 5-minute timer starts, the watchdog starts, the chat index is brought up to date, and pi's model runtime is loaded (<code>warmModels</code>), so the first agent starts faster. The browser's screen is not started here: it starts at the first browser step or take over (<code>wakeScreen</code>).</li>
+<li>The server listens on port 3210, and on <code>/run/weilo-sandbox/api.sock</code> for the sandbox. Then, in the background: compaction settings are written for the models in use, every scratch folder is emptied, actions start, the curator's 5-minute timer starts, the watchdog starts, the chat index is brought up to date, and pi's model runtime is loaded (<code>warmModels</code>), so the first agent starts faster. The browser's screen is not started here: it starts at the first browser step or take over (<code>wakeScreen</code>).</li>
 <li>On <code>SIGTERM</code> or <code>SIGINT</code> the daemon closes both servers, stops every pi (<code>SIGTERM</code>, then <code>SIGKILL</code> 5 seconds later if one hangs), waits for queued JSON and audit writes, and exits, within 12 seconds at most (<code>SHUTDOWN_MS</code>; compose allows 15).</li>
 <li>A worker thread (<code>watchdog.mjs</code>) watches the event loop: stuck for 120 seconds (<code>HUNG_MS</code>), it logs "The app stopped responding" and kills the daemon, and Docker starts it again.</li>
 </ol>
@@ -170,7 +170,7 @@
 
 <section class="card" id="pi-start">
 <h2>How an agent's pi starts</h2>
-<p>A pi starts on first use: the chat opening its event stream, a message, a routine, or a call that needs it. <code>open(id)</code> in <code>runner.mjs</code> keeps one run per agent; a second caller waits for the same start.</p>
+<p>A pi starts on first use: the chat opening its event stream, a message, an action, or a call that needs it. <code>open(id)</code> in <code>runner.mjs</code> keeps one run per agent; a second caller waits for the same start.</p>
 <figure>
 <div class="fig narrow">
 <svg viewBox="0 0 520 760" role="img" aria-labelledby="ps-t ps-d">
@@ -227,10 +227,10 @@
   [--append-system-prompt agent/USER.md] [--append-system-prompt agent/MEMORY.md]
   -ne -e builtin:mcp -e builtin:codemode -e builtin:tool-search -e builtin:llama.cpp
   -e /app/weilo.mjs -e /app/memory/extension.mjs
-  [-e /app/browser/extension/index.js] [-e /app/routines/extension/index.js]
+  [-e /app/browser/extension/index.js] [-e /app/actions/extension/index.js]
   [-e agent/extensions/&lt;name&gt;/&lt;entry&gt; ...]
   --no-skills [--skill agent/skills/&lt;skill&gt; ...]
-  --tools read,bash,edit,write,show,ask,manage_agents,skill,memory,fetch_knowledge,manage_settings,ask_agent[,browser][,routine][,&lt;extension tools&gt;][,codemode,mcp__&lt;plugin&gt;__* ...]
+  --tools read,bash,edit,write,show,ask,manage_agents,skill,memory,fetch_knowledge,manage_settings,ask_agent[,browser][,action][,&lt;extension tools&gt;][,codemode,mcp__&lt;plugin&gt;__* ...]
   --session-dir agent/sessions/&lt;id&gt; --session-id &lt;id&gt;</code></pre>
 <p>An isolated agent differs in six places: it starts in the sandbox (<code>spawnSandboxed</code>, with only its folder, chat, HOME and, read only, its skills and added extensions mounted); its profile is read from a copy in its pi folder; it gets <code>--no-context-files</code> instead of <code>USER.md</code> and <code>MEMORY.md</code>; it does not load <code>memory/extension.mjs</code>; its <code>--tools</code> leave out <code>skill</code>, <code>memory</code>, <code>fetch_knowledge</code>, <code>manage_settings</code> and <code>ask_agent</code>; and its chat is in <code>isolated-sessions/&lt;id&gt;</code>. Without plugins the list ends with <code>--no-mcp</code> instead of <code>codemode</code> and the plugin tools.</p>
 <ul>
@@ -313,13 +313,13 @@
 
 <section class="card" id="events">
 <h2>Events and chat files</h2>
-<p><code>GET /api/agents/:id/events</code> is a server-sent event stream, for paired devices only. The first event is <code>{type: "history", messages, busy, asking}</code> (pi's <code>get_messages</code>, taken in the same step that adds the listener, so no event falls between them; only what the chat shows: user and agent messages without thinking, compaction summaries, and the <code>ask</code>, <code>routine</code> and <code>manage_agents</code> results). Then come pi's own events: <code>agent_start</code>, <code>message_update</code>, <code>message_end</code>, <code>tool_execution_start</code> and <code>_end</code>, <code>compaction_start</code> and <code>_end</code>, <code>agent_settled</code>, <code>extension_ui_request</code>, plus the daemon's <code>ask_end</code> and finally <code>{type: "exit", code, error}</code> when pi ends.</p>
+<p><code>GET /api/agents/:id/events</code> is a server-sent event stream, for paired devices only. The first event is <code>{type: "history", messages, busy, asking}</code> (pi's <code>get_messages</code>, taken in the same step that adds the listener, so no event falls between them; only what the chat shows: user and agent messages without thinking, compaction summaries, and the <code>ask</code>, <code>action</code> and <code>manage_agents</code> results, and in older chats the old <code>routine</code> tool's). Then come pi's own events: <code>agent_start</code>, <code>message_update</code>, <code>message_end</code>, <code>tool_execution_start</code> and <code>_end</code>, <code>compaction_start</code> and <code>_end</code>, <code>agent_settled</code>, <code>extension_ui_request</code>, plus the daemon's <code>ask_end</code> and finally <code>{type: "exit", code, error}</code> when pi ends.</p>
 <p>A user message that pi expanded from <code>/skill:name</code> is turned back into what was typed (<code>asTyped</code> in <code>agents/sessions.mjs</code>), in the stream and in the files read later.</p>
 <h3>The chat files</h3>
 <p>Pi writes one JSON line per entry in <code>*.jsonl</code> files in the agent's session folder: <code>agent/sessions/&lt;id&gt;/</code> or <code>isolated-sessions/&lt;id&gt;/</code>. The daemon reads them for four things:</p>
 <ul>
 <li>The agent list's newest message: only the last 64 KB of the newest file.</li>
-<li>Earlier messages that pi summarized away: <code>GET /api/agents/:id/earlier?skip=n</code>, 60 at a time, the entries before the last compaction's <code>firstKeptEntryId</code>, without thinking and without tool results other than <code>ask</code>, <code>routine</code> and <code>manage_agents</code>. What was read is kept for the last 4 agents (<code>EARLIER_KEPT</code>), keyed by each file's size and time, so the next page is a slice of it; only what the chat shows is kept.</li>
+<li>Earlier messages that pi summarized away: <code>GET /api/agents/:id/earlier?skip=n</code>, 60 at a time, the entries before the last compaction's <code>firstKeptEntryId</code>, without thinking and without tool results other than <code>ask</code>, <code>action</code>, <code>manage_agents</code> (and the older <code>routine</code>). What was read is kept for the last 4 agents (<code>EARLIER_KEPT</code>), keyed by each file's size and time, so the next page is a slice of it; only what the chat shows is kept.</li>
 <li>The chat index (<code>agents/chats.mjs</code>), for search (<code>GET /api/search?q=</code>, at most 200 characters, 50 results, newest first), <a href="memory-and-knowledge.html#fetch"><code>fetch_knowledge</code></a> and the <a href="memory-and-knowledge.html#curator">curator</a>: SQLite (<code>node:sqlite</code>) with an FTS5 trigram index of user and assistant text. Each use first reads what was added to the files since (in 1 MB pieces, whole lines only); a file that shrank is read again, one that went is dropped. The index lives in <code>agent/index/chats.db</code> (the folder root's, 0700), in the data folder, so an image update keeps it; it is brought up to date when the daemon starts.</li>
 </ul>
 <p>Every chat file is opened with <code>O_NOFOLLOW</code> and must be a regular file (<code>openChat</code> in <code>common.mjs</code>): a link an agent put among its chat files is skipped, never indexed or shown.</p>
@@ -327,17 +327,17 @@
 <p>Pi summarizes long conversations itself, when the free tokens fall to <code>compaction.modelOverrides.&lt;provider/id&gt;.reserveTokens</code>. The daemon writes that value for each model in use that has none: summarize at 40% of a 1M window, 80% of a 500k one, 90% of a smaller one, never with less than 16384 tokens free (<code>COMPACT_AT</code>, <code>MIN_RESERVE</code>, <code>settings/compaction.mjs</code>). A value set by hand stays. <code>GET …/context</code> gives the chat's meter <code>{tokens, window, point}</code>; <code>POST …/compact</code> summarizes now and is refused during a run.</p>
 </section>
 
-<section class="card" id="routines">
-<h2>Routines</h2>
-<p><code>routines/routines.mjs</code> keeps <code>agent/routines.json</code> <code>{timezone, items}</code> and checks every 30 seconds.</p>
+<section class="card" id="actions">
+<h2>Actions</h2>
+<p><code>actions/actions.mjs</code> keeps <code>agent/actions.json</code> <code>{timezone, items}</code>: what agents do for the user with a tap and, if the user chooses, by themselves at set times. It checks every 30 seconds for what is due. Older versions kept timed tasks in <code>agent/routines.json</code>: on first use each becomes an agent action with that schedule, and the file is removed.</p>
 <ul>
-<li><code>every</code> is <code>once</code>, <code>hour</code>, <code>day</code>, <code>weekday</code> or <code>week</code>; <code>times</code> are 1 to 6 <code>HH:MM</code> values; <code>day</code> (0 to 6) for a week; <code>date</code> (<code>YYYY-MM-DD</code>, <code>today</code>, <code>tomorrow</code>) or <code>in_minutes</code> (1 to 525600) for once. At most 50 routines per agent.</li>
-<li>Times are wall-clock times in the routine's time zone: the browser's, sent as <code>X-Timezone</code> with every request. A time a clock change repeats runs once, at the earlier moment; one it skips runs at the later moment (<code>routines/schedule.mjs</code>).</li>
-<li>A routine moves to its next time, and that is saved, before its task is sent: a crash skips one run and never repeats one.</li>
-<li>A routine missed by more than an hour (the computer was off) waits for its next time and is noted as <code>Missed: …</code>, recurring or one-time; a missed one-time routine stays in the list with that note. The routines panel shows it as it is, not as a failed run.</li>
-<li>When the user's time zone changes, recurring routines that were on the old zone move to the new one, and their next time is worked out again.</li>
-<li>The task goes to the chat as a message that starts with <code>⏰ Routine: &lt;title&gt;</code>, followed by a note that the user is away: do what the task covers, leave steps that need the user for the end, and reply with what was done and what waits. After a minute the daemon moves on to the next routine, so one slow or stuck agent does not hold up the others; a slow start is not marked failed, but a real failure that comes later is still recorded.</li>
-<li>Agents manage their own routines with the <code>routine</code> tool of the bundled routines extension, which calls <code>/api/agents/:id/routines</code>.</li>
+<li>A <code>schedule</code>'s <code>every</code> is <code>once</code>, <code>minutes</code> (5, 10, 15 or 30), <code>hour</code>, <code>day</code>, <code>weekday</code> or <code>week</code>; <code>times</code> are 1 to 6 <code>HH:MM</code> values; <code>day</code> for week; <code>date</code> (or <code>today</code>, <code>tomorrow</code>) or <code>in_minutes</code> for once. At most 50 actions per agent.</li>
+<li>Times are wall-clock times in the user's time zone: the browser's, sent as <code>X-Timezone</code> with every request. A time a clock change repeats runs once, at the earlier moment; one it skips runs at the later moment (<code>actions/schedule.mjs</code>).</li>
+<li>A due action moves to its next time, and that is saved, before it runs: a crash skips one run and never repeats one. A once schedule ends after it runs.</li>
+<li>One missed by more than an hour (the computer was off) waits for its next time and is noted as <code>Missed: …</code> in its runs.</li>
+<li>When the user's time zone changes, recurring schedules on the old zone move to the new one, and their next time is worked out again.</li>
+<li>A due action runs as if tapped, with its fields' defaults. An agent action goes to the chat as a message that starts with <code>⚡ Action: &lt;title&gt; · ran by itself</code>, with a note that the user is away: do it now, confirm with <code>ask</code> (a notification), leave the rest that needs them for the end. A script runs at once, and its answer is a notification; one that asks first waits for the user instead, with a notification.</li>
+<li>Agents propose and change their actions with the <code>action</code> tool of the bundled actions extension; the user approves each in the chat.</li>
 </ul>
 </section>
 

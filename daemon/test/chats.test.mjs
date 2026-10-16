@@ -16,7 +16,7 @@ test("the index finds what was said, by text, words, day and time", async () => 
   writeFileSync(regular, line("user", "My home Server runs Ubuntu", "2026-10-10T10:00:00Z") + line("assistant", "Noted the server", "2026-10-10T10:01:00Z") + '{"type":"model_change"}\nnot json\n');
   writeFileSync(isolated, line("user", "⏰ Routine: check the bank", "2026-10-11T09:00:00Z"));
   assert.deepEqual((await containing("SERV", null, 10)).map((m) => m.body), ["Noted the server", "My home Server runs Ubuntu"]);
-  assert.deepEqual((await withAny(["ubuntu", "bank", "is"], null, 10)).map((m) => [m.agent, m.isolated, m.speaker]), [["b2", 1, "routine"], ["a1", 0, "you"]]);
+  assert.deepEqual((await withAny(["ubuntu", "bank", "is"], null, 10)).map((m) => [m.agent, m.isolated, m.speaker]), [["b2", 1, "action"], ["a1", 0, "you"]]);
   assert.equal((await onDate("a1", "2026-10-10")).length, 2);
   assert.equal((await after("a1", "2026-10-10T10:00:00Z")).length, 1);
   assert.deepEqual(await agentsWithChats(), ["a1", "b2"]);

@@ -3,7 +3,7 @@ import { request } from "./http";
 export interface Found {
   agent: string;
   name: string;
-  speaker: "you" | "agent" | "routine";
+  speaker: "you" | "agent" | "action";
   at: string;
   snippet: string;
 }

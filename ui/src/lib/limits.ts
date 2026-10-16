@@ -1,5 +1,3 @@
-export const MAX_ROUTINE_TITLE = 80;
-export const MAX_ROUTINE_TASK = 4000;
 export const MAX_TIMES = 6;
 export const MAX_NAME = 100;
 export const MAX_SEARCH = 200;

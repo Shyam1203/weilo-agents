@@ -8,6 +8,9 @@ import { asTyped, chatFiles, textOf } from "./sessions.mjs";
 
 const ROLE = /"role":"(user|assistant)"/;
 
+// A message an action sent (ACTION_MARK in actions/actions.mjs), or one from the scheduled tasks of older versions.
+const startedByAction = (body) => body.startsWith("⚡ Action: ") || body.startsWith("⏰ Routine:");
+
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, done INTEGER NOT NULL, head TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY, file TEXT NOT NULL, agent TEXT NOT NULL, speaker TEXT NOT NULL, at TEXT NOT NULL, body TEXT NOT NULL, isolated INTEGER NOT NULL);
@@ -18,7 +21,7 @@ const SCHEMA = `
   CREATE TRIGGER IF NOT EXISTS messages_out AFTER DELETE ON messages BEGIN INSERT INTO words (words, rowid, body) VALUES ('delete', old.id, old.body); END;
 `;
 
-const INDEX_VERSION = 1;
+const INDEX_VERSION = 2;
 
 let db = null;
 let sql = null;
@@ -57,7 +60,7 @@ function said(line) {
   const message = asTyped(entry.message);
   const body = textOf(message?.content, "\n").trim();
   if (!body || (message.role !== "user" && message.role !== "assistant")) return null;
-  return { speaker: message.role === "assistant" ? "agent" : body.startsWith("⏰ Routine:") ? "routine" : "you", at: String(entry.timestamp ?? ""), body };
+  return { speaker: message.role === "assistant" ? "agent" : startedByAction(body) ? "action" : "you", at: String(entry.timestamp ?? ""), body };
 }
 
 async function allChatFiles() {

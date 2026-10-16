@@ -68,6 +68,15 @@ export function agentKey(id) {
 
 export const dropAgentKey = (key) => agentKeys.delete(key);
 
+// A script action's key: it may use its agent's browser and nothing else (no model, no other tool).
+const scriptKeys = new Map();
+export function scriptKey(id) {
+  const key = randomBytes(32).toString("base64url");
+  scriptKeys.set(key, id);
+  return key;
+}
+export const dropScriptKey = (key) => scriptKeys.delete(key);
+
 export const KEY_HEADERS = ["authorization", "x-api-key", "x-goog-api-key", "api-key"];
 
 const KEY_LENGTH = 43;
@@ -85,7 +94,7 @@ export function keyIn({ headers }, query) {
 
 export async function identify({ headers }) {
   const bearer = /^Bearer (\S+)$/.exec(headers.authorization ?? "")?.[1];
-  if (bearer) return agentKeys.has(bearer) ? { agent: agentKeys.get(bearer) } : null;
+  if (bearer) return agentKeys.has(bearer) ? { agent: agentKeys.get(bearer) } : scriptKeys.has(bearer) ? { agent: scriptKeys.get(bearer), script: true } : null;
   const token = cookieOf(headers.cookie);
   if (!token) return null;
   const device = (await loaded()).find((d) => d.hash === hash(token));
