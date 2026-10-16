@@ -63,6 +63,10 @@ export const userZone = async () => (await load(), state.timezone);
 export async function noteZone(zone) {
   await load();
   if (!validZone(zone) || state.timezone === zone) return;
+  for (const r of state.items.filter((r) => r.timezone === state.timezone && r.every !== "once" && r.nextRunAt !== null)) {
+    r.timezone = zone;
+    r.nextRunAt = nextRun(r, zone, Date.now());
+  }
   state.timezone = zone;
   await save();
 }
@@ -110,10 +114,16 @@ export async function forgetRoutines(agentId) {
 
 let ticking = false;
 
-const sendWithin = (agentId, text) => {
+const failed = (routine, err) => {
+  routine.lastError = String(err.message).slice(0, 300);
+  if (err.status === 404) state.items = state.items.filter((r) => r !== routine);
+};
+
+const sendWithin = (routine, text) => {
   let timer;
-  const late = new Promise((_, reject) => (timer = setTimeout(() => reject(new Error("The agent did not answer")), SEND_MS)));
-  return Promise.race([prompt(agentId, { text }), late]).finally(() => clearTimeout(timer));
+  const sent = prompt(routine.agentId, { text });
+  const late = new Promise((resolve) => (timer = setTimeout(resolve, SEND_MS)));
+  return Promise.race([sent, late.then(() => sent.catch((err) => (failed(routine, err), save())))]).finally(() => clearTimeout(timer));
 };
 
 async function tick() {
@@ -134,18 +144,17 @@ async function tick() {
         continue;
       }
       if (!late) sends.push(routine);
-      else if (routine.every === "once") routine.lastError = MISSED;
+      else routine.lastError = MISSED;
     }
     if (due.length) await save();
     for (const routine of sends) {
       if (!state.items.includes(routine)) continue;
       try {
-        await sendWithin(routine.agentId, `⏰ Routine: ${routine.title}\n\n${NOTE}\n\n${routine.task}`);
         routine.lastError = null;
+        await sendWithin(routine, `⏰ Routine: ${routine.title}\n\n${NOTE}\n\n${routine.task}`);
         if (routine.every === "once") state.items = state.items.filter((r) => r !== routine);
       } catch (err) {
-        routine.lastError = String(err.message).slice(0, 300);
-        if (err.status === 404) state.items = state.items.filter((r) => r !== routine);
+        failed(routine, err);
       }
     }
     if (sends.length) await save();

@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { join } from "node:path";
-import { BIN, MAX_VIEW_MESSAGE, SCREEN, SCREEN_RESTART_MS } from "../config.mjs";
+import { BIN, MAX_VIEW_MESSAGE, SCREEN, SCREEN_RESTART_MS, SCREEN_WAKE_MS } from "../config.mjs";
 import { splitOn } from "../common.mjs";
 import { accept, frame, readMessages } from "../http/websocket.mjs";
 import { BROWSER, folder, setOwner, spawnAs } from "../users.mjs";
@@ -36,7 +36,17 @@ function xauthority(cookie) {
   return Buffer.concat([Buffer.from([0xff, 0xff]), field(Buffer.alloc(0)), field(Buffer.from("1")), field(Buffer.from("MIT-MAGIC-COOKIE-1")), field(cookie)]);
 }
 
-export async function startScreen() {
+let starting = null;
+export async function wakeScreen() {
+  starting ??= startScreen().catch((err) => ((starting = null), Promise.reject(err)));
+  await starting;
+  for (const end = Date.now() + SCREEN_WAKE_MS; !(chromium && existsSync(SOCKET)); ) {
+    if (Date.now() > end) throw new Error("The browser did not start in time");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+async function startScreen() {
   if (!hasScreen()) return log("not in this image; the browser is off");
   rmSync("/tmp/.X1-lock", { force: true });
   rmSync("/tmp/.X11-unix/X1", { force: true });
@@ -65,7 +75,7 @@ export async function startScreen() {
 }
 
 export function viewUpgrade(req, socket, head) {
-  if (!hasScreen() || !accept(req, socket, "binary")) return false;
+  if (!hasScreen() || !chromium || !accept(req, socket, "binary")) return false;
   const screen = connect(SOCKET);
   const end = () => (screen.destroy(), socket.destroy());
   screen.on("error", end);

@@ -1,7 +1,7 @@
-import { open, readdir, stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { CHATS } from "../common.mjs";
-import { CHAT_CHUNK, CHAT_TAIL, EARLIER_PAGE, PREVIEW_CHARS, PREVIEW_TAIL } from "../config.mjs";
+import { CHATS, openChat } from "../common.mjs";
+import { CHAT_CHUNK, CHAT_TAIL, EARLIER_KEPT, EARLIER_PAGE, PREVIEW_CHARS, PREVIEW_TAIL } from "../config.mjs";
 
 export const textOf = (content, between = "") => (typeof content === "string" ? content : (content ?? []).filter((b) => b.type === "text").map((b) => b.text).join(between));
 
@@ -30,7 +30,7 @@ export async function lastMessage(id) {
 }
 
 async function readLast(path) {
-  const file = await open(path).catch(() => null);
+  const file = await openChat(path).catch(() => null);
   if (!file) return null;
   try {
     const { size } = await file.stat();
@@ -61,7 +61,7 @@ async function readLast(path) {
 
 
 async function* linesOf(file) {
-  const handle = await open(file).catch(() => null);
+  const handle = await openChat(file).catch(() => null);
   if (!handle) return;
   try {
     const { size } = await handle.stat();
@@ -90,8 +90,7 @@ async function* linesOf(file) {
 export const shown = (m) => m?.role === "user" || m?.role === "assistant" || m?.role === "compactionSummary" || (m?.role === "toolResult" && ["ask", "routine", "manage_agents"].includes(m.toolName));
 export const slim = (m) => (Array.isArray(m.content) && m.role === "assistant" ? { ...m, content: m.content.filter((b) => b.type !== "thinking") } : m);
 
-export async function earlierOf(id, skip = 0) {
-  const files = await chatFiles(id);
+async function readEarlier(files) {
   const entries = [];
   let kept = null;
   let before = 0;
@@ -107,12 +106,27 @@ export async function earlierOf(id, skip = 0) {
         continue;
       }
       if (entry.type === "compaction") kept = entry.firstKeptEntryId;
-      else entries.push(entry);
+      else entries.push({ id: entry.id, message: shown(entry.message) ? slim(asTyped(entry.message)) : null });
     }
   }
   const end = kept ? entries.findIndex((e, i) => i >= before && e.id === kept) : before;
-  const earlier = entries.slice(0, Math.max(0, end)).filter((e) => shown(e.message));
+  return entries.slice(0, Math.max(0, end)).flatMap((e) => (e.message ? [e.message] : []));
+}
+
+const earlierRead = new Map();
+export async function earlierOf(id, skip = 0) {
+  const files = await chatFiles(id);
+  const key = (await Promise.all(files.map((f) => stat(f).then((s) => `${f}:${s.size}:${s.mtimeMs}`, () => f)))).join("|");
+  let read = earlierRead.get(id);
+  if (read?.key !== key) {
+    read = { key, earlier: readEarlier(files) };
+    earlierRead.delete(id);
+    earlierRead.set(id, read);
+    read.earlier.catch(() => earlierRead.delete(id));
+    if (earlierRead.size > EARLIER_KEPT) earlierRead.delete(earlierRead.keys().next().value);
+  }
+  const earlier = await read.earlier;
   const stop = Math.max(0, earlier.length - skip);
   const start = Math.max(0, stop - EARLIER_PAGE);
-  return { messages: earlier.slice(start, stop).map((e) => slim(asTyped(e.message))), more: start > 0 };
+  return { messages: earlier.slice(start, stop), more: start > 0 };
 }

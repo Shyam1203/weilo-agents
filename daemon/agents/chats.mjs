@@ -1,7 +1,8 @@
-import { open, readdir, stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
-import { join, sep } from "node:path";
-import { CHATS, ISOLATED_SESSIONS, RUN } from "../common.mjs";
+import { mkdirSync } from "node:fs";
+import { dirname, join, sep } from "node:path";
+import { AGENT_DIR, CHATS, ISOLATED_SESSIONS, openChat } from "../common.mjs";
 import { CHAT_CHUNK } from "../config.mjs";
 import { asTyped, chatFiles, textOf } from "./sessions.mjs";
 
@@ -19,8 +20,9 @@ const SCHEMA = `
 
 let db = null;
 let sql = null;
-export function openIndex(path = join(RUN, "chats.db")) {
+export function openIndex(path = join(AGENT_DIR, "index", "chats.db")) {
   db?.close();
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   db = new DatabaseSync(path);
   db.exec(SCHEMA);
   sql = {
@@ -54,7 +56,8 @@ async function allChatFiles() {
 }
 
 async function index({ path, agent, isolated }, from, size) {
-  const handle = await open(path);
+  const handle = await openChat(path).catch(() => null);
+  if (!handle) return from;
   try {
     let done = from;
     let rest = Buffer.alloc(0);
@@ -77,7 +80,7 @@ async function index({ path, agent, isolated }, from, size) {
 
 const HEAD = 64;
 const headOf = async (path) => {
-  const handle = await open(path).catch(() => null);
+  const handle = await openChat(path).catch(() => null);
   if (!handle) return "";
   try {
     const { buffer, bytesRead } = await handle.read(Buffer.alloc(HEAD), 0, HEAD, 0);
@@ -148,5 +151,5 @@ export function withAny(words, agents, limit) {
 export const onDate = (agent, date) => query(`SELECT ${COLUMNS} FROM messages WHERE agent = ? AND at >= ? AND at < ? ORDER BY at`, agent, date, `${date}~`);
 export const newest = async (agent, limit) => (await query(`SELECT ${COLUMNS} FROM messages WHERE agent = ? ORDER BY at DESC LIMIT ?`, agent, limit)).reverse();
 export const latest = (agent) => read("SELECT max(at) AS at FROM messages WHERE agent = ?", agent)[0]?.at ?? null;
-export const after = (agent, at) => read(`SELECT ${COLUMNS} FROM messages WHERE agent = ? AND at > ? ORDER BY at`, agent, at);
+export const after = (agent, at, limit = -1) => read(`SELECT ${COLUMNS} FROM messages WHERE agent = ? AND at > ? ORDER BY at LIMIT ?`, agent, at, limit);
 export const agentsWithChats = async () => (await query("SELECT DISTINCT agent FROM messages")).map(({ agent }) => agent);

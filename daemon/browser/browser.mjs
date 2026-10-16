@@ -5,7 +5,7 @@ import { fail } from "../common.mjs";
 import {
   BACK_TIMEOUT_MS, CONNECT_TIMEOUT_MS, CONTENT_TIMEOUT_MS, ELEMENT_TIMEOUT_MS, LOAD_TIMEOUT_MS, PORT, SETTLE_MS, SNAPSHOT_MAX, SNAPSHOT_TIMEOUT_MS, TAB_TIMEOUT_MS, WINDOW_TRIES, WINDOW_TRY_MS,
 } from "../config.mjs";
-import { cdpAddress, hasScreen } from "./screen.mjs";
+import { cdpAddress, hasScreen, wakeScreen } from "./screen.mjs";
 
 const playwright = () => createRequire(import.meta.url)("playwright-core");
 
@@ -23,6 +23,7 @@ const connected = () =>
 
 async function connect() {
   if (!hasScreen()) throw fail(409, "This image has no browser");
+  await wakeScreen();
   const browser = await playwright().chromium.connectOverCDP(cdpAddress(PORT), { timeout: CONNECT_TIMEOUT_MS });
   browser.on("disconnected", () => {
     connecting = undefined;

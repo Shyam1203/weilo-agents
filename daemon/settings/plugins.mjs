@@ -1,7 +1,7 @@
 import { fail, MCP, updateJson } from "../common.mjs";
 import { servers } from "../gateway/plugins.mjs";
 import { BIN, PLUGIN_STATUS_TIMEOUT_MS } from "../config.mjs";
-import { pluginUser, sharedTools, spawnAs, writeIn } from "../users.mjs";
+import { passedOn, pluginUser, sharedTools, spawnAs, writeIn } from "../users.mjs";
 
 const NAME = /^[\w-]+$/;
 const ENV_KEY = /^[A-Za-z_]\w*$/;
@@ -44,7 +44,7 @@ async function report(name, plugin) {
   const { user, home } = await pluginUser(name);
   await writeIn(home, "mcp.json", JSON.stringify({ mcpServers: { [name]: plugin } }), user.uid, user.gid, 0o600);
   const stdout = await new Promise((resolve) => {
-    const child = spawnAs(user, BIN.pi, ["mcp", "list", "--json"], { cwd: home, env: { ...process.env, ...sharedTools, PI_CODING_AGENT_DIR: home, HOME: home }, stdio: ["ignore", "pipe", "ignore"] });
+    const child = spawnAs(user, BIN.pi, ["mcp", "list", "--json"], { cwd: home, env: { ...passedOn(), ...sharedTools, PI_CODING_AGENT_DIR: home, HOME: home }, stdio: ["ignore", "pipe", "ignore"] });
     let out = "";
     const timer = setTimeout(() => child.kill(), PLUGIN_STATUS_TIMEOUT_MS);
     child.stdout.setEncoding("utf8").on("data", (d) => (out += d));

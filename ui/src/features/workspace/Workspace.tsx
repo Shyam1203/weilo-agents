@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { getUpdate, type Update } from "../../api/app";
 import { reorderAgents, type Agent } from "../../api/agents";
 import type { Extension } from "../../api/extensions";
@@ -10,14 +10,16 @@ import { KEYS, read, write } from "../../lib/storage";
 import { useBackStep } from "../../lib/useBackStep";
 import { useEdgeSwipe } from "../../lib/useEdgeSwipe";
 import { useMedia } from "../../lib/useMedia";
-import { AgentForm } from "../agents/AgentForm";
 import { ChatView } from "../chat/ChatView";
-import { SettingsView, type SettingsPage } from "../settings/SettingsView";
+import type { SettingsPage } from "../settings/SettingsView";
 import { ContactDialog } from "../support/ContactDialog";
 import { Welcome } from "../user/Welcome";
 import { GetStarted } from "./GetStarted";
 import { Sidebar } from "./Sidebar";
 import { useUnread } from "./useUnread";
+
+const AgentForm = lazy(() => import("../agents/AgentForm").then((m) => ({ default: m.AgentForm })));
+const SettingsView = lazy(() => import("../settings/SettingsView").then((m) => ({ default: m.SettingsView })));
 
 interface Props {
   agents: Agent[];
@@ -102,7 +104,11 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
         />
       </div>
       <main ref={swipe} className={`${showChat || settings ? "flex" : "hidden"} min-w-0 flex-1 md:flex`}>
-        {settings && <SettingsView page={settings} agents={agents} providers={providers} skills={skills} plugins={plugins} extensions={extensions} user={user} models={models} onModels={onModels} onChange={reload} onClose={() => setSettings(null)} />}
+        {settings && (
+          <Suspense>
+            <SettingsView page={settings} agents={agents} providers={providers} skills={skills} plugins={plugins} extensions={extensions} user={user} models={models} onModels={onModels} onChange={reload} onClose={() => setSettings(null)} />
+          </Suspense>
+        )}
         <div className={settings ? "hidden" : "contents"}>
           {agent ? (
             <ChatView
@@ -123,20 +129,22 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
         </div>
       </main>
       {form && (
-        <AgentForm
-          agent={form === "edit" ? agent : undefined}
-          providers={providers}
-          skills={skills}
-          plugins={plugins}
-          extensions={extensions}
-          models={models}
-          hidden={settings !== null}
-          onAddProvider={() => openSettings("providers")}
-          onOpenSettings={openSettings}
-          onClose={() => setForm(null)}
-          onSaved={async (saved) => (await reloadAgents(), select(saved.id), setForm(null))}
-          onDeleted={() => (setForm(null), setShowChat(false), reloadAgents())}
-        />
+        <Suspense>
+          <AgentForm
+            agent={form === "edit" ? agent : undefined}
+            providers={providers}
+            skills={skills}
+            plugins={plugins}
+            extensions={extensions}
+            models={models}
+            hidden={settings !== null}
+            onAddProvider={() => openSettings("providers")}
+            onOpenSettings={openSettings}
+            onClose={() => setForm(null)}
+            onSaved={async (saved) => (await reloadAgents(), select(saved.id), setForm(null))}
+            onDeleted={() => (setForm(null), setShowChat(false), reloadAgents())}
+          />
+        </Suspense>
       )}
       {welcome && <Welcome user={user} onDone={() => (write(KEYS.welcomed, "1"), setWelcome(false), reload())} />}
       {contact && <ContactDialog name={user.name} onClose={() => setContact(false)} />}

@@ -11,11 +11,11 @@ import { earlierOf } from "./agents/sessions.mjs";
 import { clearScratch } from "./agents/workspace.mjs";
 import { closeBrowser, giveBack, hasWindow, isTaken, showBrowser, takeOver, useBrowser } from "./browser/browser.mjs";
 import { getRule, saveRule } from "./browser/rule.mjs";
-import { cdpUpgrade, isCdpPath, startScreen, viewUpgrade } from "./browser/screen.mjs";
-import { fail } from "./common.mjs";
-import { ADMIN_SOCKET, PORT, SANDBOX_API, SANDBOX_DIR, SYSTEM_PATH, USAGE_SHOWN } from "./config.mjs";
+import { cdpUpgrade, isCdpPath, viewUpgrade } from "./browser/screen.mjs";
+import { fail, settled } from "./common.mjs";
+import { ADMIN_SOCKET, PORT, SANDBOX_API, SANDBOX_DIR, HUNG_MS, MAX_PAIR_BODY, SHUTDOWN_MS, SYSTEM_PATH, USAGE_SHOWN } from "./config.mjs";
 import { sendContact } from "./contact.mjs";
-import { providerOf, proxyModel } from "./gateway/models.mjs";
+import { providerOf, proxyModel, warmModels } from "./gateway/models.mjs";
 import { pipePlugin, pluginOf, proxyPlugin } from "./gateway/plugins.mjs";
 import { cookieFor, identify, keyIn, newCode, pair, pairedDevices, unpair } from "./http/access.mjs";
 import { events } from "./http/events.mjs";
@@ -36,7 +36,9 @@ import { addSkills, hasSkill, listSkills, planSkill, removeSkill, saveSkill } fr
 import { manageSettings } from "./settings/manage.mjs";
 import { getUser, saveUser } from "./settings/user.mjs";
 import { setUpdateCheck, updateStatus } from "./update.mjs";
-import { audit } from "./audit.mjs";
+import { audit, audited } from "./audit.mjs";
+import { syncIndex } from "./agents/chats.mjs";
+import { watchdog } from "./watchdog.mjs";
 import { securityReport } from "./security.mjs";
 import { secure } from "./users.mjs";
 import { BUILD } from "./version.mjs";
@@ -189,7 +191,7 @@ async function handle(req, res, sandboxed) {
       return await proxyPlugin(req, res, { plugin, rest, search: url.search });
     }
     if (path === "/api/pair" && req.method === "POST" && !sandboxed) {
-      const token = await pair((await bodyOf(req)).code, req.headers["user-agent"]).catch((err) => {
+      const token = await pair((await bodyOf(req, MAX_PAIR_BODY)).code, req.headers["user-agent"]).catch((err) => {
         audit("pairing refused", { reason: err.message });
         throw err;
       });
@@ -275,7 +277,18 @@ sandbox.listen(SANDBOX_API);
 void syncCompaction();
 void clearScratch();
 startRoutines();
-void startScreen().catch((err) => console.error("The browser cannot start:", err.message));
 startCurator();
 
-for (const signal of ["SIGTERM", "SIGINT"]) process.on(signal, () => stopAll().finally(() => process.exit(0)));
+watchdog(HUNG_MS);
+void syncIndex().catch((err) => console.error("The chat index cannot be built:", err.message));
+void warmModels();
+
+const shutDown = () => {
+  server.close();
+  sandbox.close();
+  setTimeout(() => process.exit(0), SHUTDOWN_MS).unref();
+  void stopAll()
+    .then(() => Promise.all([settled(), audited()]))
+    .finally(() => process.exit(0));
+};
+for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, shutDown);

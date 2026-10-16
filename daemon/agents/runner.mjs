@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EXTENSIONS, fail } from "../common.mjs";
 import { agentKey, dropAgentKey } from "../http/access.mjs";
-import { BIN, CORE_TOOLS, IDLE_MS, MAX_APPROVAL, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
+import { BIN, CORE_TOOLS, GLANCE_MS, IDLE_MS, MAX_APPROVAL, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
 import { audit } from "../audit.mjs";
 import { askBefore } from "../browser/rule.mjs";
 import { addUsage, usageToday } from "./usage.mjs";
@@ -16,7 +16,7 @@ import { skillPaths } from "../settings/skills.mjs";
 import { userFlags } from "../settings/user.mjs";
 import { notify } from "../push.mjs";
 import { spawnSandboxed } from "../sandbox/client.mjs";
-import { ownTools, sharedTools, spawnAs } from "../users.mjs";
+import { ownTools, passedOn, sharedTools, spawnAs } from "../users.mjs";
 import { chatDirOf, getAgent, homeOf, isIsolated, makeHome, mayCall, placesOf, profilePath, userHomeOf, userOf } from "./agents.mjs";
 import { piDirOf, piFiles, writePiDir } from "./pidir.mjs";
 import { piRpc } from "./pi.mjs";
@@ -46,7 +46,7 @@ const close = (run) => {
 const touch = (run) => {
   clearTimeout(run.timer);
   if (run.busy || run.listeners.size || runs.get(run.id) !== run) return;
-  run.timer = setTimeout(() => (close(run), void clearScratch(run.id)), IDLE_MS).unref();
+  run.timer = setTimeout(() => (close(run), void clearScratch(run.id)), run.used ? IDLE_MS : GLANCE_MS).unref();
 };
 
 const [WEILO, MEMORY] = ["../weilo.mjs", "../memory/extension.mjs"].map((path) => fileURLToPath(new URL(path, import.meta.url)));
@@ -131,12 +131,12 @@ async function start(run) {
     child = spawnSandboxed({ user, argv, cwd, env, umask: 0o002, binds: kind.binds, files: Object.fromEntries(Object.entries(files).map(([name, text]) => [join(dir, name), text])) });
   } else {
     await writePiDir(dir, user, files);
-    child = spawnAs(user, argv[0], argv.slice(1), { cwd, env: { ...process.env, ...env } });
+    child = spawnAs(user, argv[0], argv.slice(1), { cwd, env: { ...passedOn(), ...env } });
   }
   run.done = new Promise((resolve) => {
     run.pi = piRpc(child, {
       onEvent(event) {
-        if (event.type === "agent_start") (run.busy = true), (run.reply = null);
+        if (event.type === "agent_start") (run.busy = true), (run.used = true), (run.reply = null);
         if (event.type === "message_end" && event.message?.role === "assistant") (run.reply = event.message), void charge(run, event.message.usage).catch((err) => console.error("Usage:", err.message));
         if (event.type === "agent_settled") (run.busy = false), tell(run);
         if (event.type === "tool_execution_start") run.doing = event.toolName;

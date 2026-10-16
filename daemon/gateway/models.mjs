@@ -57,6 +57,8 @@ export const keyedHeaders = (headers, key, real) =>
 
 export const forgetAuth = () => (made = 0);
 
+export const warmModels = () => registry().then(() => {}, (err) => console.error("The model runtime cannot load:", err.message));
+
 /** @type {[string, RegExp][]} */
 const API_PATHS = [
   ["anthropic-messages", /^\/v1\/messages/],

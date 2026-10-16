@@ -54,7 +54,7 @@ export function piRpc(child, { onEvent, onExit } = /** @type {{ onEvent?: (event
   const close = () => {
     if (done) return;
     child.stdin.end();
-    killer ??= setTimeout(() => child.kill(), PI_KILL_MS).unref();
+    killer ??= setTimeout(() => (child.kill(), setTimeout(() => child.kill("SIGKILL"), PI_KILL_MS).unref()), PI_KILL_MS).unref();
   };
 
   return { send, reply, close };

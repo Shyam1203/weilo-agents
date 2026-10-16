@@ -83,7 +83,7 @@ async function curate(model, agent, text) {
 }
 
 async function newLines(id, since) {
-  const fresh = after(id, since);
+  const fresh = after(id, since, Math.ceil((CURATOR_MAX_PIECES * CURATOR_MAX_INPUT) / "[YYYY-MM-DD] User: ".length) + 1);
   if (!fresh.some((m) => m.speaker === "you")) return [];
   const lines = [];
   let size = 0;
