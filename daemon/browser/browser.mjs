@@ -3,18 +3,23 @@ import { createRequire } from "node:module";
 import { abort, activityOf, prompt } from "../agents/runner.mjs";
 import { fail } from "../common.mjs";
 import {
-  BACK_TIMEOUT_MS, CONNECT_TIMEOUT_MS, CONTENT_TIMEOUT_MS, ELEMENT_TIMEOUT_MS, LOAD_TIMEOUT_MS, PORT, SETTLE_MS, SNAPSHOT_MAX, SNAPSHOT_TIMEOUT_MS, TAB_TIMEOUT_MS, WINDOW_TRIES, WINDOW_TRY_MS,
+  BROWSER_IDLE_MS, BROWSER_SWEEP_MS, WINDOW_IDLE_MS, BACK_TIMEOUT_MS, CONNECT_TIMEOUT_MS, CONTENT_TIMEOUT_MS, ELEMENT_TIMEOUT_MS, LOAD_TIMEOUT_MS, PORT, SETTLE_MS, SNAPSHOT_MAX, SNAPSHOT_TIMEOUT_MS, TAB_TIMEOUT_MS, WINDOW_TRIES, WINDOW_TRY_MS,
 } from "../config.mjs";
-import { cdpAddress, hasScreen, wakeScreen } from "./screen.mjs";
+import { tellAgent } from "../agents/status.mjs";
+import { cdpAddress, hasScreen, isAwake, sleepScreen, viewing, wakeScreen } from "./screen.mjs";
 
 const playwright = () => createRequire(import.meta.url)("playwright-core");
 
 const TAKEN = "The user is using this browser now. Wait until they give it back.";
 
 const agents = new Map();
-const of = (agent) => agents.get(agent) ?? agents.set(agent, { window: null, taken: undefined, queue: Promise.resolve() }).get(agent);
+const of = (agent) => agents.get(agent) ?? agents.set(agent, { window: null, taken: undefined, queue: Promise.resolve(), used: Date.now() }).get(agent);
 
 let connecting;
+let current = null;
+const forgetWindows = () => {
+  for (const [agent, record] of agents) if (record.window) (record.window = null), tellAgent(agent, { browserOpen: false });
+};
 const connected = () =>
   (connecting ??= connect().catch((err) => {
     connecting = undefined;
@@ -25,9 +30,12 @@ async function connect() {
   if (!hasScreen()) throw fail(409, "This image has no browser");
   await wakeScreen();
   const browser = await playwright().chromium.connectOverCDP(cdpAddress(PORT), { timeout: CONNECT_TIMEOUT_MS });
+  current = browser;
   browser.on("disconnected", () => {
+    if (current !== browser) return;
+    current = null;
     connecting = undefined;
-    for (const record of agents.values()) record.window = null;
+    forgetWindows();
   });
   return { ctx: browser.contexts()[0], root: await browser.newBrowserCDPSession() };
 }
@@ -74,6 +82,7 @@ async function live(agent) {
   const tabs = await tabsOf(w);
   if (!tabs.length) {
     record.window = null;
+    tellAgent(agent, { browserOpen: false });
     return null;
   }
   if (!tabs.includes(w.tab)) w.tab = tabs.at(-1);
@@ -105,6 +114,7 @@ async function openWindow(agent) {
   const w = { windowId, tab, known: 1 };
   await restore(w).catch(() => {});
   of(agent).window = w;
+  tellAgent(agent, { browserOpen: true });
   for (const [other, { taken }] of agents) if (other !== agent && taken !== undefined) await showBrowser(other).catch(() => {});
   return w;
 }
@@ -216,16 +226,19 @@ function asMessage(err) {
 
 export function useBrowser(agent, args) {
   const record = of(agent);
-  const result = record.queue.then(() => step(agent, args)).catch(asMessage);
+  record.used = Date.now();
+  const result = record.queue.then(() => step(agent, args)).catch(asMessage).finally(() => (record.used = Date.now()));
   record.queue = result.catch(() => {});
   return result;
 }
 
 export const isTaken = (agent) => agents.get(agent)?.taken !== undefined;
+export const windowOpen = (agent) => Boolean(agents.get(agent)?.window);
 
 export async function takeOver(agent) {
   if (isTaken(agent)) return;
   const record = of(agent);
+  record.used = Date.now();
   const busy = activityOf(agent) !== null;
   record.taken = busy;
   try {
@@ -233,6 +246,7 @@ export async function takeOver(agent) {
     await record.queue;
     if (!(await live(agent))) await openWindow(agent);
     await showBrowser(agent);
+    tellAgent(agent, { taken: true });
   } catch (err) {
     record.taken = undefined;
     throw err;
@@ -241,8 +255,10 @@ export async function takeOver(agent) {
 
 export async function giveBack(agent) {
   const record = of(agent);
+  record.used = Date.now();
   const carryOn = record.taken;
   record.taken = undefined;
+  tellAgent(agent, { taken: false });
   if (carryOn) await prompt(agent, { text: "I finished using the browser. Read the page again, then carry on." });
 }
 
@@ -252,3 +268,40 @@ export async function closeBrowser(agent) {
   agents.delete(agent);
   await Promise.all((state?.tabs ?? []).map((tab) => tab.close().catch(() => {})));
 }
+
+// Tabs an agent left open keep running (the browser does not slow down background tabs, so that
+// agents can work in them). When an agent has not used its window for a while and is not working,
+// its window is closed; when nothing uses the browser at all, it sleeps until the next use.
+let lastUse = Date.now();
+async function sweep() {
+  if (!isAwake()) return;
+  const now = Date.now();
+  const watched = viewing();
+  if (watched) lastUse = now;
+  for (const [agent, record] of agents) {
+    const idle = !watched && record.taken === undefined && activityOf(agent) === null && now - record.used > WINDOW_IDLE_MS;
+    if (!idle || !record.window) continue;
+    await record.queue;
+    if (Date.now() - record.used <= WINDOW_IDLE_MS || record.taken !== undefined) continue;
+    const state = await live(agent).catch(() => null);
+    record.window = null;
+    tellAgent(agent, { browserOpen: false });
+    await Promise.all((state?.tabs ?? []).map((tab) => tab.close().catch(() => {})));
+  }
+  const records = [...agents.values()];
+  const last = Math.max(lastUse, ...records.map((r) => r.used));
+  if (Date.now() - last <= BROWSER_IDLE_MS || records.some((r) => r.taken !== undefined)) return;
+  sleepScreen();
+  current = null;
+  connecting = undefined;
+  forgetWindows();
+}
+
+let sweeping = false;
+setInterval(() => {
+  if (sweeping) return;
+  sweeping = true;
+  void sweep()
+    .catch((err) => console.error("Browser:", err.message))
+    .finally(() => (sweeping = false));
+}, BROWSER_SWEEP_MS).unref();

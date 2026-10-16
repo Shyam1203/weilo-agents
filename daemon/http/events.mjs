@@ -34,6 +34,6 @@ export async function events(req, res, id) {
 // notifications wait while someone is looking.
 export function agentStatus(req, res) {
   openStream(req, res);
-  const off = watchAgents(() => res.write("data: {}\n\n"));
+  const off = watchAgents((data) => res.write(`data: ${JSON.stringify(data)}\n\n`));
   req.on("close", () => (off(), markSeen()));
 }

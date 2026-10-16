@@ -4,6 +4,11 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 ## Unreleased
 
+- Much lighter chats: the app is sent only what it draws. A reply no longer arrives three or four times (as each step ends, as the turn ends and again as the run ends) with every file the agent read and every command's output, and its thinking and its text as it is written no longer stream to the app, which shows them only when they are done. A file an agent writes is no longer sent to the app either: a step shows its path. While a reply is written, only the newest message is drawn again, not the whole chat.
+- The browser rests: an agent's window closes when it has not used it for 10 minutes and is not working, and the browser stops after 20 minutes with nothing using it (it starts again with the next step, signed in as before). Tabs left open no longer use the computer's CPU and memory for good.
+- The agent list and the browser panel are told what changed instead of asking: an agent's working state and its browser come straight from the app, and the list is read again at most once a second.
+- Knowledge search (`fetch_knowledge`) picks the messages that match best, not the newest that hold any of the words, so an older and better answer is no longer left out.
+
 - Lighter chats: images in a chat are sent to the app as links, not again in full each time it opens the chat, and files you attach go up as they are (not as text a third larger). The app hears when the agent list changes instead of asking every 2 to 5 seconds, and the stream of a chat stays open behind proxies such as Tailscale Serve. Agent profiles, today's usage and knowledge pages are read again only when they change, and the app's files are compressed when it is built, not when it starts. Older messages in a long chat are laid out only when they come near the screen.
 - A chat left open in a browser tab no longer keeps its agent running: it stops after 10 idle minutes and starts again with the next message.
 - Fixes: a one-time routine that fails after the first minute stays in the list with its error. Search shows a message that holds the words where they are not shown as text (in a link's address, say) instead of dropping it. An agent's key must match whole.

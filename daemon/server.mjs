@@ -12,7 +12,7 @@ import { serveImage } from "./agents/images.mjs";
 import { agentsChanged } from "./agents/status.mjs";
 import { saveUpload } from "./agents/uploads.mjs";
 import { clearScratch } from "./agents/workspace.mjs";
-import { closeBrowser, giveBack, hasWindow, isTaken, showBrowser, takeOver, useBrowser } from "./browser/browser.mjs";
+import { closeBrowser, giveBack, hasWindow, isTaken, showBrowser, takeOver, useBrowser, windowOpen } from "./browser/browser.mjs";
 import { getRule, saveRule } from "./browser/rule.mjs";
 import { cdpUpgrade, isCdpPath, viewUpgrade } from "./browser/screen.mjs";
 import { fail, settled } from "./common.mjs";
@@ -110,7 +110,7 @@ route("GET", "/api/search", ({ query }) => searchChats(query.get("q")));
 route("GET", "/api/agents", async ({ query }) => {
   if (query.has("seen")) markSeen();
   const [agents, used] = await Promise.all([listAgents(), usageToday()]);
-  return agents.map((agent) => ({ ...agent, used: used[agent.id] ?? 0, working: activityOf(agent.id) !== null, doing: activityOf(agent.id), taken: isTaken(agent.id) }));
+  return agents.map((agent) => ({ ...agent, used: used[agent.id] ?? 0, working: activityOf(agent.id) !== null, doing: activityOf(agent.id), taken: isTaken(agent.id), browserOpen: windowOpen(agent.id) }));
 });
 route("POST", "/api/agents", ({ body }) => createAgent(body));
 route("PUT", "/api/agents", ({ body }) => setOrder(body.order), quiet);
@@ -224,7 +224,7 @@ async function handle(req, res, sandboxed) {
       const agent = scoped && (await getAgent(id));
       if (who.agent && !mayCall(agent, tool)) throw fail(403, "An isolated agent cannot use this. The user can change what it may use in its settings.");
       const result = await handler({ id, rid, body: await bodyOf(req), query: url.searchParams, headers: req.headers, who });
-      if (method !== "GET" && name.startsWith("/api/agents")) agentsChanged();
+      if (method !== "GET" && name.startsWith("/api/agents") && (who.device || tool === "manage_agents")) agentsChanged();
       if (audited) audit(`${method} ${name}`, { by: who.device ? `device ${who.device}` : `agent ${who.agent}`, ...(id && { id }), ...(rid && { rid }) });
       return result === undefined ? reply(res, 204) : reply(res, 200, result);
     }

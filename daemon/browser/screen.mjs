@@ -16,17 +16,41 @@ const ENV = { ...process.env, DISPLAY, XAUTHORITY, HOME: "/home/node" };
 
 const log = (...args) => console.log("[screen]", ...args);
 
+// The screen runs from its first use until it sleeps (see sleepScreen). Each start is a new
+// generation: a program of an earlier one that exits late is not started again.
+let generation = 0;
+const children = new Set();
+
 function keep(name, command, args, { delay = 0, stdio = "ignore", started } = /** @type {{ delay?: number, stdio?: any, started?: (child: any) => void }} */ ({})) {
+  const mine = generation;
   const run = () => {
+    if (mine !== generation) return;
     const child = spawnAs(BROWSER, command, args, { stdio, env: ENV });
+    children.add(child);
     child.on("error", () => log(`${name} cannot start`));
     child.on("exit", (code) => {
+      children.delete(child);
+      if (mine !== generation) return;
       log(`${name} exited (${code}); starting again in ${SCREEN_RESTART_MS / 1000}s`);
       setTimeout(run, SCREEN_RESTART_MS).unref();
     });
     started?.(child);
   };
   setTimeout(run, delay).unref();
+}
+
+export const isAwake = () => starting !== null;
+
+// Stops Chromium, the window manager and the display. Sign-ins stay in the profile; the next
+// browser step or take over starts them again.
+export function sleepScreen() {
+  if (!starting) return;
+  generation++;
+  starting = null;
+  chromium = null;
+  client?.destroy();
+  for (const child of children) child.kill();
+  log("asleep: nothing used it for a while");
 }
 
 export const hasScreen = () => existsSync(BIN.Xvnc) && existsSync(BIN.chromium);
@@ -48,6 +72,7 @@ export async function wakeScreen() {
 
 async function startScreen() {
   if (!hasScreen()) return log("not in this image; the browser is off");
+  generation++;
   rmSync("/tmp/.X1-lock", { force: true });
   rmSync("/tmp/.X11-unix/X1", { force: true });
   rmSync(PRIVATE, { recursive: true, force: true });
@@ -74,10 +99,19 @@ async function startScreen() {
   );
 }
 
+let viewers = 0;
+export const viewing = () => viewers > 0;
+
 export function viewUpgrade(req, socket, head) {
   if (!hasScreen() || !chromium || !accept(req, socket, "binary")) return false;
   const screen = connect(SOCKET);
-  const end = () => (screen.destroy(), socket.destroy());
+  viewers++;
+  let ended = false;
+  const end = () => {
+    if (!ended) (ended = true), viewers--;
+    screen.destroy();
+    socket.destroy();
+  };
   screen.on("error", end);
   socket.on("error", end);
   socket.on("close", end);
@@ -102,9 +136,11 @@ export const isCdpPath = (path) => path === `/api/browser-cdp/${SECRET}`;
 function attachPipe(child) {
   const [, , , input, output] = child.stdio;
   input.on("error", () => {});
-  chromium = { write: (text) => input.write(`${text}\0`) };
+  const mine = { write: (text) => input.write(`${text}\0`) };
+  chromium = mine;
   output.setEncoding("utf8").on("data", splitOn("\0", (message) => client?.write(frame(Buffer.from(message), 0x1))));
   child.on("exit", () => {
+    if (chromium !== mine) return;
     chromium = null;
     client?.destroy();
   });
