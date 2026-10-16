@@ -63,8 +63,8 @@
 <tbody>
 <tr><td><code>server.mjs</code></td><td>Entry: every API route, the two listeners (the app's port and the sandbox's socket) and upgrades, <code>checkPlace</code>, the admin socket, start order.</td></tr>
 <tr><td><code>config.mjs</code></td><td>Every value to tune (port, limits, timeouts, users, <code>BIN</code>, <code>SYSTEM_PATH</code>, tool lists). Plain constants.</td></tr>
-<tr><td><code>common.mjs</code></td><td>Data paths (<code>WEILO_ROOT</code> moves them, for tests), <code>fail()</code>, <code>readJson</code>/<code>updateJson</code>/<code>writePrivate</code>, <code>unsafe()</code> (secrets, instructions, hidden text), <code>slug</code>.</td></tr>
-<tr><td><code>users.mjs</code></td><td><code>spawnAs</code> and <code>asUser</code> (setpriv's arguments), the helper users, PATHs for agents, <code>folder</code>/<code>newFile</code>/<code>tree</code>, <code>secure()</code>.</td></tr>
+<tr><td><code>common.mjs</code></td><td>Data paths (<code>WEILO_ROOT</code> moves them, for tests), <code>fail()</code>, <code>readJson</code>/<code>updateJson</code>/<code>writePrivate</code>, <code>unsafe()</code> (secrets, instructions, hidden text), <code>slug</code>, <code>splitOn</code> (lines or frames from a list of chunks).</td></tr>
+<tr><td><code>users.mjs</code></td><td><code>spawnAs</code> and <code>asUser</code> (setpriv's arguments), the helper users, PATHs for agents, <code>folder</code>/<code>newFile</code>/<code>tree</code>, <code>inFolder</code> (work through an opened folder, never a link), <code>pluginUser</code> (a plugin's own user and HOME), <code>secure()</code>.</td></tr>
 <tr><td><code>weilo.mjs</code></td><td>The pi extension every agent loads: <code>show</code>, <code>ask</code>, <code>skill</code>, <code>manage_agents</code>, <code>manage_settings</code>, <code>ask_agent</code>.</td></tr>
 <tr><td><code>tool.mjs</code></td><td>What extensions share: <code>call()</code> to the API with <code>WEILO_KEY</code>, <code>daemonTool()</code>, the JSON-schema helpers.</td></tr>
 <tr><td><code>audit.mjs</code>, <code>security.mjs</code></td><td>The audit log; the checks in Settings &gt; Security &amp; devices.</td></tr>
@@ -80,7 +80,7 @@
 <tr><td><code>test/</code></td><td>The daemon's tests (<code>node:test</code>); <code>root.mjs</code> gives each file a data folder of its own.</td></tr>
 <tr><td><code>gateway/pipe.mjs</code></td><td>Script an agent's pi runs: the pipe to a plugin program.</td></tr>
 <tr><td><code>http/request.mjs</code>, <code>access.mjs</code></td><td>Host/Origin guard, JSON body and reply; devices, codes, agent keys.</td></tr>
-<tr><td><code>http/static.mjs</code>, <code>files.mjs</code>, <code>events.mjs</code>, <code>websocket.mjs</code></td><td>The UI files; files chats name; SSE; a minimal WebSocket server.</td></tr>
+<tr><td><code>http/static.mjs</code>, <code>files.mjs</code>, <code>events.mjs</code>, <code>websocket.mjs</code></td><td>The UI files (compressed once, with ETags); files chats name; SSE; a minimal WebSocket server.</td></tr>
 <tr><td><code>memory/memory.mjs</code>, <code>vault.mjs</code>, <code>fetch.mjs</code>, <code>curator.mjs</code>, <code>extension.mjs</code></td><td>Notes; vault pages and scrubbing; search; the curator; the memory tools' extension.</td></tr>
 <tr><td><code>routines/routines.mjs</code>, <code>schedule.mjs</code>, <code>extension/</code></td><td>Store and runs; time math; the bundled <code>routine</code> tool.</td></tr>
 <tr><td><code>browser/screen.mjs</code>, <code>browser.mjs</code>, <code>rule.mjs</code>, <code>extension/</code></td><td>Xvnc, openbox, Chromium and the live view; the browser tool and take over; ask first; the bundled <code>browser</code> tool.</td></tr>

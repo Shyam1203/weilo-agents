@@ -77,7 +77,7 @@
 <div class="fig">
 <svg viewBox="0 0 760 560" role="img" aria-labelledby="as-t as-d">
 <title id="as-t">Processes inside weilo-core</title>
-<desc id="as-d">The root daemon listens on port 3210. It starts each regular agent's pi with setpriv as the agent's user, and asks the sandbox container to start each isolated agent's pi in namespaces of its own; it starts the curator as uid 1100, regular agents' plugin programs as uid 1200, and Xvnc, openbox and Chromium as uid 1000. Agent pis call the daemon's API on 127.0.0.1:3210 with their own key. The daemon drives Chromium through a debugging pipe and shows its screen through a unix socket.</desc>
+<desc id="as-d">The root daemon listens on port 3210. It starts each regular agent's pi with setpriv as the agent's user, and asks the sandbox container to start each isolated agent's pi in namespaces of its own; it starts the curator as uid 1100, regular agents' plugin programs each as a uid of its own (from 300000), and Xvnc, openbox and Chromium as uid 1000. Agent pis call the daemon's API on 127.0.0.1:3210 with their own key. The daemon drives Chromium through a debugging pipe and shows its screen through a unix socket.</desc>
 <defs><marker id="as-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0 0L10 5L0 10z"/></marker></defs>
 <rect class="box b-grey" x="8" y="8" width="744" height="544" rx="14"/>
 <text class="tb" x="24" y="32">weilo-core</text>
@@ -103,7 +103,7 @@
 <text class="ts" x="568" y="265" text-anchor="middle">uid 1100, cwd knowledge/, no groups</text>
 <rect class="box b-violet" x="400" y="286" width="336" height="56" rx="10"/>
 <text class="tb" x="568" y="310" text-anchor="middle">plugin programs (regular agents)</text>
-<text class="ts" x="568" y="331" text-anchor="middle">uid 1200, group 2000, own folder</text>
+<text class="ts" x="568" y="331" text-anchor="middle">a uid each (300000+), group 2000</text>
 <rect class="box b-violet" x="400" y="352" width="336" height="76" rx="10"/>
 <text class="tb" x="568" y="376" text-anchor="middle">Xvnc :1, openbox, Chromium</text>
 <text class="ts" x="568" y="398" text-anchor="middle">uid 1000 (node), no groups</text>
@@ -137,9 +137,9 @@
 <tr><td>A regular agent's <code>pi --mode rpc</code></td><td>its <code>uid</code> (from 2001), gid = uid</td><td><code>agents</code> (2000)</td><td><code>workspace/&lt;folder&gt;/</code></td><td><code>runner.mjs</code> <code>start</code></td></tr>
 <tr><td>An isolated agent's <code>pi --mode rpc</code>, in the sandbox</td><td>its <code>uid</code>, gid = uid</td><td>none (<code>--clear-groups</code>)</td><td><code>isolated/&lt;folder&gt;/</code></td><td><code>runner.mjs</code> <code>start</code>, through <code>sandbox/</code></td></tr>
 <tr><td>Curator's <code>pi -p</code></td><td>1100</td><td>none</td><td><code>knowledge/</code></td><td><code>memory/curator.mjs</code></td></tr>
-<tr><td>A plugin program used by a regular agent</td><td>1200</td><td>2000</td><td><code>/var/lib/weilo/pi/plugins-cwd/</code>, empty and root's (the agent's folder is <code>WEILO_FOLDER</code>)</td><td><code>gateway/plugins.mjs</code> <code>pipePlugin</code></td></tr>
+<tr><td>A plugin program used by a regular agent</td><td>its plugin's own: 300000 + n (n given once per plugin name, in <code>agent/plugin-users.json</code>), gid = uid</td><td>2000</td><td><code>/var/lib/weilo/pi/plugins-cwd/</code>, empty and root's (HOME <code>/var/lib/weilo/pi/plugins/&lt;name&gt;/</code>, 0700, its own; the agent's folder is <code>WEILO_FOLDER</code>)</td><td><code>gateway/plugins.mjs</code> <code>pipePlugin</code></td></tr>
 <tr><td>A plugin program used by an isolated agent, in the sandbox</td><td>the agent's uid + 100000</td><td>the agent's gid</td><td><code>/tmp</code>, its own (the agent's folder is <code>WEILO_FOLDER</code>)</td><td><code>pipePlugin</code>, through <code>sandbox/</code></td></tr>
-<tr><td><code>pi mcp list</code> (Settings &gt; Plugins status)</td><td>1200</td><td>2000</td><td><code>/var/lib/weilo/pi/plugins/</code></td><td><code>settings/plugins.mjs</code></td></tr>
+<tr><td><code>pi mcp list</code> (Settings &gt; Plugins status), once per plugin</td><td>that plugin's user</td><td>2000</td><td><code>/var/lib/weilo/pi/plugins/&lt;name&gt;/</code>, with an <code>mcp.json</code> of only that plugin</td><td><code>settings/plugins.mjs</code></td></tr>
 <tr><td>Sandbox program (<code>node /app/sandbox/server.mjs</code>)</td><td>root, in <code>weilo-sandbox</code></td><td>-</td><td>-</td><td>the sandbox container (<code>command</code>)</td></tr>
 <tr><td>Xvnc, openbox, Chromium</td><td>1000 (<code>node</code>)</td><td>none</td><td>-</td><td><code>browser/screen.mjs</code>, restarted 2 s after they stop</td></tr>
 <tr><td>Short-lived <code>pi</code> that lists models</td><td>root</td><td>-</td><td><code>agent/</code></td><td><code>settings/providers.mjs</code> <code>availableModels</code></td></tr>
@@ -150,7 +150,7 @@
 <section class="card" id="daemon">
 <h2>What the daemon does</h2>
 <div class="cols">
-<div class="tile"><h3>Serves</h3><p>The built UI (<code>http/static.mjs</code>, with <code>frame-ancestors 'none'</code>), the JSON API, the live event stream (SSE), files the chats name (<code>http/files.mjs</code>), and two WebSockets: the screen's live view and its own debugging channel to Chromium.</p></div>
+<div class="tile"><h3>Serves</h3><p>The built UI (<code>http/static.mjs</code>, with <code>frame-ancestors 'none'</code>; compressed with brotli or gzip once and kept in memory, with an ETag for a 304; a missing <code>/assets/</code> file is a 404), the JSON API, the live event stream (SSE), files the chats name (<code>http/files.mjs</code>), and two WebSockets: the screen's live view and its own debugging channel to Chromium.</p></div>
 <div class="tile"><h3>Guards</h3><p>Host, Origin and <code>Sec-Fetch-Site</code> checks (<code>http/request.mjs</code>), paired devices and agent keys (<code>http/access.mjs</code>), the per-route tool gate and <code>mayCall</code> (<code>server.mjs</code>). See <a href="security.html#boundaries">Security</a>.</p></div>
 <div class="tile"><h3>Keeps</h3><p>Keys, plugin secrets, paired devices, profiles, settings, routines, notification keys: all in <code>agent/</code>, root's. It writes JSON files whole (temporary file, then rename) and one change at a time per file (<code>updateJson</code> in <code>common.mjs</code>).</p></div>
 <div class="tile"><h3>Runs</h3><p>One pi per open agent (<code>agents/runner.mjs</code>; an isolated one through the sandbox), the routines clock, the curator, the browser's screen, and the notifications. It owns owners and modes too (<code>secure()</code> at every start).</p></div>
@@ -303,14 +303,14 @@
 <ul>
 <li><code>POST /api/agents/:id/message</code> takes <code>{text, images, files}</code>. Images (PNG, JPEG, GIF, WebP data URLs) go to the model as image blocks; other files are saved in <code>uploads/</code> of the agent's folder and named in the message as <code>[Attached file: uploads/…]</code> (<a href="agents.html#folders">Folders and uploads</a>). The UI allows at most 4 images and 5 files of 5 MB (<code>ui/src/lib/limits.ts</code>); the daemon accepts a body of at most 64 million characters.</li>
 <li>A message sent during a run is queued into it (<code>streamingBehavior: "steer"</code>).</li>
-<li>Pi's RPC lines are split on LF only, not with Node's <code>readline</code>, which would also split on U+2028 and U+2029 inside JSON strings.</li>
+<li>Pi's RPC lines are split on LF only, not with Node's <code>readline</code>, which would also split on U+2028 and U+2029 inside JSON strings. Lines, websocket frames and the browser's debugging pipe are put together from a list of chunks (<code>splitOn</code> in <code>common.mjs</code>), so a 16 MB line takes 31 ms instead of 2.2 s, and a 32 MB frame 67 ms instead of 9.5 s.</li>
 <li>When an agent uses <code>ask</code>, pi sends an <code>extension_ui_request</code> (<code>select</code> or <code>input</code>). The daemon keeps it as <code>run.asking</code>, sends it to the chat, writes the answer back, and ends it with <code>ask_end</code>. Other dialogs pi may open (<code>confirm</code>, <code>editor</code>) are cancelled at once.</li>
 </ul>
 </section>
 
 <section class="card" id="events">
 <h2>Events and chat files</h2>
-<p><code>GET /api/agents/:id/events</code> is a server-sent event stream, for paired devices only. The first event is <code>{type: "history", messages, busy, asking}</code> (pi's <code>get_messages</code>, taken in the same step that adds the listener, so no event falls between them). Then come pi's own events: <code>agent_start</code>, <code>message_update</code>, <code>message_end</code>, <code>tool_execution_start</code> and <code>_end</code>, <code>compaction_start</code> and <code>_end</code>, <code>agent_settled</code>, <code>extension_ui_request</code>, plus the daemon's <code>ask_end</code> and finally <code>{type: "exit", code, error}</code> when pi ends.</p>
+<p><code>GET /api/agents/:id/events</code> is a server-sent event stream, for paired devices only. The first event is <code>{type: "history", messages, busy, asking}</code> (pi's <code>get_messages</code>, taken in the same step that adds the listener, so no event falls between them; only what the chat shows: user and agent messages without thinking, compaction summaries, and the <code>ask</code>, <code>routine</code> and <code>manage_agents</code> results). Then come pi's own events: <code>agent_start</code>, <code>message_update</code>, <code>message_end</code>, <code>tool_execution_start</code> and <code>_end</code>, <code>compaction_start</code> and <code>_end</code>, <code>agent_settled</code>, <code>extension_ui_request</code>, plus the daemon's <code>ask_end</code> and finally <code>{type: "exit", code, error}</code> when pi ends.</p>
 <p>A user message that pi expanded from <code>/skill:name</code> is turned back into what was typed (<code>asTyped</code> in <code>agents/sessions.mjs</code>), in the stream and in the files read later.</p>
 <h3>The chat files</h3>
 <p>Pi writes one JSON line per entry in <code>*.jsonl</code> files in the agent's session folder: <code>agent/sessions/&lt;id&gt;/</code> or <code>isolated-sessions/&lt;id&gt;/</code>. The daemon reads them for four things:</p>

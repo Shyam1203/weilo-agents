@@ -61,7 +61,7 @@
 <tr><td><code>manage_agents</code></td><td class="y">list, create, update regular agents</td><td class="p">list itself; ask for its own skills, plugins, extensions</td></tr>
 <tr><td>Skills and added extensions</td><td>read from <code>agent/</code></td><td>only its own, mounted read only</td></tr>
 <tr><td>Installed tools on PATH</td><td>shared <code>/home/node/.local/bin</code></td><td>its own <code>.local/bin</code></td></tr>
-<tr><td>Plugin programs run as</td><td>user 1200, in an empty folder</td><td>a user of their own (uid + 100000) in the sandbox, with only its folder</td></tr>
+<tr><td>Plugin programs run as</td><td>a user of their own per plugin (from 300000), in an empty folder</td><td>a user of their own (uid + 100000) in the sandbox, with only its folder</td></tr>
 <tr><td>Browser</td><td>on unless switched off</td><td>switched off when it becomes isolated; you may turn it on</td></tr>
 <tr><td>Routines</td><td>yes</td><td>yes</td></tr>
 <tr><td>Its chat searched by others and by the curator</td><td>yes</td><td>yes, marked as an isolated agent's report</td></tr>
@@ -190,6 +190,7 @@
 <li>Extra lines warn of reach: "It would get the provider openai and the plugin github, which Research does not have." and "It would get the browser, with the sign-ins of every site you are signed in to there."</li>
 <li>Over 20000 characters the request is refused before it is asked.</li>
 <li>On yes, the target's pi starts anew (the asking agent's own once its reply ends). On anything else: "The user did not approve it".</li>
+<li>Changes to one agent run one at a time, each on the profile as saved then. If a field the request sets changed while you were asked, the approved change is refused (409, "was changed while the user was asked") instead of undoing the newer one; <code>manage_settings</code> does the same when the settings changed.</li>
 </ul>
 </section>
 
@@ -234,7 +235,7 @@
 <rect class="box b-red" x="16" y="16" width="250" height="150" rx="10"/>
 <text class="tb" x="32" y="42">agent/ (root, group agents)</text>
 <text class="tm" x="32" y="70">profiles/&lt;id&gt;/agent.json</text>
-<text class="tm" x="32" y="94">skills/&lt;skill&gt;/  2770</text>
+<text class="tm" x="32" y="94">skills/&lt;skill&gt;/  3770</text>
 <text class="tm" x="32" y="118">extensions/&lt;name&gt;/  2750</text>
 <text class="tm" x="32" y="142">mcp.json  0600</text>
 <rect class="box b-green" x="490" y="16" width="254" height="78" rx="10"/>
@@ -264,14 +265,14 @@
 <h3>Skills</h3>
 <ul>
 <li>Added in Settings &gt; Skills as a <code>.zip</code> or a <code>SKILL.md</code>. A zip is refused if it holds a link or unpacks to over 50 MB; <code>SKILL.md</code> files are looked for up to 3 folders deep; each needs a <code>description</code>. The id is the skill's name as a slug (at most 48 characters); one with the same id is replaced.</li>
-<li>A regular agent saves a skill with the <code>skill</code> tool (description at most 1024 characters, instructions at most 16000). You approve it in the chat first: the question shows the name, the description, the whole instructions, and whether it changes an existing skill and which other agents use it. Once approved it is written to the library, switched on for that agent, and loads when the reply ends; if you say no, nothing is saved and the agent does not ask again. Other files in that skill's folder stay; the agent may add scripts there.</li>
+<li>A regular agent saves a skill with the <code>skill</code> tool (description at most 1024 characters, instructions at most 16000). You approve it in the chat first: the question shows the name, the description, the whole instructions, and whether it changes an existing skill and which other agents use it. Once approved it is written to the library (through the opened folder, never through a link: a skill folder or <code>SKILL.md</code> that is a link is refused), added to that agent's current skills, and loads when the reply ends; if you say no, nothing is saved and the agent does not ask again. Other files in that skill's folder stay; the agent may add scripts there.</li>
 <li>An agent loads exactly the skills its profile lists (<code>--no-skills --skill …</code>). Typing <code>/</code> in the chat lists them; choosing one inserts <code>/skill:name</code>, which pi expands.</li>
 </ul>
 <h3>Plugins</h3>
 <ul>
 <li>MCP servers in <code>agent/mcp.json</code>, added in Settings &gt; Plugins as a command (split like a shell line, with optional environment variables) or a web address with an optional token (sent as <code>Authorization: Bearer</code>). The name uses letters, digits, <code>-</code> and <code>_</code>. Secrets are written there and never returned.</li>
 <li>Pi gets <code>codemode</code> and <code>mcp__&lt;name&gt;__*</code> in its allowlist for each plugin it uses; with none, <code>--no-mcp</code>.</li>
-<li>Settings &gt; Plugins checks whether each connects by running <code>pi mcp list</code> as user 1200, with the secrets in a folder of that user's alone.</li>
+<li>Settings &gt; Plugins checks whether each connects by running <code>pi mcp list</code> once per plugin, as that plugin's own user, with an <code>mcp.json</code> holding only that plugin in a folder of that user's alone (<code>/var/lib/weilo/pi/plugins/&lt;name&gt;/</code>). So one plugin never sees another's secrets.</li>
 <li>Sign-in to a plugin with OAuth is not in this version.</li>
 </ul>
 <h3>Extensions</h3>
