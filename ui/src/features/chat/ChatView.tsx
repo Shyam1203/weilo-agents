@@ -95,7 +95,14 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
   useEffect(() => {
     if (seeingPins && pinned.fresh) look();
   }, [seeingPins, pinned.fresh, look]);
-  const showPins = () => (setTab("pins"), panel !== "actions" && togglePanel("actions"));
+  // The pin a "Pinned: …" line names stands out for a moment.
+  const [lit, setLit] = useState<string | null>(null);
+  useEffect(() => {
+    if (!lit) return;
+    const off = setTimeout(() => setLit(null), 2000);
+    return () => clearTimeout(off);
+  }, [lit]);
+  const showPins = (title: string) => (setTab("pins"), setLit(title), panel !== "actions" && togglePanel("actions"));
   const [pending, setPending] = useState<{ key: number; action: Action }[]>([]);
   const scroller = useFollowBottom([chat.live, chat.asking, pending, acts.actions]);
   const { away, unseen, toBottom } = scroller;
@@ -203,7 +210,7 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
       actionCount={acts.actions?.length ?? 0}
       agentName={agent.name}
       onNew={actionsOff ? undefined : () => (setSheet(null), setMaking(true))}
-      cards={(pin) => <PinCard key={pin.id} pin={pin} action={acts.actions?.find((a) => a.id === pin.actionId)} onTick={(i, done) => tick(pin, i, done)} onRemove={() => unpin(pin)} onOpenAction={(a) => (setSheet(null), setOpened(a.id))} />}
+      cards={(pin) => <PinCard key={pin.id} pin={pin} lit={pin.title === lit} action={acts.actions?.find((a) => a.id === pin.actionId)} onTick={(i, done) => tick(pin, i, done)} onRemove={() => unpin(pin)} onOpenAction={(a) => (setSheet(null), setOpened(a.id))} />}
       actions={<ActionsPanel off={actionsOff} actions={acts.actions} error={acts.error} running={running} onRun={start} onOpen={(a) => setOpened(a.id)} onNew={() => (setSheet(null), setMaking(true))} />}
     />
   );

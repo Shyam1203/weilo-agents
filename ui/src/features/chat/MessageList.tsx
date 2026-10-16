@@ -24,8 +24,8 @@ interface Props {
   onEdit: (message: Draft) => void;
   queued: Queued[];
   onUnqueue: (queued: Queued) => Promise<void>;
-  /** Opens the pins, from a "Pinned: …" line. */
-  onPins?: () => void;
+  /** Opens the pins and shows the one a "Pinned: …" line names. */
+  onPins?: (title: string) => void;
   /** Things to show among the messages by their time (an action's answers): at in seconds. */
   extras?: { at: number; key: string; node: ReactNode }[];
   note?: ReactNode;
@@ -41,7 +41,7 @@ export function MessageList({ messages, busy, asking, onAnswer, onReply, onRetry
   // Kept stable like reply, so a row still draws again only when its own message changes.
   const actions = useRef({ onRetry, onEdit, onPins });
   actions.current = { onRetry, onEdit, onPins };
-  const showPins = useCallback(() => actions.current.onPins?.(), []);
+  const showPins = useCallback((title: string) => actions.current.onPins?.(title), []);
   const retryWith = useCallback((m: Message) => actions.current.onRetry(draftOf(m)), []);
   const edit = useCallback((m: Message) => actions.current.onEdit(draftOf(m)), []);
 
@@ -129,7 +129,7 @@ interface RowProps {
   onReply: (message: string) => void;
   onRetry: (message: Message) => void;
   onEdit: (message: Message) => void;
-  onPins?: () => void;
+  onPins?: (title: string) => void;
 }
 
 // A row draws again only when its own props change, so a new event redraws the newest message, not
@@ -138,7 +138,7 @@ const Row = memo(function Row({ item, label, spaced, far, chosen, replyable, wor
   return (
     <li data-at={item.at ?? undefined} className={`animate-fade-in ${spaced ? "mt-2.5" : ""} ${far ? "[content-visibility:auto] [contain-intrinsic-size:auto_120px]" : ""}`}>
       {label && <p className="mt-4 mb-2.5 text-center text-xs font-medium text-ink-3">{label}</p>}
-      {item.kind === "ask" ? <AskCard question={item.question} options={item.options} answer={item.answer} /> : item.kind === "note" ? item.pins && onPins ? <button type="button" onClick={onPins} className="mx-auto flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs text-ink-2 ring-1 ring-line hover:bg-select"><Icon name="pin" size={12} /> {item.text} <Icon name="chevronRight" size={11} /></button> : <p className="flex items-center justify-center gap-1.5 py-1 text-xs text-ink-3"><Icon name={item.pins ? "pin" : item.text.startsWith("Action") ? "bolt" : "clock"} size={12} /> {item.text}</p> : item.kind === "summary" ? <p title="The agent now has a summary of the messages above, not the messages themselves." className="flex items-center gap-3 py-1 text-xs text-ink-3 before:h-px before:flex-1 before:bg-line after:h-px after:flex-1 after:bg-line">{item.text}</p> : item.kind === "steps" ? <StepsLine steps={item.steps} working={working} /> : item.kind === "show" ? <ShowBlocks blocks={item.blocks} streaming={item.streaming} chosen={chosen} onReply={replyable ? onReply : undefined} /> : item.role === "human" ? <HumanMessage message={item} latest={latest} onEdit={() => onEdit(item)} /> : <AgentText text={item.text} />}
+      {item.kind === "ask" ? <AskCard question={item.question} options={item.options} answer={item.answer} /> : item.kind === "note" ? item.pin && onPins ? <button type="button" onClick={() => onPins(item.pin!)} className="mx-auto flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs text-ink-2 ring-1 ring-line hover:bg-select"><Icon name="pin" size={12} /> {item.text} <Icon name="chevronRight" size={11} /></button> : <p className="flex items-center justify-center gap-1.5 py-1 text-xs text-ink-3"><Icon name={item.pin ? "pin" : item.text.startsWith("Action") ? "bolt" : "clock"} size={12} /> {item.text}</p> : item.kind === "summary" ? <p title="The agent now has a summary of the messages above, not the messages themselves." className="flex items-center gap-3 py-1 text-xs text-ink-3 before:h-px before:flex-1 before:bg-line after:h-px after:flex-1 after:bg-line">{item.text}</p> : item.kind === "steps" ? <StepsLine steps={item.steps} working={working} /> : item.kind === "show" ? <ShowBlocks blocks={item.blocks} streaming={item.streaming} chosen={chosen} onReply={replyable ? onReply : undefined} /> : item.role === "human" ? <HumanMessage message={item} latest={latest} onEdit={() => onEdit(item)} /> : <AgentText text={item.text} />}
       {ending !== undefined && <ReplyActions text={ending} at={item.at} onRetry={retry ? () => onRetry(retry) : undefined} />}
     </li>
   );
