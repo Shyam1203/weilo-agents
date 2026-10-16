@@ -59,7 +59,7 @@ const Tag = defineComponent({
   name: "Tag",
   description: "A small label, such as a status.",
   props: z.object({ text: z.string() }),
-  component: ({ props }) => <UiTag>{props.text}</UiTag>,
+  component: ({ props }) => <span className="self-start"><UiTag>{props.text}</UiTag></span>,
 });
 
 const Image = defineComponent({
@@ -185,7 +185,7 @@ const Select = defineComponent({
   component: ({ props }) => {
     const { field, streaming, error, clear } = useField(props.name, props.value as string | undefined, props.rules);
     const options = (props.options ?? []).map((o) => ({ value: o, label: o }));
-    return <Checked error={error}><UiSelect label={props.name} value={(field.value as string) ?? ""} options={options} placeholder={props.placeholder} disabled={streaming} onChange={(v) => (clear(), field.setValue(v))} /></Checked>;
+    return <Checked error={error}><UiSelect label={props.name} value={(field.value as string) ?? ""} options={options} placeholder={props.placeholder ?? "Choose one"} disabled={streaming} onChange={(v) => (clear(), field.setValue(v))} /></Checked>;
   },
 });
 
@@ -211,14 +211,17 @@ const Button = defineComponent({
     const form = useFormName();
     const validation = useFormValidation();
     const streaming = useIsStreaming();
-    const variant = props.variant ?? (form ? "primary" : "secondary");
+    // Models often put the action second, where the variant goes (the generic action docs show it so): take it there too.
+    const misplaced = typeof props.variant === "object" ? (props.variant as unknown as ActionPlan) : undefined;
+    const variant = (misplaced ? undefined : props.variant) ?? (form ? "primary" : "secondary");
+    const plan = (props.action as ActionPlan | undefined) ?? misplaced;
     return (
       <UiButton
         variant={variant}
         disabled={streaming}
         onClick={() => {
           if (validation && variant === "primary" && !validation.validateForm()) return;
-          trigger(props.label, form, props.action as ActionPlan | undefined);
+          trigger(props.label, form, plan);
         }}
       >
         {props.label}
@@ -286,6 +289,10 @@ export const library = createLibrary({
 
 export const PROMPT: PromptOptions = {
   preamble: "ui is a small program in OpenUI Lang, built only from the components below.",
+  additionalRules: [
+    `A Button's second argument is its variant and its third the action: Button("Open site", "secondary", @OpenUrl("https://example.com")).`,
+    `Give every Select a placeholder, such as "Choose one".`,
+  ],
   toolCalls: false,
   bindings: false,
   builtinFunctions: false,

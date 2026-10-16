@@ -81,3 +81,6 @@ form = Card([Form("call", [Field("Your email", Input("email", "you@example.com",
 Before finishing, walk your output and verify:
 1. root = Stack(...) is the FIRST line (for optimal streaming).
 2. Every referenced name is defined. Every defined name (other than root) is reachable from root.
+
+- A Button's second argument is its variant and its third the action: Button("Open site", "secondary", @OpenUrl("https://example.com")).
+- Give every Select a placeholder, such as "Choose one".
