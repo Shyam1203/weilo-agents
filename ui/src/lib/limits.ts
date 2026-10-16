@@ -1,7 +1,6 @@
 export const MAX_NAME = 100;
 export const MAX_SEARCH = 200;
 export const MAX_ABOUT = 4000;
-export const MAX_RULE = 1000;
 
 export const MAX_CONTACT_NAME = 100;
 export const MAX_CONTACT_EMAIL = 254;

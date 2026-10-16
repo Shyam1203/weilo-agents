@@ -137,10 +137,9 @@
 <text class="ts" x="540" y="220">WHAT AGENTS CAN USE</text>
 <text class="t" x="540" y="242">Skills</text><text class="ts" x="660" y="242">2 skills</text>
 <text class="t" x="540" y="268">Plugins · Extensions</text>
-<text class="t" x="540" y="294">Browser</text>
-<text class="ts" x="540" y="320">APP</text>
-<text class="t" x="540" y="342">Devices</text>
-<text class="t" x="540" y="368">General</text><text class="ts" x="680" y="368">System</text>
+<text class="ts" x="540" y="294">APP</text>
+<text class="t" x="540" y="316">Devices</text>
+<text class="t" x="540" y="342">General</text><text class="ts" x="680" y="342">System</text>
 </svg>
 </div>
 <figcaption>Schematic wireframe. Below 768 px the list and the chat (or Settings) are separate screens (<code>Workspace.tsx</code>, <code>SettingsView.tsx</code>).</figcaption>
@@ -214,7 +213,6 @@
 <tr><td>Skills</td><td>Library, add <code>.zip</code> or <code>SKILL.md</code>, turn on per agent, delete</td><td><code>/api/skills</code>, <code>PUT /api/agents/:id</code></td></tr>
 <tr><td>Plugins</td><td>Add a command or web address, connection status, remove</td><td><code>/api/plugins</code>, <code>/api/plugins/status</code></td></tr>
 <tr><td>Extensions</td><td>Bundled and added ones; adding asks first, and the warning says an extension can read and change the files of each agent that uses it and use its model account</td><td><code>/api/extensions</code></td></tr>
-<tr><td>Browser</td><td>"Ask me first" and the rule; says it is a request, not a lock</td><td><code>/api/browser/rule</code></td></tr>
 <tr><td colspan="3"><strong>App</strong></td></tr>
 <tr><td>Devices</td><td>Paired devices with dates and whether each gets notifications, Remove (it also stops its notifications), Add a device (code, link, minutes left); then the latest 50 changes from the audit log, 10 at a time with Show more</td><td><code>/api/devices</code>, <code>/api/devices/code</code>, <code>/api/activity</code></td></tr>
 <tr><td>General</td><td>Appearance (System, Light, Dark or Weilo Theme: <code>data-theme</code> on <code>&lt;html&gt;</code>, stored in the browser); Notifications (this device on or off, mute per agent; which devices get them shows under Devices); About (version, build, pi version, update notice, the update check switch)</td><td><code>/api/push</code>, <code>/api/push/devices</code>, <code>/api/push/muted</code>, <code>/api/version</code>, <code>/api/update</code></td></tr>

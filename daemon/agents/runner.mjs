@@ -6,7 +6,6 @@ import { EXTENSIONS, fail } from "../common.mjs";
 import { agentKey, dropAgentKey } from "../http/access.mjs";
 import { BIN, CORE_TOOLS, GLANCE_MS, IDLE_MS, MAX_APPROVAL, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
 import { audit } from "../audit.mjs";
-import { askBefore } from "../browser/rule.mjs";
 import { addUsage, usageToday } from "./usage.mjs";
 import { memoryFlags } from "../memory/memory.mjs";
 import { pointOf } from "../settings/compaction.mjs";
@@ -143,7 +142,7 @@ async function start(run) {
   await holds.get(run.id);
   const agent = await getAgent(run.id);
   const dir = piDirOf(run.id);
-  const [ask, plugins, kind] = await Promise.all([askBefore(), pluginTools(agent.plugins), kindOf(agent, dir)]);
+  const [plugins, kind] = await Promise.all([pluginTools(agent.plugins), kindOf(agent, dir)]);
   const argv = argvOf(agent, kind, plugins);
   const user = userOf(agent);
   const isolated = isIsolated(agent);
@@ -153,7 +152,7 @@ async function start(run) {
   const cwd = homeOf(agent);
   const env = {
     ...kind.env, PI_CODING_AGENT_DIR: dir, HOME: userHomeOf(agent),
-    WEILO_AGENT: run.id, WEILO_API: `http://127.0.0.1:${PORT}/api`, WEILO_KEY: run.key, WEILO_ASK_BEFORE: ask, WEILO_SCRATCH: kind.scratch,
+    WEILO_AGENT: run.id, WEILO_API: `http://127.0.0.1:${PORT}/api`, WEILO_KEY: run.key, WEILO_SCRATCH: kind.scratch,
     ...(isolated && { WEILO_ISOLATED: "1" }),
   };
   let child;

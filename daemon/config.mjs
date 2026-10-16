@@ -162,5 +162,3 @@ export const WINDOW_TRY_MS = 200;
 export const WINDOW_IDLE_MS = 10 * MINUTE;
 export const BROWSER_IDLE_MS = 20 * MINUTE;
 export const BROWSER_SWEEP_MS = MINUTE;
-export const DEFAULT_RULE = "Ask me before you do anything on a website that cannot be undone: send a message or an email, buy something, post or publish, delete, or send a form with my personal details.";
-export const MAX_RULE = 1000;

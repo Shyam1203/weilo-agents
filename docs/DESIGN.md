@@ -59,7 +59,7 @@ container serves the UI and runs pi. All user data is one host folder, `~/.weilo
 ```
 ~/.weilo-agents/
 ├── agent/               pi's own, shared by all agents: auth.json, settings.json, mcp.json,
-│   │                    AGENTS.md, USER.md, MEMORY.md, curator.json, actions.json, browser.json, push.json, install.json,
+│   │                    AGENTS.md, USER.md, MEMORY.md, curator.json, actions.json, push.json, install.json,
 │   │                    audit.jsonl, usage.json, plugin-users.json, skills/, extensions/
 │   ├── sessions/<id>/   each regular agent's conversation
 │   ├── order.json       { "agents": [ids] }: the agent list order, as dragged (newer agents after)
@@ -163,7 +163,6 @@ An agent's pi loads only pi's built-in extensions (`PI_BUILTINS` in `config.mjs`
 | `GET /api/agents/:id/actions` · `POST /api/agents/:id/actions` `{title, request}` · `POST /api/agents/:id/actions/:rid/run` `{input}` · `PUT /api/agents/:id/actions/:rid` `{title?, request?, schedule?}` · `DELETE /api/agents/:id/actions/:rid` | the user's: list (keeps the `X-Timezone`) · make one · run (an agent action answers `{sent}`, a script its run) · its name, what it asks for and when it runs by itself · remove |
 | `POST /api/agents/:id/browser` `{action, …}` | a step in the agent's browser window; returns `{text}` (the `browser` tool calls this) |
 | `GET /api/agents/:id/browser` · `POST …/browser/show` · `…/take-over` · `…/give-back` | `{taken, hasWindow}` · bring its window to the front · stop its run and let you use the window · let it carry on |
-| `GET /api/browser/rule` · `PUT /api/browser/rule` `{ask, rule}` | when agents must ask first, and for what |
 | `WS /api/browser/view` | the screen (noVNC), with the same checks as the API |
 | `GET /api/agents/:id/files/<path>` | a file in `workspace/`, from the agent's folder or the top (see Files under Decisions) |
 
@@ -176,7 +175,7 @@ An agent's pi loads only pi's built-in extensions (`PI_BUILTINS` in `config.mjs`
 
 **Take over:** the panel at the top of the chat's right-hand side shows the screen with the agent's window in front. Take over stops the agent's run (`abort`), waits for a step that was running, opens its window if there is none, and lets you use it; the agent's browser steps are refused until you give it back. Give back sends the agent a message to read the page again and carry on (only if its run was stopped). The agent list shows "You have the browser" for an agent you took over, also when you open another chat. A window that another agent opens does not cover the one you took over.
 
-**Ask first:** `browser/rule.mjs` keeps `agent/browser.json` `{ask, rule}`, set in Settings > Browser. The rule goes to every agent in its browser tool's description (`WEILO_ASK_BEFORE`), and the agent uses `ask` before it does what the rule names. It is a request to the agent, not a lock: an agent that has the browser tool can do what it likes in the browser, whose sign-ins every agent with the tool shares. Keys, the paired devices and other agents' chats are kept from agents by their users and by the key gateway (Users and Keys above).
+**The browser:** an agent that has the browser tool can do what it likes in the browser, whose sign-ins every agent with the tool shares; it does not ask first. Keys, the paired devices and other agents' chats are kept from agents by their users and by the key gateway (Users and Keys above).
 
 **Events:** relay pi's own events unchanged (`message_update` text/thinking/tool-call
 deltas, `tool_execution_*`, `agent_settled`). They already are a typed streaming protocol,
@@ -280,7 +279,7 @@ Weilo Theme (`data-theme` on `<html>`, which overrides the colour tokens).
 - Composer: text, attachments (files and photos, camera, paste, drop) and voice typing; typing "- " or "1. " starts a list that a new line carries on. The + offers Files and photos, Camera, and Skills and commands (what typing "/" offers). Disabled
   with "Add a provider" until a key exists. Stop appears while a run is going. A failed start
   closes the stream and shows pi's message with Try again; a clean restart reconnects by itself.
-- Settings, Skills and Plugins are one page in place of the chat (`features/settings/SettingsView.tsx`; the chat stays mounted behind it, so a draft survives; opening it reads the lists again): a menu on the left in four groups (You: About you, Memory; Models: Providers, Usage; What agents can use: Skills, Plugins, Extensions, Browser; App: Devices, which is the paired devices and the activity on one page, and General, which is appearance, notifications and About on one page; it opens at About you; on a phone, the list of pages first, each with what it holds at a glance ("1 connected", "2 skills"), then the page with a back arrow) and a page on the right made of rows (`components/ui/Row.tsx`: title and description on the left, the control on the right). The sidebar's Skills, Plugins and Settings buttons open it at their page.
+- Settings, Skills and Plugins are one page in place of the chat (`features/settings/SettingsView.tsx`; the chat stays mounted behind it, so a draft survives; opening it reads the lists again): a menu on the left in four groups (You: About you, Memory; Models: Providers, Usage; What agents can use: Skills, Plugins, Extensions; App: Devices, which is the paired devices and the activity on one page, and General, which is appearance, notifications and About on one page; it opens at About you; on a phone, the list of pages first, each with what it holds at a glance ("1 connected", "2 skills"), then the page with a back arrow) and a page on the right made of rows (`components/ui/Row.tsx`: title and description on the left, the control on the right). The sidebar's Skills, Plugins and Settings buttons open it at their page.
 - Settings > Usage (`features/settings/UsagePage.tsx`, `api/usage.ts`): tiles for today, the last 14 days and the estimated cost; a bar per day of tokens, stacked by agent (8 colours, the rest as Other); and a row per agent with today's tokens, its daily limit, 14 days' tokens and cost.
 - Settings > Providers: a key field per provider, Connected tag, Models (which ones agents can
   pick), Remove. Keys go to the daemon only.
