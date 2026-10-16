@@ -33,3 +33,14 @@ test("today's count from the older usage file carries over", async () => {
   assert.deepEqual(await usageToday(), { a9: 50 });
   assert.equal(await addUsage("a9", { output: 5 }), 55);
 });
+
+test("a state file that is not valid JSON is read from its last good copy", async () => {
+  const { join } = await import("node:path");
+  const { root } = await import("./root.mjs");
+  const { readJson, updateJson } = await import("../common.mjs");
+  const file = join(root, "agent", "state.json");
+  await updateJson(file, () => ({ n: 1 }));
+  await updateJson(file, () => ({ n: 2 }));
+  await writeFile(file, "{ broken");
+  assert.deepEqual(await readJson(file), { n: 1 });
+});

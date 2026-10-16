@@ -22,3 +22,9 @@ test("a new chat file keeps the older files as earlier messages", async () => {
   writeFileSync(join(dir, "2.jsonl"), line("d", "user", "four") + line("e", "assistant", "five") + compaction("e"));
   assert.deepEqual(await texts(), ["one", "two", "three", "four"]);
 });
+
+test("earlier messages follow a chat file that grows", async () => {
+  assert.deepEqual(await texts(), ["one", "two", "three", "four"]);
+  writeFileSync(join(dir, "3.jsonl"), line("f", "user", "six") + line("g", "assistant", "seven"));
+  assert.deepEqual(await texts(), ["one", "two", "three", "four", "five"]);
+});
