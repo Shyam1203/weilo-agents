@@ -82,7 +82,7 @@
 <text class="t" x="214" y="168">The agent's reply in Markdown…</text>
 <rect class="box b-blue" x="214" y="184" width="300" height="88" rx="10"/><text class="tb" x="226" y="206">Inbox asks to change itself:</text><text class="ts" x="226" y="228">Skills: mail-triage</text>
 <rect class="wire" x="226" y="238" width="88" height="24" rx="12"/><text class="ts" x="270" y="255" text-anchor="middle">Change it</text><rect class="wire" x="322" y="238" width="60" height="24" rx="12"/><text class="ts" x="352" y="255" text-anchor="middle">Don't</text>
-<rect class="wire-f" x="320" y="302" width="110" height="22" rx="11"/><text class="ts" x="375" y="318" text-anchor="middle">Waiting for you</text>
+<rect class="wire-f" x="320" y="302" width="110" height="22" rx="11"/><text class="ts" x="375" y="318" text-anchor="middle">Waiting for answer</text>
 <rect class="wire" x="214" y="332" width="326" height="84" rx="14"/><text class="ts" x="228" y="356">Type your answer</text><text class="t" x="228" y="402">+</text><text class="ts" x="420" y="402">42%</text><text class="ts" x="458" y="402">mic</text><text class="ts" x="494" y="402">send</text>
 <rect class="wire-f" x="554" y="8" width="198" height="424" rx="10"/>
 <text class="tb" x="566" y="34">Browser</text>
@@ -99,7 +99,7 @@
 <ul>
 <li><strong>Sidebar</strong> (<code>Sidebar.tsx</code>): the name, + New agent, a search of all chats, the agents (avatar, name, <span class="tag iso">Isolated</span> tag, time, newest message or what it is doing, "You have the browser" while you hold its window, an unread dot), then an "Update … is available" button when there is one, Settings, and the mail button for Contact us. Drag to reorder (hold first on a phone; Alt+Up and Alt+Down with the keyboard).</li>
 <li><strong>Chat</strong> (<code>ChatView.tsx</code>): the top bar opens Edit agent from the title, and has find in this chat and the panel button. What the agent did between its words is one folded line ("Read 2 files · Ran a command") that opens to each step; <code>show</code> blocks, questions and routine lines show as themselves; thinking is not shown. Earlier messages load as you scroll up.</li>
-<li><strong>Composer</strong> (<code>Composer.tsx</code>): text, attachments (files and photos, camera, paste, drop), voice typing, the context meter beside send, and Stop during a run. The + offers Files and photos, Camera, and Skills and commands (what typing <code>/</code> offers: <code>/compact</code>, <code>/reload</code>, the agent's skills and plugins). While the agent waits for an answer, what you type is the answer. Without a provider it shows "Add a provider to send messages."</li>
+<li><strong>Composer</strong> (<code>Composer.tsx</code>): text, attachments (files and photos, camera, paste, drop), voice typing, the context meter beside send, and Stop during a run (also in the working pill, and Esc). While the agent works, Enter sends a message for it to read before its next step and Alt+Enter (or the clock button) one for when it finishes; queued messages can be edited or taken back. The draft is kept per agent, ↑ in an empty box brings back your last message, typing anywhere in the chat goes to the box, and an empty chat offers starters (<code>EmptyChat.tsx</code>). The + offers Files and photos, Camera, and Skills and commands (what typing <code>/</code> offers: <code>/compact</code>, <code>/reload</code>, the agent's skills and plugins). While the agent waits for an answer, what you type is the answer. Without a provider it shows "Add a provider to send messages."</li>
 </ul>
 </section>
 
@@ -195,7 +195,7 @@
 
 <section class="card" id="approval-card">
 <h2>Questions and the approval card</h2>
-<p>An agent's <code>ask</code> and the daemon's approval questions arrive the same way: an <code>extension_ui_request</code> with <code>select</code> (options) or <code>input</code> (a line of text). <code>AskCard.tsx</code> shows the question in full (scrolling inside the card when long), the options as buttons or a text field, and Skip. The chosen answer stays marked in the chat. A pill above the composer says "Waiting for you", and what you type in the message box is the answer.</p>
+<p>An agent's <code>ask</code> and the daemon's approval questions arrive the same way: an <code>extension_ui_request</code> with <code>select</code> (options) or <code>input</code> (a line of text). <code>AskCard.tsx</code> shows the question in full (scrolling inside the card when long), the options as buttons or a text field, and Skip. The chosen answer stays marked in the chat. A pill above the composer says "Waiting for your answer", number keys 1 to 9 pick an option, and what you type in the message box is the answer.</p>
 <p>The answer is <code>POST /api/agents/:id/answer</code> <code>{request, value}</code>; Skip sends no value. An approval card's options are "Create it" or "Change it", and "Don't". A change applied without a question (a trusted agent's) shows as a small line in the chat instead.</p>
 </section>
 

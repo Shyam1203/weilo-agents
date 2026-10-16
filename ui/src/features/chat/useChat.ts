@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { abort, answerAsk, compactChat, eventsUrl, getContext, getEarlier, reloadAgent, send, type Context, type Outgoing } from "../../api/chat";
-import { empty, failureOf, itemsOf, noteOf, reduce, type PiEvent, type PiMessage } from "./conversation";
+import { abort, answerAsk, compactChat, eventsUrl, getContext, getEarlier, reloadAgent, send, unqueue, type Context, type Outgoing } from "../../api/chat";
+import { empty, failureOf, itemsOf, noteOf, reduce, type PiEvent, type PiMessage, type Queued } from "./conversation";
 
 const RELOADED = "Reloaded: skills, instructions and notes were read again.";
 const MEASURE = ["history", "agent_settled", "compaction_end"];
@@ -81,5 +81,6 @@ export function useChat(agentId: string) {
     },
     answer: (value?: string) => answerAsk(agentId, chat.asking!.id, value),
     stop: () => abort(agentId).catch(() => {}),
+    unqueue: (queued: Queued) => unqueue(agentId, queued.text, queued.when),
   };
 }

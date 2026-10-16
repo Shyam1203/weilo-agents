@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { doingText } from "../../api/agents";
 import type { Outgoing } from "../../api/chat";
 import { messageOf } from "../../api/http";
@@ -7,7 +7,9 @@ import { Icon, type IconName } from "../../components/ui/Icon";
 import { Menu, MenuItem } from "../../components/ui/Menu";
 import { matches } from "../../components/ui/Search";
 import { toImageDataUrl } from "../../lib/attachments";
+import { finePointer, isFreeKey } from "../../lib/keys";
 import { MAX_FILE_MB, MAX_FILES, MAX_IMAGES } from "../../lib/limits";
+import { draftKey, read, write } from "../../lib/storage";
 import { useDictation } from "../../lib/useDictation";
 import { CameraDialog } from "./CameraDialog";
 import { COMMAND_LIST, CommandMenu, type Shortcut } from "./CommandMenu";
@@ -16,7 +18,13 @@ import { continueList } from "./lists";
 const MAX_HEIGHT = 200;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
+export interface Draft {
+  text: string;
+  images: string[];
+}
+
 interface Props {
+  agentId: string;
   onEdit: () => void;
   shortcuts: Shortcut[];
   to: string;
@@ -29,10 +37,15 @@ interface Props {
   onSend: (message: Outgoing) => Promise<void>;
   onStop: () => void;
   meter?: ReactNode;
+  /** Put this in the box, replacing what is there (a new object each time). */
+  fill?: Draft | null;
+  /** What ↑ brings back in an empty box: your last message. */
+  last?: Draft;
 }
 
-export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, onAnswer, disabled, onSend, onStop, meter }: Props) {
-  const [text, setText] = useState("");
+export function Composer({ agentId, onEdit, shortcuts, to, avatar, doing, busy, waiting, onAnswer, disabled, onSend, onStop, meter, fill, last }: Props) {
+  const [text, setText] = useState(() => read(draftKey(agentId)) ?? "");
+  const [focused, setFocused] = useState(false);
   const [images, setImages] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
@@ -65,6 +78,27 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
     return () => observer.disconnect();
   }, [text, dictation.interim]);
 
+  useEffect(() => write(draftKey(agentId), text.trim() ? text : null), [agentId, text]);
+
+  const put = (draft: Draft) => {
+    setText(draft.text);
+    setImages(draft.images);
+    setFiles([]);
+    setError(null);
+    caret.current = draft.text.length;
+    box.current?.focus();
+  };
+  useEffect(() => void (fill && put(fill)), [fill]);
+
+  useEffect(() => {
+    if (finePointer()) box.current?.focus();
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key.length === 1 && event.key !== " " && isFreeKey(event)) box.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   useLayoutEffect(() => {
     if (caret.current !== null && box.current) box.current.setSelectionRange(caret.current, caret.current);
     caret.current = null;
@@ -92,7 +126,7 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
 
   const hasContent = !!text.trim() || images.length > 0 || files.length > 0;
 
-  const submit = async (event?: FormEvent) => {
+  const submit = async (event?: FormEvent, when: "now" | "later" = "now") => {
     event?.preventDefault();
     if (!hasContent || sending || disabled) return;
     dictation.stop();
@@ -101,7 +135,7 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
     setError(null);
     try {
       if (onAnswer && sent.text && !images.length && !files.length) await onAnswer(sent.text);
-      else await onSend(sent);
+      else await onSend({ ...sent, when });
       setText("");
       setImages([]);
       setFiles([]);
@@ -133,11 +167,19 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
       }
       if (event.key === "Escape") return setClosedFor(text);
     }
+    if (event.key === "Escape" && busy && !waiting) {
+      event.preventDefault();
+      return onStop();
+    }
+    if (event.key === "ArrowUp" && !hasContent && last && (last.text || last.images.length)) {
+      event.preventDefault();
+      return put(last);
+    }
     if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
-    const newLine = event.shiftKey || !matchMedia("(pointer: fine)").matches;
+    const newLine = event.shiftKey || !finePointer();
     if (!newLine) {
       event.preventDefault();
-      return void submit();
+      return void submit(undefined, busy && event.altKey ? "later" : "now");
     }
     const el = event.currentTarget;
     const next = el.selectionStart === el.selectionEnd ? continueList(el.value, el.selectionStart) : null;
@@ -162,6 +204,7 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
   };
 
   const note = error ?? dictation.error ?? (dictation.listening ? "Listening… Tap the microphone to stop." : null);
+  const keys = busy && hasContent && !onAnswer ? "Enter tells it now · Alt+Enter sends it when it finishes" : waiting ? "Enter to send your answer" : busy ? "Enter to send · Esc to stop" : "Enter to send · Shift+Enter for a new line · / for commands · ↑ for your last message";
 
   return (
     <form
@@ -181,13 +224,18 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
         <p role="status" className="absolute bottom-full left-3 mb-1.5 flex animate-rise items-center gap-1.5 rounded-full bg-raised py-0.5 pr-2.5 pl-0.5 text-xs text-ink-2 ring-1 ring-line">
           <Avatar spec={avatar} size={26} working doing={doing} />
           <span key={waiting ? "waiting" : doingText(doing)} className="working-dots animate-text-swap">
-            {waiting ? "Waiting for you" : doingText(doing)}<span>.</span>
+            {waiting ? "Waiting for your answer" : doingText(doing)}<span>.</span>
             <span>.</span>
             <span>.</span>
           </span>
+          {!waiting && (
+            <button type="button" onClick={onStop} title="Stop (Esc)" className="ml-1 rounded-full px-1.5 font-medium text-ink hover:bg-select">
+              Stop
+            </button>
+          )}
         </p>
       )}
-      <div className={`flex flex-col rounded-2xl border bg-page transition-colors focus-within:border-ink-3 ${dragging ? "border-dashed border-ink-2" : "border-line-strong"}`}>
+      <div className={`flex flex-col rounded-2xl border bg-page transition-colors focus-within:border-ink-3 ${dragging ? "border-dashed border-ink-2" : waiting ? "border-ink-2 ring-2 ring-ink-3/30" : "border-line-strong"}`}>
         {(files.length > 0 || images.length > 0) && (
           <ul className="flex flex-wrap gap-2 px-3 pt-3" aria-label="Attachments">
             {images.map((url, i) => (
@@ -232,6 +280,8 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
             onChange={(e) => (setText(e.target.value), setActive(0), setError(null))}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
             disabled={disabled}
             readOnly={dictation.listening && !!dictation.interim}
             placeholder={dragging ? "Drop files to attach" : onAnswer ? "Type your answer" : `Message ${to}`}
@@ -243,6 +293,7 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
             className="block min-w-0 flex-1 resize-none bg-transparent px-1 py-1.5 text-[15px] leading-6 outline-none placeholder:truncate placeholder:text-ink-3 focus-visible:outline-none"
           />
           {meter}
+          {busy && hasContent && !onAnswer && <RoundButton icon="clock" label="Send when it finishes" disabled={sending || disabled} onClick={() => void submit(undefined, "later")} />}
           {busy && !hasContent ? (
             <RoundButton icon="stop" label="Stop" solid onClick={onStop} />
           ) : hasContent || !dictation.supported ? (
@@ -252,7 +303,7 @@ export function Composer({ onEdit, shortcuts, to, avatar, doing, busy, waiting, 
           )}
         </div>
       </div>
-      {note && <p className={`px-4 text-xs ${error || dictation.error ? "text-bad" : "text-ink-3"}`}>{note}</p>}
+      {note ? <p className={`px-4 text-xs ${error || dictation.error ? "text-bad" : "text-ink-3"}`}>{note}</p> : focused && <p className="hidden truncate px-4 text-[11px] text-ink-3 pointer-fine:block">{keys}</p>}
       {camera && <CameraDialog onCapture={(file) => void attach([file])} onClose={() => setCamera(false)} />}
     </form>
   );

@@ -2,6 +2,10 @@ const DAY = 24 * 60 * 60 * 1000;
 const startOfDay = (ms: number) => new Date(ms).setHours(0, 0, 0, 0);
 const time = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
+/** The clock time of a moment (seconds), for beside a message. */
+export const clockTime = (at: number) => time(at * 1000);
+export const fullWhen = (at: number) => new Date(at * 1000).toLocaleString([], { dateStyle: "full", timeStyle: "short" });
+
 export function longWhen(at: number) {
   const ms = at * 1000;
   const days = Math.round((startOfDay(Date.now()) - startOfDay(ms)) / DAY);

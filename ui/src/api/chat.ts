@@ -1,9 +1,12 @@
+import { imageDataUrl } from "../lib/attachments";
 import { request, RequestError } from "./http";
 
 export interface Outgoing {
   text: string;
   images: string[];
   files: File[];
+  /** While the agent works: "now" tells it before its next step, "later" waits until it finishes. */
+  when?: "now" | "later";
 }
 
 export const fileUrl = (agent: string, path: string, view = false) => `/api/agents/${agent}/files/${path.split("/").map(encodeURIComponent).join("/")}${view ? "?view=1" : ""}`;
@@ -32,12 +35,15 @@ async function upload(agentId: string, file: File) {
   return (data as { path: string }).path;
 }
 
-export async function send(agentId: string, { text, images, files }: Outgoing) {
+export async function send(agentId: string, { text, images, files, when }: Outgoing) {
   const paths = await Promise.all(files.map((file) => upload(agentId, file)));
-  return request("POST", `/api/agents/${agentId}/message`, { text, images, files: paths });
+  // A message sent again or edited can hold a chat image, which the app has as a link.
+  const pictures = await Promise.all(images.map(imageDataUrl));
+  return request("POST", `/api/agents/${agentId}/message`, { text, images: pictures, files: paths, when });
 }
 export const answerAsk = (agentId: string, requestId: string, value?: string) => request("POST", `/api/agents/${agentId}/answer`, { request: requestId, value });
 
+export const unqueue = (agentId: string, text: string, when: "now" | "later") => request("POST", `/api/agents/${agentId}/unqueue`, { text, when });
 export const abort = (agentId: string) => request("POST", `/api/agents/${agentId}/abort`);
 export const listCommands = (agentId: string) => request<Command[]>("GET", `/api/agents/${agentId}/commands`);
 export const getEarlier = <M>(agentId: string, skip: number) => request<{ messages: M[]; more: boolean }>("GET", `/api/agents/${agentId}/earlier?skip=${skip}`);
