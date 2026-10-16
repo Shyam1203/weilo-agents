@@ -1,6 +1,6 @@
 import { readdir, stat } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
 import { AGENT_DIR, CHATS, ISOLATED_SESSIONS, openChat } from "../common.mjs";
 import { CHAT_CHUNK } from "../config.mjs";
@@ -18,13 +18,24 @@ const SCHEMA = `
   CREATE TRIGGER IF NOT EXISTS messages_out AFTER DELETE ON messages BEGIN INSERT INTO words (words, rowid, body) VALUES ('delete', old.id, old.body); END;
 `;
 
+const INDEX_VERSION = 1;
+
 let db = null;
 let sql = null;
 export function openIndex(path = join(AGENT_DIR, "index", "chats.db")) {
   db?.close();
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  db = new DatabaseSync(path);
-  db.exec(SCHEMA);
+  try {
+    db = new DatabaseSync(path);
+    if (db.prepare("PRAGMA user_version").get()?.user_version !== INDEX_VERSION) throw new Error("an older index");
+    db.exec(SCHEMA);
+  } catch {
+    db?.close();
+    for (const end of ["", "-journal", "-wal", "-shm"]) rmSync(`${path}${end}`, { force: true });
+    db = new DatabaseSync(path);
+    db.exec(SCHEMA);
+    db.exec(`PRAGMA user_version = ${INDEX_VERSION}`);
+  }
   sql = {
     files: db.prepare("SELECT path, done, head FROM files"),
     insert: db.prepare("INSERT INTO messages (file, agent, speaker, at, body, isolated) VALUES (?, ?, ?, ?, ?, ?)"),

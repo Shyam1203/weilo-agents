@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { copyFile, mkdir, open, readFile, rename } from "node:fs/promises";
+import { mkdir, open, readFile, rename } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -60,7 +60,7 @@ export const plainText = (markdown) =>
     .trim();
 
 export async function openChat(path) {
-  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   if ((await handle.stat()).isFile()) return handle;
   await handle.close();
   throw fail(400, `${path} is not a file`);
@@ -95,7 +95,6 @@ export async function writePrivate(file, text) {
   } finally {
     await handle.close();
   }
-  await copyFile(file, `${file}.bak`).catch(() => {});
   await rename(tmp, file);
 }
 
@@ -116,7 +115,8 @@ export async function readJson(file) {
   if (data !== undefined) return data;
   const good = parse(await readFile(`${file}.bak`, "utf8").catch(() => ""));
   if (good === undefined) throw fail(500, `${basename(file)} is not valid JSON`);
-  console.error(`${basename(file)} is not valid JSON; using its last good copy`);
+  await writePrivate(`${file}.corrupt`, text);
+  console.error(`${basename(file)} is not valid JSON; using its last good copy (the broken one is kept as ${basename(file)}.corrupt)`);
   return good;
 }
 
@@ -124,6 +124,8 @@ const chains = new Map();
 export function updateJson(file, change) {
   const run = (chains.get(file) ?? Promise.resolve()).then(async () => {
     const data = await change(await readJson(file));
+    const before = file === DEVICES ? null : await readFile(file, "utf8").catch(() => null);
+    if (before !== null && parse(before) !== undefined) await writePrivate(`${file}.bak`, before);
     await writePrivate(file, JSON.stringify(data, null, 2));
     return data;
   });

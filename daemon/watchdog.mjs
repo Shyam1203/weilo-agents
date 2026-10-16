@@ -3,11 +3,12 @@ import { Worker } from "node:worker_threads";
 const WATCH = `
 const { workerData: { beat, limit } } = process.getBuiltinModule("node:worker_threads");
 let last = -1;
-let since = Date.now();
+let stale = 0;
 setInterval(() => {
   const now = Atomics.load(beat, 0);
-  if (now !== last) [last, since] = [now, Date.now()];
-  else if (Date.now() - since > limit) {
+  stale = now === last ? stale + 1 : 0;
+  last = now;
+  if (stale * 5000 > limit) {
     process.getBuiltinModule("node:fs").writeSync(2, "The app stopped responding for " + Math.round(limit / 1000) + " s; restarting it\\n");
     process.kill(process.pid, "SIGKILL");
   }

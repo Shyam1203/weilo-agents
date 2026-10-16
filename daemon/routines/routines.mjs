@@ -63,10 +63,9 @@ export const userZone = async () => (await load(), state.timezone);
 export async function noteZone(zone) {
   await load();
   if (!validZone(zone) || state.timezone === zone) return;
-  for (const r of state.items.filter((r) => r.timezone === state.timezone && r.every !== "once" && r.nextRunAt !== null)) {
-    r.timezone = zone;
-    r.nextRunAt = nextRun(r, zone, Date.now());
-  }
+  const moving = state.items.filter((r) => r.timezone === state.timezone && r.every !== "once" && r.nextRunAt !== null);
+  const next = moving.map((r) => nextRun(r, zone, Date.now()));
+  moving.forEach((r, i) => Object.assign(r, { timezone: zone, nextRunAt: next[i] }));
   state.timezone = zone;
   await save();
 }
@@ -123,7 +122,8 @@ const sendWithin = (routine, text) => {
   let timer;
   const sent = prompt(routine.agentId, { text });
   const late = new Promise((resolve) => (timer = setTimeout(resolve, SEND_MS)));
-  return Promise.race([sent, late.then(() => sent.catch((err) => (failed(routine, err), save())))]).finally(() => clearTimeout(timer));
+  late.then(() => void sent.catch((err) => (failed(routine, err), save())));
+  return Promise.race([sent, late]).finally(() => clearTimeout(timer));
 };
 
 async function tick() {

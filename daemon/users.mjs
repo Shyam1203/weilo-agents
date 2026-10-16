@@ -124,6 +124,7 @@ export async function secure(agents) {
   await folder(join(RUN, "pi"), 0, AGENTS_GID, 0o751);
   await folder(PLUGINS_HOME, 0, 0, 0o711);
   await rm(join(PLUGINS_HOME, "mcp.json"), { force: true });
+  await rm(join(RUN, "chats.db"), { force: true });
   await folder(PLUGINS_CWD, 0, 0, 0o755);
   const tools = await stat(TOOLS).catch(() => null);
   if (tools && tools.gid !== AGENTS_GID) await tree(TOOLS, 0, AGENTS_GID, "g+rwX,o+rX");

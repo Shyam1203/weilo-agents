@@ -10,6 +10,7 @@ x-app: &app
       COMMIT: ${WEILO_COMMIT:-unknown}
   init: true
   restart: unless-stopped
+  stop_grace_period: 15s
 
 services:
   core:

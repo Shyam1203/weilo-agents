@@ -62,7 +62,7 @@ jobs:
 
       - name: Build for arm64 and check it starts
         run: |
-          docker buildx build --platform linux/arm64 --load -t weilo-arm64 -f image/Dockerfile --build-arg VERSION="$VERSION" --cache-from type=gha .
+          docker buildx build --platform linux/arm64 --load -t weilo-arm64 -f image/Dockerfile --build-arg VERSION="$VERSION" .
           docker run --rm --platform linux/arm64 --entrypoint sh weilo-arm64 -c 'node -e "require(\"node:sqlite\")" && node --check /app/server.mjs && test -x "$(readlink -f /usr/local/bin/pi)"'
 
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2

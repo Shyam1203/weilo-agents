@@ -158,7 +158,7 @@ agentRoute("POST", "/api/agents/:id/memory", "memory", async ({ id, body }) => {
   return { text: await useMemory(body, confirm) };
 });
 agentRoute("POST", "/api/agents/:id/fetch_knowledge", "fetch_knowledge", async ({ body }) => ({ text: await fetchKnowledge(body) }), quiet);
-agentRoute("GET", "/api/agents/:id/routines", "routines", async ({ id, headers }) => (await noteZone(headers["x-timezone"]), listRoutines(id)));
+agentRoute("GET", "/api/agents/:id/routines", "routines", async ({ id, headers, who }) => (who.device && (await noteZone(headers["x-timezone"])), listRoutines(id)));
 agentRoute("POST", "/api/agents/:id/routines", "routines", ({ id, body, headers }) => addRoutine(id, body, headers["x-timezone"]));
 agentRoute("PUT", "/api/agents/:id/routines/:rid", "routines", ({ id, rid, body }) => updateRoutine(id, rid, body));
 agentRoute("DELETE", "/api/agents/:id/routines/:rid", "routines", ({ id, rid }) => removeRoutine(id, rid));

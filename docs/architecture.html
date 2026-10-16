@@ -163,7 +163,7 @@
 <li><code>migrate()</code> brings the data folder to this app's data version, or stops the start if the folder is newer (<a href="#versions">Versions and data</a>).</li>
 <li><code>secure(profiles)</code> sets owner and mode of the top of every place (<a href="data-and-permissions.html#tree">the tree</a>).</li>
 <li>The server listens on port 3210, and on <code>/run/weilo-sandbox/api.sock</code> for the sandbox. Then, in the background: compaction settings are written for the models in use, every scratch folder is emptied, routines start, the curator's 5-minute timer starts, the watchdog starts, the chat index is brought up to date, and pi's model runtime is loaded (<code>warmModels</code>), so the first agent starts faster. The browser's screen is not started here: it starts at the first browser step or take over (<code>wakeScreen</code>).</li>
-<li>On <code>SIGTERM</code> or <code>SIGINT</code> the daemon closes both servers, stops every pi (<code>SIGTERM</code>, then <code>SIGKILL</code> 5 seconds later if one hangs), waits for queued JSON and audit writes, and exits, within 8 seconds at most (<code>SHUTDOWN_MS</code>).</li>
+<li>On <code>SIGTERM</code> or <code>SIGINT</code> the daemon closes both servers, stops every pi (<code>SIGTERM</code>, then <code>SIGKILL</code> 5 seconds later if one hangs), waits for queued JSON and audit writes, and exits, within 12 seconds at most (<code>SHUTDOWN_MS</code>; compose allows 15).</li>
 <li>A worker thread (<code>watchdog.mjs</code>) watches the event loop: stuck for 120 seconds (<code>HUNG_MS</code>), it logs "The app stopped responding" and kills the daemon, and Docker starts it again.</li>
 </ol>
 </section>

@@ -28,3 +28,11 @@ test("earlier messages follow a chat file that grows", async () => {
   writeFileSync(join(dir, "3.jsonl"), line("f", "user", "six") + line("g", "assistant", "seven"));
   assert.deepEqual(await texts(), ["one", "two", "three", "four", "five"]);
 });
+
+test("a pipe or a link among chat files is skipped, never waited on", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const { symlinkSync } = await import("node:fs");
+  execFileSync("mkfifo", [join(dir, "4.jsonl")]);
+  symlinkSync(join(dir, "1.jsonl"), join(dir, "5.jsonl"));
+  assert.deepEqual(await texts(), ["one", "two", "three", "four", "five", "six", "seven"]);
+});

@@ -1,7 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { CHATS, openChat } from "../common.mjs";
-import { CHAT_CHUNK, CHAT_TAIL, EARLIER_KEPT, EARLIER_PAGE, PREVIEW_CHARS, PREVIEW_TAIL } from "../config.mjs";
+import { CHAT_CHUNK, CHAT_TAIL, EARLIER_KEPT, EARLIER_KEPT_MS, EARLIER_PAGE, PREVIEW_CHARS, PREVIEW_TAIL } from "../config.mjs";
 
 export const textOf = (content, between = "") => (typeof content === "string" ? content : (content ?? []).filter((b) => b.type === "text").map((b) => b.text).join(between));
 
@@ -117,14 +117,14 @@ const earlierRead = new Map();
 export async function earlierOf(id, skip = 0) {
   const files = await chatFiles(id);
   const key = (await Promise.all(files.map((f) => stat(f).then((s) => `${f}:${s.size}:${s.mtimeMs}`, () => f)))).join("|");
+  for (const [agent, kept] of earlierRead) if (Date.now() - kept.used > EARLIER_KEPT_MS) earlierRead.delete(agent);
   let read = earlierRead.get(id);
-  if (read?.key !== key) {
-    read = { key, earlier: readEarlier(files) };
-    earlierRead.delete(id);
-    earlierRead.set(id, read);
-    read.earlier.catch(() => earlierRead.delete(id));
-    if (earlierRead.size > EARLIER_KEPT) earlierRead.delete(earlierRead.keys().next().value);
-  }
+  if (read?.key !== key) read = { key, earlier: readEarlier(files) };
+  read.used = Date.now();
+  earlierRead.delete(id);
+  earlierRead.set(id, read);
+  read.earlier.catch(() => earlierRead.get(id) === read && earlierRead.delete(id));
+  if (earlierRead.size > EARLIER_KEPT) earlierRead.delete(earlierRead.keys().next().value);
   const earlier = await read.earlier;
   const stop = Math.max(0, earlier.length - skip);
   const start = Math.max(0, stop - EARLIER_PAGE);
