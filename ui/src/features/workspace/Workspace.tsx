@@ -168,7 +168,6 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
             models={models}
             defaultModel={recommendedModel(models, providers, agents)}
             hidden={settings !== null}
-            onAddProvider={() => openSettings("providers")}
             onOpenSettings={openSettings}
             onClose={() => setForm(null)}
             onSaved={async (saved) => (fresh && (write(KEYS.welcomed, "1"), setWelcome(false)), await reloadAgents(), select(saved.id), setForm(null))}

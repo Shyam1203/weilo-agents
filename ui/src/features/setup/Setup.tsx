@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { createAgent, type Agent } from "../../api/agents";
+import { createAgent, newAgent, type Agent } from "../../api/agents";
 import type { Model, Provider } from "../../api/providers";
 import type { User } from "../../api/user";
 import { Avatar } from "../../components/ui/Avatar";
@@ -37,7 +37,7 @@ export function Setup({ providers, models, user, onChange, onModels, onCreated, 
   const [named, setNamed] = useState(!!user.name);
   const { busy, error, run } = useAction();
   const start = (s: Starter) =>
-    run(s.name, async () => onCreated(await createAgent({ name: s.name, instructions: s.instructions, avatar: s.avatar, model, thinking: "", skills: [], plugins: [], extensions: [], disabled: [], isolated: false, trusted: false, dailyTokens: 0 })));
+    run(s.name, async () => onCreated(await createAgent(newAgent({ name: s.name, instructions: s.instructions, avatar: s.avatar, model }))));
 
   return (
     <div className="flex flex-1 justify-center overflow-y-auto px-4 py-10 sm:py-14">
