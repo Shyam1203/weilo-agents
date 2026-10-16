@@ -26,18 +26,20 @@ export async function pushStatus() {
   return { publicKey, devices: devices.map(({ id, label, added }) => ({ id, label, added })), muted };
 }
 
-export async function addDevice({ subscription, label }) {
+// A browser's notifications belong to the paired device that turned them on: unpairing it stops them.
+export async function addDevice({ subscription, label }, paired) {
   const { endpoint, keys } = subscription ?? {};
   if (typeof endpoint !== "string" || !PUSH_SERVICE.test(endpoint) || typeof keys?.p256dh !== "string" || typeof keys?.auth !== "string") throw fail(400, "This browser's notification address is not valid");
-  const id = randomUUID();
-  await updateJson(PUSH, (data) => ({
-    ...data,
-    devices: [...(data.devices ?? []).filter((d) => d.endpoint !== endpoint), { id, endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth }, label: typeof label === "string" ? label.slice(0, 80) : "", added: Date.now() }],
-  }));
-  return { id };
+  const { devices } = await updateJson(PUSH, (data) => {
+    const was = (data.devices ?? []).find((d) => d.endpoint === endpoint);
+    const device = { id: was?.id ?? randomUUID(), endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth }, label: typeof label === "string" ? label.slice(0, 80) : "", added: was?.added ?? Date.now(), paired };
+    return { ...data, devices: [...(data.devices ?? []).filter((d) => d.endpoint !== endpoint), device] };
+  });
+  return { id: devices.find((d) => d.endpoint === endpoint).id };
 }
 
 export const removeDevice = (id) => updateJson(PUSH, (data) => ({ ...data, devices: (data.devices ?? []).filter((d) => d.id !== id) }));
+export const removePaired = (paired) => updateJson(PUSH, (data) => ({ ...data, devices: (data.devices ?? []).filter((d) => d.paired !== paired) }));
 
 export async function setMuted(muted) {
   if (!Array.isArray(muted) || !muted.every((id) => typeof id === "string")) throw fail(400, "The list is not valid");

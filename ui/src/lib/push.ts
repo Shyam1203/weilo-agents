@@ -1,7 +1,18 @@
 import { addDevice, removeDevice } from "../api/push";
 import { KEYS, read, write } from "./storage";
 
-export const registerWorker = () => void navigator.serviceWorker?.register("/sw.js").catch(() => {});
+export const registerWorker = () =>
+  void navigator.serviceWorker
+    ?.register("/sw.js")
+    .then(relink)
+    .catch(() => {});
+
+// Notifications turned on before devices were paired belong to no device yet: tie them to this one.
+async function relink(worker: ServiceWorkerRegistration) {
+  if (!thisDevice() || unsupported() || Notification.permission !== "granted") return;
+  const subscription = await worker.pushManager.getSubscription();
+  if (subscription) write(KEYS.device, (await addDevice(subscription.toJSON(), deviceLabel())).id);
+}
 
 const iOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 export function unsupported(): string | null {

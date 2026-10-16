@@ -6,7 +6,7 @@ import { createAgent, filesOf, getAgent, isIsolated, mayCall, profiles, listAgen
 import { abort, activityOf, answer, askUser, compact, contextOf, holding, prompt, restart, restartAll, skillCommands, stop, stopAll } from "./agents/runner.mjs";
 import { askAgent, manageAgents } from "./agents/manage.mjs";
 import { searchChats } from "./agents/search.mjs";
-import { usageHistory, usageToday } from "./agents/usage.mjs";
+import { backfillUsage, usageHistory, usageToday } from "./agents/usage.mjs";
 import { earlierOf } from "./agents/sessions.mjs";
 import { clearScratch } from "./agents/workspace.mjs";
 import { closeBrowser, giveBack, hasWindow, isTaken, showBrowser, takeOver, useBrowser } from "./browser/browser.mjs";
@@ -26,7 +26,7 @@ import { CURATOR_KEY, getCurator, setCurator, startCurator } from "./memory/cura
 import { fetchKnowledge } from "./memory/fetch.mjs";
 import { memoryText, saveMemoryText, useMemory } from "./memory/memory.mjs";
 import { migrate } from "./migrate.mjs";
-import { addDevice, markSeen, pushStatus, removeDevice, setMuted } from "./push.mjs";
+import { addDevice, markSeen, pushStatus, removeDevice, removePaired, setMuted } from "./push.mjs";
 import { addRoutine, forgetRoutines, listRoutines, noteZone, removeRoutine, startRoutines, updateRoutine } from "./routines/routines.mjs";
 import { addExtension, listExtensions, removeExtension } from "./settings/extensions.mjs";
 import { answerSignIn, signInStatus, startSignIn, stopSignIn } from "./settings/login.mjs";
@@ -66,7 +66,7 @@ route("GET", "/api/security", () => securityReport());
 route("GET", "/api/usage", () => usageHistory(USAGE_SHOWN));
 route("GET", "/api/devices", ({ who }) => pairedDevices(who.device));
 route("POST", "/api/devices/code", () => newCode());
-route("DELETE", "/api/devices/:id", ({ id }) => unpair(id));
+route("DELETE", "/api/devices/:id", async ({ id }) => (await unpair(id), await removePaired(id), undefined));
 route("GET", "/api/update", () => updateStatus());
 route("PUT", "/api/update", ({ body }) => setUpdateCheck(body));
 route("POST", "/api/contact", ({ body }) => sendContact(body));
@@ -98,7 +98,7 @@ route("GET", "/api/memory", async () => {
 route("PUT", "/api/memory", forAll(async ({ body }) => ({ text: await saveMemoryText(body.text) })));
 route("PUT", "/api/memory/curator", ({ body }) => setCurator(body));
 route("GET", "/api/push", () => pushStatus());
-route("POST", "/api/push/devices", ({ body }) => addDevice(body));
+route("POST", "/api/push/devices", ({ body, who }) => addDevice(body, who.device));
 route("DELETE", "/api/push/devices/:id", ({ id }) => removeDevice(id));
 route("PUT", "/api/push/muted", ({ body }) => setMuted(body.muted));
 route("GET", "/api/browser/rule", () => getRule());
@@ -282,6 +282,7 @@ startCurator();
 watchdog(HUNG_MS);
 void syncIndex().catch((err) => console.error("The chat index cannot be built:", err.message));
 void warmModels();
+void backfillUsage().catch((err) => console.error("Past usage cannot be counted:", err.message));
 
 const shutDown = () => {
   server.close();

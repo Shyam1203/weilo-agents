@@ -2,7 +2,7 @@ import "./root.mjs";
 import assert from "node:assert/strict";
 import { createDecipheriv, createECDH, hkdfSync, randomBytes } from "node:crypto";
 import { test } from "node:test";
-import { encrypt } from "../push.mjs";
+import { addDevice, encrypt, pushStatus, removePaired } from "../push.mjs";
 
 function decrypt(body, ecdh, auth) {
   const salt = body.subarray(0, 16);
@@ -28,4 +28,14 @@ test("a notification can be read only with the browser's keys", () => {
   assert.equal(body.readUInt32BE(16), 4096);
   assert.equal(decrypt(body, ecdh, auth), '{"title":"Agent","body":"Done."}');
   assert.throws(() => decrypt(body, ecdh, randomBytes(16)));
+});
+const sub = (n) => ({ endpoint: `https://fcm.googleapis.com/fcm/send/${n}`, keys: { p256dh: "p", auth: "a" } });
+
+test("notifications belong to the paired device that turned them on", async () => {
+  const { id } = await addDevice({ subscription: sub(1), label: "Old" });
+  const again = await addDevice({ subscription: sub(1), label: "Linked" }, "dev1");
+  await addDevice({ subscription: sub(2), label: "Other" }, "dev2");
+  assert.equal(again.id, id);
+  await removePaired("dev1");
+  assert.deepEqual((await pushStatus()).devices.map((d) => d.label), ["Other"]);
 });
