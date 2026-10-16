@@ -13,10 +13,9 @@ import { agentsChanged } from "./agents/status.mjs";
 import { saveUpload } from "./agents/uploads.mjs";
 import { clearScratch } from "./agents/workspace.mjs";
 import { closeBrowser, giveBack, hasWindow, isTaken, showBrowser, takeOver, useBrowser, windowOpen } from "./browser/browser.mjs";
-import { getRule, saveRule } from "./browser/rule.mjs";
 import { cdpUpgrade, isCdpPath, viewUpgrade } from "./browser/screen.mjs";
 import { fail, settled } from "./common.mjs";
-import { ADMIN_SOCKET, MAX_UPLOAD, PORT, SANDBOX_API, SANDBOX_DIR, HUNG_MS, MAX_PAIR_BODY, SHUTDOWN_MS, SYSTEM_PATH, USAGE_SHOWN } from "./config.mjs";
+import { ADMIN_SOCKET, MAX_UPLOAD, PORT, SANDBOX_API, SANDBOX_DIR, HUNG_MS, MAX_PAIR_BODY, SHUTDOWN_MS, SYSTEM_PATH, USAGE_SHOWN, ACTIVITY_SHOWN } from "./config.mjs";
 import { sendContact } from "./contact.mjs";
 import { providerOf, proxyModel, warmModels } from "./gateway/models.mjs";
 import { pipePlugin, pluginOf, proxyPlugin } from "./gateway/plugins.mjs";
@@ -27,9 +26,9 @@ import { bodyOf, guard, rawBodyOf, reply } from "./http/request.mjs";
 import { serveUi } from "./http/static.mjs";
 import { CURATOR_KEY, getCurator, setCurator, startCurator } from "./memory/curator.mjs";
 import { fetchKnowledge } from "./memory/fetch.mjs";
-import { memoryText, saveMemoryText, useMemory } from "./memory/memory.mjs";
+import { useMemory } from "./memory/memory.mjs";
 import { migrate } from "./migrate.mjs";
-import { addDevice, markSeen, pushStatus, removeDevice, removePaired, setMuted } from "./push.mjs";
+import { addDevice, markSeen, notifiedDevices, pushStatus, removeDevice, removePaired, setMuted } from "./push.mjs";
 import { actionTool, addAction, changeAction, forgetActions, listActions, noteZone, removeAction, runAction, startActions } from "./actions/actions.mjs";
 import { forgetPins, listPins, pinTool, removePin, tickPin } from "./actions/pins.mjs";
 import { addExtension, listExtensions, removeExtension } from "./settings/extensions.mjs";
@@ -40,10 +39,9 @@ import { addSkills, hasSkill, listSkills, planSkill, removeSkill, saveSkill } fr
 import { manageSettings } from "./settings/manage.mjs";
 import { getUser, saveUser } from "./settings/user.mjs";
 import { setUpdateCheck, updateStatus } from "./update.mjs";
-import { audit, audited } from "./audit.mjs";
+import { audit, audited, recentAudit } from "./audit.mjs";
 import { syncIndex } from "./agents/chats.mjs";
 import { watchdog } from "./watchdog.mjs";
-import { securityReport } from "./security.mjs";
 import { secure } from "./users.mjs";
 import { BUILD } from "./version.mjs";
 
@@ -68,9 +66,12 @@ const forAll = (change) => async (req) => {
 };
 
 route("GET", "/api/version", () => BUILD);
-route("GET", "/api/security", () => securityReport());
+route("GET", "/api/activity", () => recentAudit(ACTIVITY_SHOWN));
 route("GET", "/api/usage", () => usageHistory(USAGE_SHOWN));
-route("GET", "/api/devices", ({ who }) => pairedDevices(who.device));
+route("GET", "/api/devices", async ({ who }) => {
+  const [devices, notified] = await Promise.all([pairedDevices(who.device), notifiedDevices()]);
+  return devices.map((d) => ({ ...d, notifications: notified.has(d.id) }));
+});
 route("POST", "/api/devices/code", () => newCode());
 route("DELETE", "/api/devices/:id", async ({ id }) => (await unpair(id), await removePaired(id), undefined));
 route("GET", "/api/update", () => updateStatus());
@@ -97,18 +98,17 @@ route("POST", "/api/extensions", forAll(({ body }) => addExtension(body)));
 route("DELETE", "/api/extensions/:id", forAll(({ id }) => removeExtension(id)));
 route("GET", "/api/user", () => getUser());
 route("PUT", "/api/user", forAll(({ body }) => saveUser(body)));
-route("GET", "/api/memory", async () => {
-  const [text, curator] = await Promise.all([memoryText(), getCurator()]);
-  return { text, ...curator };
+route("GET", "/api/memory", () => getCurator());
+route("PUT", "/api/memory", async ({ body }) => {
+  const was = await getCurator();
+  const now = await setCurator(body);
+  if (now.notes !== was.notes) await restartAll();
+  return now;
 });
-route("PUT", "/api/memory", forAll(async ({ body }) => ({ text: await saveMemoryText(body.text) })));
-route("PUT", "/api/memory/curator", ({ body }) => setCurator(body));
 route("GET", "/api/push", () => pushStatus());
 route("POST", "/api/push/devices", ({ body, who }) => addDevice(body, who.device));
 route("DELETE", "/api/push/devices/:id", ({ id }) => removeDevice(id));
 route("PUT", "/api/push/muted", ({ body }) => setMuted(body.muted));
-route("GET", "/api/browser/rule", () => getRule());
-route("PUT", "/api/browser/rule", forAll(({ body }) => saveRule(body)));
 route("GET", "/api/search", ({ query }) => searchChats(query.get("q")));
 route("GET", "/api/images/:id", ({ id, res }) => serveImage(res, id), streamed);
 route("GET", "/api/agents/status", ({ req, res }) => agentStatus(req, res), streamed);
@@ -166,9 +166,9 @@ agentRoute("POST", "/api/agents/:id/skill", "skill", async ({ id, body }) => {
 agentRoute("POST", "/api/agents/:id/manage_agents", "manage_agents", ({ id, body }) => manageAgents(id, body));
 agentRoute("POST", "/api/agents/:id/ask_agent", "ask_agent", ({ id, body }) => askAgent(id, body));
 agentRoute("POST", "/api/agents/:id/manage_settings", "manage_settings", ({ id, body }) => manageSettings(id, body));
-agentRoute("POST", "/api/agents/:id/memory", "memory", async ({ id, body }) => {
-  const confirm = (await getCurator()).ask && (async (what) => (await askUser(id, `${(await getAgent(id)).name} asks to ${what}`, [SAVE, "Don't"])) === SAVE);
-  return { text: await useMemory(body, confirm) };
+agentRoute("POST", "/api/agents/:id/memory", "memory", async ({ body }) => {
+  if (!(await getCurator()).notes) throw fail(403, "Notes about the user are off in Settings > Memory.");
+  return { text: await useMemory(body) };
 });
 agentRoute("POST", "/api/agents/:id/fetch_knowledge", "fetch_knowledge", async ({ body }) => ({ text: await fetchKnowledge(body) }), quiet);
 agentRoute("POST", "/api/agents/:id/action", "action", ({ id, body }) => actionTool(id, body));

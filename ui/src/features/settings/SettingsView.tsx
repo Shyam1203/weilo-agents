@@ -10,7 +10,6 @@ import { Icon, type IconName } from "../../components/ui/Icon";
 import { Page } from "../../components/ui/Row";
 import { getTheme } from "../../lib/theme";
 import { useMedia } from "../../lib/useMedia";
-import { BrowserSettings } from "../browser/BrowserSettings";
 import { ExtensionsPage } from "../extensions/ExtensionsPage";
 import { MemoryPage } from "../memory/MemoryPage";
 import { PluginsPage } from "../plugins/PluginsPage";
@@ -21,10 +20,10 @@ import { AboutPage } from "./AboutPage";
 import { NotificationsPage } from "./NotificationsPage";
 import { Appearance } from "./Appearance";
 import { ProvidersPage } from "./ProvidersPage";
-import { SecurityPage } from "./SecurityPage";
+import { ActivityPage } from "./ActivityPage";
 import { UsagePage } from "./UsagePage";
 
-export type SettingsPage = "you" | "memory" | "providers" | "usage" | "skills" | "plugins" | "extensions" | "browser" | "security" | "general";
+export type SettingsPage = "you" | "memory" | "providers" | "usage" | "skills" | "plugins" | "extensions" | "devices" | "general";
 
 const MENU: { group: string; pages: { value: SettingsPage; label: string; icon: IconName }[] }[] = [
   {
@@ -47,13 +46,12 @@ const MENU: { group: string; pages: { value: SettingsPage; label: string; icon: 
       { value: "skills", label: "Skills", icon: "sparkle" },
       { value: "plugins", label: "Plugins", icon: "puzzle" },
       { value: "extensions", label: "Extensions", icon: "plug" },
-      { value: "browser", label: "Browser", icon: "globe" },
     ],
   },
   {
     group: "App",
     pages: [
-      { value: "security", label: "Security & devices", icon: "shield" },
+      { value: "devices", label: "Devices", icon: "devices" },
       { value: "general", label: "General", icon: "settings" },
     ],
   },
@@ -139,10 +137,10 @@ export function SettingsView({ page: first, agents, providers, skills, plugins, 
                 <ProvidersPage providers={providers} models={models} onChange={onChange} onModels={onModels} />
               ) : page === "usage" ? (
                 <UsagePage agents={agents} />
-              ) : page === "security" ? (
+              ) : page === "devices" ? (
                 <Sections>
                   <DevicesPage section />
-                  <SecurityPage agents={agents} section />
+                  <ActivityPage agents={agents} section />
                 </Sections>
               ) : page === "general" ? (
                 <Sections>
@@ -156,9 +154,7 @@ export function SettingsView({ page: first, agents, providers, skills, plugins, 
                 </Page>
               ) : page === "memory" ? (
                 <MemoryPage providers={providers} models={models} />
-              ) : page === "browser" ? (
-                <BrowserSettings />
-              ) : page === "skills" ? (
+                            ) : page === "skills" ? (
                 <SkillsPage skills={skills} agents={agents} onChange={onChange} />
               ) : page === "plugins" ? (
                 <PluginsPage plugins={plugins} onChange={onChange} />

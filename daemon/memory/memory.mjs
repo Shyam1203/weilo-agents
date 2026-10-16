@@ -71,12 +71,7 @@ const saveNotes = (notes) => (notes.length ? writePrivate(MEMORY, render(notes))
 const full = (notes) => notes.length > MAX_NOTES || render(notes).length > MAX_NOTES_CHARS;
 const oldest = (notes) => [...notes].sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5).map(show).join("\n");
 
-export async function useMemory({ action, text, id, kind }, confirm) {
-  if (confirm && (action === "remember" || action === "forget")) {
-    const was = (await readNotes()).find((n) => n.id === id);
-    const what = action === "remember" ? `remember (${kind ?? was?.kind ?? "fact"}): "${line(text)}"${was ? ` (instead of "${was.text}")` : ""}` : `forget: "${was?.text ?? id}"`;
-    if (!(await confirm(what))) return "The user did not approve it: nothing was changed.";
-  }
+export async function useMemory({ action, text, id, kind }) {
   return serial(async () => {
     const notes = await readNotes();
     if (action === "list") return notes.length ? notes.map(show).join("\n") : "No notes yet.";
@@ -98,16 +93,5 @@ export async function useMemory({ action, text, id, kind }, confirm) {
     return at < 0 ? `Saved as ${next.at(-1).id}.` : `Updated ${id}; it counts as confirmed now.`;
   });
 }
-
-export const memoryText = () => readFile(MEMORY, "utf8").catch(() => "");
-
-export const saveMemoryText = (text) =>
-  serial(async () => {
-    if (typeof text !== "string") throw fail(400, "The memory is not valid");
-    const notes = parse(text).map((n) => ({ ...n, text: line(n.text) }));
-    if (full(notes)) throw fail(400, `Memory holds ${MAX_NOTES} notes or ${MAX_NOTES_CHARS} characters at most.`);
-    await saveNotes(notes);
-    return memoryText();
-  });
 
 export const memoryFlags = () => access(MEMORY).then(() => ["--append-system-prompt", MEMORY], () => []);

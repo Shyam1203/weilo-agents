@@ -307,7 +307,7 @@ export function Composer({ agentId, onEdit, shortcuts, to, avatar, doing, busy, 
           )}
         </div>
       </div>
-      {note ? <p className={`px-4 text-xs ${error || dictation.error ? "text-bad" : "text-ink-3"}`}>{note}</p> : focused && <p className="hidden truncate px-4 text-[11px] text-ink-3 pointer-fine:block">{keys}</p>}
+      {note ? <p className={`px-4 text-xs ${error || dictation.error ? "text-bad" : "text-ink-3"}`}>{note}</p> : <p aria-hidden={!focused} className={`hidden truncate px-4 text-[11px] text-ink-3 transition-opacity pointer-fine:block ${focused ? "" : "opacity-0"}`}>{keys}</p>}
       {camera && <CameraDialog onCapture={(file) => void attach([file])} onClose={() => setCamera(false)} />}
     </form>
   );

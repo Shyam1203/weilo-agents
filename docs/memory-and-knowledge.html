@@ -71,9 +71,9 @@
 <li>Each note is <code>- [id month kind] text</code>. The month is when it was saved or last confirmed; the kind is one of <code>preference</code>, <code>fact</code>, <code>goal</code>, <code>person</code>, <code>project</code>, <code>decision</code> (<code>fact</code> when none is given). The file groups notes under a heading per kind (Preferences, Facts, Goals, People, Projects, Decisions), and puts notes not confirmed for 12 months under "Not confirmed for 12 months: may be out of date", so agents treat them with care.</li>
 <li>Agents write it with the <code>memory</code> tool: <code>remember</code> (one line and a <code>kind</code>; with an <code>id</code> it replaces that note and counts as confirming it, so an agent that hears a note is still true remembers it again with the same text), <code>forget</code> (by id), <code>list</code> (with each note's kind and month).</li>
 <li>The daemon refuses a note over 200 characters, one that looks like a secret, one that reads as an instruction to an agent ("ignore your instructions", "you are now…", a <code>curl … | sh</code>) or hides text with invisible characters (<code>unsafe</code> in <code>common.mjs</code>, as Hermes checks its memory), one too similar to another (shared words over all words at least 0.7: the answer names the note to update instead), and one that would make the file full (the answer lists the 5 oldest notes, to forget one first).</li>
-<li>With Settings &gt; Memory &gt; Ask before saving on, each <code>remember</code> and <code>forget</code> is first a question in the agent's chat ("Research asks to remember: …"); anything but Save it leaves the notes as they are.</li>
+<li>With Settings &gt; Memory &gt; Notes about you off, agents get neither the <code>memory</code> tool nor <code>MEMORY.md</code>, and the route refuses a call. The notes stay in the file; turning it on gives them back.</li>
 <li>Writes happen one after another, so two agents saving at once never lose each other's note. The file is written whole and shared with the <code>agents</code> group (0640, root's).</li>
-<li>A note reaches agents the next time their pi starts. The <code>memory</code> tool does not restart anyone; Settings &gt; Memory (which shows the notes grouped by kind, each with its month or "Not confirmed since …", or as text; Add has a kind picker) does. <code>/reload</code> restarts one agent.</li>
+<li>A note reaches agents the next time their pi starts. The <code>memory</code> tool does not restart anyone; turning Notes about you on or off does. To change or remove a note, ask an agent: its <code>memory</code> tool can. <code>/reload</code> restarts one agent.</li>
 <li>A line you add by hand as <code>- text</code> (or <code>- [goal] text</code>) gets the next id, this month and, if none, the kind <code>fact</code> when the file is saved.</li>
 </ul>
 </section>
@@ -98,7 +98,7 @@ updated: 2026-10-12
 
 <section class="card" id="curator">
 <h2>The curator</h2>
-<p>Off until you choose its model in Settings &gt; Memory (<code>PUT /api/memory/curator</code>, kept in <code>agent/curator.json</code> with, per agent, the last message read, the last shared note filed and the last run). It reads chats from the chat index, not the files, and takes at most as many new messages as its input budget (6 pieces of 24000 characters) can hold, so a long backlog is not loaded whole; the rest waits for the next run.</p>
+<p>Off until you choose its model in Settings &gt; Memory (<code>PUT /api/memory</code>, kept in <code>agent/curator.json</code> with, per agent, the last message read, the last shared note filed and the last run). It reads chats from the chat index, not the files, and takes at most as many new messages as its input budget (6 pieces of 24000 characters) can hold, so a long backlog is not loaded whole; the rest waits for the next run.</p>
 <figure>
 <div class="fig">
 <svg viewBox="0 0 760 520" role="img" aria-labelledby="cu-t cu-d">

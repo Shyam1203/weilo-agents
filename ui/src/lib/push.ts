@@ -11,7 +11,7 @@ export const registerWorker = () =>
 async function relink(worker: ServiceWorkerRegistration) {
   if (!thisDevice() || unsupported() || Notification.permission !== "granted") return;
   const subscription = await worker.pushManager.getSubscription();
-  if (subscription) write(KEYS.device, (await addDevice(subscription.toJSON(), deviceLabel())).id);
+  if (subscription) write(KEYS.device, (await addDevice(subscription.toJSON())).id);
 }
 
 const iOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -23,13 +23,6 @@ export function unsupported(): string | null {
   return "This browser cannot show notifications.";
 }
 
-function deviceLabel() {
-  const ua = navigator.userAgent;
-  const device = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) || iOS() ? "iPad" : /Android/.test(ua) ? "Android" : /Windows/.test(ua) ? "Windows" : /Mac/.test(ua) ? "Mac" : /Linux/.test(ua) ? "Linux" : "Device";
-  const browser = /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "";
-  return browser && device !== "iPhone" && device !== "iPad" ? `${device} · ${browser}` : device;
-}
-
 export const thisDevice = () => read(KEYS.device);
 
 export async function turnOn(publicKey: string) {
@@ -37,7 +30,7 @@ export async function turnOn(publicKey: string) {
   if (permission !== "granted") throw new Error("Notifications are blocked for this site. Allow them in the browser's site settings, then try again.");
   const worker = await navigator.serviceWorker.ready;
   const subscription = (await worker.pushManager.getSubscription()) ?? (await worker.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: publicKey }));
-  const { id } = await addDevice(subscription.toJSON(), deviceLabel());
+  const { id } = await addDevice(subscription.toJSON());
   write(KEYS.device, id);
 }
 

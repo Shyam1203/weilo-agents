@@ -1,8 +1,11 @@
 import "./root.mjs";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { unsafe } from "../common.mjs";
-import { memoryText, saveMemoryText, useMemory } from "../memory/memory.mjs";
+import { MEMORY, unsafe, writePrivate } from "../common.mjs";
+import { useMemory } from "../memory/memory.mjs";
+
+const memoryText = () => readFile(MEMORY, "utf8").catch(() => "");
 
 test("unsafe finds secrets, steering and hidden text, and lets facts through", () => {
   assert.equal(unsafe("Prefers metric units"), null);
@@ -25,22 +28,9 @@ test("notes are remembered, changed, refused when unsafe or close to another, an
   assert.equal(await useMemory({ action: "list" }), "No notes yet.");
 });
 
-test("with confirm, nothing changes until the user says yes", async () => {
-  const asked = [];
-  const no = async (what) => (asked.push(what), false);
-  assert.match(await useMemory({ action: "remember", text: "Lives in Pune" }, no), /did not approve/);
-  assert.deepEqual(asked, ['remember (fact): "Lives in Pune"']);
-  assert.equal(await memoryText(), "");
-  assert.match(await useMemory({ action: "remember", text: "Lives in Pune" }, async () => true), /Saved/);
-});
-
-test("the user's own edit is checked like an agent's", async () => {
-  await assert.rejects(saveMemoryText("- password: hunter2\n"), { status: 400 });
-  assert.match(await saveMemoryText("- Has a cat\n"), /Has a cat/);
-});
-
 test("notes are grouped by kind, and one not confirmed for a year is set apart until it is confirmed", async () => {
-  await saveMemoryText("- [m1 2026-10 goal] Run a marathon\n- [m2 2020-01 person] Sister is Asha\n- Likes jazz\n");
+  await writePrivate(MEMORY, "- [m1 2026-10 goal] Run a marathon\n- [m2 2020-01 person] Sister is Asha\n- Likes jazz\n");
+  assert.match(await useMemory({ action: "remember", text: "Has a cat" }), /Saved as m4/);
   const text = await memoryText();
   assert.match(text, /## Goals\n- \[m1 2026-10 goal\] Run a marathon/);
   assert.match(text, /## Facts\n- \[m3 \d{4}-\d{2} fact\] Likes jazz/);
@@ -51,6 +41,6 @@ test("notes are grouped by kind, and one not confirmed for a year is set apart u
 });
 
 test("a bracket that is not tags stays part of the note", async () => {
-  await saveMemoryText("- [urgent] Call mom on Sunday\n");
-  assert.match(await memoryText(), /- \[m\d+ \d{4}-\d{2} fact\] \[urgent\] Call mom on Sunday/);
+  await writePrivate(MEMORY, "- [urgent] Call mom on Sunday\n");
+  assert.match(await useMemory({ action: "list" }), /m1 \(fact, \d{4}-\d{2}\): \[urgent\] Call mom on Sunday/);
 });

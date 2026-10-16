@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import type { Agent } from "../../api/agents";
 import { listCommands, type Outgoing } from "../../api/chat";
 import { messageOf, RequestError } from "../../api/http";
-import type { Model, Provider } from "../../api/providers";
+import { shortName, type Model, type Provider } from "../../api/providers";
 import { Avatar } from "../../components/ui/Avatar";
 import { Button, IconButton } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
@@ -14,7 +14,7 @@ import { useMedia } from "../../lib/useMedia";
 import { read, write, KEYS } from "../../lib/storage";
 import { avatarOf } from "../agents/avatars";
 import { Composer, type Draft } from "./Composer";
-import { ModelMenu } from "./ModelMenu";
+import { ChangeModel } from "./ChangeModel";
 import { fixesFor, Problem, type Fix } from "./Problem";
 import { useNotifyOffer } from "./useNotifyOffer";
 import { EmptyChat } from "./EmptyChat";
@@ -161,9 +161,9 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
   const put = (draft: Draft) => setFill({ ...draft });
   const lastMine = chat.messages.findLast((m): m is Message => m.kind === "message" && m.role === "human");
   const last = lastMine && { text: lastMine.text, images: lastMine.images };
-  const modelMenu = (button: boolean) => <ModelMenu agent={agent} models={models} providers={providers} busy={chat.busy} button={button} onChanged={() => (setReplyError(null), onActivity())} onError={(message) => setReplyError(message, true)} />;
+  const changeModel = <ChangeModel agent={agent} models={models} providers={providers} busy={chat.busy} onChanged={() => (setReplyError(null), onActivity())} onError={(message) => setReplyError(message, true)} />;
   const problem = (message: string, fixes: Fix[], tone?: "alert" | "info") => (
-    <Problem message={message} fixes={fixes} tone={tone} onRetry={last && !chat.busy ? () => (setReplyError(null), retry(last)) : undefined} modelPicker={modelMenu(true)} onProviders={onOpenSettings} onLimit={onEditLimits} />
+    <Problem message={message} fixes={fixes} tone={tone} onRetry={last && !chat.busy ? () => (setReplyError(null), retry(last)) : undefined} changeModel={changeModel} onProviders={onOpenSettings} onLimit={onEditLimits} />
   );
   const unqueue = (q: Parameters<typeof chat.unqueue>[0]) =>
     chat.unqueue(q).catch((err) => {
@@ -263,7 +263,7 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
           onBack={onBack}
           leading={<Avatar spec={avatarOf(agent)} size={32} working={chat.busy} doing={chat.doing} />}
           title={agent.name}
-          subtitle={<>{agent.isolated && <Tag>Isolated</Tag>}{modelMenu(false)}</>}
+          subtitle={<>{agent.isolated && <Tag>Isolated</Tag>}{agent.model ? shortName(models?.find((m) => m.id === agent.model)?.name ?? agent.model) : "Choose a model"}</>}
           onTitle={onEdit}
           actions={<><IconButton icon="search" label="Find in this chat" aria-pressed={finding} className={finding ? "bg-select text-ink" : ""} onClick={() => (finding ? closeFind() : setFinding(true))} /><span className="relative flex"><IconButton icon="bolt" label={panel === "actions" ? "Hide actions & pins" : pinned.fresh ? "Actions & pins (a pin changed)" : "Actions & pins"} aria-pressed={panel === "actions"} className={panel === "actions" ? "bg-select text-ink" : ""} onClick={() => (pinned.fresh && setTab("pins"), togglePanel("actions"))} />{pinned.fresh && !seeingPins && <span aria-hidden="true" className="pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-full bg-good ring-2 ring-page" />}</span><span className="relative flex"><IconButton icon="globe" label={panel === "browser" ? "Hide the browser" : browserBusy ? "Browser (open)" : "Browser"} aria-pressed={panel === "browser"} className={panel === "browser" ? "bg-select text-ink" : ""} onClick={() => togglePanel("browser")} />{browserBusy && panel !== "browser" && <span aria-hidden="true" className="pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-full bg-working ring-2 ring-page" />}</span></>}
         />

@@ -247,7 +247,6 @@
 <tr><td><code>HOME</code></td><td><code>homes/&lt;folder&gt;</code> (isolated: <code>isolated-homes/&lt;folder&gt;</code>): its own tool settings and sign-ins (git and the like)</td></tr>
 <tr><td><code>PATH</code>, <code>npm_config_prefix</code>, <code>PYTHONUSERBASE</code></td><td>Regular: root's folders, then <code>/home/node/.local/bin</code> (shared tools). Isolated: root's folders, then <code>&lt;HOME&gt;/.local/bin</code>.</td></tr>
 <tr><td><code>WEILO_AGENT</code>, <code>WEILO_API</code>, <code>WEILO_KEY</code></td><td>Who it is, <code>http://127.0.0.1:3210/api</code> (in the sandbox, forwarded to the app's socket for it), and its key for every call back</td></tr>
-<tr><td><code>WEILO_ASK_BEFORE</code></td><td>The browser rule from Settings &gt; Browser, or empty when off</td></tr>
 <tr><td><code>WEILO_SCRATCH</code></td><td><code>/tmp/weilo/&lt;id&gt;</code>, emptied when it goes idle (isolated: <code>/tmp</code>, its own)</td></tr>
 <tr><td><code>WEILO_ISOLATED</code></td><td><code>1</code> for an isolated agent: the tools then describe what it may ask for</td></tr>
 </tbody></table></div>

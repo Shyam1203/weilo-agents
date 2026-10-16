@@ -30,9 +30,9 @@ export const PUSH_TTL_S = 24 * 60 * 60;
 export const PUSH_TIMEOUT_MS = 10_000;
 export const PUSH_BODY_CHARS = 180;
 
-export const STALE_DEVICE_DAYS = 90;
 export const USAGE_DAYS = 31;
 export const USAGE_SHOWN = 14;
+export const ACTIVITY_SHOWN = 50;
 
 export const BROWSER_UID = 1000;
 export const CURATOR_UID = 1100;
@@ -162,5 +162,3 @@ export const WINDOW_TRY_MS = 200;
 export const WINDOW_IDLE_MS = 10 * MINUTE;
 export const BROWSER_IDLE_MS = 20 * MINUTE;
 export const BROWSER_SWEEP_MS = MINUTE;
-export const DEFAULT_RULE = "Ask me before you do anything on a website that cannot be undone: send a message or an email, buy something, post or publish, delete, or send a form with my personal details.";
-export const MAX_RULE = 1000;

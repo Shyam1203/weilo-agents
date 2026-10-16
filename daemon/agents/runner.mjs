@@ -6,8 +6,8 @@ import { EXTENSIONS, fail } from "../common.mjs";
 import { agentKey, dropAgentKey } from "../http/access.mjs";
 import { BIN, CORE_TOOLS, GLANCE_MS, IDLE_MS, MAX_APPROVAL, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
 import { audit } from "../audit.mjs";
-import { askBefore } from "../browser/rule.mjs";
 import { addUsage, usageToday } from "./usage.mjs";
+import { getCurator } from "../memory/curator.mjs";
 import { memoryFlags } from "../memory/memory.mjs";
 import { pointOf } from "../settings/compaction.mjs";
 import { extensionsOf } from "../settings/extensions.mjs";
@@ -82,16 +82,17 @@ const touch = (run) => {
 
 const [WEILO, MEMORY] = ["../weilo.mjs", "../memory/extension.mjs"].map((path) => fileURLToPath(new URL(path, import.meta.url)));
 
-const toolsFlags = (agent, plugins, extensions) => {
-  const tools = [...PI_TOOLS, ...CORE_TOOLS.filter((t) => mayCall(agent, t)), ...extensions.flatMap((e) => e.tools)];
+const toolsFlags = (agent, plugins, kind) => {
+  const tools = [...PI_TOOLS, ...CORE_TOOLS.filter((t) => mayCall(agent, t) && (t !== "memory" || kind.notes)), ...kind.extensions.flatMap((e) => e.tools)];
   return plugins.length ? ["--tools", [...tools, "codemode", ...plugins].join(",")] : ["--no-mcp", "--tools", tools.join(",")];
 };
 
 async function kindOf(agent, dir) {
   const [skills, extensions] = await Promise.all([skillPaths(agent.skills), extensionsOf(agent)]);
   if (!isIsolated(agent)) {
-    const about = (await Promise.all([userFlags(), memoryFlags()])).flat();
-    return { profile: profilePath(agent.id), skills, extensions, ours: [WEILO, MEMORY], about, env: sharedTools, scratch: scratchOf(agent.id) };
+    const { notes } = await getCurator();
+    const about = (await Promise.all([userFlags(), notes ? memoryFlags() : []])).flat();
+    return { profile: profilePath(agent.id), skills, extensions, ours: [WEILO, MEMORY], about, notes, env: sharedTools, scratch: scratchOf(agent.id) };
   }
   const binds = [...placesOf(agent).map((path) => ({ path })), ...[...skills, ...extensions.filter((x) => !x.builtin).map((x) => join(EXTENSIONS, x.id))].map((path) => ({ path, ro: true }))];
   return { profile: join(dir, "agent.json"), skills, extensions, ours: [WEILO], about: ["--no-context-files"], env: ownTools(userHomeOf(agent)), scratch: "/tmp", binds };
@@ -109,7 +110,7 @@ const argvOf = (agent, kind, plugins) => {
     "-ne", ...PI_BUILTINS.flatMap((name) => ["-e", `builtin:${name}`]),
     ...kind.ours.flatMap((path) => ["-e", path]), ...kind.extensions.flatMap((e) => ["-e", e.entry]),
     "--no-skills", ...kind.skills.flatMap((path) => ["--skill", path]),
-    ...toolsFlags(agent, plugins, kind.extensions),
+    ...toolsFlags(agent, plugins, kind),
     "--session-dir", chatDirOf(agent),
     "--session-id", id,
   ];
@@ -143,7 +144,7 @@ async function start(run) {
   await holds.get(run.id);
   const agent = await getAgent(run.id);
   const dir = piDirOf(run.id);
-  const [ask, plugins, kind] = await Promise.all([askBefore(), pluginTools(agent.plugins), kindOf(agent, dir)]);
+  const [plugins, kind] = await Promise.all([pluginTools(agent.plugins), kindOf(agent, dir)]);
   const argv = argvOf(agent, kind, plugins);
   const user = userOf(agent);
   const isolated = isIsolated(agent);
@@ -153,7 +154,7 @@ async function start(run) {
   const cwd = homeOf(agent);
   const env = {
     ...kind.env, PI_CODING_AGENT_DIR: dir, HOME: userHomeOf(agent),
-    WEILO_AGENT: run.id, WEILO_API: `http://127.0.0.1:${PORT}/api`, WEILO_KEY: run.key, WEILO_ASK_BEFORE: ask, WEILO_SCRATCH: kind.scratch,
+    WEILO_AGENT: run.id, WEILO_API: `http://127.0.0.1:${PORT}/api`, WEILO_KEY: run.key, WEILO_SCRATCH: kind.scratch,
     ...(isolated && { WEILO_ISOLATED: "1" }),
   };
   let child;

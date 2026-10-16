@@ -37,7 +37,6 @@ export const CURATOR = join(AGENT_DIR, "curator.json");
 export const OLD_SCHEDULES = join(AGENT_DIR, "routines.json");
 export const ACTIONS = join(AGENT_DIR, "actions.json");
 export const PINS = join(AGENT_DIR, "pins.json");
-export const BROWSER = join(AGENT_DIR, "browser.json");
 export const PUSH = join(AGENT_DIR, "push.json");
 export const MODELS = join(AGENT_DIR, "models.json");
 export const INSTALL = join(AGENT_DIR, "install.json");

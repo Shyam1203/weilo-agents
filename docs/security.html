@@ -39,7 +39,7 @@
 <li><a href="#approvals">Approvals</a></li>
 <li><a href="#trusted">Trusted agents ("always allow")</a></li>
 <li><a href="#budgets">Daily token limits</a></li>
-<li><a href="#audit">The audit log and Settings &gt; Security &amp; devices</a></li>
+<li><a href="#audit">The audit log and Settings &gt; Devices</a></li>
 <li><a href="#matrix">Who can read and write what</a></li>
 <li><a href="#attackers">What each attacker can and cannot do</a></li>
 <li><a href="#content">Agent-written content in the app</a></li>
@@ -193,7 +193,7 @@
 <text class="tm" x="126" y="88" text-anchor="middle">node /app/pair.mjs</text>
 <rect class="box b-grey" x="16" y="128" width="220" height="92" rx="10"/>
 <text class="tb" x="126" y="154" text-anchor="middle">More devices</text>
-<text class="ts" x="126" y="176" text-anchor="middle">Security &amp; devices &gt; Add</text>
+<text class="ts" x="126" y="176" text-anchor="middle">Devices &gt; Add</text>
 <text class="tm" x="126" y="200" text-anchor="middle">POST /api/devices/code</text>
 <rect class="box b-red" x="276" y="16" width="220" height="92" rx="10"/>
 <text class="tb" x="386" y="42" text-anchor="middle">admin socket</text>
@@ -235,7 +235,7 @@
 <li>Codes use 32 letters and digits that cannot be confused (no I, O, 0 or 1) and are shown as <code>ABCD-EFGH</code>.</li>
 <li><code>POST /api/pair</code> is the only API call that needs no cookie, and its body is read up to 1 KB only (<code>MAX_PAIR_BODY</code>; any other body up to 64 MB), so an unpaired caller cannot make the daemon hold a large one. Every other call without one gets <code>401 {pair: true}</code>, and the app shows its pairing screen. The static UI itself is public.</li>
 <li>The device key never leaves the daemon in plain form after pairing: only its hash is stored. A device's last use is written at most once an hour.</li>
-<li>Settings &gt; Security &amp; devices lists devices and removes them; a removed device needs a new code.</li>
+<li>Settings &gt; Devices lists devices and removes them; a removed device needs a new code.</li>
 <li>Only root in the container can open the admin socket, so an agent cannot make itself a code.</li>
 </ul>
 </section>
@@ -351,7 +351,7 @@
 <li><strong>Asked by the app only.</strong> The app sends a spec over <code>/run/weilo-sandbox/ctl.sock</code> (a volume both containers mount, root's alone). <code>sandbox/spec.mjs</code> refuses root or any uid under 2001, a place outside those folders, any place that is a link, and files outside <code>/var/lib/weilo</code>.</li>
 <li><strong>Namespaces for each program.</strong> Each pi, and each plugin program of an isolated agent, starts with <code>unshare</code> in new pid, mount, ipc and uts namespaces, under <code>tini</code>. <code>sandbox/enter.mjs</code>, as root inside them, covers the data folder, <code>/var/lib/weilo</code>, the sandbox's socket, <code>/tmp</code> and <code>/dev/shm</code> with empty folders, mounts back only that program's places (skills and extensions read only, nothing setuid), writes its pi folder, and starts it with <code>setpriv</code> as its user with no capability and <code>no-new-privs</code>. So it sees its own processes only, its own <code>/tmp</code>, and only its own folder, chat and HOME.</li>
 <li><strong>Ended with the app.</strong> When the app hangs up, the program's stdin ends; 5 seconds later it is killed, and with it everything in its namespace.</li>
-<li><strong>Fail closed.</strong> If the sandbox cannot make namespaces it starts nothing, and Settings &gt; Security &amp; devices says so. If it is not running, isolated agents do not start.</li>
+<li><strong>Fail closed.</strong> If the sandbox cannot make namespaces it starts nothing, and Settings &gt; Devices says so. If it is not running, isolated agents do not start.</li>
 </ul>
 <p>Making namespaces needs <code>SYS_ADMIN</code> in the sandbox container, and on hosts with AppArmor <code>apparmor:unconfined</code> (Docker's profile forbids mounts). The container drops every other capability, and the programs it starts have none. The kernel is still the host's: for a kernel of its own, install <a href="https://gvisor.dev">gVisor</a> and set <code>WEILO_SANDBOX_RUNTIME=runsc</code> before starting.</p>
 </section>
@@ -431,9 +431,9 @@
 </section>
 
 <section class="card" id="audit">
-<h2>The audit log and Settings &gt; Security &amp; devices</h2>
+<h2>The audit log and Settings &gt; Devices</h2>
 <p><code>agent/audit.jsonl</code> (root's, 0600; a second file at 5 MB) records every change made through the API (method, route, ids, and who: a device or an agent; never a request's body), each pairing and refused pairing code, and every question an agent asked you with your answer. A chat's own traffic (messages, answers, browser steps, searches) is left out.</p>
-<p>Settings &gt; Security &amp; devices shows the latest 50 entries and checks the install: whether the sandbox runs and can make namespaces, which isolated agents have the browser, devices not used for 90 days, and whether a newer version is out.</p>
+<p>Settings &gt; Devices shows the latest 50 entries and checks the install: whether the sandbox runs and can make namespaces, which isolated agents have the browser, devices not used for 90 days, and whether a newer version is out.</p>
 </section>
 
 <section class="card" id="matrix">
@@ -514,7 +514,7 @@
 <li><strong>Shared installed tools.</strong> <code>/home/node/.local</code> is writable by the <code>agents</code> group. A program one regular agent installs (or replaces) there runs in other regular agents when they call it by name. Root's folders come first in PATH, so a system program's name cannot be taken over.</li>
 <li><strong>Isolated folders are readable by regular agents, by design.</strong> Regular agents (and their plugin programs) read isolated agents' folders and search their chats with <code>fetch_knowledge</code>: what an isolated agent learns about you is yours. They cannot change them. What comes from an isolated agent may come from untrusted pages, so it is always labelled as its report.</li>
 <li><strong>Upload race.</strong> Uploads are written by root into the agent's folder, which agents can change. The last step of the path is never followed if it is a link, but the folders above it are resolved normally: an agent that swaps a parent folder for a link at the right moment could make an upload land elsewhere, owned by the uploading agent.</li>
-<li><strong>The browser shares logins.</strong> Every agent with the browser uses the same profile and every site you signed in to. "Ask me first" is a request in the tool description, not a lock. It is off for an agent that becomes isolated; a request to turn it on says so.</li>
+<li><strong>The browser shares logins.</strong> Every agent with the browser uses the same profile and every site you signed in to. Agents do not ask before they act on a site. The browser is off for an agent that becomes isolated; a request to turn it on says so.</li>
 <li><strong>Account sign-ins.</strong> The placeholders follow the token shapes pi reads today (Anthropic, ChatGPT, GitHub Copilot); a pi update that reads more of a token could break such a provider until the placeholder follows. Sign-in with an account has not been tested end to end against every provider.</li>
 <li><strong>Bundled switches for regular agents.</strong> Switching off the browser or actions for a regular agent removes the tool, but its routes stay callable with that agent's key.</li>
 <li><strong>The curator's file tools are not fenced by pi.</strong> They are confined by its Linux user (1100), which owns only the vault. It is told to write only there, and every page it touched is scrubbed of lines that look like secrets.</li>

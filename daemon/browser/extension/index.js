@@ -16,8 +16,7 @@ export default function (pi) {
     pi,
     "browser",
     "Browser",
-    process.env.WEILO_ASK_BEFORE ? `${BROWSER}
-The user's rule: ${process.env.WEILO_ASK_BEFORE} Use ask to get their answer first.` : BROWSER,
+    BROWSER,
     {
       action: { type: "string", enum: ["open", "read", "click", "type", "press", "scroll", "back", "new_tab", "tabs", "switch", "close_tab"] },
       url: note("A web address that starts with http:// or https://."),
