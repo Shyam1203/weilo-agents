@@ -6,6 +6,7 @@ interface Block {
   text?: string;
   data?: string;
   mimeType?: string;
+  url?: string;
   id?: string;
   name?: string;
   arguments?: unknown;
@@ -151,7 +152,7 @@ export interface Message {
   at: number | null;
 }
 
-const imagesOf = (content: PiMessage["content"]) => (typeof content === "string" ? [] : content.filter((b) => b.type === "image").map((b) => `data:${b.mimeType};base64,${b.data}`));
+const imagesOf = (content: PiMessage["content"]) => (typeof content === "string" ? [] : content.filter((b) => b.type === "image" && (b.url || b.data)).map((b) => b.url ?? `data:${b.mimeType};base64,${b.data}`));
 
 interface ShownBlocks {
   kind: "show";

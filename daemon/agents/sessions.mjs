@@ -1,6 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { CHATS, openChat } from "../common.mjs";
+import { linkImages } from "./images.mjs";
 import { CHAT_CHUNK, CHAT_TAIL, EARLIER_KEPT, EARLIER_KEPT_MS, EARLIER_PAGE, PREVIEW_CHARS, PREVIEW_TAIL } from "../config.mjs";
 
 export const textOf = (content, between = "") => (typeof content === "string" ? content : (content ?? []).filter((b) => b.type === "text").map((b) => b.text).join(between));
@@ -106,7 +107,7 @@ async function readEarlier(files) {
         continue;
       }
       if (entry.type === "compaction") kept = entry.firstKeptEntryId;
-      else entries.push({ id: entry.id, message: shown(entry.message) ? slim(asTyped(entry.message)) : null });
+      else entries.push({ id: entry.id, message: shown(entry.message) ? linkImages(slim(asTyped(entry.message))) : null });
     }
   }
   const end = kept ? entries.findIndex((e, i) => i >= before && e.id === kept) : before;

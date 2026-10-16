@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { access, lstat, readdir, readFile, rename, rm } from "node:fs/promises";
+import { access, lstat, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { APP, BUNDLED, fail, HOMES, ISOLATED, ISOLATED_HOMES, ISOLATED_SESSIONS, ORDER, PROFILES, readJson, RUN, SESSIONS, slug, updateJson, WORKSPACE } from "../common.mjs";
 import { AGENTS_GID, FIRST_AGENT_UID, ISOLATED_HOME, REGULAR_HOME, SHARED_TOOLS } from "../config.mjs";
@@ -75,12 +75,23 @@ async function move(before, after) {
 
 const withoutBrowser = (agent, before) => (agent.isolated && !before?.isolated ? { ...agent, disabled: [...new Set([...agent.disabled, "browser"])] } : agent);
 
+// A profile is read for nearly every request: keep each one, and read it again only when its file changes.
+const read = new Map();
+async function readProfile(id) {
+  const path = profilePath(id);
+  const info = await stat(path);
+  const key = `${info.ino}:${info.size}:${info.mtimeMs}`;
+  if (read.get(id)?.key !== key) read.set(id, { key, saved: JSON.parse(await readFile(path, "utf8")) });
+  return structuredClone(read.get(id).saved);
+}
+
 export async function getAgent(id) {
   try {
-    const saved = JSON.parse(await readFile(profilePath(id), "utf8"));
+    const saved = await readProfile(id);
     const agent = { id, thinking: "", skills: [], plugins: [], extensions: [], disabled: [], instructions: "", isolated: false, trusted: false, dailyTokens: 0, ...saved };
     return { ...agent, disabled: Array.isArray(agent.disabled) ? agent.disabled.filter((name) => Object.hasOwn(BUNDLED, name)) : [] };
   } catch (err) {
+    if (err.code === "ENOENT") read.delete(id);
     throw err.code === "ENOENT" ? fail(404, "This agent does not exist") : err;
   }
 }

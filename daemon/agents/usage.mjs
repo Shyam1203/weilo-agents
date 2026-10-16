@@ -1,7 +1,7 @@
-import { readdir } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { CHATS, openChat, readJson, updateJson, USAGE } from "../common.mjs";
+import { CHATS, openChat, readJson, USAGE, writePrivate } from "../common.mjs";
 import { USAGE_DAYS } from "../config.mjs";
 import { userZone } from "../routines/routines.mjs";
 import { dateIn } from "../routines/schedule.mjs";
@@ -12,14 +12,52 @@ export const tokensOf = (usage) => (usage?.input ?? 0) + (usage?.output ?? 0) + 
 const costOf = (usage) => usage?.cost?.total ?? 0;
 const daysOf = ({ days, day, agents }) => days ?? (day ? { [day]: Object.fromEntries(Object.entries(agents ?? {}).map(([id, tokens]) => [id, { tokens, cost: 0 }])) } : {});
 
+// Usage is read on every message and every look at the agent list, and changes with every reply: it
+// is kept in memory, read again only when the file changes, and written once for a burst of changes.
+let state = null;
+const keyOf = async () => {
+  const info = await stat(USAGE).catch(() => null);
+  return info ? `${info.ino}:${info.size}:${info.mtimeMs}` : "";
+};
+
+let loading = null;
+async function load() {
+  const key = await keyOf();
+  if (state?.key !== key && !writing) state = { key, data: await (loading ??= readJson(USAGE).finally(() => (loading = null))) };
+  return state.data;
+}
+
+let writing = null;
+let again = false;
+function save() {
+  if (writing) return ((again = true), writing);
+  writing = (async () => {
+    do {
+      again = false;
+      await writePrivate(USAGE, JSON.stringify(state.data, null, 2));
+    } while (again);
+    state.key = await keyOf();
+  })().finally(() => (writing = null));
+  return writing;
+}
+
+export const usageSaved = () => writing ?? Promise.resolve();
+
+async function change(edit) {
+  await load();
+  state.data = edit(state.data);
+  await save();
+  return state.data;
+}
+
 export async function usageToday() {
-  const days = daysOf(await readJson(USAGE));
+  const days = daysOf(await load());
   return Object.fromEntries(Object.entries(days[await dayOf(Date.now())] ?? {}).map(([id, used]) => [id, used.tokens]));
 }
 
 export async function addUsage(id, usage) {
   const day = await dayOf(Date.now());
-  const { days } = await updateJson(USAGE, (data) => {
+  const { days } = await change((data) => {
     const all = daysOf(data);
     const was = all[day]?.[id] ?? { tokens: 0, cost: 0 };
     const next = { ...all, [day]: { ...all[day], [id]: { tokens: was.tokens + tokensOf(usage), cost: was.cost + costOf(usage) } } };
@@ -34,7 +72,7 @@ const kept = ({ backfilled }) => (backfilled ? { backfilled } : {});
 // Usage was only counted from the day the Usage page came; the chats themselves keep each reply's
 // usage. Count it from them once, keeping the larger of the two for each day and agent.
 export async function backfillUsage() {
-  if ((await readJson(USAGE)).backfilled) return;
+  if ((await load()).backfilled) return;
   const zone = await userZone();
   const found = {};
   const ids = new Set((await Promise.all(CHATS.map((top) => readdir(top).catch(() => [])))).flat().filter((id) => /^[a-z0-9-]+$/.test(id)));
@@ -44,7 +82,7 @@ export async function backfillUsage() {
       for (const f of files) await countChat(join(top, id, f), id, zone, found);
     }
   }
-  await updateJson(USAGE, (data) => {
+  await change((data) => {
     const days = daysOf(data);
     for (const [day, agents] of Object.entries(found)) {
       for (const [id, used] of Object.entries(agents)) {
@@ -80,7 +118,7 @@ async function countChat(path, id, zone, found) {
 }
 
 export async function usageHistory(count) {
-  const days = daysOf(await readJson(USAGE));
+  const days = daysOf(await load());
   const wanted = await Promise.all(Array.from({ length: count }, (_, i) => dayOf(Date.now(), count - 1 - i)));
   return wanted.map((day) => ({ day, agents: days[day] ?? {} }));
 }

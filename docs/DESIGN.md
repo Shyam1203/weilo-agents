@@ -147,8 +147,11 @@ An agent's pi loads only pi's built-in extensions (`PI_BUILTINS` in `config.mjs`
 | `POST /api/plugins` `{name, command, env}` or `{name, url, token}` · `DELETE /api/plugins/:name` | add to `mcp.json` · remove |
 | `GET /api/agents` · `POST /api/agents` | list (with `used`: today's tokens) · create (daemon makes the id, writes both files) |
 | `PUT /api/agents/:id` · `DELETE /api/agents/:id` `{keepChat, keepFiles}` | edit (a change of `isolated` stops its pi and moves its folders) · stop pi and delete the profile, its sessions unless `keepChat` (they stay where they were, out of sight), and its folder unless `keepFiles` |
-| `GET /api/agents/:id/events` | SSE: history (`get_messages`, only what the UI shows: user and agent messages without thinking, compaction summaries, and the `ask`, `routine` and `manage_agents` results), then live events; starts pi if needed |
-| `POST /api/agents/:id/message` `{text, images, files}` | `prompt` (`steer` if a run is active). Images (data URLs) go to the model; files are saved in `uploads/` of its folder and named in the message |
+| `GET /api/agents/status` | SSE, open while the app is on screen: an empty event when the agent list changed (an agent started or stopped working, replied, or was changed), so the app reads `GET /api/agents` again instead of asking every few seconds. While one is open, notifications wait |
+| `GET /api/agents/:id/events` | SSE: history (`get_messages`, only what the UI shows: user and agent messages without thinking, compaction summaries, and the `ask`, `routine` and `manage_agents` results), then live events; starts pi if needed. Images come as links (`url`, see below), tool events without their arguments and results, and a comment every 25 s keeps the stream open. An agent that was idle for 10 minutes stops even while its chat is open; the stream stays and the agent starts again with the next message |
+| `GET /api/images/<hash>.<ext>` | an image from a chat (written from the chat file the first time the chat is sent, kept in `/var/lib/weilo/images`) |
+| `POST /api/agents/:id/uploads?name=<file name>` (the file as the body, 5 MB at most) | `{path}`: saved in `uploads/` of the agent's folder |
+| `POST /api/agents/:id/message` `{text, images, files}` | `prompt` (`steer` if a run is active). Images (data URLs) go to the model; `files` are paths from the uploads route, named in the message |
 | `POST /api/agents/:id/abort` | `abort` |
 | `POST /api/agents/:id/answer` `{request, value}` | the answer to the agent's open question (`extension_ui_response`); no `value` skips it |
 | `GET /api/agents/:id/commands` | the agent's skills as `/commands` (`get_commands`) |

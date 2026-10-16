@@ -2,6 +2,7 @@ const MINUTE = 60_000;
 
 export const PORT = 3210;
 export const MAX_BODY = 64e6;
+export const MAX_UPLOAD = 5 * 1024 * 1024;
 export const MAX_PAIR_BODY = 1024;
 
 export const PAIR_CODE_MS = 10 * MINUTE;
@@ -68,6 +69,7 @@ export const GLANCE_MS = 90_000;
 export const PI_KILL_MS = 5000;
 export const SHUTDOWN_MS = 12_000;
 export const HUNG_MS = 120_000;
+export const HEARTBEAT_MS = 25_000;
 export const PREVIEW_TAIL = 64 * 1024;
 export const PREVIEW_CHARS = 140;
 export const EARLIER_PAGE = 60;

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { getUpdate, type Update } from "../../api/app";
-import { reorderAgents, type Agent } from "../../api/agents";
+import { AGENT_STATUS_URL, reorderAgents, type Agent } from "../../api/agents";
 import type { Extension } from "../../api/extensions";
 import type { Plugin } from "../../api/plugins";
 import type { Model, Provider } from "../../api/providers";
@@ -57,13 +57,20 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
 
   const refresh = useRef(reloadAgents);
   refresh.current = reloadAgents;
-  const working = agents.some((a) => a.working);
+  // While the app is on screen it listens for changes to the agent list and reads it again then.
   useEffect(() => {
-    const look = () => document.visibilityState === "visible" && void refresh.current();
-    const timer = setInterval(look, working ? 2000 : 5000);
+    let source: EventSource | null = null;
+    const look = () => {
+      if (document.visibilityState !== "visible") return void (source?.close(), (source = null));
+      if (source) return;
+      source = new EventSource(AGENT_STATUS_URL);
+      source.onopen = () => void refresh.current();
+      source.onmessage = () => void refresh.current();
+    };
+    look();
     document.addEventListener("visibilitychange", look);
-    return () => (clearInterval(timer), document.removeEventListener("visibilitychange", look));
-  }, [working]);
+    return () => (source?.close(), document.removeEventListener("visibilitychange", look));
+  }, []);
 
   const select = (id: string) => {
     setSelected(id);
