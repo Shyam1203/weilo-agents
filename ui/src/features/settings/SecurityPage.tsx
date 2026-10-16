@@ -27,7 +27,7 @@ export function SecurityPage({ agents, section }: { agents: Agent[]; section?: b
   const names = new Map(agents.map((a) => [a.id, a.name]));
   const by = (who?: string) => (who?.startsWith("agent ") ? names.get(who.slice(6)) ?? who : who ? "you" : "");
   return (
-    <Page section={section} title="Checks and activity" description="What to look at in this install, and the latest changes the app recorded.">
+    <Page section={section} title="Checks and activity" description="Things to check, and recent changes.">
       <Card>
         {report.checks.map((c) => (
           <Row key={c.title} tile={<Icon name={c.ok ? "check" : "alert"} size={16} className={`shrink-0 ${c.ok ? "text-ink-3" : "text-bad"}`} />} title={c.title} description={c.detail} />

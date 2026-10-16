@@ -9,16 +9,19 @@ import { getAgent, homeOf, isIsolated, userHomeOf, userOf } from "../agents/agen
 import { askUser, prompt, tellChats } from "../agents/runner.mjs";
 import { notify } from "../push.mjs";
 import { passedOn, sharedTools, spawnAs } from "../users.mjs";
+import { pinLine, pinsOf, unlinkPins, updateFromAction } from "./pins.mjs";
 import { DAYS, EVERY, MINUTES, dateIn, nextRun, timeIn, validZone } from "./schedule.mjs";
 
 export const KINDS = ["agent", "script"];
-export const ICONS = ["bolt", "package", "food", "cart", "truck", "calendar", "mail", "money", "search", "globe"];
+export const ICONS = ["bolt", "package", "food", "cart", "truck", "calendar", "mail", "money", "search", "globe", "tag", "list"];
 export const ACTION_MARK = "⚡ Action: ";
 // A run the schedule started: its message's first line ends with this, and the agent is told the user is away.
 export const BY_ITSELF = " · ran by itself";
 // The app's chat hides these lines under an action's message; keep them in step with conversation.ts.
 // Every agent action carries CONFIRM_NOTE: the agent asks before it pays or sends, tapped or by itself.
 export const CONFIRM_NOTE = "Before you pay, order, book or send anything, use ask to confirm the exact details with the user.";
+// An agent action that keeps pins fresh ends with this and the pins' ids; the chat hides it too.
+export const PIN_NOTE = "Then update its pin with the pin tool: ";
 export const AWAY_NOTE = "This action ran by itself at its time; the user is away and reads your reply later. Do it now. If a step needs the user's confirmation, use ask: they get a notification and answer when they can. Anything else that needs them, leave for the end. End with the result in a few lines.";
 const MISSED = "Missed: Weilo Agents was not running at that time";
 const RUNNER = fileURLToPath(new URL("./run.mjs", import.meta.url));
@@ -178,9 +181,9 @@ export function valuesOf(action, input = {}) {
 
 export const filled = (request, values) => request.replace(/\{([a-z][a-z0-9_]*)\}/g, (all, name) => values[name] ?? all);
 
-/** What a script returned, as text for the user: a string as it is, an object as one "name: value" line each ("stop" left out). */
+/** What a script returned, as text for the user: a string as it is, an object as one "name: value" line each ("stop" and "pin" left out). */
 export function shown(result) {
-  const out = typeof result === "string" ? result : result && typeof result === "object" ? Object.entries(result).filter(([k]) => k !== "stop").map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`).join("\n") : result === undefined ? "Done." : JSON.stringify(result);
+  const out = typeof result === "string" ? result : result && typeof result === "object" ? Object.entries(result).filter(([k]) => k !== "stop" && k !== "pin").map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`).join("\n") : result === undefined ? "Done." : JSON.stringify(result);
   return out.length > ACTION_SHOWN ? `${out.slice(0, ACTION_SHOWN)}…` : out;
 }
 
@@ -205,6 +208,7 @@ export async function removeAction(agentId, id) {
   find(agentId, id);
   state.items = state.items.filter((a) => a.id !== id);
   await save();
+  await unlinkPins(id);
 }
 
 export async function forgetActions(agentId) {
@@ -268,7 +272,7 @@ export async function runScript(agent, script, input) {
       child.stdin.end(JSON.stringify({ script, input }));
     });
     const ok = answer.ok === true;
-    return { ok, text: ok ? shown(answer.result) : `Failed: ${String(answer.error ?? "no answer").slice(0, 500)}`, ms: Date.now() - started, stop: ok && answer.result?.stop === true };
+    return { ok, text: ok ? shown(answer.result) : `Failed: ${String(answer.error ?? "no answer").slice(0, 500)}`, ms: Date.now() - started, stop: ok && answer.result?.stop === true, pin: ok ? answer.result?.pin : undefined };
   } finally {
     dropScriptKey(key);
   }
@@ -283,11 +287,15 @@ async function runSaved(agentId, action, values, by) {
     const result = await runScript(await getAgent(agentId), action.script, values);
     // A script may say it is done ({ stop: true }), like a delivery that arrived: then it stops running by itself.
     const stopped = result.stop && action.schedule ? ((action.schedule = null), "\nStopped running by itself.") : "";
-    const run = { at: Date.now(), ok: result.ok, text: `${result.text}${stopped}`, by, ms: result.ms };
+    // A script that keeps pins fresh returns { pin: {…} }; by itself, only a change is worth a notification.
+    const pinned = (await pinsOf(action.id)).length > 0;
+    const moved = pinned && result.pin ? await updateFromAction(agentId, action.id, result.pin) : [];
+    const said = result.text || (result.pin ? moved.map(pinLine).join("\n") || "No change." : "Done.");
+    const run = { at: Date.now(), ok: result.ok, text: `${said}${stopped}`, by, ms: result.ms };
     record(action, run);
     if (state.items.includes(action)) await save();
     audit("action run", { agent: agentId, action: action.title, ok: result.ok, by });
-    return { ...run };
+    return { ...run, quiet: pinned && result.ok && !moved.length };
   } finally {
     running.delete(action.id);
   }
@@ -300,7 +308,8 @@ export async function runAction(agentId, id, input, by = "you") {
   const values = valuesOf(action, input);
   if (action.kind === "agent") {
     const away = by === "schedule";
-    const notes = [away && AWAY_NOTE, filled(action.request, values), CONFIRM_NOTE].filter(Boolean).join("\n\n");
+    const pins = await pinsOf(action.id);
+    const notes = [away && AWAY_NOTE, filled(action.request, values), CONFIRM_NOTE, pins.length && `${PIN_NOTE}${pins.map((p) => p.id).join(", ")}.`].filter(Boolean).join("\n\n");
     await prompt(agentId, { text: `${ACTION_MARK}${action.title}${away ? BY_ITSELF : ""}\n\n${notes}` });
     record(action, { at: Date.now(), ok: true, text: `Asked ${(await getAgent(agentId)).name}`, by, chat: true });
     await save();
@@ -313,7 +322,7 @@ export async function runAction(agentId, id, input, by = "you") {
 async function runDue(action) {
   const agent = await getAgent(action.agentId);
   const result = await runAction(action.agentId, action.id, {}, "schedule");
-  if ("text" in result) void notify(agent, result.ok ? "reply" : "error", `${action.title}: ${result.text}`).catch(() => {});
+  if ("text" in result && !result.quiet) void notify(agent, result.ok ? "reply" : "error", `${action.title}: ${result.text}`).catch(() => {});
 }
 
 let ticking = false;
@@ -385,7 +394,7 @@ export async function actionTool(agentId, { op, id, input, ...fields }) {
   if (op === "try") {
     const plan = planAction({ title: "Try", ...fields, kind: "script", schedule: null }, {}, isIsolated(agent));
     const result = await runScript(agent, plan.script, valuesOf(plan, input));
-    return { text: `${result.ok ? "It worked" : "It failed"} (${result.ms} ms):\n${result.text}` };
+    return { text: `${result.ok ? "It worked" : "It failed"} (${result.ms} ms):\n${result.text}${result.pin ? `\npin: ${JSON.stringify(result.pin)}` : ""}` };
   }
   if (op === "run") {
     const action = find(agentId, id);

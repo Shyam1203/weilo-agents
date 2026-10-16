@@ -32,7 +32,7 @@ export function NotificationsPage({ agents, section }: { agents: Agent[]; sectio
   };
 
   return (
-    <Page section={section} title="Notifications" description="Get a notification when an agent replies, asks you something, or runs into a problem, while Weilo Agents is not on any of your screens.">
+    <Page section={section} title="Notifications" description="When an agent replies or needs you.">
       {why ? (
         <Notice>{why}</Notice>
       ) : (

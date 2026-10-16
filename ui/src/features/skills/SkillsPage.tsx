@@ -47,7 +47,7 @@ export function SkillsPage({ skills, agents, onChange }: Props) {
   return (
     <Page
       title="Skills"
-      description="Skills teach agents how to do tasks. Turn a skill on for an agent here or in Edit agent."
+      description="Teach agents how to do tasks."
       action={
         <>
           <input ref={picker} type="file" accept=".zip,.md" onChange={add} className="hidden" />
@@ -59,7 +59,7 @@ export function SkillsPage({ skills, agents, onChange }: Props) {
     >
       <ErrorText>{error}</ErrorText>
       {skills.length > 0 && <Search value={query} onChange={setQuery} label="Search skills" />}
-      <List items={skills.filter((s) => matches(query, s.name, s.description))} empty={skills.length ? "No skills match." : "No skills yet. Add a skill as a .zip file or a SKILL.md file."}>
+      <List items={skills.filter((s) => matches(query, s.name, s.description))} empty={skills.length ? "No skills match." : "No skills yet. Add a .zip or SKILL.md file."}>
         {(s) => {
           const users = agents.filter((a) => a.skills.includes(s.id));
           const others = agents.filter((a) => !users.includes(a));

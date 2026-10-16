@@ -47,7 +47,7 @@ export function Setup({ providers, models, user, onChange, onModels, onCreated, 
           <p className="mt-1.5 text-[14px] text-ink-3">{connected ? "Pick your first agent and start chatting." : "Two steps and you are chatting with your first agent."}</p>
         </header>
 
-        <Step n={1} title="Connect a model" done={connected} detail={connected ? `Connected: ${providers.filter((p) => p.connected).map((p) => p.name).join(", ")}` : "Sign in with an account you already have, or add an API key. It stays on this computer."}>
+        <Step n={1} title="Connect a model" done={connected} detail={connected ? `Connected: ${providers.filter((p) => p.connected).map((p) => p.name).join(", ")}` : "Sign in, or add an API key."}>
           {!connected && (
             <Card>
               {providers.map((p) => (
@@ -57,7 +57,7 @@ export function Setup({ providers, models, user, onChange, onModels, onCreated, 
           )}
         </Step>
 
-        <Step n={2} title="Choose your first agent" muted={!connected} detail="You can change its name, instructions and model at any time.">
+        <Step n={2} title="Choose your first agent" muted={!connected} detail="You can change it later.">
           {connected && (
             <div className="flex flex-col gap-3">
               <ul className="grid gap-2 sm:grid-cols-2">

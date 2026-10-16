@@ -76,7 +76,7 @@ export interface Queued {
 
 export const empty: Conversation = { ready: false, messages: [], busy: false, open: false, asking: null, queued: [], earlier: [], more: false };
 
-const shows = (m: PiMessage) => m.role === "user" || m.role === "assistant" || m.role === "compactionSummary" || (m.role === "toolResult" && (m.toolName === "ask" || m.toolName === "routine" || m.toolName === "manage_agents" || m.toolName === "action"));
+const shows = (m: PiMessage) => m.role === "user" || m.role === "assistant" || m.role === "compactionSummary" || (m.role === "toolResult" && (m.toolName === "ask" || m.toolName === "routine" || m.toolName === "manage_agents" || m.toolName === "action" || m.toolName === "pin"));
 
 const textOf = (content: PiMessage["content"] | undefined) => (typeof content === "string" ? content : (content ?? []).map((b) => b.text ?? "").join(""));
 
@@ -190,6 +190,8 @@ export interface Note extends ItemBase {
   kind: "note";
   role: "agent";
   text: string;
+  /** A line about a pin: it opens the pins. */
+  pins?: true;
 }
 
 interface Summary extends ItemBase {
@@ -233,9 +235,16 @@ const OLD_SCHEDULED_MARK = "⏰ Routine: ";
 const ACTION_MARK = "⚡ Action: ";
 const CONFIRM_NOTE = "\n\nBefore you pay, order, book or send anything, use ask to confirm the exact details with the user.";
 const BY_ITSELF = " · ran by itself";
+// An action that keeps pins fresh ends with this line, for the agent only (PIN_NOTE).
+const PIN_NOTE = /\n\nThen update its pin with the pin tool: [^\n]*$/;
 
 function actionNote(details: PiMessage["details"]) {
   const verb = { create: "Action saved", update: "Action changed", delete: "Action deleted" }[details?.op ?? ""];
+  return verb && details?.title ? `${verb}: ${details.title}` : null;
+}
+
+function pinNote(details: PiMessage["details"]) {
+  const verb = { pin: "Pinned", unpin: "Unpinned" }[details?.op ?? ""];
   return verb && details?.title ? `${verb}: ${details.title}` : null;
 }
 
@@ -269,7 +278,7 @@ function itemsFor(m: PiMessage, i: number, arriving: boolean, results: Map<strin
     const text = textOf(m.content);
     if (text.startsWith(OLD_SCHEDULED_MARK)) return [{ kind: "note", id: `${i}`, role: "agent", text: `${text.slice(OLD_SCHEDULED_MARK.length).split("\n")[0]} ran by itself`, at }];
     if (text.startsWith(ACTION_MARK)) {
-      const [title, ...rest] = text.slice(ACTION_MARK.length).replace(CONFIRM_NOTE, "").split("\n\n");
+      const [title, ...rest] = text.slice(ACTION_MARK.length).replace(PIN_NOTE, "").replace(CONFIRM_NOTE, "").split("\n\n");
       if (title.endsWith(BY_ITSELF)) return [{ kind: "note", id: `${i}`, role: "agent", text: `${title.slice(0, -BY_ITSELF.length)} ran by itself`, at }];
       return [{ kind: "message", id: `${i}`, role: "human", text: rest.join("\n\n"), images: imagesOf(m.content), at, action: title }];
     }
@@ -288,6 +297,10 @@ function itemsFor(m: PiMessage, i: number, arriving: boolean, results: Map<strin
     if (b.type === "toolCall" && b.name === "action") {
       const text = actionNote(b.id ? results.get(b.id)?.details : undefined);
       if (text) return [{ kind: "note", id: `${i}.${j}`, role: "agent", text, at }];
+    }
+    if (b.type === "toolCall" && b.name === "pin") {
+      const text = pinNote(b.id ? results.get(b.id)?.details : undefined);
+      if (text) return [{ kind: "note", id: `${i}.${j}`, role: "agent", text, at, pins: true }];
     }
     // "routine" was the older tool for timed tasks: its results read like an action's.
     if (b.type === "toolCall" && b.name === "routine") {

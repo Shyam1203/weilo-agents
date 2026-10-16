@@ -33,7 +33,7 @@ export function AboutPage({ section }: { section?: boolean }) {
         {update?.available && (
           <Row
             title={`Version ${update.latest} is available`}
-            description="Run update.cmd (Windows) or update.sh in your Weilo Agents folder. Without them, download the new zip once and unzip it over the folder. Your chats and settings stay in ~/.weilo-agents."
+            description="Run update.sh (update.cmd on Windows)."
           >
             {update.url && (
               <a href={update.url} target="_blank" rel="noreferrer noopener">
@@ -50,8 +50,8 @@ export function AboutPage({ section }: { section?: boolean }) {
             update?.enabled === false
               ? "Off. Nothing is sent to GitHub."
               : update?.latest && !update.available
-                ? "You have the newest version. Asks GitHub now and then; nothing else is sent."
-                : "Asks GitHub for a newer version now and then. Nothing else is sent."
+                ? "You're up to date. Nothing else is sent."
+                : "Checks GitHub. Nothing else is sent."
           }
         >
           <Switch checked={update?.enabled ?? true} onChange={(on) => void toggle(on)} label="Check for updates" />

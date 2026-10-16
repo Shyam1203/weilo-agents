@@ -34,7 +34,7 @@ export function ExtensionsPage({ extensions, onChange }: Props) {
   return (
     <Page
       title="Extensions"
-      description="Extensions give agents new tools. Some come with the app. Turn extensions on or off for each agent in Edit agent."
+      description="New tools for your agents."
       action={
         <>
           <input ref={picker} type="file" accept=".zip" onChange={add} className="hidden" />

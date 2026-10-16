@@ -31,6 +31,7 @@ import { memoryText, saveMemoryText, useMemory } from "./memory/memory.mjs";
 import { migrate } from "./migrate.mjs";
 import { addDevice, markSeen, pushStatus, removeDevice, removePaired, setMuted } from "./push.mjs";
 import { actionTool, addAction, changeAction, forgetActions, listActions, noteZone, removeAction, runAction, startActions } from "./actions/actions.mjs";
+import { forgetPins, listPins, pinTool, removePin, tickPin } from "./actions/pins.mjs";
 import { addExtension, listExtensions, removeExtension } from "./settings/extensions.mjs";
 import { answerSignIn, signInStatus, startSignIn, stopSignIn } from "./settings/login.mjs";
 import { addPlugin, listPlugins, pluginStatus, removePlugin } from "./settings/plugins.mjs";
@@ -124,6 +125,7 @@ route("DELETE", "/api/agents/:id", async ({ id, body }) => {
   const agent = await getAgent(id);
   await removeProfile(id);
   await forgetActions(id);
+  await forgetPins(id);
   await stop(id);
   await closeBrowser(id);
   await removeFiles(agent, { keepChat: body.keepChat === true, keepFiles: body.keepFiles === true });
@@ -168,6 +170,10 @@ route("POST", "/api/agents/:id/actions", ({ id, body }) => addAction(id, body));
 route("PUT", "/api/agents/:id/actions/:rid", ({ id, rid, body }) => changeAction(id, rid, body));
 route("POST", "/api/agents/:id/actions/:rid/run", ({ id, rid, body }) => runAction(id, rid, body.input));
 route("DELETE", "/api/agents/:id/actions/:rid", ({ id, rid }) => removeAction(id, rid));
+agentRoute("POST", "/api/agents/:id/pin", "pin", ({ id, body }) => pinTool(id, body));
+route("GET", "/api/agents/:id/pins", ({ id }) => listPins(id));
+route("POST", "/api/agents/:id/pins/:rid/tick", ({ id, rid, body }) => tickPin(id, rid, body));
+route("DELETE", "/api/agents/:id/pins/:rid", ({ id, rid }) => removePin(id, rid));
 
 // The agent a key belongs to. Isolated agents call only from the sandbox, the rest only from outside it.
 async function callerOf(req, url, sandboxed) {

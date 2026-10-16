@@ -143,12 +143,12 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
         {more && (
           <>
             <Section title="Model settings">
-              <Row title="Thinking" description="How much the model thinks before it answers. Models that cannot think ignore this.">
+              <Row title="Thinking" description="How hard it thinks before answering.">
                 <Pick>
                   <Select label="Thinking" value={draft.thinking} onChange={(thinking) => change({ thinking })} options={THINKING} />
                 </Pick>
               </Row>
-              <Row title="Daily token limit" description={`Tokens it may use a day (read and written; context read again from the cache is free). 0 is no limit.${agent ? ` Today: ${(agent.used ?? 0).toLocaleString()}.` : ""}`}>
+              <Row title="Daily token limit" description={`0 means no limit.${agent ? ` Today: ${(agent.used ?? 0).toLocaleString()}.` : ""}`}>
                 <Pick>
                   <input aria-label="Daily token limit" type="number" min={0} step={10000} value={draft.dailyTokens} onChange={(e) => change({ dailyTokens: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} className="input" />
                 </Pick>
@@ -195,14 +195,14 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
                 title="Isolated"
                 description={
                   <>
-                    Runs in a sandbox with only its own folder: no workspace, memory, skill library, settings or keys, and no browser unless you turn it on. Your other agents can read (not change) its folder, search its chat, and learn from what it puts in shared/.
-                    {agent && draft.isolated !== agent.isolated && " Saving moves its folder and restarts it."}
+                    Only its own folder, in a sandbox.
+                    {agent && draft.isolated !== agent.isolated && " Saving restarts it."}
                   </>
                 }
               >
                 <Switch label="Isolated" checked={draft.isolated} onChange={(isolated) => change({ isolated, ...(isolated && !draft.disabled.includes("browser") && { disabled: [...draft.disabled, "browser"] }) })} />
               </Row>
-              <Row title="Always allow its own changes" description="Changes it asks for to its own instructions, thinking or skills apply without asking you; the chat shows each one. Anything else still asks.">
+              <Row title="Always allow its own changes" description="Changes to itself apply without asking.">
                 <Switch label="Always allow its own changes" checked={draft.trusted} onChange={(trusted) => change({ trusted })} />
               </Row>
             </Section>

@@ -25,7 +25,7 @@ export function DevicesPage({ section }: { section?: boolean }) {
     <Page
       section={section}
       title="Devices"
-      description="The phones and computers that can open Weilo Agents. A new one is paired once, with a code from here."
+      description="Phones and computers that can open the app."
       action={
         <Button size="sm" icon="plus" busy={busy === "code"} onClick={() => void run("code", async () => setCode(await newPairingCode()))}>
           Add a device

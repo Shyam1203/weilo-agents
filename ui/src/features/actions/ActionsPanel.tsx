@@ -1,12 +1,10 @@
 import { describeSchedule, type Action } from "../../api/actions";
-import { Button, IconButton } from "../../components/ui/Button";
 import { ErrorText } from "../../components/ui/Field";
 import { Icon } from "../../components/ui/Icon";
 import { Loading } from "../../components/ui/List";
 import { inHowLong, shortWhen } from "../../lib/format";
 
 interface Props {
-  agentName: string;
   off: boolean;
   actions: Action[] | null;
   error: string | null;
@@ -14,20 +12,12 @@ interface Props {
   onRun: (action: Action) => void;
   onOpen: (action: Action) => void;
   onNew: () => void;
-  /** Leave out the heading where the panel has one already (a sheet on a phone). */
-  titled?: boolean;
 }
 
 /** Things the agent does for you: with a tap, and by itself at the times you choose. */
-export function ActionsPanel({ agentName, off, actions, error, running, onRun, onOpen, onNew, titled = true }: Props) {
+export function ActionsPanel({ off, actions, error, running, onRun, onOpen, onNew }: Props) {
   return (
-    <section className="flex flex-col gap-3 p-4">
-      {titled && (
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-[13px] font-medium text-ink-2">Actions</h2>
-          {!off && <IconButton icon="plus" label="New action" onClick={onNew} />}
-        </div>
-      )}
+    <div className="flex flex-col gap-3">
       <ErrorText>{error}</ErrorText>
       {off ? (
         <p className="rounded-2xl border border-dashed border-line-strong px-4 py-6 text-center text-[13px] leading-relaxed text-ink-3">Actions are turned off for this agent.</p>
@@ -79,14 +69,7 @@ export function ActionsPanel({ agentName, off, actions, error, running, onRun, o
             </ul>
           )}
           {actions.length > 0 ? (
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-xs text-ink-3">Tap a name to edit.</p>
-              {!titled && (
-                <Button size="sm" icon="plus" onClick={onNew}>
-                  New action
-                </Button>
-              )}
-            </div>
+            <p className="text-xs text-ink-3">Tap a name to edit.</p>
           ) : (
             <button type="button" onClick={onNew} className="rounded-2xl border border-dashed border-line-strong px-4 py-5 text-center text-[13px] text-ink-3 hover:bg-select">
               No actions yet. <span className="font-medium text-ink">+ New action</span>
@@ -94,6 +77,6 @@ export function ActionsPanel({ agentName, off, actions, error, running, onRun, o
           )}
         </>
       )}
-    </section>
+    </div>
   );
 }
