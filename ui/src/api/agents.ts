@@ -21,9 +21,14 @@ export interface Agent {
   working?: boolean;
   doing?: string | null;
   taken?: boolean;
+  browserOpen?: boolean;
 }
 
-export type AgentInput = Omit<Agent, "id" | "folder" | "used" | "last" | "working" | "doing" | "taken">;
+export type AgentInput = Omit<Agent, "id" | "folder" | "used" | "last" | "working" | "doing" | "taken" | "browserOpen">;
+
+// What the status stream sends: an agent's working state or browser as it changes, or nothing
+// (read the list again).
+export type AgentStatus = Partial<Pick<Agent, "working" | "doing" | "taken" | "browserOpen">> & { id?: string };
 
 const DOING: Record<string, string> = { read: "Reading files", bash: "Running a command", edit: "Editing files", write: "Editing files", grep: "Searching files", find: "Searching files", ls: "Searching files", show: "Preparing what to show", routine: "Setting up a routine", browser: "Using the browser", memory: "Saving to memory", fetch_knowledge: "Searching knowledge", ask: "Waiting for your answer", skill: "Saving a skill", manage_agents: "Setting up an agent", manage_settings: "Changing settings", ask_agent: "Asking another agent" };
 

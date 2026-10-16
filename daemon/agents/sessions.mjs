@@ -89,7 +89,19 @@ async function* linesOf(file) {
 }
 
 export const shown = (m) => m?.role === "user" || m?.role === "assistant" || m?.role === "compactionSummary" || (m?.role === "toolResult" && ["ask", "routine", "manage_agents"].includes(m.toolName));
-export const slim = (m) => (Array.isArray(m.content) && m.role === "assistant" ? { ...m, content: m.content.filter((b) => b.type !== "thinking") } : m);
+// Of a tool call the app draws a show card and an ask in full; of the others one line (the command,
+// the path, the address...), so their arguments are cut to those fields: a file an agent writes is
+// not sent to the app.
+const DRAWN = new Set(["show", "ask"]);
+const DETAIL = ["command", "action", "url", "text", "path", "file_path", "pattern", "query", "name"];
+const DETAIL_CHARS = 300;
+export function briefCall(block) {
+  if (block?.type !== "toolCall" || DRAWN.has(block.name) || !block.arguments || typeof block.arguments !== "object") return block;
+  const kept = DETAIL.flatMap((key) => (typeof block.arguments[key] === "string" ? [[key, block.arguments[key].slice(0, DETAIL_CHARS)]] : []));
+  return { ...block, arguments: Object.fromEntries(kept) };
+}
+
+export const slim = (m) => (Array.isArray(m.content) && m.role === "assistant" ? { ...m, content: m.content.filter((b) => b.type !== "thinking").map(briefCall) } : m);
 
 async function readEarlier(files) {
   const entries = [];

@@ -1,19 +1,26 @@
-// Tells the open apps that the agent list changed (an agent started or stopped working, replied, or
-// was changed), so they read it again instead of asking every few seconds.
+// Tells the open apps what changed in the agent list. An agent's working state and browser come
+// with the event itself, as they change often while it works; for anything else (a reply, a change
+// to an agent) the app is told to read the list again, at most once a second.
 const watchers = new Set();
 let timer = null;
+
+const send = (data) => watchers.forEach((write) => write(data));
 
 export function agentsChanged() {
   if (timer || !watchers.size) return;
   timer = setTimeout(() => {
     timer = null;
-    watchers.forEach((send) => send());
-  }, 200);
+    send({});
+  }, 1000);
 }
 
-export function watchAgents(send) {
-  watchers.add(send);
-  return () => watchers.delete(send);
+export function tellAgent(id, patch) {
+  if (watchers.size) send({ id, ...patch });
+}
+
+export function watchAgents(write) {
+  watchers.add(write);
+  return () => watchers.delete(write);
 }
 
 export const watchingAgents = () => watchers.size > 0;
