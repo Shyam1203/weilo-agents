@@ -1,9 +1,7 @@
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { fail, MCP, updateJson } from "../common.mjs";
 import { servers } from "../gateway/plugins.mjs";
 import { BIN, PLUGIN_STATUS_TIMEOUT_MS } from "../config.mjs";
-import { pluginUser, setOwner, sharedTools, spawnAs } from "../users.mjs";
+import { pluginUser, sharedTools, spawnAs, writeIn } from "../users.mjs";
 
 const NAME = /^[\w-]+$/;
 const ENV_KEY = /^[A-Za-z_]\w*$/;
@@ -44,8 +42,7 @@ export async function removePlugin(name) {
 
 async function report(name, plugin) {
   const { user, home } = await pluginUser(name);
-  await writeFile(join(home, "mcp.json"), JSON.stringify({ mcpServers: { [name]: plugin } }), { mode: 0o600 });
-  await setOwner(join(home, "mcp.json"), user.uid, user.gid, 0o600);
+  await writeIn(home, "mcp.json", JSON.stringify({ mcpServers: { [name]: plugin } }), user.uid, user.gid, 0o600);
   const stdout = await new Promise((resolve) => {
     const child = spawnAs(user, BIN.pi, ["mcp", "list", "--json"], { cwd: home, env: { ...process.env, ...sharedTools, PI_CODING_AGENT_DIR: home, HOME: home }, stdio: ["ignore", "pipe", "ignore"] });
     let out = "";

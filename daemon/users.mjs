@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { chmod, chown, lstat, mkdir, open, readdir, stat } from "node:fs/promises";
+import { chmod, chown, lstat, mkdir, open, readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { AGENT_DIR, EXTENSIONS, HOMES, ISOLATED, ISOLATED_HOMES, ISOLATED_SESSIONS, PLUGIN_USERS, PLUGINS_CWD, PLUGINS_HOME, KNOWLEDGE, PROFILES, ROOT, RUN, SCRATCH, SESSIONS, SKILLS, TOOLS, updateJson, WORKSPACE } from "./common.mjs";
@@ -55,6 +55,18 @@ export async function inFolder(path, job) {
   }
 }
 
+export const writeIn = (dir, name, data, uid, gid, mode) =>
+  inFolder(dir, async (at) => {
+    const handle = await open(`${at}${name}`, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, mode);
+    try {
+      await handle.writeFile(data);
+      if (isRoot) await handle.chown(uid, gid);
+      await handle.chmod(mode);
+    } finally {
+      await handle.close();
+    }
+  });
+
 export async function tree(path, uid, gid, mode) {
   if (!isRoot) return;
   await inFolder(path, async (at) => {
@@ -65,6 +77,7 @@ export async function tree(path, uid, gid, mode) {
 }
 
 export async function pluginUser(name) {
+  if (!/^[\w-]+$/.test(name)) throw new Error(`Not a plugin name: ${name}`);
   const numbers = await updateJson(PLUGIN_USERS, (all) => (Object.hasOwn(all, name) ? all : { ...all, [name]: Math.max(-1, ...Object.values(all)) + 1 }));
   const uid = PLUGIN_USERS_FROM + numbers[name];
   const home = join(PLUGINS_HOME, name);
@@ -107,6 +120,7 @@ export async function secure(agents) {
   await folder(RUN, 0, AGENTS_GID, 0o751);
   await folder(join(RUN, "pi"), 0, AGENTS_GID, 0o751);
   await folder(PLUGINS_HOME, 0, 0, 0o711);
+  await rm(join(PLUGINS_HOME, "mcp.json"), { force: true });
   await folder(PLUGINS_CWD, 0, 0, 0o755);
   const tools = await stat(TOOLS).catch(() => null);
   if (tools && tools.gid !== AGENTS_GID) await tree(TOOLS, 0, AGENTS_GID, "g+rwX,o+rX");

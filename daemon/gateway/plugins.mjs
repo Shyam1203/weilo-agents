@@ -40,6 +40,7 @@ async function startPlugin(name, plugin, agent) {
 
 export async function pipePlugin(socket, name, plugin, agent) {
   const child = await startPlugin(name, plugin, agent);
+  if (socket.destroyed) return void child.kill();
   socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: weilo-pipe\r\nConnection: Upgrade\r\n\r\n");
   const end = () => (child.kill(), socket.destroy());
   child.on("error", end);

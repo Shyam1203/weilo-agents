@@ -58,7 +58,7 @@ export function readMessages(socket, head, max, onMessage, onClose) {
   };
   const read = () => {
     const left = next(chunks.length === 1 ? chunks[0] : Buffer.concat(chunks, held));
-    if (!left) return;
+    if (!left) return void ([chunks, held, need] = [[], 0, Infinity]);
     [chunks, held, need] = [[left[0]], left[0].length, left[1]];
   };
   socket.on("data", (data) => {

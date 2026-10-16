@@ -42,7 +42,7 @@ export async function serveUi(req, res) {
     const found = await load(file);
     if (!found) continue;
     const accepts = String(req.headers["accept-encoding"] ?? "");
-    const encoding = ["br", "gzip"].find((e) => found[e] && accepts.includes(e));
+    const encoding = ["br", "gzip"].find((e) => found[e] && new RegExp(`\\b${e}\\b(?!;\\s*q=0(\\.0*)?\\b)`).test(accepts));
     const headers = {
       "Content-Type": TYPES[extname(file)] ?? "application/octet-stream",
       "X-Content-Type-Options": "nosniff",
