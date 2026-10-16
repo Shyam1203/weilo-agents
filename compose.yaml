@@ -10,11 +10,14 @@ x-app: &app
       COMMIT: ${WEILO_COMMIT:-unknown}
   init: true
   restart: unless-stopped
+  stop_grace_period: 15s
 
 services:
   core:
     <<: *app
     container_name: weilo-core
+    pids_limit: ${WEILO_CORE_PIDS:-4096}
+    mem_limit: ${WEILO_CORE_MEMORY:-8g}
     cap_drop: [NET_RAW, NET_ADMIN, MKNOD, AUDIT_WRITE, SYS_CHROOT, SETFCAP, NET_BIND_SERVICE]
     security_opt: ["no-new-privileges:true"]
     shm_size: 1gb
@@ -34,6 +37,8 @@ services:
   sandbox:
     <<: *app
     container_name: weilo-sandbox
+    pids_limit: ${WEILO_SANDBOX_PIDS:-2048}
+    mem_limit: ${WEILO_SANDBOX_MEMORY:-4g}
     command: ["node", "/app/sandbox/server.mjs"]
     runtime: ${WEILO_SANDBOX_RUNTIME:-runc}
     cap_drop: [ALL]

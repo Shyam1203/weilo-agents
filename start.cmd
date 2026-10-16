@@ -20,15 +20,28 @@ for %%d in (isolated isolated-sessions isolated-homes agent\skills agent\extensi
 
 if exist VERSION set /p WEILO_VERSION=<VERSION
 echo Getting Weilo Agents %WEILO_VERSION%. The first time this downloads the app and can take a few minutes.
+set TAG=%WEILO_VERSION%
+if "%TAG%"=="" set TAG=latest
 docker compose pull
-if errorlevel 1 (
-  echo Could not download it. Building it here instead, which takes longer.
-  docker compose build
-  if errorlevel 1 (
-    pause
-    exit /b 1
-  )
+if not errorlevel 1 goto launch
+docker image inspect ghcr.io/shyam1203/weilo-agents:%TAG% >nul 2>&1
+if not errorlevel 1 (
+  echo Could not download it. Starting the copy already on this computer.
+  goto launch
 )
+if not exist image\Dockerfile (
+  echo Could not download it, and there is no copy on this computer. Check the internet connection, then run this script again.
+  pause
+  exit /b 1
+)
+echo Could not download it. Building it here instead, which takes longer.
+docker compose build
+if errorlevel 1 (
+  pause
+  exit /b 1
+)
+
+:launch
 
 echo Starting Weilo Agents...
 docker compose up -d

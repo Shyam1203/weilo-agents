@@ -50,13 +50,14 @@
 <div class="table"><table>
 <thead><tr><th>Setting</th><th>Value</th><th>Why</th></tr></thead>
 <tbody>
-<tr><td>Image</td><td><code>ghcr.io/shyam1203/weilo-agents:${WEILO_VERSION:-latest}</code>, or built from <code>image/Dockerfile</code></td><td>The start scripts set <code>WEILO_VERSION</code> from the <code>VERSION</code> file and pull that image; they build only if the pull fails.</td></tr>
+<tr><td>Image</td><td><code>ghcr.io/shyam1203/weilo-agents:${WEILO_VERSION:-latest}</code>, or built from <code>image/Dockerfile</code></td><td>The start scripts set <code>WEILO_VERSION</code> from the <code>VERSION</code> file and pull that image. If the pull fails they start the copy already on the computer; failing that they build it, but only where <code>image/Dockerfile</code> exists (a clone); otherwise they say to check the internet connection.</td></tr>
 <tr><td>Port</td><td><code>127.0.0.1:3210:3210</code></td><td>Only this computer reaches the app. Remote use goes through <code>tailscale serve</code> (<a href="operating.html#remote">Remote use</a>).</td></tr>
 <tr><td>Data</td><td><code>${USERPROFILE:-${HOME}}/.weilo-agents</code> &rarr; <code>/home/node/.pi</code></td><td>All user data in one host folder.</td></tr>
 <tr><td>Volumes</td><td><code>tools</code> &rarr; <code>/home/node/.local</code>; <code>browser</code> &rarr; <code>/home/node/.browser</code>; <code>sandbox</code> &rarr; <code>/run/weilo-sandbox</code></td><td>What agents install with npm and pip; Chromium's profile (logins: a profile on a Windows bind mount cannot lock its files, so it lives in a volume); the two sockets between the app and the sandbox.</td></tr>
 <tr><td>Hardening</td><td><code>cap_drop: [NET_RAW, NET_ADMIN, MKNOD, AUDIT_WRITE, SYS_CHROOT, SETFCAP, NET_BIND_SERVICE]</code>, <code>no-new-privileges:true</code></td><td>No raw sockets or network changes, none of the capabilities the app does not use, and no privilege gain through set-uid programs.</td></tr>
+<tr><td>Limits</td><td><code>pids_limit: ${WEILO_CORE_PIDS:-4096}</code>, <code>mem_limit: ${WEILO_CORE_MEMORY:-8g}</code>; the sandbox <code>${WEILO_SANDBOX_PIDS:-2048}</code> and <code>${WEILO_SANDBOX_MEMORY:-4g}</code></td><td>A fork bomb or a runaway program stops at the limit instead of taking the computer down. Set the variables to change them.</td></tr>
 <tr><td>Healthcheck</td><td><code>GET /api/health</code> every 30 seconds</td><td><code>docker ps</code> shows whether the app answers.</td></tr>
-<tr><td>Other</td><td><code>init: true</code>, <code>restart: unless-stopped</code>, <code>shm_size: 1gb</code></td><td>A proper PID 1; Chromium needs more shared memory than the 64 MB default.</td></tr>
+<tr><td>Other</td><td><code>init: true</code>, <code>restart: unless-stopped</code>, <code>shm_size: 1gb</code></td><td>A proper PID 1; Docker starts the app again when it exits (also when the watchdog kills a stuck daemon); Chromium needs more shared memory than the 64 MB default.</td></tr>
 </tbody></table></div>
 <h3>The image</h3>
 <ul>
@@ -141,7 +142,7 @@
 <tr><td>A plugin program used by an isolated agent, in the sandbox</td><td>the agent's uid + 100000</td><td>the agent's gid</td><td><code>/tmp</code>, its own (the agent's folder is <code>WEILO_FOLDER</code>)</td><td><code>pipePlugin</code>, through <code>sandbox/</code></td></tr>
 <tr><td><code>pi mcp list</code> (Settings &gt; Plugins status), once per plugin</td><td>that plugin's user</td><td>2000</td><td><code>/var/lib/weilo/pi/plugins/&lt;name&gt;/</code>, with an <code>mcp.json</code> of only that plugin</td><td><code>settings/plugins.mjs</code></td></tr>
 <tr><td>Sandbox program (<code>node /app/sandbox/server.mjs</code>)</td><td>root, in <code>weilo-sandbox</code></td><td>-</td><td>-</td><td>the sandbox container (<code>command</code>)</td></tr>
-<tr><td>Xvnc, openbox, Chromium</td><td>1000 (<code>node</code>)</td><td>none</td><td>-</td><td><code>browser/screen.mjs</code>, restarted 2 s after they stop</td></tr>
+<tr><td>Xvnc, openbox, Chromium</td><td>1000 (<code>node</code>)</td><td>none</td><td>-</td><td><code>browser/screen.mjs</code>, started on first use, restarted 2 s after they stop</td></tr>
 <tr><td>Short-lived <code>pi</code> that lists models</td><td>root</td><td>-</td><td><code>agent/</code></td><td><code>settings/providers.mjs</code> <code>availableModels</code></td></tr>
 </tbody></table></div>
 <p>The model-listing pi stays root because it must read <code>auth.json</code>; it runs with <code>--no-session --no-mcp --no-skills --no-extensions --no-context-files</code> and in root's own folder, not where agents write. Sign-in with an account (<code>settings/login.mjs</code>) runs pi's own login code inside the daemon.</p>
@@ -152,7 +153,7 @@
 <div class="cols">
 <div class="tile"><h3>Serves</h3><p>The built UI (<code>http/static.mjs</code>, with <code>frame-ancestors 'none'</code>; compressed with brotli or gzip once and kept in memory, with an ETag for a 304; a missing <code>/assets/</code> file is a 404), the JSON API, the live event stream (SSE), files the chats name (<code>http/files.mjs</code>), and two WebSockets: the screen's live view and its own debugging channel to Chromium.</p></div>
 <div class="tile"><h3>Guards</h3><p>Host, Origin and <code>Sec-Fetch-Site</code> checks (<code>http/request.mjs</code>), paired devices and agent keys (<code>http/access.mjs</code>), the per-route tool gate and <code>mayCall</code> (<code>server.mjs</code>). See <a href="security.html#boundaries">Security</a>.</p></div>
-<div class="tile"><h3>Keeps</h3><p>Keys, plugin secrets, paired devices, profiles, settings, routines, notification keys: all in <code>agent/</code>, root's. It writes JSON files whole (temporary file, then rename) and one change at a time per file (<code>updateJson</code> in <code>common.mjs</code>).</p></div>
+<div class="tile"><h3>Keeps</h3><p>Keys, plugin secrets, paired devices, profiles, settings, routines, notification keys: all in <code>agent/</code>, root's. It writes JSON files whole and one change at a time per file (<code>updateJson</code> in <code>common.mjs</code>): a temporary file of its own, flushed to disk (<code>fsync</code>), the previous version kept as <code>&lt;file&gt;.bak</code>, then a rename. A file that is not valid JSON is read from its <code>.bak</code>, with a line in the log.</p></div>
 <div class="tile"><h3>Runs</h3><p>One pi per open agent (<code>agents/runner.mjs</code>; an isolated one through the sandbox), the routines clock, the curator, the browser's screen, and the notifications. It owns owners and modes too (<code>secure()</code> at every start).</p></div>
 </div>
 <h3 id="startup">Start order</h3>
@@ -161,8 +162,9 @@
 <li>The admin socket <code>/tmp/weilo-admin/admin.sock</code> (folder 0700, root's) starts: whoever connects gets a new pairing code. Only root in the container can open it (<code>docker exec weilo-core node /app/pair.mjs</code>).</li>
 <li><code>migrate()</code> brings the data folder to this app's data version, or stops the start if the folder is newer (<a href="#versions">Versions and data</a>).</li>
 <li><code>secure(profiles)</code> sets owner and mode of the top of every place (<a href="data-and-permissions.html#tree">the tree</a>).</li>
-<li>The server listens on port 3210, and on <code>/run/weilo-sandbox/api.sock</code> for the sandbox. Then, in the background: compaction settings are written for the models in use, every scratch folder is emptied, routines start, the screen starts, and the curator's 5-minute timer starts.</li>
-<li>On <code>SIGTERM</code> or <code>SIGINT</code> every pi is stopped before the daemon exits.</li>
+<li>The server listens on port 3210, and on <code>/run/weilo-sandbox/api.sock</code> for the sandbox. Then, in the background: compaction settings are written for the models in use, every scratch folder is emptied, routines start, the curator's 5-minute timer starts, the watchdog starts, the chat index is brought up to date, and pi's model runtime is loaded (<code>warmModels</code>), so the first agent starts faster. The browser's screen is not started here: it starts at the first browser step or take over (<code>wakeScreen</code>).</li>
+<li>On <code>SIGTERM</code> or <code>SIGINT</code> the daemon closes both servers, stops every pi (<code>SIGTERM</code>, then <code>SIGKILL</code> 5 seconds later if one hangs), waits for queued JSON and audit writes, and exits, within 12 seconds at most (<code>SHUTDOWN_MS</code>; compose allows 15).</li>
+<li>A worker thread (<code>watchdog.mjs</code>) watches the event loop: stuck for 120 seconds (<code>HUNG_MS</code>), it logs "The app stopped responding" and kills the daemon, and Docker starts it again.</li>
 </ol>
 </section>
 
@@ -249,7 +251,7 @@
 <tr><td><code>WEILO_SCRATCH</code></td><td><code>/tmp/weilo/&lt;id&gt;</code>, emptied when it goes idle (isolated: <code>/tmp</code>, its own)</td></tr>
 <tr><td><code>WEILO_ISOLATED</code></td><td><code>1</code> for an isolated agent: the tools then describe what it may ask for</td></tr>
 </tbody></table></div>
-<p>A regular agent's pi inherits the rest of the daemon's environment (for example <code>NODE_PATH</code> and <code>WEILO_VERSION</code>); an isolated agent's gets only the variables above.</p>
+<p>A regular agent's pi also gets an allow-list of the daemon's environment, not all of it (<code>passedOn</code> in <code>users.mjs</code>): <code>LANG</code>, <code>LC_*</code>, <code>TZ</code>, <code>TERM</code>, <code>NODE_PATH</code>, <code>PIP_BREAK_SYSTEM_PACKAGES</code>, <code>WEILO_VERSION</code>, <code>WEILO_COMMIT</code>, the proxy variables (<code>HTTP(S)_PROXY</code>, <code>NO_PROXY</code>, <code>ALL_PROXY</code>, either case) and the CA certificates (<code>SSL_CERT_FILE</code>, <code>SSL_CERT_DIR</code>, <code>NODE_EXTRA_CA_CERTS</code>). The plugin status check gets the same. An isolated agent's gets only the variables above.</p>
 </section>
 
 <section class="card" id="restarts">
@@ -258,6 +260,7 @@
 <thead><tr><th>Event</th><th>What happens</th><th>Code</th></tr></thead>
 <tbody>
 <tr><td>No viewer and no run for 10 minutes</td><td>The pi stops and its scratch folder is emptied</td><td><code>touch</code>, <code>IDLE_MS</code></td></tr>
+<tr><td>Opened but never given a message, and no viewer for 90 seconds</td><td>The same, sooner: a chat you only looked at does not keep a pi for 10 minutes</td><td><code>touch</code>, <code>GLANCE_MS</code></td></tr>
 <tr><td>Agent saved in Edit agent</td><td>Its pi starts anew: now if idle, else when the run ends (<code>stale</code>)</td><td><code>restart</code></td></tr>
 <tr><td>Skills or extensions added or removed, a plugin removed, About you, Memory or the browser rule saved</td><td>Every pi starts anew</td><td><code>forAll</code> in <code>server.mjs</code></td></tr>
 <tr><td><code>manage_settings</code> change approved</td><td>Every pi starts anew</td><td><code>restartAll</code></td></tr>
@@ -265,7 +268,7 @@
 <tr><td><code>/reload</code> in the chat</td><td>That pi starts anew</td><td><code>POST …/reload</code></td></tr>
 <tr><td>Its daily token limit reached during a run</td><td>The run is stopped (the pi keeps running)</td><td><code>charge</code></td></tr>
 </tbody></table></div>
-<p>A pi is stopped by closing its stdin; it is killed if it has not exited after 5 seconds (<code>PI_KILL_MS</code>). Its key is dropped at once, so a stopped pi's tools can no longer call the daemon. Viewers see an <code>exit</code> event with code 0 and reconnect to the new pi by themselves. Adding a plugin does not restart anything: an agent uses a plugin only after its profile names it, which is a save.</p>
+<p>A pi is stopped by closing its stdin; it gets <code>SIGTERM</code> if it has not exited after 5 seconds (<code>PI_KILL_MS</code>), and <code>SIGKILL</code> 5 seconds after that. Its key is dropped at once, so a stopped pi's tools can no longer call the daemon. Viewers see an <code>exit</code> event with code 0 and reconnect to the new pi by themselves. Adding a plugin does not restart anything: an agent uses a plugin only after its profile names it, which is a save.</p>
 </section>
 
 <section class="card" id="turn">
@@ -316,9 +319,10 @@
 <p>Pi writes one JSON line per entry in <code>*.jsonl</code> files in the agent's session folder: <code>agent/sessions/&lt;id&gt;/</code> or <code>isolated-sessions/&lt;id&gt;/</code>. The daemon reads them for four things:</p>
 <ul>
 <li>The agent list's newest message: only the last 64 KB of the newest file.</li>
-<li>Earlier messages that pi summarized away: <code>GET /api/agents/:id/earlier?skip=n</code>, 60 at a time, the entries before the last compaction's <code>firstKeptEntryId</code>, without thinking and without tool results other than <code>ask</code>, <code>routine</code> and <code>manage_agents</code>.</li>
-<li>The chat index (<code>agents/chats.mjs</code>), for search (<code>GET /api/search?q=</code>, at most 200 characters, 50 results, newest first), <a href="memory-and-knowledge.html#fetch"><code>fetch_knowledge</code></a> and the <a href="memory-and-knowledge.html#curator">curator</a>: SQLite (<code>node:sqlite</code>) with an FTS5 trigram index of user and assistant text. Each use first reads what was added to the files since (in 1 MB pieces, whole lines only); a file that shrank is read again, one that went is dropped. The index lives in <code>/var/lib/weilo/chats.db</code> and is made again after a restart.</li>
+<li>Earlier messages that pi summarized away: <code>GET /api/agents/:id/earlier?skip=n</code>, 60 at a time, the entries before the last compaction's <code>firstKeptEntryId</code>, without thinking and without tool results other than <code>ask</code>, <code>routine</code> and <code>manage_agents</code>. What was read is kept for the last 4 agents (<code>EARLIER_KEPT</code>), keyed by each file's size and time, so the next page is a slice of it; only what the chat shows is kept.</li>
+<li>The chat index (<code>agents/chats.mjs</code>), for search (<code>GET /api/search?q=</code>, at most 200 characters, 50 results, newest first), <a href="memory-and-knowledge.html#fetch"><code>fetch_knowledge</code></a> and the <a href="memory-and-knowledge.html#curator">curator</a>: SQLite (<code>node:sqlite</code>) with an FTS5 trigram index of user and assistant text. Each use first reads what was added to the files since (in 1 MB pieces, whole lines only); a file that shrank is read again, one that went is dropped. The index lives in <code>agent/index/chats.db</code> (the folder root's, 0700), in the data folder, so an image update keeps it; it is brought up to date when the daemon starts.</li>
 </ul>
+<p>Every chat file is opened with <code>O_NOFOLLOW</code> and must be a regular file (<code>openChat</code> in <code>common.mjs</code>): a link an agent put among its chat files is skipped, never indexed or shown.</p>
 <h3>Context and compaction</h3>
 <p>Pi summarizes long conversations itself, when the free tokens fall to <code>compaction.modelOverrides.&lt;provider/id&gt;.reserveTokens</code>. The daemon writes that value for each model in use that has none: summarize at 40% of a 1M window, 80% of a 500k one, 90% of a smaller one, never with less than 16384 tokens free (<code>COMPACT_AT</code>, <code>MIN_RESERVE</code>, <code>settings/compaction.mjs</code>). A value set by hand stays. <code>GET …/context</code> gives the chat's meter <code>{tokens, window, point}</code>; <code>POST …/compact</code> summarizes now and is refused during a run.</p>
 </section>
@@ -330,8 +334,9 @@
 <li><code>every</code> is <code>once</code>, <code>hour</code>, <code>day</code>, <code>weekday</code> or <code>week</code>; <code>times</code> are 1 to 6 <code>HH:MM</code> values; <code>day</code> (0 to 6) for a week; <code>date</code> (<code>YYYY-MM-DD</code>, <code>today</code>, <code>tomorrow</code>) or <code>in_minutes</code> (1 to 525600) for once. At most 50 routines per agent.</li>
 <li>Times are wall-clock times in the routine's time zone: the browser's, sent as <code>X-Timezone</code> with every request. A time a clock change repeats runs once, at the earlier moment; one it skips runs at the later moment (<code>routines/schedule.mjs</code>).</li>
 <li>A routine moves to its next time, and that is saved, before its task is sent: a crash skips one run and never repeats one.</li>
-<li>A routine missed by more than an hour (the computer was off) waits for its next time; a missed one-time routine stays in the list with an error.</li>
-<li>The task goes to the chat as a message that starts with <code>⏰ Routine: &lt;title&gt;</code>, followed by a note that the user is away: do what the task covers, leave steps that need the user for the end, and reply with what was done and what waits. An agent that does not take it within a minute is marked failed, so one stuck agent does not hold up the others.</li>
+<li>A routine missed by more than an hour (the computer was off) waits for its next time and is noted as <code>Missed: …</code>, recurring or one-time; a missed one-time routine stays in the list with that note. The routines panel shows it as it is, not as a failed run.</li>
+<li>When the user's time zone changes, recurring routines that were on the old zone move to the new one, and their next time is worked out again.</li>
+<li>The task goes to the chat as a message that starts with <code>⏰ Routine: &lt;title&gt;</code>, followed by a note that the user is away: do what the task covers, leave steps that need the user for the end, and reply with what was done and what waits. After a minute the daemon moves on to the next routine, so one slow or stuck agent does not hold up the others; a slow start is not marked failed, but a real failure that comes later is still recorded.</li>
 <li>Agents manage their own routines with the <code>routine</code> tool of the bundled routines extension, which calls <code>/api/agents/:id/routines</code>.</li>
 </ul>
 </section>
@@ -351,7 +356,7 @@
 <h2>The browser</h2>
 <p>One Chromium on a virtual screen, shared by all agents, with one set of logins. Each agent has its own window with as many tabs as it needs; the browser's window id tells them apart.</p>
 <ul>
-<li><code>browser/screen.mjs</code> starts <code>Xvnc :1</code> (1280x800, VNC on a unix socket only, no TCP), openbox and Chromium as user 1000, and restarts any of them 2 seconds after it stops.</li>
+<li><code>browser/screen.mjs</code> starts <code>Xvnc :1</code> (1280x800, VNC on a unix socket only, no TCP), openbox and Chromium as user 1000 on first use (<code>wakeScreen</code>: an agent's first browser step or a take over; up to 20 seconds), not when the app starts, and restarts any of them 2 seconds after it stops. Until then the live view has nothing to show.</li>
 <li>The VNC socket and the display's Xauthority cookie are in <code>/tmp/weilo-screen/</code> (1000's, 0700). Xvnc takes X clients with that cookie only, so an agent cannot type into the browser.</li>
 <li>Chromium has no debugging port. It runs with <code>--remote-debugging-pipe</code>; the daemon passes that pipe to a WebSocket at <code>/api/browser-cdp/&lt;secret&gt;</code> (a secret made at each start) for its own Playwright.</li>
 <li>Chromium runs with background calls to Google turned off (sync, component updates, pings and more).</li>

@@ -7,6 +7,7 @@ import { App } from "./App";
 import { registerWorker } from "./lib/push";
 
 registerWorker();
+window.addEventListener("vite:preloadError", () => location.reload());
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

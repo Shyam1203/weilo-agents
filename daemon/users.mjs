@@ -12,6 +12,9 @@ export const isRoot = process.getuid?.() === 0;
 export const BROWSER = { uid: BROWSER_UID, gid: BROWSER_UID, groups: [] };
 export const CURATOR = { uid: CURATOR_UID, gid: CURATOR_UID, groups: [] };
 
+const PASSED_ON = /^(LANG|LC_\w+|TZ|TERM|NODE_PATH|PIP_BREAK_SYSTEM_PACKAGES|WEILO_VERSION|WEILO_COMMIT|(HTTPS?|NO|ALL)_PROXY|(https?|no|all)_proxy|SSL_CERT_(FILE|DIR)|NODE_EXTRA_CA_CERTS)$/;
+export const passedOn = () => Object.fromEntries(Object.entries(process.env).filter(([name]) => PASSED_ON.test(name)));
+
 export const sharedTools = { PATH: `${SYSTEM_PATH}:${TOOLS}/bin`, npm_config_prefix: TOOLS, PYTHONUSERBASE: TOOLS };
 export const ownTools = (home) => ({ PATH: `${SYSTEM_PATH}:${home}/.local/bin`, npm_config_prefix: `${home}/.local`, PYTHONUSERBASE: `${home}/.local` });
 
@@ -121,6 +124,7 @@ export async function secure(agents) {
   await folder(join(RUN, "pi"), 0, AGENTS_GID, 0o751);
   await folder(PLUGINS_HOME, 0, 0, 0o711);
   await rm(join(PLUGINS_HOME, "mcp.json"), { force: true });
+  await rm(join(RUN, "chats.db"), { force: true });
   await folder(PLUGINS_CWD, 0, 0, 0o755);
   const tools = await stat(TOOLS).catch(() => null);
   if (tools && tools.gid !== AGENTS_GID) await tree(TOOLS, 0, AGENTS_GID, "g+rwX,o+rX");

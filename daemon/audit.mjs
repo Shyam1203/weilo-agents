@@ -15,6 +15,8 @@ export function audit(event, fields = {}) {
     .catch((err) => console.error("Audit log:", err.message));
 }
 
+export const audited = () => queue;
+
 export async function recentAudit(count) {
   const file = await open(AUDIT).catch(() => null);
   if (!file) return [];

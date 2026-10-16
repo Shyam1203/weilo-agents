@@ -46,6 +46,7 @@ export async function serveUi(req, res) {
     const headers = {
       "Content-Type": TYPES[extname(file)] ?? "application/octet-stream",
       "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer",
       "Content-Security-Policy": "frame-src about:; frame-ancestors 'none'",
       "Cache-Control": asset ? "public, max-age=31536000, immutable" : "no-cache",
       ETag: found.etag,

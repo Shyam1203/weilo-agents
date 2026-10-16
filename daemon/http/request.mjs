@@ -20,13 +20,15 @@ export function guard({ headers }, path) {
   if (site && site !== "same-origin" && site !== "none" && !link) throw fail(403, "Not permitted");
 }
 
-export async function bodyOf(req) {
-  let text = "";
-  req.setEncoding("utf8");
+export async function bodyOf(req, max = MAX_BODY) {
+  const chunks = [];
+  let size = 0;
   for await (const chunk of req) {
-    text += chunk;
-    if (text.length > MAX_BODY) throw fail(413, "The request is too large");
+    size += chunk.length;
+    if (size > max) throw fail(413, "The request is too large");
+    chunks.push(chunk);
   }
+  const text = Buffer.concat(chunks).toString("utf8");
   try {
     const body = text ? JSON.parse(text) : {};
     return body && typeof body === "object" ? body : {};
@@ -36,6 +38,6 @@ export async function bodyOf(req) {
 }
 
 export const reply = (res, status, body) => {
-  res.writeHead(status, body === undefined ? {} : { "Content-Type": "application/json" });
+  res.writeHead(status, body === undefined ? {} : { "Content-Type": "application/json", "X-Content-Type-Options": "nosniff" });
   res.end(body === undefined ? undefined : JSON.stringify(body));
 };

@@ -2,6 +2,7 @@ const MINUTE = 60_000;
 
 export const PORT = 3210;
 export const MAX_BODY = 64e6;
+export const MAX_PAIR_BODY = 1024;
 
 export const PAIR_CODE_MS = 10 * MINUTE;
 export const PAIR_WRONG_CODES = 10;
@@ -63,10 +64,15 @@ export const CORE_TOOLS = ["show", "ask", "manage_agents", ...SHARED_TOOLS];
 export const PI_BUILTINS = ["mcp", "codemode", "tool-search", "llama.cpp"];
 export const RESERVED_TOOLS = [...new Set([...PI_TOOLS, ...CORE_TOOLS, "codemode"])];
 export const IDLE_MS = 10 * MINUTE;
+export const GLANCE_MS = 90_000;
 export const PI_KILL_MS = 5000;
+export const SHUTDOWN_MS = 12_000;
+export const HUNG_MS = 120_000;
 export const PREVIEW_TAIL = 64 * 1024;
 export const PREVIEW_CHARS = 140;
 export const EARLIER_PAGE = 60;
+export const EARLIER_KEPT = 4;
+export const EARLIER_KEPT_MS = 5 * MINUTE;
 export const MAX_APPROVAL = 20_000;
 export const MAX_SEARCH = 200;
 export const SEARCH_RESULTS = 50;
@@ -128,6 +134,7 @@ export const SEND_MS = MINUTE;
 
 export const SCREEN = { width: 1280, height: 800 };
 export const SCREEN_RESTART_MS = 2000;
+export const SCREEN_WAKE_MS = 20_000;
 export const MAX_VIEW_MESSAGE = 1 << 20;
 export const SNAPSHOT_MAX = 15_000;
 export const SETTLE_MS = 600;

@@ -22,3 +22,17 @@ test("a new chat file keeps the older files as earlier messages", async () => {
   writeFileSync(join(dir, "2.jsonl"), line("d", "user", "four") + line("e", "assistant", "five") + compaction("e"));
   assert.deepEqual(await texts(), ["one", "two", "three", "four"]);
 });
+
+test("earlier messages follow a chat file that grows", async () => {
+  assert.deepEqual(await texts(), ["one", "two", "three", "four"]);
+  writeFileSync(join(dir, "3.jsonl"), line("f", "user", "six") + line("g", "assistant", "seven"));
+  assert.deepEqual(await texts(), ["one", "two", "three", "four", "five"]);
+});
+
+test("a pipe or a link among chat files is skipped, never waited on", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const { symlinkSync } = await import("node:fs");
+  execFileSync("mkfifo", [join(dir, "4.jsonl")]);
+  symlinkSync(join(dir, "1.jsonl"), join(dir, "5.jsonl"));
+  assert.deepEqual(await texts(), ["one", "two", "three", "four", "five", "six", "seven"]);
+});

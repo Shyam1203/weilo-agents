@@ -64,7 +64,7 @@ export function RoutinesPanel({ agentId, agentName, off, changed }: Props) {
                       {r.nextRunAt && <Countdown at={r.nextRunAt} />}
                     </span>
                     <span className="text-xs leading-relaxed text-ink-2">{describeSchedule(r)}</span>
-                    {r.lastError ? <span className="text-xs text-bad">{r.nextRunAt ? `Last run failed: ${r.lastError}` : r.lastError}</span> : r.nextRunAt && <span className="text-xs text-ink-3">Next: {nextWhen(r.nextRunAt)}</span>}
+                    {r.lastError ? <span className="text-xs text-bad">{r.nextRunAt && !r.lastError.startsWith("Missed") ? `Last run failed: ${r.lastError}` : r.lastError}</span> : r.nextRunAt && <span className="text-xs text-ink-3">Next: {nextWhen(r.nextRunAt)}</span>}
                   </button>
                 </li>
               ))}

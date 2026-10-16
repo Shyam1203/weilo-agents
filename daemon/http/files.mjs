@@ -1,5 +1,5 @@
-import { createReadStream } from "node:fs";
-import { realpath, stat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { open, readlink, realpath } from "node:fs/promises";
 import { basename, extname, join, sep } from "node:path";
 import { pipeline } from "node:stream";
 import { fail } from "../common.mjs";
@@ -10,9 +10,13 @@ const TEXT = new Set(
 );
 
 async function find(roots, path) {
-  const file = await realpath(path).catch(() => null);
-  if (!file || !roots.some((root) => root && file.startsWith(root + sep))) return null;
-  return (await stat(file)).isFile() ? file : null;
+  const handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK).catch(() => null);
+  if (!handle) return null;
+  const file = await readlink(`/proc/self/fd/${handle.fd}`).catch(() => null);
+  const info = await handle.stat();
+  if (file && info.isFile() && roots.some((root) => root && file.startsWith(root + sep))) return { handle, file, info };
+  await handle.close();
+  return null;
 }
 
 export async function serveFile(res, { folders, roots }, path, view = false) {
@@ -23,10 +27,10 @@ export async function serveFile(res, { folders, roots }, path, view = false) {
     throw fail(404, "Not found");
   }
   const real = await Promise.all(roots.map((root) => realpath(root).catch(() => null)));
-  let file = null;
-  for (const dir of name.startsWith("/") ? ["/"] : folders) file ??= await find(real, join(dir, name));
-  if (!file) throw fail(404, "Not found");
-  const info = await stat(file);
+  let found = null;
+  for (const dir of name.startsWith("/") ? ["/"] : folders) found ??= await find(real, join(dir, name));
+  if (!found) throw fail(404, "Not found");
+  const { handle, file, info } = found;
   const kind = extname(file).toLowerCase();
   const picture = PICTURES[kind];
   const pdf = view && kind === ".pdf";
@@ -39,5 +43,5 @@ export async function serveFile(res, { folders, roots }, path, view = false) {
     "X-Content-Type-Options": "nosniff",
     "Cache-Control": "no-cache",
   });
-  pipeline(createReadStream(file), res, () => {});
+  pipeline(handle.createReadStream(), res, () => {});
 }

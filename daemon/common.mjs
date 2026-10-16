@@ -1,4 +1,5 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { mkdir, open, readFile, rename } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -58,6 +59,13 @@ export const plainText = (markdown) =>
     .replace(/\s+/g, " ")
     .trim();
 
+export async function openChat(path) {
+  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  if ((await handle.stat()).isFile()) return handle;
+  await handle.close();
+  throw fail(400, `${path} is not a file`);
+}
+
 export function splitOn(separator, each) {
   let held = [];
   return (chunk) => {
@@ -76,28 +84,48 @@ export const fail = (status, message) => Object.assign(new Error(message), { sta
 
 export const slug = (text, max) => text.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, max).replace(/^-|-$/g, "");
 
+let written = 0;
 export async function writePrivate(file, text) {
   await mkdir(dirname(file), { recursive: true });
-  await writeFile(`${file}.tmp`, text, { mode: 0o600 });
-  await rename(`${file}.tmp`, file);
+  const tmp = `${file}.${process.pid}-${++written}.tmp`;
+  const handle = await open(tmp, "w", 0o600);
+  try {
+    await handle.writeFile(text);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  await rename(tmp, file);
 }
+
+const parse = (text) => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+};
 
 export async function readJson(file) {
   const text = await readFile(file, "utf8").catch((err) => {
     if (err.code === "ENOENT") return "{}";
     throw err;
   });
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw fail(500, `${basename(file)} is not valid JSON`);
-  }
+  const data = parse(text);
+  if (data !== undefined) return data;
+  const good = parse(await readFile(`${file}.bak`, "utf8").catch(() => ""));
+  if (good === undefined) throw fail(500, `${basename(file)} is not valid JSON`);
+  await writePrivate(`${file}.corrupt`, text);
+  console.error(`${basename(file)} is not valid JSON; using its last good copy (the broken one is kept as ${basename(file)}.corrupt)`);
+  return good;
 }
 
 const chains = new Map();
 export function updateJson(file, change) {
   const run = (chains.get(file) ?? Promise.resolve()).then(async () => {
     const data = await change(await readJson(file));
+    const before = file === DEVICES ? null : await readFile(file, "utf8").catch(() => null);
+    if (before !== null && parse(before) !== undefined) await writePrivate(`${file}.bak`, before);
     await writePrivate(file, JSON.stringify(data, null, 2));
     return data;
   });
@@ -106,3 +134,5 @@ export function updateJson(file, change) {
   void tail.then(() => chains.get(file) === tail && chains.delete(file));
   return run;
 }
+
+export const settled = () => Promise.all(chains.values());

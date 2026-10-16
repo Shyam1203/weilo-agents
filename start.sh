@@ -19,8 +19,15 @@ WEILO_VERSION=$(tr -d '[:space:]' < VERSION 2>/dev/null)
 export WEILO_VERSION
 echo "Getting Weilo Agents ${WEILO_VERSION:-latest}. The first time this downloads the app and can take a few minutes."
 if ! docker compose pull; then
-  echo "Could not download it. Building it here instead, which takes longer."
-  docker compose build || exit 1
+  if docker image inspect "ghcr.io/shyam1203/weilo-agents:${WEILO_VERSION:-latest}" >/dev/null 2>&1; then
+    echo "Could not download it. Starting the copy already on this computer."
+  elif [ -f image/Dockerfile ]; then
+    echo "Could not download it. Building it here instead, which takes longer."
+    docker compose build || exit 1
+  else
+    echo "Could not download it, and there is no copy on this computer. Check the internet connection, then run this script again."
+    exit 1
+  fi
 fi
 
 echo "Starting Weilo Agents..."

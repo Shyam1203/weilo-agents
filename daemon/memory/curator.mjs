@@ -83,8 +83,9 @@ async function curate(model, agent, text) {
 }
 
 async function newLines(id, since) {
-  const fresh = after(id, since);
-  if (!fresh.some((m) => m.speaker === "you")) return [];
+  const fresh = after(id, since, Math.ceil((CURATOR_MAX_PIECES * CURATOR_MAX_INPUT) / "[YYYY-MM-DD] User: ".length) + 1);
+  const last = fresh.at(-1)?.at;
+  if (!fresh.some((m) => m.speaker === "you")) return { lines: [], last };
   const lines = [];
   let size = 0;
   for (const m of fresh) {
@@ -93,7 +94,7 @@ async function newLines(id, since) {
     lines.push({ line, at: m.at });
     size += line.length;
   }
-  return lines;
+  return { lines, last };
 }
 
 function piecesOf(lines) {
@@ -176,12 +177,12 @@ async function look() {
       const until = latest(agent.id) ?? seen;
       if (!due({ seen, until, ran, failed: failures.get(agent.id) }, Date.now())) continue;
       try {
-        const lines = await newLines(agent.id, seen);
+        const { lines, last } = await newLines(agent.id, seen);
         for (const piece of piecesOf(lines).slice(0, CURATOR_MAX_PIECES)) {
           await curate(model, agent, piece.text);
           await mark("seen", agent.id, piece.at);
         }
-        if (!lines.length) await mark("seen", agent.id, until);
+        if (!lines.length) await mark("seen", agent.id, last ?? until);
         await mark("ran", agent.id, new Date().toISOString());
         failures.delete(agent.id);
       } catch (err) {
