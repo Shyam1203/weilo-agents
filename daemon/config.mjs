@@ -143,6 +143,7 @@ export const LATE_MS = 60 * MINUTE;
 export const SCREEN = { width: 1280, height: 800 };
 export const SCREEN_RESTART_MS = 2000;
 export const SCREEN_WAKE_MS = 20_000;
+export const BROWSER_CACHE_BYTES = 256 * 1024 * 1024;
 export const MAX_VIEW_MESSAGE = 1 << 20;
 export const SNAPSHOT_MAX = 15_000;
 export const SETTLE_MS = 600;
