@@ -14,7 +14,7 @@ const Loading = () => (
   </div>
 );
 
-export function BrowserPanel({ agentId, agentName, off, onTaken }: { agentId: string; agentName: string; off: boolean; onTaken: () => void }) {
+export function BrowserPanel({ agentId, agentName, off, taken: takenNow, open: openNow, onTaken }: { agentId: string; agentName: string; off: boolean; taken: boolean; open: boolean; onTaken: () => void }) {
   const [taken, setTaken] = useState(false);
   const [hasWindow, setHasWindow] = useState(false);
   const [open, setOpen] = useState(false);
@@ -28,11 +28,9 @@ export function BrowserPanel({ agentId, agentName, off, onTaken }: { agentId: st
     void showBrowser(agentId).catch(() => {});
   }, [agentId, off]);
 
-  useEffect(() => {
-    if (off || hasWindow) return;
-    const timer = setInterval(() => document.visibilityState === "visible" && void browserState(agentId).then((s) => (setTaken(s.taken), setHasWindow(s.hasWindow)), () => {}), 3000);
-    return () => clearInterval(timer);
-  }, [agentId, off, hasWindow]);
+  // The agent list hears when its window opens or closes and when it is taken over.
+  useEffect(() => setTaken(takenNow), [takenNow]);
+  useEffect(() => setHasWindow(openNow), [openNow]);
 
   const open_ = () => hasWindow && (void showBrowser(agentId).catch(() => {}), setOpen(true));
   const take = () => run("take", async () => (await takeOver(agentId), setTaken(true), setHasWindow(true), setOpen(true), onTaken()));

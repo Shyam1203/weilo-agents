@@ -21,8 +21,8 @@ import { chatDirOf, getAgent, homeOf, isIsolated, makeHome, mayCall, placesOf, p
 import { piDirOf, piFiles, writePiDir } from "./pidir.mjs";
 import { piRpc } from "./pi.mjs";
 import { linkImages } from "./images.mjs";
-import { asTyped, chatFiles, shown, slim, textOf } from "./sessions.mjs";
-import { agentsChanged } from "./status.mjs";
+import { asTyped, briefCall, chatFiles, shown, slim, textOf } from "./sessions.mjs";
+import { agentsChanged, tellAgent } from "./status.mjs";
 import { toImages, uploadedFiles } from "./uploads.mjs";
 import { clearScratch, makeScratch, rulesOf, scratchOf } from "./workspace.mjs";
 
@@ -32,16 +32,26 @@ const runs = new Map();
 const watchers = new Map();
 const listenersOf = (id) => watchers.get(id) ?? new Set();
 
-// The app draws neither tool arguments nor results, and only some messages.
-const TOOL_EVENT = /^tool_execution_/;
-const slimEvent = (event) => {
-  if (TOOL_EVENT.test(event.type)) {
-    const { args: _args, result: _result, partialResult: _partial, ...rest } = event;
-    return rest;
+// Only what the app draws goes to it. pi's other events repeat what the app already has or
+// never shows: agent_end holds the whole run, turn_end its tool results (and most tool results are
+// not drawn: a file that was read, a command's output), and the text and thinking
+// of a reply arrive in full with message_end. Of a reply as it is written, only a show card is
+// drawn, so only tool calls go out, and of their deltas only a show card's.
+const RELAYED = new Set(["queue_update", "extension_ui_request", "agent_start", "agent_settled", "message_start", "message_update", "message_end", "compaction_start", "compaction_end", "tool_execution_start", "tool_execution_end"]);
+const slimEvent = (run, event) => {
+  if (!RELAYED.has(event.type)) return null;
+  if (event.type === "tool_execution_start" || event.type === "tool_execution_end") return { type: event.type, toolCallId: event.toolCallId, toolName: event.toolName };
+  if (event.type === "compaction_end") return { type: event.type, result: Boolean(event.result) };
+  if (event.type === "message_update") {
+    const step = event.assistantMessageEvent ?? {};
+    if (step.type === "toolcall_start" && step.toolName === "show") run.showing.add(step.contentIndex);
+    if (!/^toolcall_/.test(step.type ?? "") || (step.type === "toolcall_delta" && !run.showing.has(step.contentIndex))) return null;
+    return { type: event.type, assistantMessageEvent: step.toolCall ? { ...step, toolCall: briefCall(step.toolCall) } : step };
   }
+  if (event.type === "message_start") run.showing.clear();
   if (!event.message) return event;
   const message = asTyped(event.message);
-  return { ...event, message: linkImages(message, shown(message)) };
+  return shown(message) ? { ...event, message: linkImages(slim(message)) } : null;
 };
 
 const emit = (run, event) => listenersOf(run.id).forEach((send) => send(event));
@@ -155,7 +165,6 @@ async function start(run) {
   run.done = new Promise((resolve) => {
     run.pi = piRpc(child, {
       onEvent(event) {
-        if (CHANGES.has(event.type)) agentsChanged();
         if (event.type === "agent_start") (run.busy = true), (run.used = true), (run.reply = null);
         if (event.type === "message_end" && event.message?.role === "assistant") (run.reply = event.message), void charge(run, event.message.usage).catch((err) => console.error("Usage:", err.message));
         if (event.type === "agent_settled") (run.busy = false), tell(run);
@@ -166,14 +175,17 @@ async function start(run) {
           else if (event.method === "confirm" || event.method === "editor") run.pi.reply({ type: "extension_ui_response", id: event.id, cancelled: true });
         }
         if ((event.type === "tool_execution_end" && !run.asking?.resolve) || !run.busy) endAsk(run);
-        emit(run, slimEvent(event));
+        if (ACTIVITY.has(event.type)) tellAgent(run.id, { working: run.busy, doing: run.busy ? (run.doing ?? "") : null });
+        if (event.type === "message_end" && (event.message?.role === "assistant" || event.message?.role === "user")) agentsChanged();
+        const relayed = slimEvent(run, event);
+        if (relayed) emit(run, relayed);
         if (run.stale && !run.busy) close(run);
         else touch(run);
       },
       onExit({ code, message }) {
         close(run);
         endAsk(run);
-        agentsChanged();
+        tellAgent(run.id, { working: false, doing: null });
         // An agent that was idle stops quietly: the app keeps its chat and it starts again when needed.
         if (!run.asleep || code) emit(run, { type: "exit", code, error: code ? message : "" });
         resolve(undefined);
@@ -183,13 +195,13 @@ async function start(run) {
   return run;
 }
 
-const CHANGES = new Set(["agent_start", "agent_settled", "tool_execution_start", "tool_execution_end", "message_end"]);
+const ACTIVITY = new Set(["agent_start", "agent_settled", "tool_execution_start", "tool_execution_end"]);
 
 const holds = new Map();
 
 const open = (id) => {
   if (!runs.has(id)) {
-    const run = { id, busy: false, stale: false, asleep: false, timer: null };
+    const run = { id, busy: false, stale: false, asleep: false, timer: null, showing: new Set() };
     run.ready = start(run).catch((err) => {
       close(run);
       throw err;

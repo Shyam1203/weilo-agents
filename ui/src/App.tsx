@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listAgents, type Agent } from "./api/agents";
+import { listAgents, type Agent, type AgentStatus } from "./api/agents";
 import { messageOf, RequestError } from "./api/http";
 import { listExtensions, type Extension } from "./api/extensions";
 import { listPlugins, type Plugin } from "./api/plugins";
@@ -41,6 +41,8 @@ export function App() {
     }, () => {});
   const reloadAgents = useCallback(() => (queued.current ??= running.current.then(() => ((queued.current = null), (running.current = loadAgents())))), []);
 
+  const patchAgent = useCallback(({ id, ...patch }: AgentStatus) => setData((d) => d && { ...d, agents: d.agents.map((a) => (a.id === id ? { ...a, ...patch } : a)) }), []);
+
   const keys = data?.providers.filter((p) => p.connected).map((p) => p.id).join();
   useEffect(() => {
     if (keys === undefined) return;
@@ -60,5 +62,5 @@ export function App() {
 
   if (unpaired) return <PairScreen onPaired={() => void reload()} />;
   if (!data) return <FullScreenStatus error={error} onRetry={reload} />;
-  return <Workspace agents={data.agents} providers={data.providers} skills={data.skills} plugins={data.plugins} extensions={data.extensions} user={data.user} models={models} onModels={enableModels} reload={reload} reloadAgents={reloadAgents} />;
+  return <Workspace agents={data.agents} providers={data.providers} skills={data.skills} plugins={data.plugins} extensions={data.extensions} user={data.user} models={models} onModels={enableModels} reload={reload} reloadAgents={reloadAgents} patchAgent={patchAgent} />;
 }
