@@ -33,15 +33,16 @@ export function MemoryPage({ providers, models }: Props) {
   const change = (next: Partial<MemorySettings>) => run("settings", async () => setSettings(await setMemory(next)));
 
   return (
-    <Page title="Memory" description="What your agents remember about you.">
+    <Page
+      title="Memory"
+      description={notes ? "Agents remember what they learn about you." : "Off. Agents don't save what they learn about you."}
+      action={<Switch label="Memory" checked={notes} onChange={(on) => void change({ notes: on })} />}
+    >
       <Card>
         <Row title="Knowledge curator" description={model ? "Curated Knowledge from our conversations." : "Off. Pick a model to turn it on."}>
           <div className="pick w-full min-w-0 sm:w-56">
             <Select label="Knowledge curator model" value={model} disabled={!models || busy === "settings"} onChange={(v) => void change({ model: v })} options={options} />
           </div>
-        </Row>
-        <Row title="Notes about you" description="Agents save what they learn about you.">
-          <Switch label="Notes about you" checked={notes} onChange={(on) => void change({ notes: on })} />
         </Row>
       </Card>
       <ErrorText>{error}</ErrorText>

@@ -334,7 +334,7 @@ const quoted = (text) => `"${text}"`;
 const fieldOf = (field) => (field ? ` in ${quoted(field)}` : "");
 const textOf = (value) => (typeof value === "string" ? value.slice(0, 200) : "");
 
-export function teachStep(step) {
+function teachStep(step) {
   const [name, field] = [textOf(step.name), textOf(step.field)];
   const value = step.value === null ? null : textOf(step.value);
   const typed = value === null || unsafe(value) === "secret" ? `a password or other secret (not recorded)${fieldOf(field)}` : `${quoted(value)}${fieldOf(field)}`;
@@ -356,7 +356,7 @@ export function teachStep(step) {
   }
 }
 
-export function addStep(steps, step) {
+function addStep(steps, step) {
   const line = teachStep(step);
   const last = steps.at(-1);
   if (!line || line === last || (step.act === "type" && last === `${line} and pressed Enter`)) return;
@@ -421,7 +421,7 @@ export async function startTeaching(agent) {
   }
 }
 
-export const teachMessage = (goal, steps) =>
+const teachMessage = (goal, steps) =>
   `I showed you in the browser how to: ${goal}\n\nWhat I did:\n${steps.map((step, i) => `${i + 1}. ${step}`).join("\n")}\n\nSave this as a skill with the skill tool, so you can do it yourself next time. Write the steps so they still work when the page changes a little, say which values change each time (like amounts or dates) and ask me for those then, and leave out what was only for this once. I did not record passwords: never ask me for one in the chat.`;
 
 export async function finishTeaching(agent, goal) {

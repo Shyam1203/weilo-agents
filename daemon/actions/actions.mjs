@@ -19,7 +19,7 @@ export const ACTION_MARK = "⚡ Action: ";
 export const BY_ITSELF = " · ran by itself";
 export const CONFIRM_NOTE = "Before you pay, order, book or send anything, use ask to confirm the exact details with the user.";
 export const PIN_NOTE = "Then update its pin with the pin tool: ";
-export const AWAY_NOTE = `This action ran by itself at its time; the user is away and reads your reply later. Do it now. If a step needs the user's confirmation, use ask: they get a notification and answer when they can. Anything else that needs them, leave for the end. End with the result in a few lines. If it was a check and you found nothing new worth telling the user, reply with only ${NOTHING_NEW}: then they are not disturbed.`;
+const AWAY_NOTE = `This action ran by itself at its time; the user is away and reads your reply later. Do it now. If a step needs the user's confirmation, use ask: they get a notification and answer when they can. Anything else that needs them, leave for the end. End with the result in a few lines. If it was a check and you found nothing new worth telling the user, reply with only ${NOTHING_NEW}: then they are not disturbed.`;
 const MISSED = "Missed: Weilo Agents was not running at that time";
 const RUNNER = fileURLToPath(new URL("./run.mjs", import.meta.url));
 
@@ -97,7 +97,7 @@ function fieldsOf(list) {
   return fields;
 }
 
-export function scheduleOf(input, zone, now = Date.now()) {
+function scheduleOf(input, zone, now = Date.now()) {
   if (input === null) return null;
   if (typeof input !== "object") throw fail(400, "The schedule is not valid");
   const { every } = input;
@@ -127,7 +127,7 @@ const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frid
 export const when = (s) =>
   s.every === "minutes" ? `every ${s.minutes} minutes` : s.every === "hour" ? `every hour at :${s.times[0].slice(3)}` : s.every === "once" ? `once, on ${s.date} at ${s.times[0]}` : `${s.every === "weekday" ? "on weekdays" : s.every === "week" ? `every ${DAY_NAMES[s.day]}` : "every day"} at ${s.times.join(" and ")}`;
 
-export function planAction(input, current = {}, isolated = false, zone = "UTC") {
+function planAction(input, current = {}, isolated = false, zone = "UTC") {
   const next = {
     title: text(input.title, MAX_ACTION_TITLE, "The title") ?? current.title,
     about: text(input.about, MAX_ACTION_ABOUT, "about") ?? current.about ?? "",
@@ -158,7 +158,7 @@ export function planAction(input, current = {}, isolated = false, zone = "UTC") 
   return next;
 }
 
-export function valuesOf(action, input = {}) {
+function valuesOf(action, input = {}) {
   const values = {};
   for (const f of action.fields) {
     const given = input?.[f.name];
@@ -170,7 +170,7 @@ export function valuesOf(action, input = {}) {
   return values;
 }
 
-export const filled = (request, values) => request.replace(/\{([a-z][a-z0-9_]*)\}/g, (all, name) => values[name] ?? all);
+const filled = (request, values) => request.replace(/\{([a-z][a-z0-9_]*)\}/g, (all, name) => values[name] ?? all);
 
 export function shown(result) {
   const out = typeof result === "string" ? result : result && typeof result === "object" ? Object.entries(result).filter(([k]) => k !== "stop" && k !== "pin").map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`).join("\n") : result === undefined ? "Done." : JSON.stringify(result);
@@ -230,7 +230,7 @@ export async function changeAction(agentId, id, { title, request, schedule }) {
   return view(action);
 }
 
-export async function runScript(agent, script, input) {
+async function runScript(agent, script, input) {
   if (isIsolated(agent)) throw fail(400, "An isolated agent cannot run scripts here");
   const key = scriptKey(agent.id);
   const started = Date.now();
@@ -293,7 +293,7 @@ export async function runAction(agentId, id, input, by = "you") {
     const away = by === "schedule";
     const pins = await pinsOf(action.id);
     const notes = [away && AWAY_NOTE, filled(action.request, values), CONFIRM_NOTE, pins.length && `${PIN_NOTE}${pins.map((p) => p.id).join(", ")}.`].filter(Boolean).join("\n\n");
-    await prompt(agentId, { text: `${ACTION_MARK}${action.title}${away ? BY_ITSELF : ""}\n\n${notes}` });
+    await prompt(agentId, { text: `${ACTION_MARK}${action.title}${away ? BY_ITSELF : ""}\n\n${notes}`, when: away ? "later" : "now" });
     record(action, { at: Date.now(), ok: true, text: `Asked ${(await getAgent(agentId)).name}`, by, chat: true });
     await save();
     return { sent: true };

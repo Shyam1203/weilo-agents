@@ -24,7 +24,7 @@ const INDEX_VERSION = 2;
 
 let db = null;
 let sql = null;
-export function openIndex(path = join(AGENT_DIR, "index", "chats.db")) {
+function openIndex(path = join(AGENT_DIR, "index", "chats.db")) {
   db?.close();
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   try {
@@ -154,7 +154,7 @@ function holding(words) {
 
 export const containing = (text, agents, limit) => withAny([text], agents, limit);
 
-export function withAny(words, agents, limit) {
+function withAny(words, agents, limit) {
   if (!words.length || agents?.length === 0) return Promise.resolve([]);
   const { where, params } = holding(words);
   const of = agents ? `AND agent IN (${agents.map(() => "?").join(", ")})` : "";

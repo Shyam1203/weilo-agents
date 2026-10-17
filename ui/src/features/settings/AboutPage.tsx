@@ -23,7 +23,7 @@ export function AboutPage() {
     );
 
   return (
-    <Page section title="About" description="Include the version when you ask for help.">
+    <Page section title="About">
       <Card>
         <Row title="Weilo Agents">{value(build?.version)}</Row>
         <Row title="Build">{value(build ? build.commit.slice(0, 7) : undefined)}</Row>

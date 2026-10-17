@@ -7,8 +7,8 @@ import { piDirOf, piFiles, writePiDir } from "../agents/pidir.mjs";
 import { activityOf } from "../agents/runner.mjs";
 import { CURATOR, fail, KNOWLEDGE, readJson, updateJson } from "../common.mjs";
 import { BIN, CURATOR_EVERY_MS, CURATOR_MAX_FAILURES, CURATOR_MAX_GAP_MS, CURATOR_MAX_INPUT, CURATOR_MAX_MESSAGE, CURATOR_MAX_PIECES, CURATOR_QUIET_MS, CURATOR_TIMEOUT_MS } from "../config.mjs";
-import { agentKey, dropAgentKey } from "../http/access.mjs";
-import { CURATOR as CURATOR_USER, spawnAs } from "../users.mjs";
+import { dropAgentKey, extraKey } from "../http/access.mjs";
+import { CURATOR as CURATOR_USER, passedOn, sharedTools, spawnAs } from "../users.mjs";
 import { ensureVault, scrub } from "./vault.mjs";
 
 export const CURATOR_KEY = "curator";
@@ -44,11 +44,11 @@ export async function setCurator({ model, notes }) {
 const TRUNCATED = /^Response was truncated/m;
 
 async function askPi(model, prompt) {
-  const key = agentKey(CURATOR_KEY);
+  const key = extraKey(CURATOR_KEY);
   const dir = piDirOf(CURATOR_KEY);
   try {
     await writePiDir(dir, CURATOR_USER, await piFiles({ model, key, agent: CURATOR_KEY }));
-    await runPi(model, prompt, { ...process.env, PI_CODING_AGENT_DIR: dir, HOME: dir });
+    await runPi(model, prompt, { ...passedOn(), ...sharedTools, PI_CODING_AGENT_DIR: dir, HOME: dir });
   } finally {
     dropAgentKey(key);
   }

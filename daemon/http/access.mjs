@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomInt } from "node:crypto";
 import { DEVICES, fail, readJson, updateJson } from "../common.mjs";
-import { DEVICE_COOKIE_S, DEVICE_SEEN_MS, PAIR_CODE_MS, PAIR_WRONG_CODES } from "../config.mjs";
+import { DEVICE_COOKIE_S, DEVICE_SEEN_MS, PAIR_CODE_MS, PAIR_WRONG_GAP_MS } from "../config.mjs";
 
 const COOKIE = "weilo_device";
 const hash = (text) => createHash("sha256").update(text).digest("hex");
@@ -8,7 +8,7 @@ const hash = (text) => createHash("sha256").update(text).digest("hex");
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const plain = (code) => code.toUpperCase().replace(/[^A-Z0-9]/g, "");
 const codes = new Map();
-let wrong = [];
+let wrong = 0;
 
 export function newCode() {
   const code = Array.from({ length: 8 }, () => ALPHABET[randomInt(ALPHABET.length)]).join("");
@@ -28,12 +28,11 @@ const save = (change) => updateJson(DEVICES, (data) => ({ ...data, devices: chan
 
 export async function pair(code, userAgent) {
   const now = Date.now();
-  wrong = wrong.filter((t) => now - t < PAIR_CODE_MS);
-  if (wrong.length >= PAIR_WRONG_CODES) throw fail(429, "Too many wrong codes. Wait 10 minutes, then try again.");
+  if (now - wrong < PAIR_WRONG_GAP_MS) throw fail(429, "Wait a second, then try the code again.");
   for (const [c, expires] of codes) if (expires < now) codes.delete(c);
   const key = plain(typeof code === "string" ? code : "");
   if (!codes.has(key)) {
-    wrong.push(now);
+    wrong = now;
     throw fail(400, "This code is not right, or it has expired. Make a new one.");
   }
   codes.delete(key);

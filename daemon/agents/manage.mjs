@@ -23,7 +23,7 @@ const asProfile = (request) => {
   return extensions === undefined ? rest : { ...rest, extensions: extensions.filter((id) => !Object.hasOwn(BUNDLED, id)), disabled: Object.keys(BUNDLED).filter((id) => !extensions.includes(id)) };
 };
 
-export function refusal(asker, action, target, body) {
+function refusal(asker, action, target, body) {
   if (USER_ONLY.some((f) => body[f] !== undefined)) return "Only the user can make an agent isolated or trusted, or say what it may do without asking, in its settings.";
   if (isIsolated(asker)) {
     if (action === "create") return "An isolated agent cannot make agents.";
@@ -34,7 +34,7 @@ export function refusal(asker, action, target, body) {
   return null;
 }
 
-export const allowedAlways = (asker, target, patch) => asker.trusted === true && target.id === asker.id && Object.keys(patch).length > 0 && Object.keys(patch).every((f) => TRUSTED_FIELDS.includes(f));
+const allowedAlways = (asker, target, patch) => asker.trusted === true && target.id === asker.id && Object.keys(patch).length > 0 && Object.keys(patch).every((f) => TRUSTED_FIELDS.includes(f));
 
 async function known(request) {
   const { skills, plugins, extensions } = request;
