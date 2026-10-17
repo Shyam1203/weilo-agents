@@ -7,7 +7,7 @@ import { AGENT_DIR, EXTENSIONS, HOMES, ISOLATED, ISOLATED_HOMES, ISOLATED_SESSIO
 import { AGENTS_GID, BIN, BROWSER_UID, CURATOR_UID, ISOLATED_HOME, PLUGIN_USERS_FROM, SYSTEM_PATH } from "./config.mjs";
 
 const run = promisify(execFile);
-export const isRoot = process.getuid?.() === 0;
+const isRoot = process.getuid?.() === 0;
 
 export const BROWSER = { uid: BROWSER_UID, gid: BROWSER_UID, groups: [] };
 export const CURATOR = { uid: CURATOR_UID, gid: CURATOR_UID, groups: [] };

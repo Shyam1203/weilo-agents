@@ -53,7 +53,7 @@ export async function setMuted(muted) {
 let seen = 0;
 export const markSeen = () => (seen = Date.now());
 
-export function encrypt(text, { p256dh, auth }) {
+function encrypt(text, { p256dh, auth }) {
   const browserKey = Buffer.from(p256dh, "base64url");
   const ecdh = createECDH("prime256v1");
   const ownKey = ecdh.generateKeys();

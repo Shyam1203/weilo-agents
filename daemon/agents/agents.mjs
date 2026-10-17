@@ -16,7 +16,7 @@ const folder = (id) => {
 const THINKING = ["", "off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 const ids = (list) => Array.isArray(list) && list.every((id) => typeof id === "string");
-export const ALLOW_RULE = /^(skill|action|settings|ask:[a-z0-9-]+)$/;
+const ALLOW_RULE = /^(skill|action|settings|ask:[a-z0-9-]+)$/;
 
 const clean = ({ name, model, thinking = "", skills = [], plugins = [], extensions = [], disabled = [], instructions = "", avatar, isolated = false, trusted = false, allow = [], dailyTokens = 0 }) => {
   if (typeof name !== "string" || !name.trim()) throw fail(400, "Type a name");

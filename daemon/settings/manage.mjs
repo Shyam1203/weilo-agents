@@ -13,7 +13,7 @@ const APPROVE = "Change it";
 const names = (value) => value === undefined || (Array.isArray(value) && value.every((v) => typeof v === "string"));
 const list = (items) => items.join(", ");
 
-export function planSettings(request, { enabled, models, users, overrides }) {
+function planSettings(request, { enabled, models, users, overrides }) {
   const other = Object.keys(request).find((f) => !FIELDS.includes(f));
   if (other) throw fail(400, `Only enable, disable and compaction can be changed, not ${other}.`);
   const { enable = [], disable = [], compaction = {} } = request;

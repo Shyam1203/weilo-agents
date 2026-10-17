@@ -5,7 +5,7 @@ import { MAX_PIN_HISTORY, MAX_PIN_ITEMS, MAX_PINS } from "../config.mjs";
 import { tellChats } from "../agents/runner.mjs";
 import { ICONS, listActions } from "./actions.mjs";
 
-export const PIN_KINDS = ["status", "list"];
+const PIN_KINDS = ["status", "list"];
 const TONES = ["good", "bad"];
 
 let state;
@@ -20,7 +20,7 @@ const text = (value, max, what) => {
   return value.trim();
 };
 
-export const numberIn = (value) => {
+const numberIn = (value) => {
   const m = /-?\d[\d,]*(?:\.\d+)?/.exec(value ?? "");
   return m ? Number(m[0].replaceAll(",", "")) : null;
 };
@@ -45,7 +45,7 @@ function itemsOf(items) {
   });
 }
 
-export function pinChange(input) {
+function pinChange(input) {
   const change = {
     title: text(input.title, 60, "The title"),
     source: text(input.source, 30, "source"),
@@ -98,7 +98,7 @@ export async function removePin(agentId, id) {
 export async function tickPin(agentId, id, { index, done }) {
   await load();
   const pin = find(agentId, id);
-  const item = pin.items?.[index];
+  const item = Number.isInteger(index) ? pin.items?.[index] : undefined;
   if (!item) throw fail(404, "This item is not on the list");
   item.done = done === true;
   pin.updatedAt = Date.now();

@@ -2,11 +2,16 @@
 
 Versions follow [SemVer](https://semver.org). While the version starts with 0, a minor version may change how things work.
 
-## Unreleased
+## 0.1.2
 
+- Settings > Memory has one switch beside its title that turns memory on or off, in place of the "Notes about you" row. Settings > About no longer has a line under its title.
+- An action that runs by itself while you are chatting with its agent now waits for the agent to finish, instead of cutting into what it is doing.
+- Fixes: a chat summary written while the knowledge curator was at work could fail, and the agent then kept its long chat. A chat closing at the wrong moment could stop the app.
+- Pairing no longer stops for 10 minutes after wrong codes, which anyone who could reach the app could cause on purpose. Instead, after a wrong code the next try waits a second, which still keeps a code from being guessed.
+- Memory no longer refuses a note with a long number in it (an order number, say) as if it were a card number: only numbers that pass a card's check digit count.
+- The knowledge curator and the chat summary get the same short list of the app's settings as agents, not all of them.
 - Long chats cost less and stay sharper. A chat is now summarized at half of the model's room, and never later than about 120,000 tokens, instead of when it is almost full. An agent that finished with its chat near that point is summarized right away, so your next message does not wait for it. The summary is an assistant's, not a coder's: what you want, what you told it about yourself, what is done, what is open or promised, and the names, numbers and links to keep. With a knowledge curator model it is written on that model, and the agent is told it can look up older messages. Long results of tools from earlier in a chat (pages, files, commands) are cut short when they are sent to the model again; the agent can run the tool again if it needs them. A summary point you set yourself stays.
 - The chat shows again the lines for requests that were always allowed and keys that were saved.
-- The repo no longer has tests or code comments; the docs hold the reasons behind the design.
 - While an agent works, its "Working… Stop" line sits in the chat under its steps, so it no longer covers the button that scrolls to the newest message on a phone.
 
 - Sign in to plugins: a plugin on the web that needs a sign-in (Notion, Linear and others) shows "Needs sign-in" and a Sign in button in Settings > Plugins. You sign in on the service's own page; the app keeps the sign-in, renews it, and adds it to the agents' requests, so agents never see it. Sign out there too.

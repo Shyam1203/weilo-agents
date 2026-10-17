@@ -51,7 +51,7 @@ function authOf(options) {
 const headerFor = (auth, value) =>
   auth.type === "header" ? { [auth.header]: value } : { authorization: auth.type === "basic" ? `Basic ${Buffer.from(`${auth.username}:${value}`).toString("base64")}` : `Bearer ${value}` };
 
-export function redact(text, auth, value) {
+function redact(text, auth, value) {
   const forms = [value, encodeURIComponent(value), Buffer.from(value).toString("base64"), ...(auth.type === "basic" ? [Buffer.from(`${auth.username}:${value}`).toString("base64")] : [])];
   return forms.filter((form) => form.length >= 4).sort((a, b) => b.length - a.length).reduce((out, form) => out.split(form).join("[key]"), text);
 }

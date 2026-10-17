@@ -213,8 +213,8 @@
 <text class="tm" x="146" y="324" text-anchor="middle">POST /api/pair {code}</text>
 <rect class="box b-amber" x="316" y="250" width="200" height="96" rx="10"/>
 <text class="tb" x="416" y="276" text-anchor="middle">pair()</text>
-<text class="ts" x="416" y="300" text-anchor="middle">10 wrong codes in 10</text>
-<text class="ts" x="416" y="322" text-anchor="middle">min: 429 for 10 min</text>
+<text class="ts" x="416" y="300" text-anchor="middle">a wrong code: the next</text>
+<text class="ts" x="416" y="322" text-anchor="middle">waits 1 second</text>
 <rect class="box b-red" x="556" y="250" width="188" height="96" rx="10"/>
 <text class="tb" x="650" y="276" text-anchor="middle">devices.json</text>
 <text class="ts" x="650" y="300" text-anchor="middle">name, dates,</text>
@@ -479,7 +479,7 @@
 <tr><td>A <code>page</code> block an agent drew</td><td>Run script in a sandboxed frame, load https resources, send one reply during your click.</td><td>Reach the app, its API or storage (empty origin, <code>sandbox="allow-scripts"</code>); navigate the frame.</td></tr>
 <tr><td>Another website in your browser</td><td>Link to the app.</td><td>Load, frame or call it (Origin and <code>Sec-Fetch-Site</code>; <code>SameSite=Strict</code> cookie).</td></tr>
 <tr><td>A device on your network</td><td>Nothing.</td><td>Reach the port (bound to <code>127.0.0.1</code>).</td></tr>
-<tr><td>A program on your computer</td><td>Reach the port and the public UI files.</td><td>Use the API without pairing; guess a code (10 wrong codes stop pairing for 10 minutes).</td></tr>
+<tr><td>A program on your computer</td><td>Reach the port and the public UI files.</td><td>Use the API without pairing; guess a code (one try a second: about 600 in a code's 10 minutes, out of a trillion codes).</td></tr>
 </tbody></table></div>
 </section>
 

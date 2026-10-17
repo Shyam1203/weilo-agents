@@ -45,12 +45,14 @@ export const AUDIT = join(AGENT_DIR, "audit.jsonl");
 export const USAGE = join(AGENT_DIR, "usage.json");
 
 const SECRET =
-  /\b(sk-[\w-]{16,}|gh[pousr]_\w{20,}|AKIA[0-9A-Z]{16}|xox[abprs]-[\w-]{10,}|eyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{8,})|-----BEGIN [A-Z ]*PRIVATE KEY|\b(?:\d[ -]?){13,19}\b|\b(password|passwd|api[ _-]?key|secret|token)\s*[:=]/i;
+  /\b(sk-[\w-]{16,}|gh[pousr]_\w{20,}|AKIA[0-9A-Z]{16}|xox[abprs]-[\w-]{10,}|eyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{8,})|-----BEGIN [A-Z ]*PRIVATE KEY|\b(password|passwd|api[ _-]?key|secret|token)\s*[:=]/i;
 
 const STEERING =
   /\b(ignore|disregard|forget|override)\b[^.\n]{0,40}\b(instructions?|rules|prompt|guidelines)\b|\b(system prompt|developer message|you are now|new instructions|do not tell the user|don't tell the user)\b|<\/?(system|instructions?|assistant)>|\b(curl|wget)\b[^\n]*\|\s*(ba|z)?sh\b|authorized_keys|\bbase64\s+(-d|--decode)\b[^\n]*\|/i;
 const INVISIBLE = /[\u00AD\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF\u{E0000}-\u{E007F}]/u;
-export const unsafe = (text) => (SECRET.test(text) ? "secret" : STEERING.test(text) || INVISIBLE.test(text) ? "steering" : null);
+const passesLuhn = (digits) => [...digits].reverse().reduce((sum, d, i) => sum + (i % 2 ? [0, 2, 4, 6, 8, 1, 3, 5, 7, 9][+d] : +d), 0) % 10 === 0;
+const cardIn = (text) => [...text.matchAll(/\b\d(?:[ -]?\d){12,18}\b/g)].some(([run]) => passesLuhn(run.replace(/\D/g, "")));
+export const unsafe = (text) => (SECRET.test(text) || cardIn(text) ? "secret" : STEERING.test(text) || INVISIBLE.test(text) ? "steering" : null);
 
 export const plainText = (markdown) =>
   markdown

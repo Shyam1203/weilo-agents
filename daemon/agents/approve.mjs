@@ -1,7 +1,7 @@
 import { getAgent, updateAgent } from "./agents.mjs";
 import { askUser } from "./runner.mjs";
 
-export const ALWAYS = "Always allow";
+const ALWAYS = "Always allow";
 export const ALLOWED_NOTE = " (always allowed)";
 
 export async function approve(id, rule, question, options) {

@@ -39,7 +39,7 @@ const SIGN_IN_COMPAT = {
   openai: { supportsMaxOutputTokens: false, supportsMidConvoEffort: false, supportsLongCacheRetention: false, supportsExplicitPromptCacheMode: false },
 };
 
-export const placeholderFor = (provider, key, real) => (PLACEHOLDERS[provider] ?? ((k) => k))(key, real);
+const placeholderFor = (provider, key, real) => (PLACEHOLDERS[provider] ?? ((k) => k))(key, real);
 
 export async function piModels(model, key) {
   const provider = providerOf(model);
@@ -50,9 +50,9 @@ export async function piModels(model, key) {
   return { providers: { [provider]: real && SIGN_IN_COMPAT[provider] ? { ...proxied, compat: { ...own.compat, ...SIGN_IN_COMPAT[provider] } } : proxied } };
 }
 
-export const swapKey = (text, key, real) => text.replace(new RegExp(`[^\\s,]*${key}[^\\s,]*`, "g"), () => real);
+const swapKey = (text, key, real) => text.replace(new RegExp(`[^\\s,]*${key}[^\\s,]*`, "g"), () => real);
 
-export const keyedHeaders = (headers, key, real) =>
+const keyedHeaders = (headers, key, real) =>
   Object.fromEntries(Object.entries(headers).flatMap(([name, value]) => (KEY_HEADERS.includes(name) ? [[name, swapKey(value, key, real)]] : value.includes(key) ? [] : [[name, value]])));
 
 export const forgetAuth = () => (made = 0);

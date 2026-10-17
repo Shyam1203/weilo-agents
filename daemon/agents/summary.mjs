@@ -4,7 +4,7 @@ import { fail } from "../common.mjs";
 import { BIN, MAX_SUMMARY_INPUT, SUMMARY_TIMEOUT_MS } from "../config.mjs";
 import { dropAgentKey, extraKey } from "../http/access.mjs";
 import { CURATOR_KEY, getCurator } from "../memory/curator.mjs";
-import { CURATOR as CURATOR_USER, spawnAs } from "../users.mjs";
+import { CURATOR as CURATOR_USER, passedOn, sharedTools, spawnAs } from "../users.mjs";
 import { getAgent, mayCall } from "./agents.mjs";
 import { piDirOf, piFiles, writePiDir } from "./pidir.mjs";
 
@@ -55,7 +55,7 @@ export async function summarize(id, { transcript, previous = "", focus = "" }) {
 const runPi = (model, input, dir) =>
   new Promise((resolve, reject) => {
     const args = ["-p", "--no-session", "--no-extensions", "--no-skills", "--no-mcp", "--no-context-files", "--no-tools", "--thinking", "off", "--model", model, "--system-prompt", INSTRUCTIONS];
-    const child = spawnAs(CURATOR_USER, BIN.pi, args, { cwd: dir, env: { ...process.env, PI_CODING_AGENT_DIR: dir, HOME: dir } });
+    const child = spawnAs(CURATOR_USER, BIN.pi, args, { cwd: dir, env: { ...passedOn(), ...sharedTools, PI_CODING_AGENT_DIR: dir, HOME: dir } });
     let out = "";
     let err = "";
     const timer = setTimeout(() => child.kill(), SUMMARY_TIMEOUT_MS);

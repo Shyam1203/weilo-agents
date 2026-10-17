@@ -6,7 +6,7 @@ export const MAX_UPLOAD = 5 * 1024 * 1024;
 export const MAX_PAIR_BODY = 1024;
 
 export const PAIR_CODE_MS = 10 * MINUTE;
-export const PAIR_WRONG_CODES = 10;
+export const PAIR_WRONG_GAP_MS = 1000;
 export const DEVICE_COOKIE_S = 400 * 24 * 60 * 60;
 export const DEVICE_SEEN_MS = 60 * MINUTE;
 export const ADMIN_SOCKET = "/tmp/weilo-admin/admin.sock";
@@ -95,7 +95,7 @@ export const SIGN_IN_TIMEOUT_MS = 15 * MINUTE;
 export const SIGN_IN_STEP_MS = 8000;
 export const MODELS_TIMEOUT_MS = 90_000;
 export const MODELS_FOR_MS = 10 * MINUTE;
-export const COMPACT_CAP = 120_000;
+const COMPACT_CAP = 120_000;
 export const COMPACT_POINT = (window) => Math.min(COMPACT_CAP, Math.round(window * (window >= 128_000 ? 0.5 : 0.8)));
 export const OLD_COMPACT_AT = (window) => (window >= 1e6 ? 0.4 : window >= 5e5 ? 0.8 : 0.9);
 export const IDLE_COMPACT_AT = 0.75;
