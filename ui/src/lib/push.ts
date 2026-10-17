@@ -7,7 +7,6 @@ export const registerWorker = () =>
     .then(relink)
     .catch(() => {});
 
-// Notifications turned on before devices were paired belong to no device yet: tie them to this one.
 async function relink(worker: ServiceWorkerRegistration) {
   if (!thisDevice() || unsupported() || Notification.permission !== "granted") return;
   const subscription = await worker.pushManager.getSubscription();

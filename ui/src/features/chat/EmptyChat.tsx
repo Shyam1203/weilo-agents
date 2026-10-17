@@ -11,7 +11,6 @@ interface Props {
   onPick: (text: string) => void;
 }
 
-/** A new chat: who you are talking to and a few ways to start, put in the message box to finish. */
 export function EmptyChat({ name, avatar, shortcuts, onPick }: Props) {
   const starts = [
     { label: "What can you help me with?", description: "Ask what it can do", insert: "What can you help me with?", icon: "sparkle" as const },

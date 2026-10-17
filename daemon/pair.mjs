@@ -6,7 +6,7 @@ let code = "";
 socket.setEncoding("utf8");
 socket.on("data", (d) => (code += d));
 socket.on("end", () => console.log(`http://localhost:${PORT}/?pair=${code.trim()}`));
-socket.on("error", (/** @type {NodeJS.ErrnoException} */ err) => {
-  console.error(`Weilo Agents is not running, or this is not its container (${err.code}).`);
+socket.on("error", (err) => {
+  console.error(`Weilo Agents is not running, or this is not its container (${err["code"]}).`);
   process.exitCode = 1;
 });

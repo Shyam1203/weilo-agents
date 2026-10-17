@@ -26,7 +26,6 @@ export function PluginsPage({ plugins, onChange }: Props) {
     setStatus(undefined);
     pluginStatus().then(setStatus, () => setStatus({}));
   }, [names]);
-  // Back from a plugin's sign-in page, in another tab: see whether it worked.
   useEffect(() => {
     if (!signingIn) return;
     const back = () => (setSigningIn(false), onChange());
@@ -35,7 +34,6 @@ export function PluginsPage({ plugins, onChange }: Props) {
   }, [signingIn]);
 
   const signIn = (name: string) => {
-    // Opened now, while the click counts, so the browser does not block it; it goes to the sign-in page next.
     const tab = window.open("", "_blank");
     if (tab) tab.opener = null;
     void run(name, async () => {

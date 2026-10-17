@@ -1,6 +1,3 @@
-// Tells the open apps what changed in the agent list. An agent's working state and browser come
-// with the event itself, as they change often while it works; for anything else (a reply, a change
-// to an agent) the app is told to read the list again, at most once a second.
 const watchers = new Set();
 let timer = null;
 

@@ -14,14 +14,14 @@ const USER_ONLY = ["isolated", "trusted", "allow"];
 const APPROVE = { create: "Create it", update: "Change it" };
 const DECLINE = "Don't";
 
-/** @returns {{ skills?: string[], plugins?: string[], extensions?: string[], [field: string]: any }} */
 const pick = (body) => Object.fromEntries(FIELDS.filter((f) => body[f] !== undefined).map((f) => [f, body[f]]));
 const list = (items) => (items.length ? items.join(", ") : "none");
 
 const extensionsIn = (agent) => [...Object.keys(BUNDLED).filter((id) => !agent.disabled.includes(id)), ...agent.extensions];
-/** @param {{ extensions?: string[], [field: string]: any }} request */
-const asProfile = ({ extensions, ...rest }) =>
-  extensions === undefined ? rest : { ...rest, extensions: extensions.filter((id) => !Object.hasOwn(BUNDLED, id)), disabled: Object.keys(BUNDLED).filter((id) => !extensions.includes(id)) };
+const asProfile = (request) => {
+  const { extensions, ...rest } = request;
+  return extensions === undefined ? rest : { ...rest, extensions: extensions.filter((id) => !Object.hasOwn(BUNDLED, id)), disabled: Object.keys(BUNDLED).filter((id) => !extensions.includes(id)) };
+};
 
 export function refusal(asker, action, target, body) {
   if (USER_ONLY.some((f) => body[f] !== undefined)) return "Only the user can make an agent isolated or trusted, or say what it may do without asking, in its settings.";

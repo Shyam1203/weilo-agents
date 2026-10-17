@@ -29,7 +29,6 @@ export interface Asking {
   id: string;
   title: string;
   options?: string[];
-  /** A protected field for a key: the answer goes to the app, never to the agent. */
   secret?: boolean;
 }
 
@@ -87,11 +86,9 @@ function stream(messages: PiMessage[], e: StreamEvent): PiMessage[] {
   if (last?.role !== "assistant" || typeof last.content === "string") return messages;
   const [kind, step] = e.type.split("_");
   const content = [...last.content];
-  // The app is sent only tool calls as a reply is written; the text before one comes with message_end.
   while (content.length < e.contentIndex) content.push({ type: "text", text: "" });
   const block = content[e.contentIndex];
   if (kind === "toolcall") {
-    // Only show is drawn while its arguments arrive; other tools wait for the whole call.
     if (step === "start") content[e.contentIndex] = { type: "toolCall", id: e.id, name: e.toolName, arguments: {}, json: "" };
     else if (step === "delta" && block?.name === "show") content[e.contentIndex] = { ...block, json: block.json + (e.delta ?? ""), arguments: partialJson(block.json + (e.delta ?? "")) ?? block.arguments };
     else if (step === "end" && e.toolCall) content[e.contentIndex] = e.toolCall;
@@ -156,7 +153,6 @@ export function noteOf({ busy, exit, messages }: Conversation) {
   return last.stopReason === "aborted" ? "Stopped." : undefined;
 }
 
-// What every row of the chat has.
 interface ItemBase {
   id: string;
   at: number | null;
@@ -167,7 +163,6 @@ export interface Message extends ItemBase {
   role: "human" | "agent";
   text: string;
   images: string[];
-  /** Sent by tapping this action. */
   action?: string;
 }
 
@@ -192,7 +187,6 @@ export interface Note extends ItemBase {
   kind: "note";
   role: "agent";
   text: string;
-  /** A line about a pin, with its title: it opens the pins and shows that one. */
   pin?: string;
 }
 
@@ -223,7 +217,6 @@ function detailOf(tool: string, args: unknown) {
   return first("path", "file_path", "pattern", "query", "url", "action", "name");
 }
 
-// Kept in step with the daemon's NOTHING_NEW (config.mjs): what a check that ran by itself replies when it found nothing.
 const NOTHING_NEW = "NOTHING_NEW";
 const isNothingNew = (text: string) => {
   const words = text.split(/[\s.]+/).filter(Boolean);
@@ -237,7 +230,6 @@ const joined = (items: Item[]) =>
     const last = all.at(-1);
     if (item.kind === "steps" && last?.kind === "steps") all[all.length - 1] = { ...last, steps: [...last.steps, ...item.steps] };
     else if (item.kind === "note" && item.text === NOTHING_NEW_NOTE) {
-      // A check that ran by itself and found nothing is one line: what ran, and that nothing was new.
       const at = all.findLastIndex((x) => x.kind !== "steps");
       const ran = all[at];
       if (ran?.kind === "note" && ran.text.endsWith(RAN_BY_ITSELF)) all.splice(at, all.length - at, { ...ran, text: `${ran.text} · nothing new` });
@@ -246,13 +238,10 @@ const joined = (items: Item[]) =>
     return all;
   }, []);
 
-// Older versions sent timed tasks with this mark; they show like actions that ran by themselves.
 const OLD_SCHEDULED_MARK = "⏰ Routine: ";
-// Kept in step with the daemon's ACTION_MARK, CONFIRM_NOTE and BY_ITSELF (actions/actions.mjs).
 const ACTION_MARK = "⚡ Action: ";
 const CONFIRM_NOTE = "\n\nBefore you pay, order, book or send anything, use ask to confirm the exact details with the user.";
 const BY_ITSELF = " · ran by itself";
-// An action that keeps pins fresh ends with this line, for the agent only (PIN_NOTE).
 const PIN_NOTE = /\n\nThen update its pin with the pin tool: [^\n]*$/;
 
 function actionNote(details: PiMessage["details"]) {
@@ -267,8 +256,6 @@ function pinNote(details: PiMessage["details"]) {
 
 
 
-// Items of a message that has arrived are kept, so a new event redraws only what changed: the
-// same item objects let the chat skip every other row.
 const kept = new WeakMap<PiMessage, { i: number; deps: unknown[]; items: Item[] }>();
 const same = (a: unknown[], b: unknown[]) => a.length === b.length && a.every((x, k) => x === b[k]);
 
@@ -279,7 +266,6 @@ export function itemsOf({ messages: live, earlier, open }: Conversation): Item[]
     const i = n - earlier.length;
     const arriving = open && n === messages.length - 1;
     if (arriving) return itemsFor(m, i, true, results);
-    // A summary has no content, only its summary.
     const deps = !Array.isArray(m.content) ? [] : m.content.flatMap((b) => (b.type === "toolCall" && b.id ? [results.get(b.id)] : []));
     const was = kept.get(m);
     if (was && was.i === i && same(was.deps, deps)) return was.items;
@@ -322,7 +308,6 @@ function itemsFor(m: PiMessage, i: number, arriving: boolean, results: Map<strin
       const text = pinNote(details);
       if (text) return [{ kind: "note", id: `${i}.${j}`, role: "agent", text, at, pin: details!.title }];
     }
-    // "routine" was the older tool for timed tasks: its results read like an action's.
     if (b.type === "toolCall" && b.name === "routine") {
       const details = b.id ? results.get(b.id)?.details : undefined;
       const text = actionNote(details && { op: details.action, title: details.title ?? "a timed task" });

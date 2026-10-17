@@ -15,7 +15,6 @@ interface Props {
   onError: (message: string) => void;
 }
 
-/** "Change model" in a problem notice: pick another model without opening Edit agent. */
 export function ChangeModel({ agent, models, providers, busy, onChanged, onError }: Props) {
   const [saving, setSaving] = useState<string | null>(null);
   const choices = modelChoices(models, providers);

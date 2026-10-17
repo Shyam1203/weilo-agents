@@ -8,7 +8,6 @@ import { asTyped, chatFiles, textOf } from "./sessions.mjs";
 
 const ROLE = /"role":"(user|assistant)"/;
 
-// A message an action sent (ACTION_MARK in actions/actions.mjs), or one from the scheduled tasks of older versions.
 const startedByAction = (body) => body.startsWith("⚡ Action: ") || body.startsWith("⏰ Routine:");
 
 const SCHEMA = `
@@ -162,8 +161,6 @@ export function withAny(words, agents, limit) {
   return query(`SELECT ${COLUMNS} FROM messages WHERE ${where} ${of} ORDER BY at DESC LIMIT ?`, ...params, ...(agents ?? []), limit);
 }
 
-// The messages that best match the words (SQLite's bm25), for fetch_knowledge to score: not the
-// newest that hold any of them, which leave out an older and better match.
 export function ranked(words, agents, limit) {
   const long = words.filter((w) => w.length >= 3);
   if (!long.length) return withAny(words, agents, limit);

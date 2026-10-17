@@ -25,7 +25,6 @@ interface Props {
   onSettings: () => void;
 }
 
-/** The first run: connect a model, then pick a ready-made agent and start chatting. */
 export function Setup({ providers, models, user, onChange, onModels, onCreated, onFromScratch, onSettings }: Props) {
   const connected = providers.some((p) => p.connected);
   const choices = modelChoices(models, providers);

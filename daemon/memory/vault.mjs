@@ -31,7 +31,6 @@ function parsePage(path, raw) {
   };
 }
 
-// Pages are read again only when they change: each search of the vault looks at every page.
 let read = new Map();
 export async function pagesOf() {
   const next = new Map();

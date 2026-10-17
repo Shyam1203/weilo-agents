@@ -16,12 +16,8 @@ import { DAYS, EVERY, MINUTES, dateIn, nextRun, timeIn, validZone } from "./sche
 export const KINDS = ["agent", "script"];
 export const ICONS = ["bolt", "package", "food", "cart", "truck", "calendar", "mail", "money", "search", "globe", "tag", "list"];
 export const ACTION_MARK = "⚡ Action: ";
-// A run the schedule started: its message's first line ends with this, and the agent is told the user is away.
 export const BY_ITSELF = " · ran by itself";
-// The app's chat hides these lines under an action's message; keep them in step with conversation.ts.
-// Every agent action carries CONFIRM_NOTE: the agent asks before it pays or sends, tapped or by itself.
 export const CONFIRM_NOTE = "Before you pay, order, book or send anything, use ask to confirm the exact details with the user.";
-// An agent action that keeps pins fresh ends with this and the pins' ids; the chat hides it too.
 export const PIN_NOTE = "Then update its pin with the pin tool: ";
 export const AWAY_NOTE = `This action ran by itself at its time; the user is away and reads your reply later. Do it now. If a step needs the user's confirmation, use ask: they get a notification and answer when they can. Anything else that needs them, leave for the end. End with the result in a few lines. If it was a check and you found nothing new worth telling the user, reply with only ${NOTHING_NEW}: then they are not disturbed.`;
 const MISSED = "Missed: Weilo Agents was not running at that time";
@@ -31,7 +27,6 @@ let state;
 let loading;
 const save = () => updateJson(ACTIONS, () => state);
 
-// Tasks older versions kept in their own file, with a time to run, become agent actions with a schedule.
 const fromOld = (r, zone) => ({
   id: typeof r.id === "string" ? r.id : randomUUID(),
   agentId: r.agentId,
@@ -67,7 +62,6 @@ const load = () =>
 
 export const userZone = async () => (await load(), state.timezone);
 
-/** The user's browser is in another time zone now: schedules on the old one move with it. */
 export async function noteZone(zone) {
   await load();
   if (!validZone(zone) || state.timezone === zone) return;
@@ -103,7 +97,6 @@ function fieldsOf(list) {
   return fields;
 }
 
-/** When an action runs by itself, checked, with its next time; null for never. */
 export function scheduleOf(input, zone, now = Date.now()) {
   if (input === null) return null;
   if (typeof input !== "object") throw fail(400, "The schedule is not valid");
@@ -131,11 +124,9 @@ export function scheduleOf(input, zone, now = Date.now()) {
 }
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-/** A schedule in a few plain words: "every day at 08:00". */
 export const when = (s) =>
   s.every === "minutes" ? `every ${s.minutes} minutes` : s.every === "hour" ? `every hour at :${s.times[0].slice(3)}` : s.every === "once" ? `once, on ${s.date} at ${s.times[0]}` : `${s.every === "weekday" ? "on weekdays" : s.every === "week" ? `every ${DAY_NAMES[s.day]}` : "every day"} at ${s.times.join(" and ")}`;
 
-/** The action as it would be saved: input over what is there, checked. */
 export function planAction(input, current = {}, isolated = false, zone = "UTC") {
   const next = {
     title: text(input.title, MAX_ACTION_TITLE, "The title") ?? current.title,
@@ -167,7 +158,6 @@ export function planAction(input, current = {}, isolated = false, zone = "UTC") 
   return next;
 }
 
-/** The values for an action's fields: what was given, else each field's default. */
 export function valuesOf(action, input = {}) {
   const values = {};
   for (const f of action.fields) {
@@ -182,13 +172,11 @@ export function valuesOf(action, input = {}) {
 
 export const filled = (request, values) => request.replace(/\{([a-z][a-z0-9_]*)\}/g, (all, name) => values[name] ?? all);
 
-/** What a script returned, as text for the user: a string as it is, an object as one "name: value" line each ("stop" and "pin" left out). */
 export function shown(result) {
   const out = typeof result === "string" ? result : result && typeof result === "object" ? Object.entries(result).filter(([k]) => k !== "stop" && k !== "pin").map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`).join("\n") : result === undefined ? "Done." : JSON.stringify(result);
   return out.length > ACTION_SHOWN ? `${out.slice(0, ACTION_SHOWN)}…` : out;
 }
 
-// Runs that waited for the user, from an older version, are left out.
 const view = ({ id, title, about, kind, request, fields, icon, schedule, runs }) => ({ id, title, about, kind, request, fields, icon, schedule: schedule ?? null, runs: (runs ?? []).filter((r) => !r.waiting) });
 
 const find = (agentId, id) => {
@@ -218,7 +206,6 @@ export async function forgetActions(agentId) {
   await save();
 }
 
-/** The user makes an action themselves: a request to the agent, theirs, so no approval. */
 export async function addAction(agentId, { title, request }) {
   await load();
   if (state.items.filter((a) => a.agentId === agentId).length >= MAX_ACTIONS) throw fail(400, `An agent can have ${MAX_ACTIONS} actions`);
@@ -229,7 +216,6 @@ export async function addAction(agentId, { title, request }) {
   return view(action);
 }
 
-/** The user renames an action, changes what it asks for, or when it runs by itself: theirs to decide, so no approval. */
 export async function changeAction(agentId, id, { title, request, schedule }) {
   await load();
   const action = find(agentId, id);
@@ -244,8 +230,6 @@ export async function changeAction(agentId, id, { title, request, schedule }) {
   return view(action);
 }
 
-// Runs a script as the agent's own user, with a key that reaches only its browser. Its last line on
-// stdout is the answer (run.mjs writes it); anything longer than MAX_ACTION_OUTPUT is cut.
 export async function runScript(agent, script, input) {
   if (isIsolated(agent)) throw fail(400, "An isolated agent cannot run scripts here");
   const key = scriptKey(agent.id);
@@ -273,7 +257,6 @@ export async function runScript(agent, script, input) {
       child.stdin.end(JSON.stringify({ script, input }));
     });
     const ok = answer.ok === true;
-    // A script returns null when it found nothing new: no notification when it ran by itself.
     const nothing = ok && answer.result === null;
     return { ok, text: nothing ? "Nothing new." : ok ? shown(answer.result) : `Failed: ${String(answer.error ?? "no answer").slice(0, 500)}`, ms: Date.now() - started, stop: ok && answer.result?.stop === true, pin: ok ? answer.result?.pin : undefined, nothing };
   } finally {
@@ -288,9 +271,7 @@ async function runSaved(agentId, action, values, by) {
   running.add(action.id);
   try {
     const result = await runScript(await getAgent(agentId), action.script, values);
-    // A script may say it is done ({ stop: true }), like a delivery that arrived: then it stops running by itself.
     const stopped = result.stop && action.schedule ? ((action.schedule = null), "\nStopped running by itself.") : "";
-    // A script that keeps pins fresh returns { pin: {…} }; by itself, only a change is worth a notification.
     const pinned = (await pinsOf(action.id)).length > 0;
     const moved = pinned && result.pin ? await updateFromAction(agentId, action.id, result.pin) : [];
     const said = result.text || (result.pin ? moved.map(pinLine).join("\n") || "No change." : "Done.");
@@ -304,7 +285,6 @@ async function runSaved(agentId, action, values, by) {
   }
 }
 
-/** An action runs: an agent action goes to the agent as a message, a script runs here. by: "you" or "schedule". */
 export async function runAction(agentId, id, input, by = "you") {
   await load();
   const action = find(agentId, id);
@@ -321,7 +301,6 @@ export async function runAction(agentId, id, input, by = "you") {
   return runSaved(agentId, action, values, by);
 }
 
-// A due action runs as if tapped, with its fields' defaults. An agent action asks with its own ask (which notifies).
 async function runDue(action) {
   const agent = await getAgent(action.agentId);
   const result = await runAction(action.agentId, action.id, {}, "schedule");
@@ -340,7 +319,6 @@ async function tick() {
     const runs = [];
     for (const action of due) {
       const late = now - action.schedule.nextRunAt > LATE_MS;
-      // The next time is saved before the run starts: a crash skips a run, never repeats one.
       if (action.schedule.every === "once") action.schedule = null;
       else {
         try {
@@ -376,7 +354,6 @@ export function startActions() {
 const describe = (a) =>
   `${a.id}: "${a.title}" (${a.kind}${a.schedule ? `, runs by itself ${when(a.schedule)}` : ""})${a.about ? ` ${a.about}` : ""}${a.fields.length ? `. Fields: ${a.fields.map((f) => `${f.name}${f.options ? ` [${f.options.join(" | ")}]` : ""}${f.default ? ` = ${f.default}` : ""}`).join(", ")}` : ""}${a.kind === "agent" ? `. Request: ${a.request}` : `. Script:\n${a.script}`}${a.runs?.[0] ? `\nLast run: ${a.runs[0].ok ? "ok" : "failed"}, ${a.runs[0].text}` : ""}`;
 
-// What the user sees to approve, in plain words; the request or script is there for anyone who wants to look.
 function question(agentName, plan, changing) {
   const lines = [changing ? `${agentName} would like to change "${plan.title}".` : `${agentName} would like to add a button: "${plan.title}".`];
   if (plan.about) lines.push(plan.about);
@@ -386,7 +363,6 @@ function question(agentName, plan, changing) {
   return lines.join("\n\n");
 }
 
-/** The agent's action tool: list, try, create, update, delete and run. */
 export async function actionTool(agentId, { op, id, input, ...fields }) {
   await load();
   const agent = await getAgent(agentId);
@@ -413,7 +389,6 @@ export async function actionTool(agentId, { op, id, input, ...fields }) {
   }
   if (op !== "create" && op !== "update") throw fail(400, "Unknown op");
   const current = op === "update" ? find(agentId, id) : undefined;
-  // Stopping an action from running by itself needs no approval: it only does less.
   if (current && fields.schedule === null && Object.keys(fields).every((k) => k === "schedule")) {
     current.schedule = null;
     await save();

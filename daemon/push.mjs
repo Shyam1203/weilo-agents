@@ -21,7 +21,6 @@ async function vapid() {
   ).vapid;
 }
 
-// A browser's notifications belong to a paired device; one from before pairing waits until that browser opens the app and links it.
 const linked = (devices = []) => devices.filter((d) => d.paired);
 
 export async function pushStatus() {
@@ -30,7 +29,6 @@ export async function pushStatus() {
   return { publicKey, devices: linked(devices).map((d) => d.id), muted };
 }
 
-// Unpairing a device stops its notifications.
 export async function addDevice({ subscription }, paired) {
   const { endpoint, keys } = subscription ?? {};
   if (typeof endpoint !== "string" || !PUSH_SERVICE.test(endpoint) || typeof keys?.p256dh !== "string" || typeof keys?.auth !== "string") throw fail(400, "This browser's notification address is not valid");
@@ -42,7 +40,6 @@ export async function addDevice({ subscription }, paired) {
   return { id: devices.find((d) => d.endpoint === endpoint).id };
 }
 
-/** The paired devices that get notifications. */
 export const notifiedDevices = async () => new Set(linked((await readJson(PUSH)).devices).map((d) => d.paired));
 
 export const removeDevice = (id) => updateJson(PUSH, (data) => ({ ...data, devices: (data.devices ?? []).filter((d) => d.id !== id) }));

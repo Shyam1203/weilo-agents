@@ -16,8 +16,6 @@ const folder = (id) => {
 const THINKING = ["", "off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 const ids = (list) => Array.isArray(list) && list.every((id) => typeof id === "string");
-// What the user lets an agent do without asking each time (approve.mjs): save skills, add buttons,
-// change model settings, or send messages to one other agent ("ask:<its id>").
 export const ALLOW_RULE = /^(skill|action|settings|ask:[a-z0-9-]+)$/;
 
 const clean = ({ name, model, thinking = "", skills = [], plugins = [], extensions = [], disabled = [], instructions = "", avatar, isolated = false, trusted = false, allow = [], dailyTokens = 0 }) => {
@@ -78,7 +76,6 @@ async function move(before, after) {
 
 const withoutBrowser = (agent, before) => (agent.isolated && !before?.isolated ? { ...agent, disabled: [...new Set([...agent.disabled, "browser"])] } : agent);
 
-// A profile is read for nearly every request: keep each one, and read it again only when its file changes.
 const read = new Map();
 async function readProfile(id) {
   const path = profilePath(id);

@@ -145,7 +145,7 @@
 
 <section class="card" id="release-check">
 <h2>Before you release: the manual check</h2>
-<p>CI type-checks and tests the daemon, builds the UI and the image, and runs a smoke test (<code>.github/scripts/smoke.sh</code>: <code>/api/health</code> answers, the sandbox makes namespaces, the UI is sent compressed); the release workflow runs the same smoke test on the image it is about to push, and checks the arm64 image has <code>node:sqlite</code>, the daemon and pi. What only a real install shows is checked by hand before tagging a release: a maintainer builds the image and exercises the boundaries. Run it on Linux, and on Docker Desktop for Windows and for macOS when the release touches users, modes, folders or the start scripts.</p>
+<p>CI type-checks the daemon, builds the UI and the image, and runs a smoke test (<code>.github/scripts/smoke.sh</code>: <code>/api/health</code> answers, the sandbox makes namespaces, the UI is sent compressed); the release workflow runs the same smoke test on the image it is about to push, and checks the arm64 image has <code>node:sqlite</code>, the daemon and pi. What only a real install shows is checked by hand before tagging a release: a maintainer builds the image and exercises the boundaries. Run it on Linux, and on Docker Desktop for Windows and for macOS when the release touches users, modes, folders or the start scripts.</p>
 <h3>How to act as an agent</h3>
 <p>Probes run a command as an agent's user. Take the uid from the agent's profile:</p>
 <pre><code>docker exec weilo-core cat /home/node/.pi/agent/profiles/&lt;id&gt;/agent.json   # "uid": 2001

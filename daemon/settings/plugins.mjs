@@ -41,7 +41,6 @@ export async function removePlugin(name) {
   });
 }
 
-// A plugin on the web that turns the app away until someone signs in shows as "sign-in".
 async function report(name, saved) {
   const { oauth: _oauth, ...plugin } = saved;
   const token = saved.url ? await accessToken(name, saved).catch(() => null) : null;

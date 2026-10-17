@@ -1,7 +1,7 @@
 import { splitOn } from "../common.mjs";
 import { PI_KILL_MS } from "../config.mjs";
 
-export function piRpc(child, { onEvent, onExit } = /** @type {{ onEvent?: (event: any) => void, onExit?: (exit: { code: number | null, signal: string | null, message: string }) => void }} */ ({})) {
+export function piRpc(child, { onEvent = undefined, onExit = undefined } = {}) {
   const pending = new Map();
   let nextId = 0;
   let stderr = "";

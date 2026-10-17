@@ -1,8 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
-import { doingText } from "../../api/agents";
 import type { Outgoing } from "../../api/chat";
 import { messageOf } from "../../api/http";
-import { Avatar, type AvatarSpec } from "../../components/ui/Avatar";
 import { Icon, type IconName } from "../../components/ui/Icon";
 import { Menu, MenuItem } from "../../components/ui/Menu";
 import { matches } from "../../components/ui/Search";
@@ -17,7 +15,6 @@ import { continueList } from "./lists";
 
 const MAX_HEIGHT = 200;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
-// Dictated words go after what is typed, with a space between.
 const joined = (typed: string, heard: string) => (typed && !/\s$/.test(typed) ? `${typed} ${heard}` : typed + heard);
 
 export interface Draft {
@@ -30,8 +27,6 @@ interface Props {
   onEdit: () => void;
   shortcuts: Shortcut[];
   to: string;
-  avatar: AvatarSpec;
-  doing?: string | null;
   busy: boolean;
   waiting: boolean;
   onAnswer?: (value: string) => Promise<void>;
@@ -39,13 +34,11 @@ interface Props {
   onSend: (message: Outgoing) => Promise<void>;
   onStop: () => void;
   meter?: ReactNode;
-  /** Put this in the box, replacing what is there (a new object each time). */
   fill?: Draft | null;
-  /** What ↑ brings back in an empty box: your last message. */
   last?: Draft;
 }
 
-export function Composer({ agentId, onEdit, shortcuts, to, avatar, doing, busy, waiting, onAnswer, disabled, onSend, onStop, meter, fill, last }: Props) {
+export function Composer({ agentId, onEdit, shortcuts, to, busy, waiting, onAnswer, disabled, onSend, onStop, meter, fill, last }: Props) {
   const [text, setText] = useState(() => read(draftKey(agentId)) ?? "");
   const [focused, setFocused] = useState(false);
   const [images, setImages] = useState<string[]>([]);
@@ -143,7 +136,6 @@ export function Composer({ agentId, onEdit, shortcuts, to, avatar, doing, busy, 
       setImages([]);
       setFiles([]);
     } catch (e) {
-      // The chat shows a failed send with what can fix it; the box only keeps the message.
       if (!(e as { shown?: boolean }).shown) setError(messageOf(e));
     } finally {
       setSending(false);
@@ -224,21 +216,6 @@ export function Composer({ agentId, onEdit, shortcuts, to, avatar, doing, busy, 
       className="relative flex flex-col"
     >
       {open && <CommandMenu shortcuts={offered} active={highlighted} onPick={pick} hint={hint} onEdit={shortcuts.length ? undefined : onEdit} />}
-      {busy && (
-        <p role="status" className="absolute bottom-full left-3 mb-1.5 flex animate-rise items-center gap-1.5 rounded-full bg-raised py-0.5 pr-2.5 pl-0.5 text-xs text-ink-2 ring-1 ring-line">
-          <Avatar spec={avatar} size={26} working doing={doing} />
-          <span key={waiting ? "waiting" : doingText(doing)} className="working-dots animate-text-swap">
-            {waiting ? "Waiting for your answer" : doingText(doing)}<span>.</span>
-            <span>.</span>
-            <span>.</span>
-          </span>
-          {!waiting && (
-            <button type="button" onClick={onStop} title="Stop (Esc)" className="ml-1 rounded-full px-1.5 font-medium text-ink hover:bg-select">
-              Stop
-            </button>
-          )}
-        </p>
-      )}
       <div className={`flex flex-col rounded-2xl border bg-page transition-colors focus-within:border-ink-3 ${dragging ? "border-dashed border-ink-2" : waiting ? "border-ink-2 ring-2 ring-ink-3/30" : "border-line-strong"}`}>
         {(files.length > 0 || images.length > 0) && (
           <ul className="flex flex-wrap gap-2 px-3 pt-3" aria-label="Attachments">

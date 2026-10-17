@@ -20,7 +20,7 @@ export function spawnSandboxed(spec) {
     }),
   );
   socket.on("end", () => socket.end());
-  socket.on("error", (/** @type {NodeJS.ErrnoException} */ err) => child.emit("error", ["ENOENT", "ECONNREFUSED"].includes(err.code) ? new Error(DOWN) : err));
+  socket.on("error", (err) => child.emit("error", ["ENOENT", "ECONNREFUSED"].includes(err["code"]) ? new Error(DOWN) : err));
   socket.on("close", () => {
     child.stdout.end();
     child.stderr.end();

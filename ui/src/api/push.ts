@@ -2,7 +2,6 @@ import { request } from "./http";
 
 export interface PushStatus {
   publicKey: string;
-  /** The devices that get notifications. */
   devices: string[];
   muted: string[];
 }

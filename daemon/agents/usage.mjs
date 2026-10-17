@@ -12,8 +12,6 @@ export const tokensOf = (usage) => (usage?.input ?? 0) + (usage?.output ?? 0) + 
 const costOf = (usage) => usage?.cost?.total ?? 0;
 const daysOf = ({ days, day, agents }) => days ?? (day ? { [day]: Object.fromEntries(Object.entries(agents ?? {}).map(([id, tokens]) => [id, { tokens, cost: 0 }])) } : {});
 
-// Usage is read on every message and every look at the agent list, and changes with every reply: it
-// is kept in memory, read again only when the file changes, and written once for a burst of changes.
 let state = null;
 const keyOf = async () => {
   const info = await stat(USAGE).catch(() => null);
@@ -69,8 +67,6 @@ export async function addUsage(id, usage) {
 const recent = (days) => Object.fromEntries(Object.entries(days).sort(([a], [b]) => a.localeCompare(b)).slice(-USAGE_DAYS));
 const kept = ({ backfilled }) => (backfilled ? { backfilled } : {});
 
-// Usage was only counted from the day the Usage page came; the chats themselves keep each reply's
-// usage. Count it from them once, keeping the larger of the two for each day and agent.
 export async function backfillUsage() {
   if ((await load()).backfilled) return;
   const zone = await userZone();

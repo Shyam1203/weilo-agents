@@ -1,5 +1,6 @@
 import { execFileSync, spawn } from "node:child_process";
 import { closeSync, mkdirSync, readFileSync } from "node:fs";
+import { constants } from "node:os";
 import { dirname, join } from "node:path";
 import { ROOT, RUN } from "../common.mjs";
 import { BIN, SANDBOX_DIR } from "../config.mjs";
@@ -38,4 +39,4 @@ process.umask(umask);
 const child = spawn(BIN.setpriv, [...asUser(user), ...argv], { cwd, env, stdio: "inherit" });
 child.on("error", (err) => (console.error(err.message), process.exit(127)));
 child.on("exit", (code) => process.exit(code ?? 1));
-for (const signal of /** @type {NodeJS.Signals[]} */ (["SIGTERM", "SIGINT", "SIGHUP"])) process.on(signal, () => child.kill(signal));
+for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(signal, () => child.kill(constants.signals[signal]));

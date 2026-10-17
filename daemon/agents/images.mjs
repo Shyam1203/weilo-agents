@@ -5,8 +5,6 @@ import { join } from "node:path";
 import { pipeline } from "node:stream";
 import { fail, RUN } from "../common.mjs";
 
-// Images in a chat are kept in its file as base64. The app gets a link to a copy of each instead,
-// so a chat with photos is not sent again in full each time it is opened.
 const DIR = join(RUN, "images");
 const TYPES = { "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp" };
 const NAME = /^[0-9a-f]{32}\.(png|jpg|gif|webp)$/;
@@ -26,7 +24,6 @@ function keep(data, mimeType) {
 
 const hasImages = (message) => Array.isArray(message?.content) && message.content.some((b) => b.type === "image" && typeof b.data === "string");
 
-// Images get links; with link false (tool results the app does not draw) they are left out.
 export function linkImages(message, link = true) {
   if (!hasImages(message)) return message;
   const content = message.content.map((block) => {

@@ -3,20 +3,14 @@ import { KEY_SHOWN, KEY_TIMEOUT_MS, MAX_KEY_BODY, MAX_KEY_RESPONSE, MAX_KEY_VALU
 import { getAgent } from "./agents.mjs";
 import { askUser } from "./runner.mjs";
 
-// Keys an agent asked the user for, by agent and name: { origin, auth, value, saved }. Only the app
-// reads keys.json (root's, 0600). An agent never sees a value: it names the key, and the app adds it
-// to a request to the one site the user saved it for, then takes it out of the answer.
-
 const NAME = /^[a-z0-9][a-z0-9_-]{0,39}$/;
 const HEADER = /^[A-Za-z0-9-]{1,64}$/;
 const AUTHS = ["bearer", "header", "basic"];
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
-// Headers a request may not set: the key's own, and what the app sets itself.
 const OWN_HEADERS = new Set(["authorization", "cookie", "host", "content-length", "proxy-authorization"]);
 
 const keysOf = async (agentId) => (await readJson(KEYS))[agentId] ?? {};
 
-/** The keys of an agent, without their values. */
 export const listKeys = async (agentId) => Object.entries(await keysOf(agentId)).map(([name, k]) => ({ name, origin: k.origin, saved: k.saved }));
 
 export async function removeKey(agentId, name) {
@@ -46,8 +40,8 @@ function originOf(site) {
   return url.origin;
 }
 
-/** @param {Record<string, any>} args */
-function authOf({ auth = "bearer", header, username }) {
+function authOf(options) {
+  const { auth = "bearer", header, username } = options;
   if (!AUTHS.includes(auth)) throw fail(400, `Give auth as ${AUTHS.join(", ")}`);
   if (auth === "header" && !HEADER.test(String(header ?? ""))) throw fail(400, 'With auth "header", give header: the header\'s name, like X-Api-Key');
   if (auth === "basic" && (typeof username !== "string" || !username.trim())) throw fail(400, 'With auth "basic", give username (the key is the password)');
@@ -57,15 +51,13 @@ function authOf({ auth = "bearer", header, username }) {
 const headerFor = (auth, value) =>
   auth.type === "header" ? { [auth.header]: value } : { authorization: auth.type === "basic" ? `Basic ${Buffer.from(`${auth.username}:${value}`).toString("base64")}` : `Bearer ${value}` };
 
-/** The answer, with the key taken out wherever it shows, as it is or encoded. */
 export function redact(text, auth, value) {
   const forms = [value, encodeURIComponent(value), Buffer.from(value).toString("base64"), ...(auth.type === "basic" ? [Buffer.from(`${auth.username}:${value}`).toString("base64")] : [])];
-  // Longest first: one form can hold another (the key's own base64 sits inside "user:key"'s).
   return forms.filter((form) => form.length >= 4).sort((a, b) => b.length - a.length).reduce((out, form) => out.split(form).join("[key]"), text);
 }
 
-/** @param {string} agentId @param {Record<string, any>} args */
-async function ask(agentId, { name, site, label, ...rest }) {
+async function ask(agentId, args) {
+  const { name, site, label, ...rest } = args;
   if (!NAME.test(String(name ?? ""))) throw fail(400, "Give name: short, lowercase, like weather_api");
   const origin = originOf(site);
   const auth = authOf(rest);
@@ -83,8 +75,8 @@ async function ask(agentId, { name, site, label, ...rest }) {
   return { text: `Saved the key "${name}" for ${origin}. Use it with action use: the app adds it to your request. You never see it.`, details: { note: `Key saved: ${name}` } };
 }
 
-/** @param {string} agentId @param {Record<string, any>} args */
-async function use(agentId, { name, url, method = "GET", body, headers = {} }) {
+async function use(agentId, args) {
+  const { name, url, method = "GET", body, headers = {} } = args;
   const key = (await keysOf(agentId))[name];
   if (!key) throw fail(404, `There is no key "${name}". List the keys, or ask the user for it.`);
   let target;
@@ -121,7 +113,6 @@ async function use(agentId, { name, url, method = "GET", body, headers = {} }) {
   return { text: `HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ""}\n\n${cut}` };
 }
 
-/** The agent's key tool: ask the user for a key, use one, list them, or forget one. */
 export async function keyTool(agentId, { action, ...args }) {
   if (action === "list") {
     const keys = await keysOf(agentId);

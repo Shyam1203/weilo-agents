@@ -17,7 +17,6 @@ const of = (agent) => agents.get(agent) ?? agents.set(agent, { window: null, tak
 
 let connecting;
 let current = null;
-// The browser went away: connect afresh next time, and no agent has a window any more.
 const forget = () => {
   current = null;
   connecting = undefined;
@@ -270,9 +269,6 @@ export async function closeBrowser(agent) {
   await Promise.all((state?.tabs ?? []).map((tab) => tab.close().catch(() => {})));
 }
 
-// Tabs an agent left open keep running (the browser does not slow down background tabs, so that
-// agents can work in them). When an agent has not used its window for a while and is not working,
-// its window is closed; when nothing uses the browser at all, it sleeps until the next use.
 let lastUse = Date.now();
 async function sweep() {
   if (!isAwake()) return;
@@ -305,10 +301,6 @@ setInterval(() => {
     .finally(() => (sweeping = false));
 }, BROWSER_SWEEP_MS).unref();
 
-// Teaching: the user does a task once in the agent's window while the app writes down each step
-// (pages opened, what was clicked, typed and chosen; never a password), then the steps go to the
-// agent, which saves them as a skill. Each tab of the window gets a recorder script and a binding
-// it reports to.
 const TEACH_BINDING = "__weiloTeach";
 const RECORDER = `(() => {
   if (window.__weiloTeaching) return;
@@ -342,7 +334,6 @@ const quoted = (text) => `"${text}"`;
 const fieldOf = (field) => (field ? ` in ${quoted(field)}` : "");
 const textOf = (value) => (typeof value === "string" ? value.slice(0, 200) : "");
 
-/** One recorded step in plain words, or null to leave it out. */
 export function teachStep(step) {
   const [name, field] = [textOf(step.name), textOf(step.field)];
   const value = step.value === null ? null : textOf(step.value);
@@ -365,10 +356,6 @@ export function teachStep(step) {
   }
 }
 
-/**
- * Add a step to the recording, without repeating one: Enter after typing, or a change after Enter,
- * is the same step, and pages opened one after another (a redirect) are only the last one.
- */
 export function addStep(steps, step) {
   const line = teachStep(step);
   const last = steps.at(-1);
@@ -377,8 +364,6 @@ export function addStep(steps, step) {
   else if (steps.length < MAX_TEACH_STEPS) steps.push(line);
 }
 
-// A tab keeps its recorder and binding for its life (Playwright cannot take them back); once the
-// recording ends, the binding finds no recording for the tab and drops what it hears.
 const taught = new WeakSet();
 const recordingOf = (page) => [...agents.values()].map((r) => r.teach).find((t) => t?.pages.some((p) => p.page === page));
 
@@ -415,7 +400,6 @@ async function stopTeaching(record) {
   return teach.steps;
 }
 
-/** How many steps are recorded so far; null when nothing is being recorded. */
 export const teachingSteps = (agent) => agents.get(agent)?.teach?.steps.length ?? null;
 
 export async function startTeaching(agent) {
@@ -437,7 +421,6 @@ export async function startTeaching(agent) {
   }
 }
 
-/** The message that hands what the user showed to the agent. */
 export const teachMessage = (goal, steps) =>
   `I showed you in the browser how to: ${goal}\n\nWhat I did:\n${steps.map((step, i) => `${i + 1}. ${step}`).join("\n")}\n\nSave this as a skill with the skill tool, so you can do it yourself next time. Write the steps so they still work when the page changes a little, say which values change each time (like amounts or dates) and ask me for those then, and leave out what was only for this once. I did not record passwords: never ask me for one in the chat.`;
 

@@ -1,5 +1,3 @@
-// Writes the OpenUI component prompt that the daemon appends to the show tool's description.
-// The prompt comes from the component library in src/features/chat/openui/library.tsx.
 import { writeFile } from "node:fs/promises";
 import { runnerImport } from "vite";
 

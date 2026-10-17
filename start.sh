@@ -11,7 +11,6 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
-# The data folder, and the parts of it the sandbox mounts (so Docker does not make them as root).
 data="$HOME/.weilo-agents"
 mkdir -p "$data/isolated" "$data/isolated-sessions" "$data/isolated-homes" "$data/agent/skills" "$data/agent/extensions"
 

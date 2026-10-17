@@ -7,16 +7,13 @@ import { shortWhen } from "../../lib/format";
 
 interface Props {
   pin: Pin;
-  /** Stands out, scrolled into view: the chat just pointed at it. */
   lit?: boolean;
-  /** The action that keeps it fresh, if any. */
   action?: Action;
   onTick: (index: number, done: boolean) => void;
   onRemove: () => void;
   onOpenAction: (action: Action) => void;
 }
 
-// The numbers in a value over time, as a small line.
 function Trend({ points, tone }: { points: number[]; tone: Pin["tone"] }) {
   const low = Math.min(...points);
   const span = Math.max(...points) - low || 1;
@@ -28,7 +25,6 @@ function Trend({ points, tone }: { points: number[]; tone: Pin["tone"] }) {
   );
 }
 
-/** A pin on the Pins tab: a value that changes (with a small chart or steps), or a list to tick. */
 export function PinCard({ pin, lit, action, onTick, onRemove, onOpenAction }: Props) {
   const card = useRef<HTMLElement>(null);
   useEffect(() => {

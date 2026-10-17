@@ -5,7 +5,6 @@ export interface Outgoing {
   text: string;
   images: string[];
   files: File[];
-  /** While the agent works: "now" tells it before its next step, "later" waits until it finishes. */
   when?: "now" | "later";
 }
 
@@ -22,7 +21,6 @@ export interface Context {
   point: number;
 }
 
-// Each file goes up as it is, then the message names where it was saved.
 async function upload(agentId: string, file: File) {
   const url = `/api/agents/${agentId}/uploads?name=${encodeURIComponent(file.name)}`;
   const data = await fetchJson<{ path: string }>(url, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file }, `${file.name} was not sent`);
@@ -31,7 +29,6 @@ async function upload(agentId: string, file: File) {
 
 export async function send(agentId: string, { text, images, files, when }: Outgoing) {
   const paths = await Promise.all(files.map((file) => upload(agentId, file)));
-  // A message sent again or edited can hold a chat image, which the app has as a link.
   const pictures = await Promise.all(images.map(imageDataUrl));
   return request("POST", `/api/agents/${agentId}/message`, { text, images: pictures, files: paths, when });
 }

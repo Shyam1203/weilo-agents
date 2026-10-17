@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EXTENSIONS, fail } from "../common.mjs";
 import { agentKey, dropAgentKey } from "../http/access.mjs";
-import { ASK_CLOSE_MS, ASK_REMIND_MS, BIN, CORE_TOOLS, GLANCE_MS, IDLE_MS, MAX_APPROVAL, NOTHING_NEW, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
+import { ASK_CLOSE_MS, ASK_REMIND_MS, BIN, CORE_TOOLS, GLANCE_MS, IDLE_COMPACT_AT, IDLE_COMPACT_DELAY_MS, IDLE_MS, MAX_APPROVAL, NOTHING_NEW, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
 import { audit } from "../audit.mjs";
 import { addUsage, usageToday } from "./usage.mjs";
 import { getCurator } from "../memory/curator.mjs";
@@ -27,16 +27,9 @@ import { toImages, uploadedFiles } from "./uploads.mjs";
 import { clearScratch, makeScratch, rulesOf, scratchOf } from "./workspace.mjs";
 
 const runs = new Map();
-// Who follows each agent's chat. They stay across runs, so an agent that went idle and stopped
-// carries on with the same listeners when it starts again.
 const watchers = new Map();
 const listenersOf = (id) => watchers.get(id) ?? new Set();
 
-// Only what the app draws goes to it. pi's other events repeat what the app already has or
-// never shows: agent_end holds the whole run, turn_end its tool results (and most tool results are
-// not drawn: a file that was read, a command's output), and the text and thinking
-// of a reply arrive in full with message_end. Of a reply as it is written, only a show card is
-// drawn, so only tool calls go out, and of their deltas only a show card's.
 const RELAYED = new Set(["queue_update", "extension_ui_request", "agent_start", "agent_settled", "message_start", "message_update", "message_end", "compaction_start", "compaction_end", "tool_execution_start", "tool_execution_end"]);
 const slimEvent = (run, event) => {
   if (!RELAYED.has(event.type)) return null;
@@ -55,10 +48,8 @@ const slimEvent = (run, event) => {
 };
 
 const emit = (run, event) => listenersOf(run.id).forEach((send) => send(event));
-/** Tell the app's open chats of an agent about something outside its pi (an action's answer, say). */
 export const tellChats = (id, event) => listenersOf(id).forEach((send) => send(event));
 
-// A question nobody answers: a reminder after an hour, and after a day it closes, as if skipped.
 const waitFor = (run) => {
   const { id, title } = run.asking;
   run.waiting = [
@@ -80,13 +71,14 @@ const endAsk = (run) => {
 const close = (run) => {
   if (runs.get(run.id) === run) runs.delete(run.id);
   clearTimeout(run.timer);
+  clearTimeout(run.settling);
   run.pi?.close();
   if (run.key) dropAgentKey(run.key);
 };
 
 const touch = (run) => {
   clearTimeout(run.timer);
-  if (run.busy || runs.get(run.id) !== run) return;
+  if (run.busy || run.compacting || runs.get(run.id) !== run) return;
   const watched = listenersOf(run.id).size > 0;
   run.timer = setTimeout(() => ((run.asleep = true), close(run), void clearScratch(run.id)), run.used || watched ? IDLE_MS : GLANCE_MS).unref();
 };
@@ -140,7 +132,6 @@ function tell(run) {
   if (!reply || reply.stopReason === "aborted") return;
   if (reply.stopReason === "error") return void notifyAbout(run.id, "error", reply.errorMessage);
   const text = replyText(reply);
-  // A check that ran by itself and found nothing new says so with NOTHING_NEW alone: no notification.
   if (isNothingNew(text)) return;
   const shown = Array.isArray(reply.content) && reply.content.some((b) => b.type === "toolCall" && b.name === "show");
   void notifyAbout(run.id, "reply", text || (shown ? "Showed you something." : ""));
@@ -185,10 +176,10 @@ async function start(run) {
   run.done = new Promise((resolve) => {
     run.pi = piRpc(child, {
       onEvent(event) {
-        if (event.type === "agent_start") (run.busy = true), (run.used = true), (run.reply = null);
+        if (event.type === "agent_start") (run.busy = true), (run.used = true), (run.reply = null), clearTimeout(run.settling);
         if (event.type === "queue_update") for (const text of run.held.keys()) if (!event.steering?.includes(text) && !event.followUp?.includes(text)) run.held.delete(text);
         if (event.type === "message_end" && event.message?.role === "assistant") (run.reply = event.message), void charge(run, event.message.usage).catch((err) => console.error("Usage:", err.message));
-        if (event.type === "agent_settled") (run.busy = false), tell(run);
+        if (event.type === "agent_settled") (run.busy = false), tell(run), (run.settling = setTimeout(() => void compactIdle(run), IDLE_COMPACT_DELAY_MS).unref());
         if (event.type === "tool_execution_start") run.doing = event.toolName;
         if (event.type === "tool_execution_end" || !run.busy) run.doing = "";
         if (event.type === "extension_ui_request") {
@@ -207,7 +198,6 @@ async function start(run) {
         close(run);
         endAsk(run);
         tellAgent(run.id, { working: false, doing: null });
-        // An agent that was idle stops quietly: the app keeps its chat and it starts again when needed.
         if (!run.asleep || code) emit(run, { type: "exit", code, error: code ? message : "" });
         resolve(undefined);
       },
@@ -272,14 +262,13 @@ export async function prompt(id, { text = "", images = [], files = [], when = "n
   if (agent.dailyTokens && ((await usageToday())[id] ?? 0) >= agent.dailyTokens) throw fail(429, overLimit(agent));
   const paths = await uploadedFiles(agent, files);
   const run = await open(id);
+  await run.compacting;
   const message = [text.trim(), ...paths.map((path) => `[Attached file: ${path}]`)].filter(Boolean).join("\n\n");
   if (!message && !blocks.length) throw fail(400, "The message is empty");
   if (run.busy && blocks.length) run.held.set(message, blocks);
   return run.pi.send("prompt", { message, images: blocks, streamingBehavior: behavior }).catch(refused);
 }
 
-// pi clears its queue only as a whole: take it, drop the one message, and queue the rest again in order.
-// One at a time per agent, so two quick takebacks do not lose each other's messages.
 export async function unqueue(id, { text, when = "now" }) {
   if (typeof text !== "string" || !behaviorOf(when)) throw fail(400, "The message is not valid");
   const run = await current(id);
@@ -340,8 +329,19 @@ export async function compact(id, instructions) {
   if (instructions !== undefined && typeof instructions !== "string") throw fail(400, "The instructions are not valid");
   const run = await open(id);
   if (run.busy) throw fail(409, "Wait for the agent to finish, or stop it, then compact");
+  await run.compacting;
   const { estimatedTokensAfter } = await run.pi.send("compact", instructions?.trim() ? { customInstructions: instructions.trim() } : {}).catch(refused);
   return usageOf(run, estimatedTokensAfter ?? null);
+}
+
+async function compactIdle(run) {
+  if (run.busy || run.compacting || runs.get(run.id) !== run) return;
+  const usage = await usageOf(run).catch(() => null);
+  if (!usage?.tokens || usage.tokens < usage.point * IDLE_COMPACT_AT || run.busy || run.compacting) return;
+  run.compacting = run.pi
+    .send("compact")
+    .catch((err) => console.error("Compact:", err.message))
+    .finally(() => ((run.compacting = null), touch(run)));
 }
 
 export const activityOf = (id) => {
@@ -360,7 +360,6 @@ export async function answer(id, { request, value }) {
   endAsk(run);
 }
 
-/** Ask the user in the chat and wait. secret: a field for a key, whose value goes to the app alone (never to the agent, the audit or a notification). */
 export async function askUser(id, title, options, { secret = false } = {}) {
   if (title.length > MAX_APPROVAL) throw fail(400, `This request is too long to show the user in full (${title.length} characters; at most ${MAX_APPROVAL}). Make it shorter.`);
   const run = await current(id);

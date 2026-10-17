@@ -34,7 +34,6 @@ export const MEMORY = join(AGENT_DIR, "MEMORY.md");
 export const KNOWLEDGE = join(ROOT, "knowledge");
 export const APP = join(ROOT, "weilo.json");
 export const CURATOR = join(AGENT_DIR, "curator.json");
-// Where older versions kept tasks that run at set times; they are moved into actions.json once.
 export const OLD_SCHEDULES = join(AGENT_DIR, "routines.json");
 export const ACTIONS = join(AGENT_DIR, "actions.json");
 export const PINS = join(AGENT_DIR, "pins.json");

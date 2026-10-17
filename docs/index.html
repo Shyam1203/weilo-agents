@@ -44,7 +44,7 @@
 <div class="cols">
 <div class="tile"><h3>One folder of data</h3><p>Everything you keep lives in one host folder, <code>~/.weilo-agents</code>, mounted in the container as <code>/home/node/.pi</code>. Copy it to back up or to move to another machine. See <a href="data-and-permissions.html">Data and permissions</a>.</p></div>
 <div class="tile"><h3>Agents are not trusted</h3><p>An agent can run any shell command. So the design assumes an agent may misbehave and puts the important things (keys, devices, other agents' chats) where its Linux user cannot reach them. See <a href="security.html">Security model</a>.</p></div>
-<div class="tile"><h3>No code comments; tests for the rules</h3><p>The code carries no comments: the reasons behind the design live in these pages. The daemon's rules are type-checked and tested (<code>npm run check</code>, <code>npm test</code>, run by CI), and what only a real install shows is on the release checklist. See <a href="development.html#conventions">Development</a> and the <a href="operating.html#release-check">release checklist</a>.</p></div>
+<div class="tile"><h3>No code comments, no tests</h3><p>The code carries no comments and the repo no tests: the reasons behind the design live in these pages. The daemon is type-checked (<code>npm run check</code>, run by CI), and what only a real install shows is on the release checklist. See <a href="development.html#conventions">Development</a> and the <a href="operating.html#release-check">release checklist</a>.</p></div>
 </div>
 </section>
 

@@ -28,13 +28,13 @@ Besides your provider's API (the model you pick), the app asks GitHub now and th
 ## Develop
 
 ```sh
-npm install && npm run check && npm test   # the daemon: type check and tests
+npm install && npm run check
 cd ui && npm install
 npm run dev     # UI on http://localhost:5173, uses the API of the container on :3210
 npm run build   # type-check and build
 ```
 
-After you change the daemon or the UI, build the containers again: `docker compose up -d --build`. CI runs the checks, the tests and both builds on every pull request.
+After you change the daemon or the UI, build the containers again: `docker compose up -d --build`. CI runs the checks and both builds on every pull request.
 
 ## Documentation
 

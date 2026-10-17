@@ -27,6 +27,7 @@ import { serveFile } from "./http/files.mjs";
 import { bodyOf, guard, rawBodyOf, reply } from "./http/request.mjs";
 import { serveUi } from "./http/static.mjs";
 import { CURATOR_KEY, getCurator, setCurator, startCurator } from "./memory/curator.mjs";
+import { summarize } from "./agents/summary.mjs";
 import { fetchKnowledge } from "./memory/fetch.mjs";
 import { useMemory } from "./memory/memory.mjs";
 import { migrate } from "./migrate.mjs";
@@ -54,7 +55,6 @@ delete process.env.npm_config_prefix;
 delete process.env.PYTHONUSERBASE;
 
 const routes = [];
-// A route without a tool is for people only (paired devices). A stream route writes its own reply.
 const route = (method, path, handler, { tool = null, audited = method !== "GET", stream = false } = {}) =>
   routes.push({ method, path, handler, tool, audited, stream, scoped: path.startsWith("/api/agents/:id"), pattern: new RegExp(`^${path.replace(":id", "(?<id>[^/]+)").replace(":rid", "(?<rid>[^/]+)").replace("*", "(?<rest>.+)")}$`) });
 const agentRoute = (method, path, tool, handler, options = {}) => route(method, path, handler, { tool, ...options });
@@ -190,6 +190,7 @@ route("PUT", "/api/agents/:id/actions/:rid", ({ id, rid, body }) => changeAction
 route("POST", "/api/agents/:id/actions/:rid/run", ({ id, rid, body }) => runAction(id, rid, body.input));
 route("DELETE", "/api/agents/:id/actions/:rid", ({ id, rid }) => removeAction(id, rid));
 agentRoute("POST", "/api/agents/:id/key", "key", ({ id, body }) => keyTool(id, body));
+agentRoute("POST", "/api/agents/:id/summary", "summary", ({ id, body }) => summarize(id, body), quiet);
 route("GET", "/api/agents/:id/keys", ({ id }) => listKeys(id));
 route("DELETE", "/api/agents/:id/keys/:rid", ({ id, rid }) => removeAgentKey(id, rid));
 agentRoute("POST", "/api/agents/:id/pin", "pin", ({ id, body }) => pinTool(id, body));
@@ -197,7 +198,6 @@ route("GET", "/api/agents/:id/pins", ({ id }) => listPins(id));
 route("POST", "/api/agents/:id/pins/:rid/tick", ({ id, rid, body }) => tickPin(id, rid, body));
 route("DELETE", "/api/agents/:id/pins/:rid", ({ id, rid }) => removePin(id, rid));
 
-// The agent a key belongs to. Isolated agents call only from the sandbox, the rest only from outside it.
 async function callerOf(req, url, sandboxed) {
   const caller = keyIn(req, url.searchParams);
   if (!caller) {
@@ -238,8 +238,6 @@ async function handle(req, res, sandboxed) {
       res.setHeader("Set-Cookie", cookieFor(token, req.headers.host));
       return reply(res, 204);
     }
-    // The browser comes back from a plugin's sign-in page: the one-time state, not a cookie, says who
-    // started it (the cookie stays behind on a link from another site).
     if (path === CALLBACK && req.method === "GET" && !sandboxed) return await signedIn(res, url.searchParams);
     const who = await identify(req);
     if (!who) return reply(res, 401, { error: "Pair this device to use Weilo Agents.", pair: true });

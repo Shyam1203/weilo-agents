@@ -36,16 +36,13 @@ type Draft = AgentInput & { avatar: NonNullable<AgentInput["avatar"]> };
 
 interface Props {
   agent?: Agent;
-  /** Every agent, for the names in what this one may do without asking. */
   agents: Agent[];
   providers: Provider[];
   skills: Skill[];
   plugins: Plugin[];
   extensions: Extension[];
   models?: Model[];
-  /** The model a new agent starts with. */
   defaultModel?: string;
-  /** Open with More options shown (to change the daily limit, say). */
   showMore?: boolean;
   onOpenSettings: (page: SettingsPage) => void;
   hidden?: boolean;
@@ -83,7 +80,6 @@ export function AgentForm({ agent, agents, providers, skills, plugins, extension
   useEffect(() => {
     if (!providerId && firstConnected) setProviderId(firstConnected);
   }, [providerId, firstConnected]);
-  // The models arrive after the form opens: a new agent then gets the recommended one.
   useEffect(() => {
     if (agent || draft.model || !defaultModel) return;
     setProviderId(providerOf(defaultModel));

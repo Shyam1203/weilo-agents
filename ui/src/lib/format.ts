@@ -2,13 +2,11 @@ const DAY = 24 * 60 * 60 * 1000;
 const startOfDay = (ms: number) => new Date(ms).setHours(0, 0, 0, 0);
 const time = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
-/** The clock time of a moment (seconds), for beside a message. */
 export const clockTime = (at: number) => time(at * 1000);
 export const fullWhen = (at: number) => new Date(at * 1000).toLocaleString([], { dateStyle: "full", timeStyle: "short" });
 
 const daysApart = (from: number, to: number) => Math.round((startOfDay(to) - startOfDay(from)) / DAY);
 
-// "Today 9:30", "Yesterday 9:30" or "Tomorrow 9:30" (the word for one day away), else the date and time.
 function dayAndTime(ms: number, days: number, oneDay: string) {
   if (days <= 0) return `Today ${time(ms)}`;
   if (days === 1) return `${oneDay} ${time(ms)}`;

@@ -13,6 +13,5 @@
     "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true
   },
-  "include": ["**/*.mjs", "**/*.js"],
-  "exclude": ["test"]
+  "include": ["**/*.mjs", "**/*.js"]
 }

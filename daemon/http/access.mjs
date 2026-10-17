@@ -68,7 +68,12 @@ export function agentKey(id) {
 
 export const dropAgentKey = (key) => agentKeys.delete(key);
 
-// A script action's key: it may use its agent's browser and nothing else (no model, no other tool).
+export function extraKey(id) {
+  const key = randomBytes(32).toString("base64url");
+  agentKeys.set(key, id);
+  return key;
+}
+
 const scriptKeys = new Map();
 export function scriptKey(id) {
   const key = randomBytes(32).toString("base64url");
@@ -81,8 +86,6 @@ export const KEY_HEADERS = ["authorization", "x-api-key", "x-goog-api-key", "api
 
 const KEY_LENGTH = 43;
 
-// The key ends each token pi sends: on its own, or at the end of a placeholder shaped like the
-// provider's token (see placeholderFor). Look it up whole rather than search for it.
 export function keyIn({ headers }, query) {
   for (const candidate of [...KEY_HEADERS.map((name) => headers[name]), query.get("key")]) {
     if (typeof candidate !== "string" || candidate.length < KEY_LENGTH) continue;

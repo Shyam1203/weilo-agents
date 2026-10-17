@@ -12,24 +12,20 @@ const PRIVATE = "/tmp/weilo-screen";
 const SOCKET = join(PRIVATE, "vnc.sock");
 const XAUTHORITY = join(PRIVATE, "Xauthority");
 const PROFILE = "/home/node/.browser";
-// The cache is in the container, not the profile's volume: the volume keeps only sign-ins and
-// site data, and an update starts with an empty cache.
 const CACHE = "/home/node/.cache/weilo-browser";
 const PROFILE_CACHES = ["Cache", "Code Cache", "GPUCache", "DawnGraphiteCache", "DawnWebGPUCache"];
 const ENV = { ...process.env, DISPLAY, XAUTHORITY, HOME: "/home/node" };
 
 const log = (...args) => console.log("[screen]", ...args);
 
-// The screen runs from its first use until it sleeps (see sleepScreen). Each start is a new
-// generation: a program of an earlier one that exits late is not started again.
 let generation = 0;
 const children = new Set();
 
-function keep(name, command, args, { delay = 0, stdio = "ignore", started } = /** @type {{ delay?: number, stdio?: any, started?: (child: any) => void }} */ ({})) {
+function keep(name, command, args, { delay = 0, stdio = undefined, started = undefined } = {}) {
   const mine = generation;
   const run = () => {
     if (mine !== generation) return;
-    const child = spawnAs(BROWSER, command, args, { stdio, env: ENV });
+    const child = spawnAs(BROWSER, command, args, { stdio: stdio ?? "ignore", env: ENV });
     children.add(child);
     child.on("error", () => log(`${name} cannot start`));
     child.on("exit", (code) => {
@@ -45,8 +41,6 @@ function keep(name, command, args, { delay = 0, stdio = "ignore", started } = /*
 
 export const isAwake = () => starting !== null;
 
-// Stops Chromium, the window manager and the display. Sign-ins stay in the profile; the next
-// browser step or take over starts them again.
 export function sleepScreen() {
   if (!starting) return;
   generation++;

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
-import { daemonTool, list, note, object, str } from "./tool.mjs";
+import { trimOld, transcriptOf } from "./context.mjs";
+import { call, daemonTool, list, note, object, str } from "./tool.mjs";
 
-// Generated from the UI's component library: npm run openui-prompt --prefix ui
 const OPENUI = readFileSync(new URL("./openui-prompt.md", import.meta.url), "utf8");
 
 const DESCRIPTION = `Show the user something to look at or use, instead of describing it in text: key numbers, tables, charts, cards, forms, choices, files. Write it as ui, a small program in OpenUI Lang built from the app's own components (below); it appears in the chat while you write it. Add a short text reply as well.
@@ -45,6 +45,17 @@ const KEY = `Keep a key (an API key, a token or a password) that a service needs
 Use this, not a file or the chat, whenever a service needs a key: never ask the user to paste a key in a message. A key works only through use; it is not in your shell.`;
 
 export default function (pi) {
+  pi.on("context", ({ messages }) => {
+    const trimmed = trimOld(messages);
+    return trimmed === messages ? undefined : { messages: trimmed };
+  });
+  pi.on("session_before_compact", async ({ preparation, customInstructions, signal }) => {
+    const { messagesToSummarize, turnPrefixMessages, previousSummary, firstKeptEntryId, tokensBefore } = preparation;
+    const transcript = transcriptOf([...messagesToSummarize, ...turnPrefixMessages]);
+    if (!transcript) return;
+    const got = await call("POST", `/agents/${process.env.WEILO_AGENT}/summary`, { transcript, previous: previousSummary ?? "", focus: customInstructions ?? "" }, signal).catch(() => null);
+    if (got?.summary) return { compaction: { summary: got.summary, firstKeptEntryId, tokensBefore } };
+  });
   daemonTool(pi, "ask_agent", "Ask an agent", ASK_AGENT, { agent: note("The agent, by name or id."), message: note("What to ask or tell it, standing alone: it does not see this chat.") }, ["agent", "message"]);
   daemonTool(
     pi,

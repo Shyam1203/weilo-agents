@@ -61,9 +61,7 @@ export function useChat(agentId: string) {
 
   return {
     context,
-    /** Counts the times an action ran by itself or answered, to read the actions again. */
     actionsChanged,
-    /** Counts the times a pin changed, to read the pins again. */
     pinsChanged,
     compacting,
     compact,

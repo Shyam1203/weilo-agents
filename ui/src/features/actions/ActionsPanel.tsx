@@ -14,7 +14,6 @@ interface Props {
   onNew: () => void;
 }
 
-/** Things the agent does for you: with a tap, and by itself at the times you choose. */
 export function ActionsPanel({ off, actions, error, running, onRun, onOpen, onNew }: Props) {
   return (
     <div className="flex flex-col gap-3">
