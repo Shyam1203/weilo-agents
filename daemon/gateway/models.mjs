@@ -59,7 +59,6 @@ export const forgetAuth = () => (made = 0);
 
 export const warmModels = () => registry().then(() => {}, (err) => console.error("The model runtime cannot load:", err.message));
 
-/** @type {[string, RegExp][]} */
 const API_PATHS = [
   ["anthropic-messages", /^\/v1\/messages/],
   ["openai-responses", /\/responses(\/|$)/],
@@ -69,7 +68,7 @@ const API_PATHS = [
 function baseFor(models, path) {
   const bases = new Map();
   for (const m of models) if (m.baseUrl && !bases.has(m.api)) bases.set(m.api, m.baseUrl);
-  const api = API_PATHS.find(([name, pattern]) => bases.has(name) && pattern.test(path))?.[0];
+  const api = API_PATHS.find(([name, pattern]) => bases.has(name) && RegExp(pattern).test(path))?.[0];
   if (api) return bases.get(api);
   const count = new Map();
   for (const m of models) if (m.baseUrl) count.set(m.baseUrl, (count.get(m.baseUrl) ?? 0) + 1);

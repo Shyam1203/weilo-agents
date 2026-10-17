@@ -24,10 +24,6 @@ import { link, workspacePath } from "../blockData";
 import { FileCard } from "../FileCard";
 import { Bars, DataTable, Line } from "../Charts";
 
-// The components an agent may use in an `openui` show block. Each one renders with the app's own
-// components and Tailwind tokens; the prompt the agent sees is generated from these schemas
-// (npm run openui-prompt writes it to daemon/openui-prompt.md).
-
 const CARD = "rounded-2xl border border-line bg-page";
 const GAPS = { s: "gap-1.5", m: "gap-2.5", l: "gap-4" } as const;
 
@@ -186,7 +182,6 @@ const Button = defineComponent({
     const form = useFormName();
     const validation = useFormValidation();
     const streaming = useIsStreaming();
-    // Models often put the action second, where the variant goes (the generic action docs show it so): take it there too.
     const misplaced = typeof props.variant === "object" ? (props.variant as unknown as ActionPlan) : undefined;
     const variant = (misplaced ? undefined : props.variant) ?? (form ? "primary" : "secondary");
     const plan = (props.action as ActionPlan | undefined) ?? misplaced;

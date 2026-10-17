@@ -88,11 +88,8 @@ async function* linesOf(file) {
   }
 }
 
-// "routine" was the tool for timed tasks in older versions: its results still show in their chats.
-export const shown = (m) => m?.role === "user" || m?.role === "assistant" || m?.role === "compactionSummary" || (m?.role === "toolResult" && ["ask", "action", "pin", "routine", "manage_agents"].includes(m.toolName));
-// Of a tool call the app draws a show card and an ask in full; of the others one line (the command,
-// the path, the address...), so their arguments are cut to those fields: a file an agent writes is
-// not sent to the app.
+const RESULTS = ["ask", "action", "pin", "routine", "manage_agents"];
+export const shown = (m) => m?.role === "user" || m?.role === "assistant" || m?.role === "compactionSummary" || (m?.role === "toolResult" && (RESULTS.includes(m.toolName) || typeof m.details?.note === "string"));
 const DRAWN = new Set(["show", "ask"]);
 const DETAIL = ["command", "action", "url", "text", "path", "file_path", "pattern", "query", "name"];
 const DETAIL_CHARS = 300;
@@ -102,7 +99,12 @@ export function briefCall(block) {
   return { ...block, arguments: Object.fromEntries(kept) };
 }
 
-export const slim = (m) => (Array.isArray(m.content) && m.role === "assistant" ? { ...m, content: m.content.filter((b) => b.type !== "thinking").map(briefCall) } : m);
+export const slim = (m) =>
+  Array.isArray(m.content) && m.role === "assistant"
+    ? { ...m, content: m.content.filter((b) => b.type !== "thinking").map(briefCall) }
+    : m.role === "toolResult" && !RESULTS.includes(m.toolName)
+      ? { ...m, content: [] }
+      : m;
 
 async function readEarlier(files) {
   const entries = [];

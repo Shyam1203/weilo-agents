@@ -5,9 +5,7 @@ import { Time } from "../chat/ReplyActions";
 
 interface Props {
   action: Action;
-  /** Missing while it runs. */
   run?: ActionRun;
-  /** The action's newest answer: only that one offers what to do next. */
   latest: boolean;
   agentName: string;
   onAgain: () => void;
@@ -15,7 +13,6 @@ interface Props {
   onFix: () => void;
 }
 
-/** An instant action's answer in the chat, kept with the chat's history. The agent does not see it unless you ask it about it. */
 export function ActionResult({ action, run, latest, agentName, onAgain, onAsk, onFix }: Props) {
   const failed = run && !run.ok;
   return (

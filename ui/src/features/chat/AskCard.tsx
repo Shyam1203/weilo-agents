@@ -9,12 +9,10 @@ interface Props {
   question: string;
   options?: string[];
   answer?: string;
-  /** A protected field for a key, which goes to the app and never to the agent. */
   secret?: boolean;
   onAnswer?: (value?: string) => Promise<void>;
 }
 
-// What the ask tool answers when the question was skipped, or closed after a day (agents/runner.mjs).
 const NO_ANSWER = "The user did not answer.";
 
 export function AskCard({ question, options, answer, secret = false, onAnswer }: Props) {
@@ -30,7 +28,6 @@ export function AskCard({ question, options, answer, secret = false, onAnswer }:
   };
   useEffect(() => {
     if (!onAnswer || !options?.length) return;
-    // Number keys pick an option, also from an empty message box; capture runs before the box takes focus.
     const onKey = (event: KeyboardEvent) => {
       const box = event.target as HTMLTextAreaElement | null;
       const emptyBox = box?.tagName === "TEXTAREA" && !box.value && !event.ctrlKey && !event.metaKey && !event.altKey;

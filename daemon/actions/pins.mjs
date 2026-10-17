@@ -5,8 +5,6 @@ import { MAX_PIN_HISTORY, MAX_PIN_ITEMS, MAX_PINS } from "../config.mjs";
 import { tellChats } from "../agents/runner.mjs";
 import { ICONS, listActions } from "./actions.mjs";
 
-// Pins: small cards the agent keeps up to date for the user (a price, an order, a list), on the
-// Pins tab of the app's actions panel. They only show things, so they need no approval.
 export const PIN_KINDS = ["status", "list"];
 const TONES = ["good", "bad"];
 
@@ -22,7 +20,6 @@ const text = (value, max, what) => {
   return value.trim();
 };
 
-/** The number in a value like "$1,299.99", for the little chart. */
 export const numberIn = (value) => {
   const m = /-?\d[\d,]*(?:\.\d+)?/.exec(value ?? "");
   return m ? Number(m[0].replaceAll(",", "")) : null;
@@ -48,7 +45,6 @@ function itemsOf(items) {
   });
 }
 
-/** What changes, checked: title, icon, source, value, detail, tone, steps, items. */
 export function pinChange(input) {
   const change = {
     title: text(input.title, 60, "The title"),
@@ -63,7 +59,6 @@ export function pinChange(input) {
   return Object.fromEntries(Object.entries(change).filter(([, v]) => v !== undefined));
 }
 
-// Applies a change; says whether what the user sees of it changed (not just the time).
 function apply(pin, change) {
   const before = JSON.stringify([pin.value, pin.detail, pin.steps, pin.items, pin.tone]);
   Object.assign(pin, change);
@@ -100,7 +95,6 @@ export async function removePin(agentId, id) {
   changed(agentId);
 }
 
-/** The user ticks an item on a list, or unticks it. */
 export async function tickPin(agentId, id, { index, done }) {
   await load();
   const pin = find(agentId, id);
@@ -118,7 +112,6 @@ export async function forgetPins(agentId) {
   await save();
 }
 
-/** An action was deleted: its pins stay, no longer kept fresh by it. */
 export async function unlinkPins(actionId) {
   await load();
   const linked = state.items.filter((p) => p.actionId === actionId);
@@ -127,13 +120,11 @@ export async function unlinkPins(actionId) {
   await save();
 }
 
-/** The pins an action keeps fresh. */
 export async function pinsOf(actionId) {
   await load();
   return state.items.filter((p) => p.actionId === actionId);
 }
 
-/** A script action returned { pin: {…} }: its pins take it. Returns the ones whose content changed. */
 export async function updateFromAction(agentId, actionId, input) {
   await load();
   const linked = state.items.filter((p) => p.actionId === actionId && p.agentId === agentId);
@@ -145,13 +136,11 @@ export async function updateFromAction(agentId, actionId, input) {
   return moved.map(view);
 }
 
-/** A pin in one line, for a notification: "AirPods Pro: $189, ↓ $30 since Monday". */
 export const pinLine = (p) => `${p.title}: ${p.value || (p.items ? `${p.items.filter((i) => !i.done).length} left` : "updated")}${p.detail ? `, ${p.detail}` : ""}`;
 
 const describe = (p) =>
   `${p.id}: "${p.title}" (${p.kind}${p.actionId ? `, kept fresh by action ${p.actionId}` : ""})${p.source ? ` from ${p.source}` : ""}${p.value ? `: ${p.value}` : ""}${p.detail ? `, ${p.detail}` : ""}${p.steps ? `, step ${p.steps.done} of ${p.steps.total}` : ""}${p.items?.length ? `\n${p.items.map((i, n) => `${n}. [${i.done ? "x" : " "}] ${i.text}`).join("\n")}` : ""}`;
 
-/** The agent's pin tool: list, pin, update and unpin. */
 export async function pinTool(agentId, { op, id, action: linked, kind, ...fields }) {
   await load();
   const action = linked === "" ? null : linked;

@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, rmSync } from "node:fs";
 import { connect, createServer } from "node:net";
+import { Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { BIN, MAX_SPEC, PI_KILL_MS, PORT, SANDBOX_API, SANDBOX_CTL, SANDBOX_DIR } from "../config.mjs";
 import { encode } from "./frames.mjs";
@@ -13,7 +14,8 @@ if (!ready) console.error("The sandbox cannot make namespaces, so it starts noth
 
 function start(socket, spec, rest) {
   const child = spawn(BIN.unshare, [...NAMESPACES, "--", BIN.tini, "--", process.execPath, ENTER], { env: {}, stdio: ["pipe", "pipe", "pipe", "pipe"] });
-  /** @type {import("node:stream").Writable} */ (child.stdio[3]).end(JSON.stringify(spec));
+  const specPipe = child.stdio[3];
+  if (specPipe instanceof Writable) specPipe.end(JSON.stringify(spec));
   const send = (type, data) => !socket.destroyed && socket.write(encode(type, data));
   child.stdout.on("data", (data) => send("o", data));
   child.stderr.on("data", (data) => send("e", data));

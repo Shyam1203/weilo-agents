@@ -1,5 +1,3 @@
-// Runs one script action, as its agent's user (see runScript): the script and its input come on stdin,
-// the answer goes out as the last line of stdout. The script may use the agent's browser and node: modules.
 import { call } from "../tool.mjs";
 
 const out = (answer) => process.stdout.write(`\n${JSON.stringify(answer)}\n`);

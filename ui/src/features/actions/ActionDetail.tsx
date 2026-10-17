@@ -30,7 +30,6 @@ interface Props {
   onClose: () => void;
 }
 
-/** One action: run it now, put it on a schedule, what it did lately. Changes save as you make them. */
 export function ActionDetail({ action, agentId, agentName, onRun, onChanged, onRemove, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);

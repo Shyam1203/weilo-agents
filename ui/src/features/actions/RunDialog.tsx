@@ -22,7 +22,6 @@ interface Props {
   onClose: () => void;
 }
 
-/** What an action needs before it runs: its fields, with the last values filled in. */
 export function RunDialog({ action, onRun, onClose }: Props) {
   const [values, setValues] = useState(() => lastValues(action));
   const ready = action.fields.every((f) => values[f.name]?.trim());

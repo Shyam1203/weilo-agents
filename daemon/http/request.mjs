@@ -17,7 +17,6 @@ export function guard({ headers }, path) {
   if (!ALLOWED_HOST.test(headers.host ?? "")) throw fail(403, "Not permitted");
   if (headers.origin && !sameHost(headers.origin, headers.host)) throw fail(403, "Not permitted");
   const site = headers["sec-fetch-site"];
-  // A plugin's sign-in page sends the browser back to its callback, from the plugin's own site.
   const link = headers["sec-fetch-mode"] === "navigate" && (!path.startsWith("/api/") || path === CALLBACK);
   if (site && site !== "same-origin" && site !== "none" && !link) throw fail(403, "Not permitted");
 }

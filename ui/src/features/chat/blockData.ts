@@ -55,7 +55,6 @@ function blockOf(raw: Raw): Block | null {
   }
 }
 
-// A show call carries ui (OpenUI Lang) or page; chats from before OpenUI carry a list of blocks.
 export function blocksOf(args: unknown): Block[] {
   const { blocks, ui, page } = record(args);
   if (Array.isArray(blocks)) return blocks.flatMap((b) => blockOf(record(b)) ?? []);

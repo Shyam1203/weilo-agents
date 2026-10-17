@@ -6,10 +6,6 @@ import { KEYS, read, write } from "../../lib/storage";
 
 const canOffer = () => !read(KEYS.notifyAsked) && !thisDevice() && !unsupported() && Notification.permission !== "denied";
 
-/**
- * Offers notifications when they would have helped: the agent finished while the app was in the
- * background. Asked once per browser; Settings > General has them too.
- */
 export function useNotifyOffer(busy: boolean) {
   const [offer, setOffer] = useState(false);
   const [error, setError] = useState<string | null>(null);

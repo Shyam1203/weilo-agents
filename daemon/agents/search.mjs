@@ -14,8 +14,6 @@ export async function searchChats(query) {
   const found = [];
   for (const m of await containing(text, [...names.keys()], SEARCH_RESULTS)) {
     const body = plainText(m.body);
-    // The words can be where plain text does not show them (a link's address, say): the message
-    // still holds them, so it is shown from its start.
     const at = body.toLowerCase().indexOf(needle);
     const start = at < 0 ? 0 : Math.max(0, at - BEFORE);
     const end = Math.min(body.length, (at < 0 ? 0 : at + needle.length) + AFTER);

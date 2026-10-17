@@ -11,7 +11,6 @@ import { StepsLine } from "./StepsLine";
 import type { Asking, Item, Message, Queued } from "./conversation";
 
 const GAP = 30 * 60;
-// The browser lays out and draws older messages only when they come near the screen.
 const DRAWN = 12;
 
 interface Props {
@@ -24,21 +23,19 @@ interface Props {
   onEdit: (message: Draft) => void;
   queued: Queued[];
   onUnqueue: (queued: Queued) => Promise<void>;
-  /** Opens the pins and shows the one a "Pinned: …" line names. */
   onPins?: (title: string) => void;
-  /** Things to show among the messages by their time (an action's answers): at in seconds. */
   extras?: { at: number; key: string; node: ReactNode }[];
   note?: ReactNode;
+  working?: ReactNode;
 }
 
 const draftOf = (m: Message): Draft => ({ text: m.text, images: m.images });
 
-export function MessageList({ messages, busy, asking, onAnswer, onReply, onRetry, onEdit, queued, onUnqueue, onPins, extras = [], note }: Props) {
+export function MessageList({ messages, busy, asking, onAnswer, onReply, onRetry, onEdit, queued, onUnqueue, onPins, extras = [], note, working }: Props) {
   const shown = messages.filter((m) => (m.kind === "ask" ? m.answer !== undefined || !asking : m.kind === "show" || m.kind === "steps" || m.role === "human" || m.text.trim()));
   const replyTo = useRef(onReply);
   replyTo.current = onReply;
   const reply = useCallback((text: string) => replyTo.current(text), []);
-  // Kept stable like reply, so a row still draws again only when its own message changes.
   const actions = useRef({ onRetry, onEdit, onPins });
   actions.current = { onRetry, onEdit, onPins };
   const showPins = useCallback((title: string) => actions.current.onPins?.(title), []);
@@ -46,7 +43,6 @@ export function MessageList({ messages, busy, asking, onAnswer, onReply, onRetry
   const edit = useCallback((m: Message) => actions.current.onEdit(draftOf(m)), []);
 
   const isHuman = (m?: Item) => m?.kind === "message" && m.role === "human";
-  // What the user said after each item (the choice made on a card), from the end back.
   const chosen: (string | undefined)[] = [];
   for (let i = shown.length - 1, after: string | undefined; i >= 0; i--) {
     chosen[i] = after;
@@ -62,7 +58,6 @@ export function MessageList({ messages, busy, asking, onAnswer, onReply, onRetry
   return (
     <ol aria-live="polite" aria-relevant="additions" className="flex flex-col gap-1.5">
       {shown.map((item, i) => {
-        // An answer that came before this message goes above it.
         const before: ReactNode[] = [];
         while (next < later.length && item.at !== null && later[next].at <= item.at) {
           const extra = later[next++];
@@ -96,6 +91,7 @@ export function MessageList({ messages, busy, asking, onAnswer, onReply, onRetry
       {later.slice(next).map((x) => (
         <Extra key={x.key}>{x.node}</Extra>
       ))}
+      {working && <li className="mt-1.5 pl-1">{working}</li>}
       {queued.map((q, i) => (
         <li key={`queued-${q.when}-${q.text}-${queued.slice(0, i).filter((x) => x.when === q.when && x.text === q.text).length}`} className="mt-1.5 animate-fade-in">
           <QueuedMessage queued={q} onRemove={() => onUnqueue(q)} onEdit={() => onUnqueue(q).then(() => onEdit({ text: q.text, images: [] }))} />
@@ -132,8 +128,6 @@ interface RowProps {
   onPins?: (title: string) => void;
 }
 
-// A row draws again only when its own props change, so a new event redraws the newest message, not
-// the whole chat.
 const Row = memo(function Row({ item, label, spaced, far, chosen, replyable, working, ending, retry, latest, onReply, onRetry, onEdit, onPins }: RowProps) {
   return (
     <li data-at={item.at ?? undefined} className={`animate-fade-in ${spaced ? "mt-2.5" : ""} ${far ? "[content-visibility:auto] [contain-intrinsic-size:auto_120px]" : ""}`}>

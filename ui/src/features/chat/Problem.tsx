@@ -4,7 +4,6 @@ import { Icon } from "../../components/ui/Icon";
 
 export type Fix = "retry" | "model" | "providers" | "limit";
 
-/** What the user can do about a failed message or reply, read from its error. */
 export function fixesFor(message: string, status?: number): Fix[] {
   if (status === 429 && /today|daily/i.test(message)) return ["limit"];
   if (/tokens for today|daily limit/i.test(message)) return ["limit"];
@@ -18,13 +17,11 @@ interface Props {
   fixes: Fix[];
   tone?: "alert" | "info";
   onRetry?: () => void;
-  /** The control that changes the model, already set up as a button. */
   changeModel: ReactNode;
   onProviders: () => void;
   onLimit: () => void;
 }
 
-/** A problem in the chat, with buttons for what can fix it. */
 export function Problem({ message, fixes, tone = "alert", onRetry, changeModel, onProviders, onLimit }: Props) {
   return (
     <div role={tone === "alert" ? "alert" : "status"} className="flex gap-2.5 rounded-xl bg-card px-3.5 py-3 text-[13px] text-ink-2 ring-1 ring-line ring-inset">

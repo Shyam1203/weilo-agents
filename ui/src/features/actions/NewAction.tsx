@@ -12,7 +12,6 @@ interface Props {
   onClose: () => void;
 }
 
-/** Make an action yourself: a name, and what the agent should do when you tap it. */
 export function NewAction({ agentId, agentName, onMade, onClose }: Props) {
   const [title, setTitle] = useState("");
   const [request, setRequest] = useState("");

@@ -11,7 +11,6 @@ const readAsDataUrl = (blob: Blob) =>
 
 export const base64Of = async (file: File) => (await readAsDataUrl(file)).split(",")[1];
 
-/** An image as a data URL: one already is; a link (an image from the chat) is fetched first. */
 export async function imageDataUrl(url: string) {
   if (url.startsWith("data:")) return url;
   const res = await fetch(url).catch(() => null);

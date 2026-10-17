@@ -4,7 +4,6 @@ import { watchAgents } from "../agents/status.mjs";
 import { HEARTBEAT_MS } from "../config.mjs";
 import { markSeen } from "../push.mjs";
 
-// A comment now and then keeps a quiet stream open through proxies (Tailscale Serve and the like).
 function openStream(req, res) {
   res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "X-Accel-Buffering": "no" });
   const beat = setInterval(() => res.write(": \n\n"), HEARTBEAT_MS);
@@ -30,8 +29,6 @@ export async function events(req, res, id) {
   );
 }
 
-// The app keeps this open while it is on screen: it hears when to read the agent list again, and
-// notifications wait while someone is looking.
 export function agentStatus(req, res) {
   openStream(req, res);
   const off = watchAgents((data) => res.write(`data: ${JSON.stringify(data)}\n\n`));

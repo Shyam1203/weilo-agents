@@ -9,7 +9,6 @@ export interface Starter {
   instructions: string;
 }
 
-/** Ready-made first agents: a name, a look and instructions, all of which can be changed later. */
 export const STARTERS: Starter[] = [
   {
     name: "Assistant",

@@ -5,7 +5,6 @@ import { read, write } from "../../lib/storage";
 
 const seenKey = (agentId: string) => `weilo.pinsSeen.${agentId}`;
 
-/** The agent's pins, read again when one changes; new says one changed since you last looked. */
 export function usePins(agentId: string, changed: number) {
   const [pins, setPins] = useState<Pin[] | null>(null);
   const [error, setError] = useState<string | null>(null);

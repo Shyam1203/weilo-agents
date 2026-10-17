@@ -1,4 +1,3 @@
-// Compresses the built files once, so the app does not do it when it starts.
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";

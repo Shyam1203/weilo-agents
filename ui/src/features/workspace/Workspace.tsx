@@ -61,7 +61,6 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
   refresh.current = reloadAgents;
   const patch = useRef(patchAgent);
   patch.current = patchAgent;
-  // While the app is on screen it listens for changes to the agent list and reads it again then.
   useEffect(() => {
     let source: EventSource | null = null;
     const look = () => {
@@ -96,7 +95,6 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
     return () => navigator.serviceWorker?.removeEventListener("message", onMessage);
   }, []);
 
-  // With no agent yet, the setup takes the screen, also on a phone.
   const fresh = agents.length === 0;
   const covered = !wide && (showChat || settings !== null);
   const uncover = () => (setShowChat(false), setSettings(null));

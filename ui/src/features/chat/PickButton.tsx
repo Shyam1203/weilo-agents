@@ -5,7 +5,6 @@ interface Props {
   done?: string;
   picked?: boolean;
   onPick?: () => void;
-  /** The key that picks it, shown where there is a keyboard. */
   shortcut?: string;
 }
 

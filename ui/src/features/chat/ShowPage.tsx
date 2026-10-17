@@ -6,10 +6,8 @@ const PHONE = 768;
 
 const POLICY = "default-src 'none'; script-src 'unsafe-inline' https:; style-src 'unsafe-inline' https:; img-src data: blob: https:; media-src data: blob: https:; font-src data: https:; connect-src https:";
 
-// The app's colors a page can use, as --weilo-<name>.
 const COLORS = { bg: "--color-page", card: "--color-card", text: "--color-ink", muted: "--color-ink-3", line: "--color-line-strong", good: "--color-good", bad: "--color-bad" };
 
-/** The room a page has and the app's look, so it can fit in. */
 interface Screen {
   width: number;
   phone: boolean;
@@ -17,7 +15,6 @@ interface Screen {
   colors: Record<keyof typeof COLORS, string>;
 }
 
-// The app's colors are light-dark() pairs: a probe gives the one on screen now.
 function screenOf(frame: HTMLElement | null): Screen {
   const probe = document.body.appendChild(document.createElement("span"));
   const colors = Object.fromEntries(Object.entries(COLORS).map(([name, token]) => ((probe.style.color = `var(${token})`), [name, getComputedStyle(probe).color]))) as Screen["colors"];
@@ -26,8 +23,6 @@ function screenOf(frame: HTMLElement | null): Screen {
   return { width: Math.round(frame?.clientWidth || Math.min(innerWidth, PHONE)), phone: innerWidth < PHONE, dark: 0.2126 * r + 0.7152 * g + 0.0722 * b < 128, colors };
 }
 
-// Runs before the page: window.weilo (screen and reply), --weilo-* variables, a "weilo:screen"
-// event when the screen changes, and the page's height for its frame.
 const bridge = (screen: Screen) => `<script>
 const post = (m) => parent.postMessage(m, "*");
 const apply = (screen) => {
@@ -74,7 +69,6 @@ export function ShowPage({ title, html, onReply }: Props) {
     return () => removeEventListener("message", listen);
   }, [onReply]);
 
-  // The page hears when its width or the app's theme changes.
   useEffect(() => {
     const el = frame.current;
     if (!el) return;

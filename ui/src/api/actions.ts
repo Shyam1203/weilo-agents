@@ -26,10 +26,8 @@ export interface ActionRun {
   at: number;
   ok: boolean;
   text: string;
-  /** Tapped by you, or started by its schedule. */
   by: "you" | "schedule";
   ms?: number;
-  /** An agent action's run: its answer is the agent's reply in the chat. */
   chat?: boolean;
 }
 
@@ -37,14 +35,11 @@ export interface Action {
   id: string;
   title: string;
   about: string;
-  /** agent: a request to the agent; script: runs in seconds without the agent ("Instant"). */
   kind: "agent" | "script";
   request: string;
   fields: ActionField[];
   icon: IconName;
-  /** When it also runs by itself. */
   schedule: Schedule | null;
-  /** The newest first. */
   runs: ActionRun[];
 }
 
@@ -59,7 +54,6 @@ export const removeAction = (agentId: string, id: string) => request("DELETE", `
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const clock = (time: string) => new Date(2000, 0, 1, Number(time.slice(0, 2)), Number(time.slice(3))).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
-/** When an action runs by itself, in plain words: "Every morning at 8:00 AM". */
 export function describeSchedule(s: Schedule) {
   const at = s.times.map(clock).join(" and ");
   if (s.every === "minutes") return `Every ${s.minutes} minutes`;

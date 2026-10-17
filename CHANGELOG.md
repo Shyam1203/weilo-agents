@@ -4,6 +4,11 @@ Versions follow [SemVer](https://semver.org). While the version starts with 0, a
 
 ## Unreleased
 
+- Long chats cost less and stay sharper. A chat is now summarized at half of the model's room, and never later than about 120,000 tokens, instead of when it is almost full. An agent that finished with its chat near that point is summarized right away, so your next message does not wait for it. The summary is an assistant's, not a coder's: what you want, what you told it about yourself, what is done, what is open or promised, and the names, numbers and links to keep. With a knowledge curator model it is written on that model, and the agent is told it can look up older messages. Long results of tools from earlier in a chat (pages, files, commands) are cut short when they are sent to the model again; the agent can run the tool again if it needs them. A summary point you set yourself stays.
+- The chat shows again the lines for requests that were always allowed and keys that were saved.
+- The repo no longer has tests or code comments; the docs hold the reasons behind the design.
+- While an agent works, its "Working… Stop" line sits in the chat under its steps, so it no longer covers the button that scrolls to the newest message on a phone.
+
 - Sign in to plugins: a plugin on the web that needs a sign-in (Notion, Linear and others) shows "Needs sign-in" and a Sign in button in Settings > Plugins. You sign in on the service's own page; the app keeps the sign-in, renews it, and adds it to the agents' requests, so agents never see it. Sign out there too.
 - Always allow: a request to approve can be allowed always, for that agent: messages to one other agent, saving skills, adding buttons, or model settings. The chat then shows a line instead of asking. Edit agent > Access lists what is always allowed, and you remove one with its ×. Making or changing other agents still asks every time.
 - Saved keys: when a service needs an API key or a password, the agent asks for it in a protected field in the chat. The app keeps it and adds it only to requests to the site you saved it for; the agent never sees it, and it is taken out of what the site answers. Edit agent > Access lists an agent's keys, and you remove one with its ×.

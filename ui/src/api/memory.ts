@@ -1,9 +1,7 @@
 import { request } from "./http";
 
 export interface MemorySettings {
-  /** The Knowledge curator's model, or "" when it is off. */
   model: string;
-  /** Agents save notes about the user, and every agent gets them. */
   notes: boolean;
 }
 

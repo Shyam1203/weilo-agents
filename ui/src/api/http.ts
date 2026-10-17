@@ -4,7 +4,6 @@ export class RequestError extends Error {
   }
 }
 
-/** Fetches JSON; `failed` words the error when the reply does not give one. */
 export async function fetchJson<T>(url: string, init: RequestInit, failed: string): Promise<T> {
   let res: Response;
   try {

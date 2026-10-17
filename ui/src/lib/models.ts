@@ -1,9 +1,7 @@
 import type { Agent } from "../api/agents";
 import { choosableOf, shortName, type Model, type Provider } from "../api/providers";
 
-// Small, preview and special-purpose models are not a good first choice for an agent that does real work.
 const NOT_FIRST = /mini|nano|lite|haiku|flash|preview|spark|deep-research|computer-use|embed|image|audio|tts|realtime|classifier|\d{8}/i;
-// The balanced tier: capable, and cheaper than the largest models.
 const BALANCED = /sonnet/i;
 
 const versionOf = (id: string) => {
@@ -12,10 +10,6 @@ const versionOf = (id: string) => {
   return Number(major) + Number(minor) / 100;
 };
 
-/**
- * The model a new agent starts with: what your agents use most, or else a current, capable model of the
- * first connected provider. You can always change it.
- */
 export function recommendedModel(models: Model[] | undefined, providers: Provider[], agents: Pick<Agent, "model">[] = []): string {
   if (!models?.length) return "";
   const known = new Set(models.map((m) => m.id));
@@ -33,7 +27,6 @@ export function recommendedModel(models: Model[] | undefined, providers: Provide
   return "";
 }
 
-/** Every model an agent can be given, across the connected providers, for a picker. */
 export const modelChoices = (models: Model[] | undefined, providers: Provider[]) => {
   const connected = providers.filter((p) => p.connected);
   return connected.flatMap((p) => choosableOf(models ?? [], p.id).map((m) => ({ value: m.id, label: connected.length > 1 ? `${p.name} · ${shortName(m.name)}` : shortName(m.name) })));

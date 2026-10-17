@@ -11,18 +11,14 @@ interface Props {
   onTab: (tab: Tab) => void;
   pins: Pin[] | null;
   pinsError: string | null;
-  /** A pin changed since you last looked. */
   fresh: boolean;
   actionCount: number;
   agentName: string;
-  /** Each pin's card. */
   cards: (pin: Pin) => ReactNode;
-  /** The actions list. */
   actions: ReactNode;
   onNew?: () => void;
 }
 
-/** The bolt's panel: pins the agent keeps up to date, and actions, as two tabs. */
 export function SidePanel({ tab, onTab, pins, pinsError, fresh, actionCount, agentName, cards, actions, onNew }: Props) {
   const tabButton = (which: Tab, label: string, count: number, dot = false) => (
     <button

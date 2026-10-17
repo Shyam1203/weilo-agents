@@ -18,7 +18,6 @@ export function BrowserPanel({ agentId, agentName, off, taken: takenNow, open: o
   const [taken, setTaken] = useState(false);
   const [hasWindow, setHasWindow] = useState(false);
   const [open, setOpen] = useState(false);
-  // Steps recorded while the user shows the agent a task; null when not recording.
   const [teaching, setTeaching] = useState<number | null>(null);
   const [goal, setGoal] = useState("");
   const { busy, error, run } = useAction();
@@ -32,7 +31,6 @@ export function BrowserPanel({ agentId, agentName, off, taken: takenNow, open: o
     void showBrowser(agentId).catch(() => {});
   }, [agentId, off]);
 
-  // The agent list hears when its window opens or closes and when it is taken over.
   useEffect(() => {
     setTaken(takenNow);
     if (!takenNow) setTeaching(null);

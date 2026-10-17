@@ -9,7 +9,6 @@ interface Props {
 
 const valueOf = (x: unknown) => (x && typeof x === "object" && "value" in x ? (x as { value: unknown }).value : x);
 
-// The reply a button sends: its message, then each field of its form by name.
 function replyOf({ humanFriendlyMessage, formState, formName, params }: ActionEvent) {
   const form = formName ? (formState?.[formName] as Record<string, unknown> | undefined) : undefined;
   const fields = Object.entries(form ?? {}).flatMap(([name, field]) => {

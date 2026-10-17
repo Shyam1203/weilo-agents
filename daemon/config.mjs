@@ -76,7 +76,6 @@ export const EARLIER_PAGE = 60;
 export const EARLIER_KEPT = 4;
 export const EARLIER_KEPT_MS = 5 * MINUTE;
 export const MAX_APPROVAL = 20_000;
-// A question the user has not answered: a reminder after an hour, and it closes after a day.
 export const ASK_REMIND_MS = 60 * MINUTE;
 export const ASK_CLOSE_MS = 24 * 60 * MINUTE;
 export const MAX_SEARCH = 200;
@@ -96,7 +95,13 @@ export const SIGN_IN_TIMEOUT_MS = 15 * MINUTE;
 export const SIGN_IN_STEP_MS = 8000;
 export const MODELS_TIMEOUT_MS = 90_000;
 export const MODELS_FOR_MS = 10 * MINUTE;
-export const COMPACT_AT = (window) => (window >= 1e6 ? 0.4 : window >= 5e5 ? 0.8 : 0.9);
+export const COMPACT_CAP = 120_000;
+export const COMPACT_POINT = (window) => Math.min(COMPACT_CAP, Math.round(window * (window >= 128_000 ? 0.5 : 0.8)));
+export const OLD_COMPACT_AT = (window) => (window >= 1e6 ? 0.4 : window >= 5e5 ? 0.8 : 0.9);
+export const IDLE_COMPACT_AT = 0.75;
+export const IDLE_COMPACT_DELAY_MS = 5000;
+export const SUMMARY_TIMEOUT_MS = 3 * MINUTE;
+export const MAX_SUMMARY_INPUT = 200_000;
 export const MIN_RESERVE = 16384;
 export const PLUGIN_STATUS_TIMEOUT_MS = 90_000;
 export const MAX_UNZIPPED = 50e6;
@@ -145,7 +150,6 @@ export const MAX_PIN_HISTORY = 30;
 export const MAX_TIMES = 6;
 export const MAX_IN_MINUTES = 525_600;
 export const LATE_MS = 60 * MINUTE;
-// What an agent replies, alone, when a check that ran by itself found nothing worth telling the user.
 export const NOTHING_NEW = "NOTHING_NEW";
 
 export const MAX_KEYS = 50;

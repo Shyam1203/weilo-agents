@@ -21,7 +21,6 @@ export const toImages = (urls = []) =>
 
 const UPLOADED = /^uploads\/[0-9a-f]{8}-[\w.\- ]{1,100}$/;
 
-// A file is sent on its own, as it is, before the message that names it.
 export async function saveUpload(agent, name, data) {
   if (typeof name !== "string" || !name) throw fail(400, "The file has no name");
   const home = homeOf(agent);

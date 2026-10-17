@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import { listActions, type Action } from "../../api/actions";
 import { messageOf } from "../../api/http";
 
-/** The agent's actions, read again when the chat shows one was saved or deleted (changed). */
 export function useActions(agentId: string, changed: number) {
   const [actions, setActions] = useState<Action[] | null>(null);
   const [error, setError] = useState<string | null>(null);

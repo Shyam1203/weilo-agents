@@ -23,6 +23,7 @@ import { ContextMeter } from "./ContextMeter";
 import { FindBar } from "./FindBar";
 import { NO_REPLY, type Message } from "./conversation";
 import { LoadingChat, MessageList } from "./MessageList";
+import { WorkingPill } from "./WorkingPill";
 import { useFind } from "./useFind";
 import { useChat } from "./useChat";
 import { BrowserPanel } from "../browser/BrowserPanel";
@@ -47,7 +48,6 @@ interface Props {
   onBack: () => void;
   find?: { query: string; at: number } | null;
   onEdit: () => void;
-  /** Edit agent, opened at its daily limit. */
   onEditLimits: () => void;
   onActivity: () => void;
   onLive: (live: { busy: boolean; doing: string | null } | null) => void;
@@ -59,7 +59,6 @@ const TOP_PX = 400;
 
 type Panel = "actions" | "browser";
 const PANELS: Record<Panel, string> = { actions: "Actions & pins", browser: "Browser" };
-// Older versions kept "1" (open) or "0" (closed) here; open now means the actions panel.
 const savedPanel = (): Panel | null => {
   const saved = read(KEYS.sidebar);
   return saved === "0" ? null : saved === "browser" ? "browser" : "actions";
@@ -72,7 +71,6 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
   useEffect(() => onLive({ busy: chat.busy, doing: chat.doing }), [chat.busy, chat.doing]);
   useEffect(() => () => onLive(null), []);
   const wide = useMedia("(min-width: 1024px)");
-  // One panel on the right at a time: on a wide screen it stays as you left it, on a narrow one it opens over the chat.
   const [docked, setDocked] = useState<Panel | null>(savedPanel);
   const [sheet, setSheet] = useState<Panel | null>(null);
   const panel = wide ? docked : sheet;
@@ -83,10 +81,8 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
     setDocked(next);
   };
   const browserBusy = !!agent.browserOpen || !!agent.taken;
-  // Read the actions again when the chat shows one was saved or changed, or one ran by itself.
   const notes = chat.messages.filter((m) => m.kind === "note").length;
   const acts = useActions(agent.id, notes + chat.actionsChanged);
-  // Pins and actions share the bolt's panel, as two tabs: it opens on Pins when there are any.
   const pinned = usePins(agent.id, notes + chat.pinsChanged);
   const [chosenTab, setTab] = useState<Tab | null>(null);
   const tab: Tab = chosenTab ?? (pinned.pins?.length ? "pins" : "actions");
@@ -95,7 +91,6 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
   useEffect(() => {
     if (seeingPins && pinned.fresh) look();
   }, [seeingPins, pinned.fresh, look]);
-  // The pin a "Pinned: …" line names stands out for a moment.
   const [lit, setLit] = useState<string | null>(null);
   useEffect(() => {
     if (!lit) return;
@@ -143,7 +138,6 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
   const found = useFind(scroller.box, finding ? query : "", [chat.messages, chat.ready], loadingFor ? null : find);
   const closeFind = () => (setFinding(false), setQuery(""));
 
-  // plain: a problem that is not about a message (summarizing, a queued message, a model change), so no fixes.
   const [replyError, setReplyErrorOf] = useState<{ message: string; status?: number; plain?: boolean } | null>(null);
   const setReplyError = (message: string | null, plain = false) => setReplyErrorOf(message === null ? null : { message, plain });
   const failed = (err: unknown, plain = false) => setReplyErrorOf({ message: messageOf(err), status: err instanceof RequestError ? err.status : undefined, plain });
@@ -153,7 +147,6 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
       failed(err);
       throw Object.assign(err instanceof Error ? err : new Error(messageOf(err)), { shown: true });
     }));
-  // A send that failed is old news once the agent works again.
   useEffect(() => void (chat.busy && setReplyErrorOf(null)), [chat.busy]);
   const reply = (text: string) => void send({ text, images: [], files: [] }).catch(() => {});
   const retry = ({ text, images }: Draft) => void send({ text, images, files: [] }).catch(() => {});
@@ -180,7 +173,6 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
     setOpened(null);
     setSheet(null);
     const key = Date.now();
-    // An instant action answers in the chat (kept with the action); an agent action goes to the chat as your message.
     if (action.kind === "script") setPending((list) => [...list, { key, action }]);
     setRunning((now) => new Set(now).add(action.id));
     try {
@@ -215,7 +207,6 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
     />
   );
   const openedAction = acts.actions?.find((a) => a.id === opened);
-  // Instant actions' answers sit in the chat by their time; ones older than the messages loaded wait for "Load earlier".
   const since = chat.more ? (chat.messages.find((m) => m.at !== null)?.at ?? Infinity) : 0;
   const answer = (action: Action, run: ActionRun | undefined, latest: boolean) => (
     <ActionResult
@@ -272,7 +263,7 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
           <div ref={scroller.box} style={{ paddingBottom: room }} className="h-full overflow-y-auto">
             <div className="mx-auto w-full max-w-3xl px-4 py-5">
               {chat.more && <p className="flex items-center justify-center gap-2 pb-4 text-xs text-ink-3">{chat.loadingEarlier ? <><Icon name="spinner" size={12} /> Loading earlier messages…</> : <button type="button" onClick={() => void chat.loadEarlier()} className="underline">Load earlier messages</button>}</p>}
-              {!chat.ready ? <LoadingChat /> : fresh ? <EmptyChat name={agent.name} avatar={avatarOf(agent)} shortcuts={shortcuts} onPick={(text) => put({ text, images: [] })} /> : <MessageList messages={chat.messages} busy={chat.busy} asking={chat.asking} onAnswer={chat.answer} onReply={reply} onRetry={retry} onEdit={put} queued={chat.queued} onUnqueue={unqueue} onPins={showPins} extras={answers} note={chat.note === NO_REPLY ? problem("No reply came. Send your message again, or try another model.", ["retry", "model"], "info") : chat.note} />}
+              {!chat.ready ? <LoadingChat /> : fresh ? <EmptyChat name={agent.name} avatar={avatarOf(agent)} shortcuts={shortcuts} onPick={(text) => put({ text, images: [] })} /> : <MessageList messages={chat.messages} busy={chat.busy} asking={chat.asking} onAnswer={chat.answer} onReply={reply} onRetry={retry} onEdit={put} queued={chat.queued} onUnqueue={unqueue} onPins={showPins} extras={answers} working={chat.busy && <WorkingPill avatar={avatarOf(agent)} doing={chat.doing} waiting={!!chat.asking} onStop={chat.stop} />} note={chat.note === NO_REPLY ? problem("No reply came. Send your message again, or try another model.", ["retry", "model"], "info") : chat.note} />}
             </div>
           </div>
           <div ref={dock} className="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-page from-55% to-transparent pt-8">
@@ -322,8 +313,6 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
                 onEdit={onEdit}
                 shortcuts={shortcuts}
                 to={agent.name}
-                avatar={avatarOf(agent)}
-                doing={chat.doing}
                 busy={chat.busy}
                 waiting={!!chat.asking}
                 onAnswer={chat.asking && !chat.asking.secret ? chat.answer : undefined}
@@ -356,7 +345,6 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
   );
 }
 
-// What the agent does for you (with a tap, or by itself at set times) is one panel; its browser, a live screen, is the other.
 const Side = ({ panel, agent, actions, onTaken }: { panel: Panel; agent: Agent; actions: ReactNode; onTaken: () => void }) =>
   panel === "actions" ? (
     actions
