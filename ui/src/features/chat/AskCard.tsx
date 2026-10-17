@@ -9,10 +9,15 @@ interface Props {
   question: string;
   options?: string[];
   answer?: string;
+  /** A protected field for a key, which goes to the app and never to the agent. */
+  secret?: boolean;
   onAnswer?: (value?: string) => Promise<void>;
 }
 
-export function AskCard({ question, options, answer, onAnswer }: Props) {
+// What the ask tool answers when the question was skipped, or closed after a day (agents/runner.mjs).
+const NO_ANSWER = "The user did not answer.";
+
+export function AskCard({ question, options, answer, secret = false, onAnswer }: Props) {
   const { busy, error, run } = useAction();
   const [text, setText] = useState("");
   const send = (value?: string) => run("answer", () => onAnswer!(value));
@@ -38,7 +43,10 @@ export function AskCard({ question, options, answer, onAnswer }: Props) {
   return (
     <section className={`w-full max-w-md rounded-2xl border bg-page px-3.5 py-3 ${onAnswer ? "border-ink-3 shadow-pop" : "border-line"}`}>
       <p className="max-h-80 overflow-y-auto text-[14.5px] font-medium whitespace-pre-wrap [overflow-wrap:anywhere]">{question}</p>
-      {options?.length ? (
+      {secret && <p className="mt-1 text-xs text-ink-3">It's kept by the app and sent only to that site.</p>}
+      {answer === NO_ANSWER ? (
+        <p className="mt-2 text-xs text-ink-3">Closed without an answer.</p>
+      ) : options?.length ? (
         <>
           <div className="mt-2.5 flex flex-wrap gap-2">
             {options.map((o, i) => (
@@ -59,9 +67,9 @@ export function AskCard({ question, options, answer, onAnswer }: Props) {
               if (text.trim()) void send(text.trim());
             }}
           >
-            <input value={text} onChange={(e) => setText(e.target.value)} aria-label="Your answer" autoFocus className="input min-w-0 flex-1" />
+            <input value={text} onChange={(e) => setText(e.target.value)} aria-label={secret ? "Key" : "Your answer"} autoFocus className="input min-w-0 flex-1" {...(secret && { type: "password", autoComplete: "off", spellCheck: false })} />
             <Button type="submit" variant="primary" busy={!!busy} disabled={!text.trim()}>
-              Send
+              {secret ? "Save" : "Send"}
             </Button>
           </form>
         )

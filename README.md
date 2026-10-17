@@ -23,7 +23,7 @@ To build the image from a checkout instead: `docker compose up -d --build`.
 
 ## What leaves your computer
 
-Besides your provider's API (the model you pick), the app asks GitHub now and then whether a newer release exists (turn it off in Settings > General), and sends a message only when you use Contact us (your name, email, message and the app version, to api.weilo.xyz). If you turn on notifications (Settings > General), each one goes through your browser's push service (Google, Apple, Mozilla or Microsoft), encrypted so that only your device can read it: the agent's name and the start of what it said. Your chats and files stay on your computer.
+Besides your provider's API (the model you pick), the app asks GitHub now and then whether a newer release exists (turn it off in Settings > General), and sends a message only when you use Contact us (your name, email, message and the app version, to api.weilo.xyz). If you turn on notifications (Settings > General), each one goes through your browser's push service (Google, Apple, Mozilla or Microsoft), encrypted so that only your device can read it: the agent's name and the start of what it said. A plugin you sign in to, or a site you save a key for, gets the requests your agents make to it. Your chats and files stay on your computer.
 
 ## Develop
 

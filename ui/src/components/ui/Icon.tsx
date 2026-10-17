@@ -1,6 +1,6 @@
 import {
   CalendarDays, Ellipsis, Package, Pin, Play, ShoppingCart, Tag, Truck, UtensilsCrossed, Wallet, Zap,
-  ArrowDown, ArrowUp, Bell, Bot, ChartColumn, Brain, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Download, ExternalLink, FileText, Globe, Info, Key, List, LoaderCircle, Mail, Mic, MonitorSmartphone, MousePointer2,
+  ArrowDown, ArrowUp, Bell, Bot, ChartColumn, Brain, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Copy, Download, ExternalLink, FileText, Globe, GraduationCap, Info, Key, List, LoaderCircle, Mail, Mic, MonitorSmartphone, MousePointer2,
   PanelRight, Paperclip, Pencil, Plug, Plus, Puzzle, RotateCcw, Search, Settings, Share, ShieldCheck, Sparkles, Square, TriangleAlert, User, X,
 } from "lucide-react";
 
@@ -23,6 +23,7 @@ const ICONS = {
   sparkle: Sparkles,
   puzzle: Puzzle,
   globe: Globe,
+  teach: GraduationCap,
   panel: PanelRight,
   attach: Paperclip,
   camera: Camera,

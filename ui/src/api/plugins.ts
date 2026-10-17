@@ -3,6 +3,7 @@ import { request } from "./http";
 export interface Plugin {
   name: string;
   detail: string;
+  signedIn: boolean;
 }
 
 export interface PluginStatus {
@@ -23,3 +24,6 @@ export const listPlugins = () => request<Plugin[]>("GET", "/api/plugins");
 export const pluginStatus = () => request<Record<string, PluginStatus>>("GET", "/api/plugins/status");
 export const addPlugin = (plugin: NewPlugin) => request("POST", "/api/plugins", plugin);
 export const removePlugin = (name: string) => request("DELETE", `/api/plugins/${name}`);
+/** The address of the plugin's sign-in page, which sends this browser back to the app. */
+export const startPluginSignIn = (name: string) => request<{ url: string }>("POST", `/api/plugins/${name}/sign-in`, { origin: location.origin });
+export const signOutOfPlugin = (name: string) => request("DELETE", `/api/plugins/${name}/sign-in`);

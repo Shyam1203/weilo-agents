@@ -208,7 +208,7 @@ export function Composer({ agentId, onEdit, shortcuts, to, avatar, doing, busy, 
   };
 
   const note = error ?? dictation.error ?? (dictation.listening ? "Listening… Tap the microphone to stop." : null);
-  const keys = busy && hasContent && !onAnswer ? "Enter tells it now · Alt+Enter sends it when it finishes" : waiting ? "Enter to send your answer" : busy ? "Enter to send · Esc to stop" : "Enter to send · Shift+Enter for a new line · / for commands · ↑ for your last message";
+  const keys = busy && hasContent && !onAnswer ? "Enter tells it now · Alt+Enter sends it when it finishes" : waiting && onAnswer ? "Enter to send your answer" : busy ? "Enter to send · Esc to stop" : "Enter to send · Shift+Enter for a new line · / for commands · ↑ for your last message";
 
   return (
     <form

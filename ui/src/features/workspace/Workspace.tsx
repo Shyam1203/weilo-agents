@@ -160,6 +160,7 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
         <Suspense>
           <AgentForm
             agent={form === "new" ? undefined : agent}
+            agents={agents}
             showMore={form === "limits"}
             providers={providers}
             skills={skills}

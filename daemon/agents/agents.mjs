@@ -16,13 +16,16 @@ const folder = (id) => {
 const THINKING = ["", "off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 const ids = (list) => Array.isArray(list) && list.every((id) => typeof id === "string");
+// What the user lets an agent do without asking each time (approve.mjs): save skills, add buttons,
+// change model settings, or send messages to one other agent ("ask:<its id>").
+export const ALLOW_RULE = /^(skill|action|settings|ask:[a-z0-9-]+)$/;
 
-const clean = ({ name, model, thinking = "", skills = [], plugins = [], extensions = [], disabled = [], instructions = "", avatar, isolated = false, trusted = false, dailyTokens = 0 }) => {
+const clean = ({ name, model, thinking = "", skills = [], plugins = [], extensions = [], disabled = [], instructions = "", avatar, isolated = false, trusted = false, allow = [], dailyTokens = 0 }) => {
   if (typeof name !== "string" || !name.trim()) throw fail(400, "Type a name");
   if (typeof model !== "string" || !model.trim()) throw fail(400, "Choose a model");
-  if (typeof instructions !== "string" || !THINKING.includes(thinking) || !ids(skills) || !ids(plugins) || !ids(extensions) || !ids(disabled) || typeof isolated !== "boolean" || typeof trusted !== "boolean" || !Number.isSafeInteger(dailyTokens) || dailyTokens < 0) throw fail(400, "The agent settings are not valid");
+  if (typeof instructions !== "string" || !THINKING.includes(thinking) || !ids(skills) || !ids(plugins) || !ids(extensions) || !ids(disabled) || typeof isolated !== "boolean" || typeof trusted !== "boolean" || !ids(allow) || !allow.every((rule) => ALLOW_RULE.test(rule)) || !Number.isSafeInteger(dailyTokens) || dailyTokens < 0) throw fail(400, "The agent settings are not valid");
   const { shape, color } = avatar ?? {};
-  return { name: name.trim(), model: model.trim(), thinking, skills, plugins, extensions, disabled, instructions, ...(typeof shape === "string" && typeof color === "string" && { avatar: { shape, color } }), isolated, trusted, dailyTokens };
+  return { name: name.trim(), model: model.trim(), thinking, skills, plugins, extensions, disabled, instructions, ...(typeof shape === "string" && typeof color === "string" && { avatar: { shape, color } }), isolated, trusted, allow: [...new Set(allow)], dailyTokens };
 };
 
 async function save(id, agent) {
@@ -88,7 +91,7 @@ async function readProfile(id) {
 export async function getAgent(id) {
   try {
     const saved = await readProfile(id);
-    const agent = { id, thinking: "", skills: [], plugins: [], extensions: [], disabled: [], instructions: "", isolated: false, trusted: false, dailyTokens: 0, ...saved };
+    const agent = { id, thinking: "", skills: [], plugins: [], extensions: [], disabled: [], instructions: "", isolated: false, trusted: false, allow: [], dailyTokens: 0, ...saved };
     return { ...agent, disabled: Array.isArray(agent.disabled) ? agent.disabled.filter((name) => Object.hasOwn(BUNDLED, name)) : [] };
   } catch (err) {
     if (err.code === "ENOENT") read.delete(id);

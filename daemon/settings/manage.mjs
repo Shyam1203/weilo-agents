@@ -1,5 +1,6 @@
 import { getAgent, profiles } from "../agents/agents.mjs";
-import { askUser, restartAll } from "../agents/runner.mjs";
+import { restartAll } from "../agents/runner.mjs";
+import { ALLOWED_NOTE, approve } from "../agents/approve.mjs";
 import { fail, readJson, SETTINGS, updateJson } from "../common.mjs";
 import { MIN_RESERVE } from "../config.mjs";
 import { getCurator } from "../memory/curator.mjs";
@@ -73,7 +74,8 @@ export async function manageSettings(id, { action, ...request }) {
   if (action !== "change") throw fail(400, "Use list or change.");
   const plan = planSettings(request, now);
   const question = `${(await getAgent(id)).name} asks to change the app's settings:\n${plan.lines.join("\n")}`;
-  if ((await askUser(id, question, [APPROVE, "Don't"])) !== APPROVE) return { text: "The user did not approve it: nothing was changed." };
+  const { answer, always } = await approve(id, "settings", question, [APPROVE, "Don't"]);
+  if (answer !== APPROVE) return { text: "The user did not approve it: nothing was changed." };
   const fresh = planSettings(request, await current());
   const effect = (p) => JSON.stringify([[...(p.enabledModels ?? [])].sort(), p.compaction]);
   if (effect(fresh) !== effect(plan)) throw fail(409, "The settings were changed while the user was asked. Look again, and ask again if it is still needed.");
@@ -89,5 +91,6 @@ export async function manageSettings(id, { action, ...request }) {
   }
   await (plan.enabledModels ? setEnabledModels(plan.enabledModels) : syncCompaction());
   await restartAll();
-  return { text: "Changed. Agents start anew with it (you after this reply)." };
+  const text = "Changed. Agents start anew with it (you after this reply).";
+  return always ? { text, details: { note: `Changed the model settings${ALLOWED_NOTE}` } } : { text };
 }

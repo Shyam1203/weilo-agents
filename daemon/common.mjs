@@ -28,6 +28,7 @@ export const SKILLS = join(AGENT_DIR, "skills");
 export const EXTENSIONS = join(AGENT_DIR, "extensions");
 export const BUNDLED = Object.fromEntries(["browser", "actions"].map((id) => [id, fileURLToPath(new URL(`./${id}/extension`, import.meta.url))]));
 export const MCP = join(AGENT_DIR, "mcp.json");
+export const KEYS = join(AGENT_DIR, "keys.json");
 export const USER = join(AGENT_DIR, "USER.md");
 export const MEMORY = join(AGENT_DIR, "MEMORY.md");
 export const KNOWLEDGE = join(ROOT, "knowledge");

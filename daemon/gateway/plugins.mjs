@@ -4,6 +4,7 @@ import { homeOf, isIsolated } from "../agents/agents.mjs";
 import { spawnSandboxed } from "../sandbox/client.mjs";
 import { pluginUser, sharedTools, spawnAs } from "../users.mjs";
 import { forward, headersOf } from "./forward.mjs";
+import { accessToken } from "../settings/oauth.mjs";
 
 export const servers = async () => (await readJson(MCP)).mcpServers ?? {};
 
@@ -11,7 +12,7 @@ export async function piPlugins(names, key, agent) {
   const all = await servers();
   const mine = {};
   for (const name of names.filter((n) => Object.hasOwn(all, n))) {
-    const { url, headers: _headers, command: _command, args: _args, env: _env, ...rest } = all[name];
+    const { url, headers: _headers, command: _command, args: _args, env: _env, oauth: _oauth, ...rest } = all[name];
     mine[name] = url
       ? { ...rest, url: `http://127.0.0.1:${PORT}/api/plugin-proxy/${name}`, headers: { Authorization: `Bearer ${key}` } }
       : { ...rest, command: "node", args: ["/app/gateway/pipe.mjs", name], env: { WEILO_API: `http://127.0.0.1:${PORT}/api`, WEILO_AGENT: agent, WEILO_KEY: key } };
@@ -21,9 +22,10 @@ export async function piPlugins(names, key, agent) {
 
 export const pluginOf = async (name) => (await servers())[name];
 
-export async function proxyPlugin(req, res, { plugin, rest, search }) {
+export async function proxyPlugin(req, res, { name, plugin, rest, search }) {
   const target = new URL(plugin.url.replace(/\/$/, "") + rest + search);
-  await forward(req, res, target, { ...headersOf(req, ["authorization"]), ...plugin.headers });
+  const token = await accessToken(name, plugin);
+  await forward(req, res, target, { ...headersOf(req, ["authorization"]), ...(token ? { authorization: `Bearer ${token}` } : plugin.headers) });
 }
 
 

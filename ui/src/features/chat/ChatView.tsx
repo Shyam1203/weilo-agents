@@ -326,7 +326,7 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
                 doing={chat.doing}
                 busy={chat.busy}
                 waiting={!!chat.asking}
-                onAnswer={chat.asking ? chat.answer : undefined}
+                onAnswer={chat.asking && !chat.asking.secret ? chat.answer : undefined}
                 disabled={!hasProvider}
                 onSend={send}
                 onStop={chat.stop}

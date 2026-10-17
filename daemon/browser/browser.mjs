@@ -1,9 +1,9 @@
 import { hostname } from "node:os";
 import { createRequire } from "node:module";
 import { abort, activityOf, prompt } from "../agents/runner.mjs";
-import { fail } from "../common.mjs";
+import { fail, unsafe } from "../common.mjs";
 import {
-  BROWSER_IDLE_MS, BROWSER_SWEEP_MS, WINDOW_IDLE_MS, BACK_TIMEOUT_MS, CONNECT_TIMEOUT_MS, CONTENT_TIMEOUT_MS, ELEMENT_TIMEOUT_MS, LOAD_TIMEOUT_MS, PORT, SETTLE_MS, SNAPSHOT_MAX, SNAPSHOT_TIMEOUT_MS, TAB_TIMEOUT_MS, WINDOW_TRIES, WINDOW_TRY_MS,
+  BROWSER_IDLE_MS, BROWSER_SWEEP_MS, MAX_TEACH_GOAL, MAX_TEACH_STEPS, WINDOW_IDLE_MS, BACK_TIMEOUT_MS, CONNECT_TIMEOUT_MS, CONTENT_TIMEOUT_MS, ELEMENT_TIMEOUT_MS, LOAD_TIMEOUT_MS, PORT, SETTLE_MS, SNAPSHOT_MAX, SNAPSHOT_TIMEOUT_MS, TAB_TIMEOUT_MS, WINDOW_TRIES, WINDOW_TRY_MS,
 } from "../config.mjs";
 import { tellAgent } from "../agents/status.mjs";
 import { cdpAddress, hasScreen, isAwake, sleepScreen, viewing, wakeScreen } from "./screen.mjs";
@@ -255,6 +255,7 @@ export async function takeOver(agent) {
 
 export async function giveBack(agent) {
   const record = of(agent);
+  await stopTeaching(record);
   record.used = Date.now();
   const carryOn = record.taken;
   record.taken = undefined;
@@ -303,3 +304,152 @@ setInterval(() => {
     .catch((err) => console.error("Browser:", err.message))
     .finally(() => (sweeping = false));
 }, BROWSER_SWEEP_MS).unref();
+
+// Teaching: the user does a task once in the agent's window while the app writes down each step
+// (pages opened, what was clicked, typed and chosen; never a password), then the steps go to the
+// agent, which saves them as a skill. Each tab of the window gets a recorder script and a binding
+// it reports to.
+const TEACH_BINDING = "__weiloTeach";
+const RECORDER = `(() => {
+  if (window.__weiloTeaching) return;
+  window.__weiloTeaching = true;
+  const send = (step) => { try { window.${TEACH_BINDING}(JSON.stringify(step)); } catch {} };
+  const clean = (t) => String(t ?? "").replace(/\\s+/g, " ").trim().slice(0, 80);
+  const labelOf = (el) => clean(el.getAttribute("aria-label") || (el.labels && el.labels[0] && el.labels[0].innerText) || el.getAttribute("placeholder") || el.getAttribute("title") || el.getAttribute("name") || el.getAttribute("alt"));
+  const nameOf = (el) => labelOf(el) || clean(el.innerText || el.value);
+  const hidden = (el) => el.type === "password" || /cc-|one-time-code|password/.test(el.autocomplete || "");
+  const valueOf = (el) => (hidden(el) ? null : clean(el.value));
+  addEventListener("click", (e) => {
+    const el = e.target.closest && e.target.closest("a,button,summary,label,[role=button],[role=link],[role=tab],[role=menuitem],[role=option],[role=checkbox],input[type=checkbox],input[type=radio],input[type=submit],input[type=button]");
+    if (!el) return;
+    const role = el.getAttribute("role");
+    const kind = el.tagName === "A" || role === "link" ? "link" : el.type === "checkbox" || el.type === "radio" || role === "checkbox" ? "box" : "button";
+    send({ act: "click", kind, name: nameOf(el) });
+  }, true);
+  addEventListener("change", (e) => {
+    const el = e.target;
+    if (el.tagName === "SELECT") return send({ act: "choose", field: labelOf(el), value: clean(el.selectedOptions && el.selectedOptions[0] && el.selectedOptions[0].text) });
+    if (!/^(INPUT|TEXTAREA)$/.test(el.tagName) || /^(checkbox|radio|submit|button|file|hidden)$/.test(el.type)) return;
+    send({ act: "type", field: labelOf(el), value: valueOf(el) });
+  }, true);
+  addEventListener("keydown", (e) => {
+    const el = e.target;
+    if (e.key === "Enter" && /^(INPUT|TEXTAREA)$/.test(el.tagName)) send({ act: "enter", field: labelOf(el), value: valueOf(el) });
+  }, true);
+})()`;
+
+const quoted = (text) => `"${text}"`;
+const fieldOf = (field) => (field ? ` in ${quoted(field)}` : "");
+const textOf = (value) => (typeof value === "string" ? value.slice(0, 200) : "");
+
+/** One recorded step in plain words, or null to leave it out. */
+export function teachStep(step) {
+  const [name, field] = [textOf(step.name), textOf(step.field)];
+  const value = step.value === null ? null : textOf(step.value);
+  const typed = value === null || unsafe(value) === "secret" ? `a password or other secret (not recorded)${fieldOf(field)}` : `${quoted(value)}${fieldOf(field)}`;
+  switch (step.act) {
+    case "open": {
+      const url = textOf(step.url);
+      return /^https?:/.test(url) ? `Opened ${url}` : null;
+    }
+    case "click":
+      return !name ? null : step.kind === "link" ? `Clicked the link ${quoted(name)}` : step.kind === "box" ? `Ticked ${quoted(name)}` : `Clicked ${quoted(name)}`;
+    case "type":
+      return value === "" ? null : `Typed ${typed}`;
+    case "choose":
+      return value ? `Chose ${quoted(value)}${fieldOf(field)}` : null;
+    case "enter":
+      return value === "" ? `Pressed Enter${fieldOf(field)}` : `Typed ${typed} and pressed Enter`;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Add a step to the recording, without repeating one: Enter after typing, or a change after Enter,
+ * is the same step, and pages opened one after another (a redirect) are only the last one.
+ */
+export function addStep(steps, step) {
+  const line = teachStep(step);
+  const last = steps.at(-1);
+  if (!line || line === last || (step.act === "type" && last === `${line} and pressed Enter`)) return;
+  if ((step.act === "enter" && last && line === `${last} and pressed Enter`) || (step.act === "open" && last?.startsWith("Opened "))) steps[steps.length - 1] = line;
+  else if (steps.length < MAX_TEACH_STEPS) steps.push(line);
+}
+
+// A tab keeps its recorder and binding for its life (Playwright cannot take them back); once the
+// recording ends, the binding finds no recording for the tab and drops what it hears.
+const taught = new WeakSet();
+const recordingOf = (page) => [...agents.values()].map((r) => r.teach).find((t) => t?.pages.some((p) => p.page === page));
+
+async function watchTab(teach, page) {
+  if (teach.stopped || teach.pages.some((p) => p.page === page)) return;
+  const note = (step) => !teach.stopped && addStep(teach.steps, step);
+  const onNav = (frame) => frame === page.mainFrame() && note({ act: "open", url: frame.url() });
+  teach.pages.push({ page, onNav });
+  if (!taught.has(page)) {
+    taught.add(page);
+    await page.exposeBinding(TEACH_BINDING, ({ page: from }, payload) => {
+      const now = recordingOf(from);
+      try {
+        const step = JSON.parse(String(payload));
+        if (now && step && typeof step === "object" && step.act !== "open") addStep(now.steps, step);
+      } catch {}
+    });
+    await page.addInitScript(RECORDER);
+  }
+  await page.evaluate(RECORDER).catch(() => {});
+  page.on("framenavigated", onNav);
+  note({ act: "open", url: page.url() });
+}
+
+const unwatch = ({ page, onNav }) => page.off("framenavigated", onNav);
+
+async function stopTeaching(record) {
+  const teach = record.teach;
+  if (!teach) return [];
+  record.teach = null;
+  teach.stopped = true;
+  teach.ctx?.off("page", teach.onTab);
+  teach.pages.forEach(unwatch);
+  return teach.steps;
+}
+
+/** How many steps are recorded so far; null when nothing is being recorded. */
+export const teachingSteps = (agent) => agents.get(agent)?.teach?.steps.length ?? null;
+
+export async function startTeaching(agent) {
+  await takeOver(agent);
+  const record = of(agent);
+  if (record.teach) return;
+  const teach = { steps: [], pages: [], stopped: false, ctx: null, onTab: null };
+  record.teach = teach;
+  try {
+    const c = await connected();
+    const state = await live(agent);
+    teach.ctx = c.ctx;
+    teach.onTab = (page) => void windowIdOf(c, page).then((id) => id?.windowId === record.window?.windowId && watchTab(teach, page)).catch(() => {});
+    c.ctx.on("page", teach.onTab);
+    for (const page of state?.tabs ?? []) await watchTab(teach, page);
+  } catch (err) {
+    await stopTeaching(record);
+    throw err;
+  }
+}
+
+/** The message that hands what the user showed to the agent. */
+export const teachMessage = (goal, steps) =>
+  `I showed you in the browser how to: ${goal}\n\nWhat I did:\n${steps.map((step, i) => `${i + 1}. ${step}`).join("\n")}\n\nSave this as a skill with the skill tool, so you can do it yourself next time. Write the steps so they still work when the page changes a little, say which values change each time (like amounts or dates) and ask me for those then, and leave out what was only for this once. I did not record passwords: never ask me for one in the chat.`;
+
+export async function finishTeaching(agent, goal) {
+  const what = typeof goal === "string" ? goal.trim() : "";
+  if (!what) throw fail(400, "Say in a few words what you showed");
+  if (what.length > MAX_TEACH_GOAL) throw fail(400, `Say it in at most ${MAX_TEACH_GOAL} characters`);
+  const record = of(agent);
+  if (!record.teach) throw fail(409, "Nothing is being recorded");
+  if (!record.teach.steps.some((step) => !step.startsWith("Opened "))) throw fail(400, "Nothing was recorded yet. Do the task in the browser, then click Done.");
+  const steps = await stopTeaching(record);
+  record.taken = undefined;
+  tellAgent(agent, { taken: false });
+  await prompt(agent, { text: teachMessage(what, steps) });
+}

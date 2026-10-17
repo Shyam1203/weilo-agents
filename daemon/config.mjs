@@ -61,7 +61,7 @@ export const BIN = {
 
 export const PI_TOOLS = ["read", "bash", "edit", "write"];
 export const SHARED_TOOLS = ["skill", "memory", "fetch_knowledge", "manage_settings", "ask_agent"];
-export const CORE_TOOLS = ["show", "ask", "manage_agents", ...SHARED_TOOLS];
+export const CORE_TOOLS = ["show", "ask", "key", "manage_agents", ...SHARED_TOOLS];
 export const PI_BUILTINS = ["mcp", "codemode", "tool-search", "llama.cpp"];
 export const RESERVED_TOOLS = [...new Set([...PI_TOOLS, ...CORE_TOOLS, "codemode"])];
 export const IDLE_MS = 10 * MINUTE;
@@ -76,6 +76,9 @@ export const EARLIER_PAGE = 60;
 export const EARLIER_KEPT = 4;
 export const EARLIER_KEPT_MS = 5 * MINUTE;
 export const MAX_APPROVAL = 20_000;
+// A question the user has not answered: a reminder after an hour, and it closes after a day.
+export const ASK_REMIND_MS = 60 * MINUTE;
+export const ASK_CLOSE_MS = 24 * 60 * MINUTE;
 export const MAX_SEARCH = 200;
 export const SEARCH_RESULTS = 50;
 
@@ -142,6 +145,22 @@ export const MAX_PIN_HISTORY = 30;
 export const MAX_TIMES = 6;
 export const MAX_IN_MINUTES = 525_600;
 export const LATE_MS = 60 * MINUTE;
+// What an agent replies, alone, when a check that ran by itself found nothing worth telling the user.
+export const NOTHING_NEW = "NOTHING_NEW";
+
+export const MAX_KEYS = 50;
+export const MAX_KEY_VALUE = 16_384;
+export const KEY_TIMEOUT_MS = 30_000;
+export const MAX_KEY_RESPONSE = 1 << 20;
+export const KEY_SHOWN = 20_000;
+export const MAX_KEY_BODY = 1 << 20;
+
+export const OAUTH_PENDING_MS = 15 * MINUTE;
+export const OAUTH_TIMEOUT_MS = 15_000;
+export const OAUTH_FRESH_MS = MINUTE;
+
+export const MAX_TEACH_STEPS = 200;
+export const MAX_TEACH_GOAL = 200;
 
 export const SCREEN = { width: 1280, height: 800 };
 export const SCREEN_RESTART_MS = 2000;
