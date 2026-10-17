@@ -29,6 +29,8 @@ export interface Asking {
   id: string;
   title: string;
   options?: string[];
+  /** A protected field for a key: the answer goes to the app, never to the agent. */
+  secret?: boolean;
 }
 
 interface StreamEvent {
@@ -44,7 +46,7 @@ interface StreamEvent {
 export interface PiEvent extends Partial<Asking> {
   type: string;
   method?: string;
-  asking?: Asking | null;
+  asking?: (Asking & { method?: string }) | null;
   messages?: PiMessage[];
   busy?: boolean;
   message?: PiMessage;
@@ -76,7 +78,7 @@ export interface Queued {
 
 export const empty: Conversation = { ready: false, messages: [], busy: false, open: false, asking: null, queued: [], earlier: [], more: false };
 
-const shows = (m: PiMessage) => m.role === "user" || m.role === "assistant" || m.role === "compactionSummary" || (m.role === "toolResult" && (m.toolName === "ask" || m.toolName === "routine" || m.toolName === "manage_agents" || m.toolName === "action" || m.toolName === "pin"));
+const shows = (m: PiMessage) => m.role === "user" || m.role === "assistant" || m.role === "compactionSummary" || (m.role === "toolResult" && (m.toolName === "ask" || m.toolName === "routine" || m.toolName === "action" || m.toolName === "pin" || !!m.details?.note));
 
 const textOf = (content: PiMessage["content"] | undefined) => (typeof content === "string" ? content : (content ?? []).map((b) => b.text ?? "").join(""));
 
@@ -107,14 +109,14 @@ export function reduce(state: Conversation, e: PiEvent): Conversation {
   switch (e.type) {
     case "history": {
       const messages = (e.messages ?? []).filter(shows);
-      return { ready: true, messages, busy: !!e.busy, open: false, asking: e.asking ?? null, queued: [], earlier: [], more: e.more ?? messages[0]?.role === "compactionSummary" };
+      return { ready: true, messages, busy: !!e.busy, open: false, asking: e.asking ? { ...e.asking, secret: e.asking.method === "secret" } : null, queued: [], earlier: [], more: e.more ?? messages[0]?.role === "compactionSummary" };
     }
     case "earlier":
       return { ...state, earlier: [...(e.messages ?? []), ...state.earlier], more: !!e.more };
     case "queue_update":
       return { ...state, queued: [...(e.steering ?? []).map((text): Queued => ({ text, when: "now" })), ...(e.followUp ?? []).map((text): Queued => ({ text, when: "later" }))] };
     case "extension_ui_request":
-      return (e.method === "select" || e.method === "input") && e.id ? { ...state, asking: { id: e.id, title: e.title ?? "", options: e.options } } : state;
+      return (e.method === "select" || e.method === "input" || e.method === "secret") && e.id ? { ...state, asking: { id: e.id, title: e.title ?? "", options: e.options, secret: e.method === "secret" } } : state;
     case "ask_end":
       return { ...state, asking: null };
     case "agent_start":
@@ -221,11 +223,26 @@ function detailOf(tool: string, args: unknown) {
   return first("path", "file_path", "pattern", "query", "url", "action", "name");
 }
 
+// Kept in step with the daemon's NOTHING_NEW (config.mjs): what a check that ran by itself replies when it found nothing.
+const NOTHING_NEW = "NOTHING_NEW";
+const isNothingNew = (text: string) => {
+  const words = text.split(/[\s.]+/).filter(Boolean);
+  return words.length > 0 && words.every((word) => word === NOTHING_NEW);
+};
+const NOTHING_NEW_NOTE = "Nothing new";
+const RAN_BY_ITSELF = " ran by itself";
+
 const joined = (items: Item[]) =>
   items.reduce<Item[]>((all, item) => {
     const last = all.at(-1);
     if (item.kind === "steps" && last?.kind === "steps") all[all.length - 1] = { ...last, steps: [...last.steps, ...item.steps] };
-    else all.push(item);
+    else if (item.kind === "note" && item.text === NOTHING_NEW_NOTE) {
+      // A check that ran by itself and found nothing is one line: what ran, and that nothing was new.
+      const at = all.findLastIndex((x) => x.kind !== "steps");
+      const ran = all[at];
+      if (ran?.kind === "note" && ran.text.endsWith(RAN_BY_ITSELF)) all.splice(at, all.length - at, { ...ran, text: `${ran.text} · nothing new` });
+      else all.push(item);
+    } else all.push(item);
     return all;
   }, []);
 
@@ -288,6 +305,7 @@ function itemsFor(m: PiMessage, i: number, arriving: boolean, results: Map<strin
   if (m.role !== "assistant" || typeof m.content === "string") return [];
   const working = arriving || m.content.some((b) => b.type === "toolCall" && b.name !== "show" && b.name !== "ask");
   return m.content.flatMap((b, j): Item[] => {
+    if (b.type === "text" && !arriving && isNothingNew(b.text ?? "")) return [{ kind: "note", id: `${i}.${j}`, role: "agent", text: NOTHING_NEW_NOTE, at }];
     if (b.type === "text" && working && !arriving && b.text?.trim()) return [{ kind: "steps", id: `${i}.${j}`, role: "agent", steps: [{ tool: "say", detail: b.text.trim() }], at }];
     if (b.type === "text") return working ? [] : [{ kind: "message", id: `${i}.${j}`, role: "agent", text: b.text ?? "", images: [], at }];
     if (b.type === "toolCall" && b.name === "show") return [{ kind: "show", id: `${i}.${j}`, role: "agent", blocks: blocksOf(b.arguments), streaming: arriving, at }];
@@ -310,7 +328,7 @@ function itemsFor(m: PiMessage, i: number, arriving: boolean, results: Map<strin
       const text = actionNote(details && { op: details.action, title: details.title ?? "a timed task" });
       return text ? [{ kind: "note", id: `${i}.${j}`, role: "agent", text, at }] : [];
     }
-    const note = b.type === "toolCall" && b.name === "manage_agents" && b.id ? results.get(b.id)?.details?.note : undefined;
+    const note = b.type === "toolCall" && b.id ? results.get(b.id)?.details?.note : undefined;
     if (note) return [{ kind: "note", id: `${i}.${j}`, role: "agent", text: note, at }];
     if (b.type === "toolCall" && b.name) return [{ kind: "steps", id: `${i}.${j}`, role: "agent", steps: [{ tool: b.name, detail: detailOf(b.name, b.arguments) }], at }];
     return [];

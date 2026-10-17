@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { EXTENSIONS, fail } from "../common.mjs";
 import { agentKey, dropAgentKey } from "../http/access.mjs";
-import { BIN, CORE_TOOLS, GLANCE_MS, IDLE_MS, MAX_APPROVAL, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
+import { ASK_CLOSE_MS, ASK_REMIND_MS, BIN, CORE_TOOLS, GLANCE_MS, IDLE_MS, MAX_APPROVAL, NOTHING_NEW, PI_BUILTINS, PI_TOOLS, PORT } from "../config.mjs";
 import { audit } from "../audit.mjs";
 import { addUsage, usageToday } from "./usage.mjs";
 import { getCurator } from "../memory/curator.mjs";
@@ -58,7 +58,18 @@ const emit = (run, event) => listenersOf(run.id).forEach((send) => send(event));
 /** Tell the app's open chats of an agent about something outside its pi (an action's answer, say). */
 export const tellChats = (id, event) => listenersOf(id).forEach((send) => send(event));
 
+// A question nobody answers: a reminder after an hour, and after a day it closes, as if skipped.
+const waitFor = (run) => {
+  const { id, title } = run.asking;
+  run.waiting = [
+    setTimeout(() => void notifyAbout(run.id, "remind", title), ASK_REMIND_MS).unref(),
+    setTimeout(() => run.asking?.id === id && void answer(run.id, { request: id, value: undefined }).catch(() => {}), ASK_CLOSE_MS).unref(),
+  ];
+};
+
 const endAsk = (run) => {
+  run.waiting?.forEach(clearTimeout);
+  run.waiting = null;
   if (!run.asking) return;
   const { id, resolve } = run.asking;
   run.asking = null;
@@ -116,6 +127,10 @@ const argvOf = (agent, kind, plugins) => {
   ];
 };
 
+export const isNothingNew = (text) => {
+  const words = text.split(/[\s.]+/).filter(Boolean);
+  return words.length > 0 && words.every((word) => word === NOTHING_NEW);
+};
 const notifyAbout = (id, kind, text) => getAgent(id).then((agent) => notify(agent, kind, text)).catch(() => {});
 const replyText = (reply) => textOf(reply.content, " ").trim();
 
@@ -125,6 +140,8 @@ function tell(run) {
   if (!reply || reply.stopReason === "aborted") return;
   if (reply.stopReason === "error") return void notifyAbout(run.id, "error", reply.errorMessage);
   const text = replyText(reply);
+  // A check that ran by itself and found nothing new says so with NOTHING_NEW alone: no notification.
+  if (isNothingNew(text)) return;
   const shown = Array.isArray(reply.content) && reply.content.some((b) => b.type === "toolCall" && b.name === "show");
   void notifyAbout(run.id, "reply", text || (shown ? "Showed you something." : ""));
 }
@@ -175,7 +192,7 @@ async function start(run) {
         if (event.type === "tool_execution_start") run.doing = event.toolName;
         if (event.type === "tool_execution_end" || !run.busy) run.doing = "";
         if (event.type === "extension_ui_request") {
-          if (event.method === "select" || event.method === "input") endAsk(run), (run.asking = event), void notifyAbout(run.id, "ask", event.title);
+          if (event.method === "select" || event.method === "input") endAsk(run), (run.asking = event), waitFor(run), void notifyAbout(run.id, "ask", event.title);
           else if (event.method === "confirm" || event.method === "editor") run.pi.reply({ type: "extension_ui_response", id: event.id, cancelled: true });
         }
         if ((event.type === "tool_execution_end" && !run.asking?.resolve) || !run.busy) endAsk(run);
@@ -343,17 +360,19 @@ export async function answer(id, { request, value }) {
   endAsk(run);
 }
 
-export async function askUser(id, title, options) {
+/** Ask the user in the chat and wait. secret: a field for a key, whose value goes to the app alone (never to the agent, the audit or a notification). */
+export async function askUser(id, title, options, { secret = false } = {}) {
   if (title.length > MAX_APPROVAL) throw fail(400, `This request is too long to show the user in full (${title.length} characters; at most ${MAX_APPROVAL}). Make it shorter.`);
   const run = await current(id);
   if (!run?.busy) throw fail(409, "The agent is not in a run");
   endAsk(run);
   const answer = await new Promise((resolve) => {
-    run.asking = { type: "extension_ui_request", id: `weilo-${randomBytes(6).toString("hex")}`, method: "select", title, options, resolve };
+    run.asking = { type: "extension_ui_request", id: `weilo-${randomBytes(6).toString("hex")}`, method: secret ? "secret" : "select", title, options: secret ? [] : options, resolve };
     emit(run, run.asking);
+    waitFor(run);
     void notifyAbout(id, "ask", title);
   });
-  audit("approval", { agent: id, question: title.slice(0, 500), answer: answer ?? "(none)" });
+  audit("approval", { agent: id, question: title.slice(0, 500), answer: secret ? (answer ? "(saved)" : "(none)") : (answer ?? "(none)") });
   return answer;
 }
 

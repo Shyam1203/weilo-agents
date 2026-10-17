@@ -1,5 +1,6 @@
 import { fail, MCP, updateJson } from "../common.mjs";
 import { servers } from "../gateway/plugins.mjs";
+import { accessToken, asksSignIn } from "./oauth.mjs";
 import { BIN, PLUGIN_STATUS_TIMEOUT_MS } from "../config.mjs";
 import { passedOn, pluginUser, sharedTools, spawnAs, writeIn } from "../users.mjs";
 
@@ -10,7 +11,7 @@ const words = (line) => [...line.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)].map((m)
 
 export async function listPlugins() {
   const all = await servers();
-  return Object.entries(all).map(([name, s]) => ({ name, detail: s.url ?? [s.command, ...(s.args ?? [])].join(" ") }));
+  return Object.entries(all).map(([name, s]) => ({ name, detail: s.url ?? [s.command, ...(s.args ?? [])].join(" "), signedIn: Boolean(s.oauth?.access) }));
 }
 
 export async function addPlugin({ name, command, url, env = {}, token }) {
@@ -40,7 +41,18 @@ export async function removePlugin(name) {
   });
 }
 
-async function report(name, plugin) {
+// A plugin on the web that turns the app away until someone signs in shows as "sign-in".
+async function report(name, saved) {
+  const { oauth: _oauth, ...plugin } = saved;
+  const token = saved.url ? await accessToken(name, saved).catch(() => null) : null;
+  if (token) plugin.headers = { Authorization: `Bearer ${token}` };
+  const checked = await check(name, plugin);
+  const failed = checked.some(([, s]) => s.state !== "connected");
+  if (failed && saved.url && (token || !saved.headers) && (await asksSignIn(saved.url, token))) return [[name, { state: "sign-in", tools: 0 }]];
+  return checked;
+}
+
+async function check(name, plugin) {
   const { user, home } = await pluginUser(name);
   await writeIn(home, "mcp.json", JSON.stringify({ mcpServers: { [name]: plugin } }), user.uid, user.gid, 0o600);
   const stdout = await new Promise((resolve) => {

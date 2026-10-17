@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { createAgent, deleteAgent, newAgent, updateAgent, type Agent, type AgentInput } from "../../api/agents";
+import { createAgent, deleteAgent, listKeys, newAgent, removeKey, updateAgent, type Agent, type AgentInput, type SavedKey } from "../../api/agents";
 import { choosableOf, providerOf, shortName, type Model, type Provider } from "../../api/providers";
 import type { Extension } from "../../api/extensions";
 import type { Plugin } from "../../api/plugins";
@@ -36,6 +36,8 @@ type Draft = AgentInput & { avatar: NonNullable<AgentInput["avatar"]> };
 
 interface Props {
   agent?: Agent;
+  /** Every agent, for the names in what this one may do without asking. */
+  agents: Agent[];
   providers: Provider[];
   skills: Skill[];
   plugins: Plugin[];
@@ -52,13 +54,17 @@ interface Props {
   onDeleted: () => void;
 }
 
-export function AgentForm({ agent, providers, skills, plugins, extensions, models, defaultModel = "", showMore = false, onOpenSettings, hidden, onClose, onSaved, onDeleted }: Props) {
+export function AgentForm({ agent, agents, providers, skills, plugins, extensions, models, defaultModel = "", showMore = false, onOpenSettings, hidden, onClose, onSaved, onDeleted }: Props) {
   const [draft, setDraft] = useState<Draft>(() =>
-    agent ? { name: agent.name, model: agent.model, thinking: agent.thinking, skills: agent.skills, plugins: agent.plugins, extensions: agent.extensions, disabled: agent.disabled, instructions: agent.instructions, avatar: avatarOf(agent), isolated: agent.isolated, trusted: agent.trusted, dailyTokens: agent.dailyTokens } : { ...newAgent({ name: "", model: defaultModel, instructions: "" }), avatar: randomAvatar() },
+    agent ? { name: agent.name, model: agent.model, thinking: agent.thinking, skills: agent.skills, plugins: agent.plugins, extensions: agent.extensions, disabled: agent.disabled, instructions: agent.instructions, avatar: avatarOf(agent), isolated: agent.isolated, trusted: agent.trusted, allow: agent.allow ?? [], dailyTokens: agent.dailyTokens } : { ...newAgent({ name: "", model: defaultModel, instructions: "" }), avatar: randomAvatar() },
   );
   const [choosing, setChoosing] = useState<"skills" | "plugins" | "extensions" | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [more, setMore] = useState(showMore);
+  const [keys, setKeys] = useState<SavedKey[]>([]);
+  useEffect(() => {
+    if (agent) void listKeys(agent.id).then(setKeys, () => {});
+  }, [agent?.id]);
   const { busy, error, run } = useAction();
   const change = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }));
   const builtIn = extensions.filter((x) => x.builtin);
@@ -204,6 +210,15 @@ export function AgentForm({ agent, providers, skills, plugins, extensions, model
               <Row title="Always allow its own changes" description="Changes to itself apply without asking.">
                 <Switch label="Always allow its own changes" checked={draft.trusted} onChange={(trusted) => change({ trusted })} />
               </Row>
+              {draft.allow.length > 0 && (
+                <Row title="Also always allowed" below={<Chips items={draft.allow.map((rule) => ({ id: rule, label: allowLabel(rule, agents) }))} onRemove={(rule) => change({ allow: draft.allow.filter((r) => r !== rule) })} />} />
+              )}
+              {keys.length > 0 && agent && (
+                <Row
+                  title="Saved keys"
+                  below={<Chips items={keys.map((k) => ({ id: k.name, label: `${k.name} (${new URL(k.origin).host})` }))} onRemove={(name) => void run("key", async () => (await removeKey(agent.id, name), setKeys(keys.filter((k) => k.name !== name))))} />}
+                />
+              )}
             </Section>
           </>
         )}
@@ -232,6 +247,29 @@ const Section = ({ title, children }: { title: string; children: ReactNode }) =>
     <Card>{children}</Card>
   </section>
 );
+
+const ALLOW_LABELS: Record<string, string> = { skill: "Saving skills", action: "Adding buttons", settings: "Model settings" };
+
+function allowLabel(rule: string, agents: Agent[]) {
+  if (!rule.startsWith("ask:")) return ALLOW_LABELS[rule] ?? rule;
+  const other = agents.find((a) => a.id === rule.slice(4));
+  return other ? `Messages to ${other.name}` : "Messages to a deleted agent";
+}
+
+function Chips({ items, onRemove }: { items: { id: string; label: string }[]; onRemove: (id: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {items.map((item) => (
+        <span key={item.id} className="inline-flex items-center gap-1 rounded-full py-0.5 pr-1 pl-2.5 text-xs text-ink-2 ring-1 ring-line">
+          {item.label}
+          <button type="button" aria-label={`Remove ${item.label}`} onClick={() => onRemove(item.id)} className="rounded-full p-0.5 text-ink-3 hover:bg-select hover:text-ink">
+            <Icon name="close" size={12} />
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+}
 
 const Pick = ({ children }: { children: ReactNode }) => <div className="pick w-full min-w-0 sm:w-56">{children}</div>;
 

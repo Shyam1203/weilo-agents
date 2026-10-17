@@ -3,10 +3,11 @@ import { rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { audit } from "../audit.mjs";
 import { ACTIONS, fail, OLD_SCHEDULES, readJson, updateJson } from "../common.mjs";
-import { ACTION_MS, ACTION_SHOWN, ACTIONS_EVERY_MS, LATE_MS, MAX_ACTION_ABOUT, MAX_ACTION_FIELDS, MAX_ACTION_OUTPUT, MAX_ACTION_REQUEST, MAX_ACTION_RUNS, MAX_ACTION_SCRIPT, MAX_ACTION_TITLE, MAX_ACTIONS, MAX_IN_MINUTES, MAX_TIMES, PORT } from "../config.mjs";
+import { ACTION_MS, ACTION_SHOWN, ACTIONS_EVERY_MS, LATE_MS, MAX_ACTION_ABOUT, MAX_ACTION_FIELDS, MAX_ACTION_OUTPUT, MAX_ACTION_REQUEST, MAX_ACTION_RUNS, MAX_ACTION_SCRIPT, MAX_ACTION_TITLE, MAX_ACTIONS, MAX_IN_MINUTES, MAX_TIMES, NOTHING_NEW, PORT } from "../config.mjs";
 import { dropScriptKey, scriptKey } from "../http/access.mjs";
 import { getAgent, homeOf, isIsolated, userHomeOf, userOf } from "../agents/agents.mjs";
-import { askUser, prompt, tellChats } from "../agents/runner.mjs";
+import { prompt, tellChats } from "../agents/runner.mjs";
+import { ALLOWED_NOTE, approve } from "../agents/approve.mjs";
 import { notify } from "../push.mjs";
 import { passedOn, sharedTools, spawnAs } from "../users.mjs";
 import { pinLine, pinsOf, unlinkPins, updateFromAction } from "./pins.mjs";
@@ -22,7 +23,7 @@ export const BY_ITSELF = " · ran by itself";
 export const CONFIRM_NOTE = "Before you pay, order, book or send anything, use ask to confirm the exact details with the user.";
 // An agent action that keeps pins fresh ends with this and the pins' ids; the chat hides it too.
 export const PIN_NOTE = "Then update its pin with the pin tool: ";
-export const AWAY_NOTE = "This action ran by itself at its time; the user is away and reads your reply later. Do it now. If a step needs the user's confirmation, use ask: they get a notification and answer when they can. Anything else that needs them, leave for the end. End with the result in a few lines.";
+export const AWAY_NOTE = `This action ran by itself at its time; the user is away and reads your reply later. Do it now. If a step needs the user's confirmation, use ask: they get a notification and answer when they can. Anything else that needs them, leave for the end. End with the result in a few lines. If it was a check and you found nothing new worth telling the user, reply with only ${NOTHING_NEW}: then they are not disturbed.`;
 const MISSED = "Missed: Weilo Agents was not running at that time";
 const RUNNER = fileURLToPath(new URL("./run.mjs", import.meta.url));
 
@@ -272,7 +273,9 @@ export async function runScript(agent, script, input) {
       child.stdin.end(JSON.stringify({ script, input }));
     });
     const ok = answer.ok === true;
-    return { ok, text: ok ? shown(answer.result) : `Failed: ${String(answer.error ?? "no answer").slice(0, 500)}`, ms: Date.now() - started, stop: ok && answer.result?.stop === true, pin: ok ? answer.result?.pin : undefined };
+    // A script returns null when it found nothing new: no notification when it ran by itself.
+    const nothing = ok && answer.result === null;
+    return { ok, text: nothing ? "Nothing new." : ok ? shown(answer.result) : `Failed: ${String(answer.error ?? "no answer").slice(0, 500)}`, ms: Date.now() - started, stop: ok && answer.result?.stop === true, pin: ok ? answer.result?.pin : undefined, nothing };
   } finally {
     dropScriptKey(key);
   }
@@ -295,7 +298,7 @@ async function runSaved(agentId, action, values, by) {
     record(action, run);
     if (state.items.includes(action)) await save();
     audit("action run", { agent: agentId, action: action.title, ok: result.ok, by });
-    return { ...run, quiet: pinned && result.ok && !moved.length };
+    return { ...run, quiet: result.nothing || (pinned && result.ok && !moved.length) };
   } finally {
     running.delete(action.id);
   }
@@ -419,7 +422,7 @@ export async function actionTool(agentId, { op, id, input, ...fields }) {
   if (!current && state.items.filter((a) => a.agentId === agentId).length >= MAX_ACTIONS) throw fail(400, `An agent can have ${MAX_ACTIONS} actions`);
   const plan = planAction(fields, current, isIsolated(agent), state.timezone);
   const options = current ? ["Save the change", "No thanks"] : plan.schedule ? [`Add it, and run it ${when(plan.schedule)}`, "Add the button only", "No thanks"] : ["Add the button", "No thanks"];
-  const answer = await askUser(agentId, question(agent.name, plan, !!current), options);
+  const { answer, always } = await approve(agentId, "action", question(agent.name, plan, !!current), options);
   if (!answer || answer === "No thanks") return { text: "The user did not want it: nothing was saved. Do not ask again unless they ask you to." };
   if (answer === "Add the button only") plan.schedule = null;
   if (current) {
@@ -428,5 +431,5 @@ export async function actionTool(agentId, { op, id, input, ...fields }) {
   } else state.items.push({ id: randomUUID(), agentId, ...plan, runs: [] });
   await save();
   const scheduled = plan.schedule ? ` It runs by itself ${when(plan.schedule)}.` : "";
-  return { text: `Saved. The user can tap "${plan.title}" in the app now.${scheduled}`, details: { op, title: plan.title } };
+  return { text: `Saved. The user can tap "${plan.title}" in the app now.${scheduled}`, details: { op, title: always ? `${plan.title}${ALLOWED_NOTE}` : plan.title } };
 }

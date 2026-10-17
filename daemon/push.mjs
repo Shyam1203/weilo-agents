@@ -102,7 +102,7 @@ export async function notify(agent, kind, text) {
   const devices = linked(all);
   if (!devices.length || muted.includes(agent.id)) return;
   const said = plainText(text ?? "");
-  const body = kind === "ask" ? `Asks you: ${said}` : kind === "error" ? `Stopped with a problem${said ? `: ${said}` : "."}` : said || "Replied.";
+  const body = kind === "ask" ? `Asks you: ${said}` : kind === "remind" ? `Still waiting for you: ${said}` : kind === "error" ? `Stopped with a problem${said ? `: ${said}` : "."}` : said || "Replied.";
   const payload = JSON.stringify({ title: agent.name, body: body.length > PUSH_BODY_CHARS ? `${body.slice(0, PUSH_BODY_CHARS - 1)}…` : body, agent: agent.id, kind });
   const keys = await vapid();
   await Promise.all(devices.map((device) => send(device, payload, keys)));

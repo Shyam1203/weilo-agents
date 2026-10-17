@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { addPlugin, pluginStatus, removePlugin, type Plugin, type PluginStatus } from "../../api/plugins";
+import { addPlugin, pluginStatus, removePlugin, signOutOfPlugin, startPluginSignIn, type Plugin, type PluginStatus } from "../../api/plugins";
 import { Button, IconButton } from "../../components/ui/Button";
 import { ErrorText, Field } from "../../components/ui/Field";
 import { List, Loading } from "../../components/ui/List";
@@ -20,11 +20,36 @@ export function PluginsPage({ plugins, onChange }: Props) {
   const [status, setStatus] = useState<Record<string, PluginStatus>>();
   const { busy, error, run } = useAction();
 
-  const names = plugins.map((p) => p.name).join();
+  const [signingIn, setSigningIn] = useState(false);
+  const names = plugins.map((p) => `${p.name}:${p.signedIn}`).join();
   useEffect(() => {
     setStatus(undefined);
     pluginStatus().then(setStatus, () => setStatus({}));
   }, [names]);
+  // Back from a plugin's sign-in page, in another tab: see whether it worked.
+  useEffect(() => {
+    if (!signingIn) return;
+    const back = () => (setSigningIn(false), onChange());
+    window.addEventListener("focus", back);
+    return () => window.removeEventListener("focus", back);
+  }, [signingIn]);
+
+  const signIn = (name: string) => {
+    // Opened now, while the click counts, so the browser does not block it; it goes to the sign-in page next.
+    const tab = window.open("", "_blank");
+    if (tab) tab.opener = null;
+    void run(name, async () => {
+      try {
+        const { url } = await startPluginSignIn(name);
+        if (tab) (tab.location.href = url), setSigningIn(true);
+        else location.href = url;
+      } catch (err) {
+        tab?.close();
+        throw err;
+      }
+    });
+  };
+  const signOut = (name: string) => run(name, async () => (await signOutOfPlugin(name), onChange()));
 
   const remove = (name: string) =>
     run(name, async () => {
@@ -61,8 +86,19 @@ export function PluginsPage({ plugins, onChange }: Props) {
                 </>
               }
             >
-              {!status ? <Loading label="" /> : s?.state === "connected" ? <Tag>{s.tools} tools</Tag> : <Tag>Not connected</Tag>}
-              <Button size="sm" variant="ghost" busy={busy === p.name} onClick={() => remove(p.name)}>
+              {!status ? <Loading label="" /> : s?.state === "connected" ? <Tag>{s.tools} tools</Tag> : s?.state === "sign-in" ? <Tag>Needs sign-in</Tag> : <Tag>Not connected</Tag>}
+              {s?.state === "sign-in" ? (
+                <Button size="sm" variant="primary" busy={busy === p.name} onClick={() => signIn(p.name)}>
+                  Sign in
+                </Button>
+              ) : (
+                p.signedIn && (
+                  <Button size="sm" variant="ghost" disabled={busy === p.name} onClick={() => void signOut(p.name)}>
+                    Sign out
+                  </Button>
+                )
+              )}
+              <Button size="sm" variant="ghost" disabled={busy === p.name} onClick={() => remove(p.name)}>
                 Delete
               </Button>
             </Row>
@@ -129,7 +165,7 @@ function AddPlugin({ onBack, onAdded }: { onBack: () => void; onAdded: () => voi
           <Field label="Web address">
             <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/mcp" className="input font-mono text-[13px]" />
           </Field>
-          <Field label="Access token" hint="Only if the plugin needs a token. Optional.">
+          <Field label="Access token" hint="Optional. Leave it empty to sign in instead.">
             <input type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} className="input" />
           </Field>
         </>
