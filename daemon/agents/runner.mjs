@@ -240,7 +240,7 @@ export async function subscribe(id, send) {
   const older = (await chatFiles(id)).length > 1;
   let off;
   await run.pi.send("get_messages", {}, ({ messages }) => {
-    send({ type: "history", messages: messages.map(asTyped).filter(shown).map(slim).map((m) => linkImages(m)), more: older || messages[0]?.role === "compactionSummary", busy: run.busy, asking: run.asking });
+    send({ type: "history", messages: messages.map(asTyped).filter(shown).map(slim).map((m) => linkImages(m)), more: older || messages[0]?.role === "compactionSummary", busy: run.busy, compacting: !!run.compacting, asking: run.asking });
     off = listen(id, send);
   });
   touch(run);
@@ -338,9 +338,14 @@ async function compactIdle(run) {
   if (run.busy || run.compacting || runs.get(run.id) !== run) return;
   const usage = await usageOf(run).catch(() => null);
   if (!usage?.tokens || usage.tokens < usage.point * IDLE_COMPACT_AT || run.busy || run.compacting) return;
+  emit(run, { type: "compaction_start" });
   run.compacting = run.pi
     .send("compact")
-    .catch((err) => console.error("Compact:", err.message))
+    .then(
+      () => true,
+      (err) => (console.error("Compact:", err.message), false),
+    )
+    .then((result) => emit(run, { type: "compaction_end", result }))
     .finally(() => ((run.compacting = null), touch(run)));
 }
 

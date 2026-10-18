@@ -100,7 +100,7 @@ export function BrowserPanel({ agentId, agentName, off, taken: takenNow, open: o
         <h2 className="text-[13px] font-medium text-ink-2">Browser</h2>
         {!recording && action}
       </div>
-      <div role={hasWindow ? "button" : undefined} tabIndex={hasWindow ? 0 : undefined} aria-label={hasWindow ? "Open the browser" : undefined} onClick={open_} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), open_())} className="group relative block w-full cursor-pointer text-left">
+      <div className="relative block w-full">
         {!hasWindow ? (
           <div className="flex aspect-[8/5] w-full items-center justify-center rounded-xl bg-screen px-4 text-center text-[13px] text-white/70">No browser window yet.</div>
         ) : open ? (
@@ -110,9 +110,11 @@ export function BrowserPanel({ agentId, agentName, off, taken: takenNow, open: o
             <LiveView />
           </Suspense>
         )}
-        {hasWindow && <span className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/0 opacity-0 transition group-hover:bg-black/35 group-hover:opacity-100 group-focus-visible:bg-black/35 group-focus-visible:opacity-100">
-          <span className="rounded-lg bg-black/70 px-3 py-1.5 text-xs font-medium text-white">Open</span>
-        </span>}
+        {hasWindow && (
+          <button type="button" aria-label="Open the browser" onClick={open_} className="group absolute inset-0 flex items-center justify-center rounded-xl bg-black/0 transition hover:bg-black/35 focus-visible:bg-black/35">
+            <span className="rounded-lg bg-black/70 px-3 py-1.5 text-xs font-medium text-white opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">Open</span>
+          </button>
+        )}
       </div>
       {bar || <p className="text-xs text-ink-3">{taken ? `You are in control. ${agentName} waits until you give it back.` : hasWindow ? `${agentName}'s browser window.` : `${agentName} has not used the browser yet. It opens a window when it does.`}</p>}
       <ErrorText>{error}</ErrorText>

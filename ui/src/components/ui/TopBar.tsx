@@ -14,9 +14,12 @@ export function TopBar({ leading, title, subtitle, actions, onBack, onTitle }: {
   return (
     <header className="flex h-14 shrink-0 items-center gap-2.5 border-b border-line px-3 sm:px-4">
       {onBack && <IconButton icon="chevronLeft" label="Back" onClick={onBack} className="-ml-1 md:hidden" />}
-      <button type="button" onClick={onTitle} className="-mx-2 flex min-w-0 items-center gap-2.5 rounded-xl px-2 py-1 transition-colors hover:bg-select">
-        {heading}
-      </button>
+      <h2 className="flex min-w-0">
+        <button type="button" onClick={onTitle} title="Edit agent" className="-mx-2 flex min-w-0 items-center gap-2.5 rounded-xl px-2 py-1 transition-colors hover:bg-select">
+          {heading}
+          <span className="sr-only">, edit agent</span>
+        </button>
+      </h2>
       <span className="flex-1" />
       {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
     </header>

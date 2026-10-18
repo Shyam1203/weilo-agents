@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { zoom } from "../../lib/zoom";
 import { Icon } from "./Icon";
@@ -22,6 +22,7 @@ const ROOM = 220;
 
 export function Select({ label, value, options, onChange, placeholder = "", disabled = false }: { label: string; value: string; options: Option[]; onChange: (value: string) => void; placeholder?: string; disabled?: boolean }) {
   const [place, setPlace] = useState<Place | null>(null);
+  const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const current = options.find((o) => o.value === value);
@@ -64,8 +65,11 @@ export function Select({ label, value, options, onChange, placeholder = "", disa
   const onListKey = (e: KeyboardEvent) => {
     const items = [...(list.current?.querySelectorAll<HTMLElement>("button") ?? [])];
     const at = items.indexOf(document.activeElement as HTMLElement);
-    const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[e.key];
-    if (to === undefined) return;
+    if (e.key === "Tab") return (e.preventDefault(), setPlace(null), trigger.current?.focus());
+    const letter = e.key.length === 1 && e.key.trim() ? e.key.toLowerCase() : null;
+    const typed = letter ? options.findIndex((o, i) => i > at && o.label.toLowerCase().startsWith(letter)) : -1;
+    const to = letter ? (typed >= 0 ? typed : options.findIndex((o) => o.label.toLowerCase().startsWith(letter))) : { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[e.key];
+    if (to === undefined || to < 0) return;
     e.preventDefault();
     items[(to + items.length) % items.length]?.focus();
   };
@@ -75,14 +79,19 @@ export function Select({ label, value, options, onChange, placeholder = "", disa
       <button
         ref={trigger}
         type="button"
-        aria-label={label}
+        aria-labelledby={`${id}-label ${id}-value`}
         aria-haspopup="listbox"
         aria-expanded={open}
         disabled={disabled}
         onClick={() => (open ? setPlace(null) : show())}
         className="input flex h-10 items-center justify-between gap-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <span className="min-w-0 flex-1 truncate">{current?.label ?? (value || placeholder)}</span>
+        <span id={`${id}-label`} className="sr-only">
+          {label}
+        </span>
+        <span id={`${id}-value`} className="min-w-0 flex-1 truncate">
+          {current?.label ?? (value || placeholder)}
+        </span>
         <Icon name="chevronDown" size={15} className={`shrink-0 text-ink-3 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {place &&

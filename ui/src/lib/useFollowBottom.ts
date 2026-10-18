@@ -40,5 +40,9 @@ export function useFollowBottom(deps: unknown[]) {
   }, deps);
 
   const toBottom = () => box.current?.scrollTo({ top: box.current.scrollHeight, behavior: "smooth" });
-  return { box, away, unseen, toBottom };
+  const stick = () => {
+    const el = box.current;
+    if (el && atBottom.current) el.scrollTop = el.scrollHeight;
+  };
+  return { box, away, unseen, toBottom, stick };
 }

@@ -17,6 +17,7 @@ interface Drag {
 export function useDragOrder(ids: string[], onDrop: (ids: string[]) => Promise<unknown>) {
   const [order, setOrder] = useState<string[] | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
+  const [moved, setMoved] = useState<{ id: string; at: number } | null>(null);
   const items = useRef(new Map<string, HTMLElement>());
   const drag = useRef<Drag | null>(null);
   const dropped = useRef(false);
@@ -117,9 +118,10 @@ export function useDragOrder(ids: string[], onDrop: (ids: string[]) => Promise<u
       const next = [...shown];
       [next[from], next[to]] = [next[to], next[from]];
       setOrder(next);
+      setMoved({ id, at: to + 1 });
       void onDrop(next).finally(() => setOrder(null));
     },
   });
 
-  return { order: shown, dragging, itemProps, wasDrag: () => dropped.current };
+  return { order: shown, dragging, itemProps, wasDrag: () => dropped.current, moved };
 }

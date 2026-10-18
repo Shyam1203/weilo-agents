@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useDismiss } from "../../lib/useDismiss";
 import { useExit } from "../../lib/useExit";
 import { Icon, type IconName } from "./Icon";
@@ -18,8 +18,12 @@ const PLACEMENT = {
 
 export function Menu({ trigger, placement = "below-end", wide = false, children }: Props) {
   const [open, setOpen] = useState(false);
-  const close = useCallback(() => setOpen(false), []);
-  const ref = useDismiss<HTMLDivElement>(open, close);
+  const ref = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => {
+    if (ref.current?.querySelector('[role="menu"]')?.contains(document.activeElement)) ref.current.querySelector("button")?.focus();
+    setOpen(false);
+  }, []);
+  useDismiss(open, close, ref);
   const { shown, closing } = useExit(open);
   const items = () => [...(ref.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]') ?? [])];
 
@@ -28,7 +32,7 @@ export function Menu({ trigger, placement = "below-end", wide = false, children 
   }, [open]);
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Escape") ref.current?.querySelector("button")?.focus();
+    if (e.key === "Tab") return setOpen(false);
     const list = items();
     const at = list.indexOf(document.activeElement as HTMLElement);
     const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: list.length - 1 }[e.key];
@@ -54,6 +58,7 @@ export function MenuItem({ icon, label, onClick }: { icon?: IconName; label: Rea
     <button
       type="button"
       role="menuitem"
+      tabIndex={-1}
       onClick={onClick}
       className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13.5px] transition-colors hover:bg-select text-ink"
     >

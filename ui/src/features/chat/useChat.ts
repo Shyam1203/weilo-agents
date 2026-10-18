@@ -37,6 +37,7 @@ export function useChat(agentId: string) {
       const event: PiEvent = JSON.parse(m.data);
       if (event.type === "exit" && event.error) source.close();
       dispatch(event);
+      if (event.type === "history") setCompacting(!!event.compacting);
       if (event.type === "compaction_start") setCompacting(true);
       if (event.type === "compaction_end") (setCompacting(false), event.result && setStatus("The conversation was summarized."));
       if (event.type === "agent_start") setStatus(null);

@@ -101,8 +101,14 @@ export function Workspace({ agents, providers, skills, plugins, extensions, user
   useBackStep(covered, uncover);
   const swipe = useEdgeSwipe(uncover, covered);
 
+  useEffect(() => {
+    const where = settings ? "Settings" : showChat || wide ? agent?.name : undefined;
+    document.title = [unread.size ? `(${unread.size})` : "", where && `${where} ·`, "Weilo Agents"].filter(Boolean).join(" ");
+  }, [settings, showChat, wide, agent?.name, unread.size]);
+
   return (
     <div className="flex h-full">
+      <h1 className="sr-only">Weilo Agents</h1>
       <div className={`${showChat || settings || fresh ? "hidden" : "flex"} w-full md:flex md:w-auto`}>
         <Sidebar
           agents={agents.map((a) => (live && a.id === agent?.id ? { ...a, working: live.busy, doing: live.busy ? (live.doing ?? "") : null } : a))}
