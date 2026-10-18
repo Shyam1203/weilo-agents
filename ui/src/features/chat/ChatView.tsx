@@ -136,18 +136,30 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
     if (loadingFor && !chat.loadingEarlier) void chat.loadEarlier();
   }, [loadingFor, chat.loadingEarlier]);
   const found = useFind(scroller.box, finding ? query : "", [chat.messages, chat.ready], loadingFor ? null : find);
-  const closeFind = () => (setFinding(false), setQuery(""));
+  const findButton = useRef<HTMLButtonElement>(null);
+  const closeFind = () => (setFinding(false), setQuery(""), findButton.current?.focus());
 
   const [replyError, setReplyErrorOf] = useState<{ message: string; status?: number; plain?: boolean } | null>(null);
   const setReplyError = (message: string | null, plain = false) => setReplyErrorOf(message === null ? null : { message, plain });
   const failed = (err: unknown, plain = false) => setReplyErrorOf({ message: messageOf(err), status: err instanceof RequestError ? err.status : undefined, plain });
+  const [outgoing, setOutgoing] = useState<Outgoing | null>(null);
   const send = (message: Outgoing) =>
     (setReplyError(null),
-    chat.send(message).catch((err) => {
-      failed(err);
-      throw Object.assign(err instanceof Error ? err : new Error(messageOf(err)), { shown: true });
-    }));
+    setOutgoing(message),
+    chat
+      .send(message)
+      .catch((err) => {
+        failed(err);
+        throw Object.assign(err instanceof Error ? err : new Error(messageOf(err)), { shown: true });
+      })
+      .finally(() => setOutgoing((now) => (now === message ? null : now))));
   useEffect(() => void (chat.busy && setReplyErrorOf(null)), [chat.busy]);
+  const [said, setSaid] = useState("");
+  const wasBusy = useRef(chat.busy);
+  useEffect(() => {
+    setSaid(wasBusy.current && !chat.busy ? `${agent.name} finished.` : "");
+    wasBusy.current = chat.busy;
+  }, [chat.busy]);
   const reply = (text: string) => void send({ text, images: [], files: [] }).catch(() => {});
   const retry = ({ text, images }: Draft) => void send({ text, images, files: [] }).catch(() => {});
   const [fill, setFill] = useState<Draft | null>(null);
@@ -236,6 +248,7 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
     observer.observe(dock.current!);
     return () => observer.disconnect();
   }, []);
+  useLayoutEffect(scroller.stick, [room]);
 
   const [skills, setSkills] = useState<Shortcut[]>([]);
   useEffect(() => {
@@ -256,16 +269,17 @@ export function ChatView({ agent, models, providers, find, onBack, onEdit, onEdi
           title={agent.name}
           subtitle={<>{agent.isolated && <Tag>Isolated</Tag>}{agent.model ? shortName(models?.find((m) => m.id === agent.model)?.name ?? agent.model) : "Choose a model"}</>}
           onTitle={onEdit}
-          actions={<><IconButton icon="search" label="Find in this chat" aria-pressed={finding} className={finding ? "bg-select text-ink" : ""} onClick={() => (finding ? closeFind() : setFinding(true))} /><span className="relative flex"><IconButton icon="bolt" label={panel === "actions" ? "Hide actions & pins" : pinned.fresh ? "Actions & pins (a pin changed)" : "Actions & pins"} aria-pressed={panel === "actions"} className={panel === "actions" ? "bg-select text-ink" : ""} onClick={() => (pinned.fresh && setTab("pins"), togglePanel("actions"))} />{pinned.fresh && !seeingPins && <span aria-hidden="true" className="pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-full bg-good ring-2 ring-page" />}</span><span className="relative flex"><IconButton icon="globe" label={panel === "browser" ? "Hide the browser" : browserBusy ? "Browser (open)" : "Browser"} aria-pressed={panel === "browser"} className={panel === "browser" ? "bg-select text-ink" : ""} onClick={() => togglePanel("browser")} />{browserBusy && panel !== "browser" && <span aria-hidden="true" className="pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-full bg-working ring-2 ring-page" />}</span></>}
+          actions={<><IconButton ref={findButton} icon="search" label="Find in this chat" aria-pressed={finding} className={finding ? "bg-select text-ink" : ""} onClick={() => (finding ? closeFind() : setFinding(true))} /><span className="relative flex"><IconButton icon="bolt" label={panel === "actions" ? "Hide actions & pins" : pinned.fresh ? "Actions & pins (a pin changed)" : "Actions & pins"} aria-pressed={panel === "actions"} className={panel === "actions" ? "bg-select text-ink" : ""} onClick={() => (pinned.fresh && setTab("pins"), togglePanel("actions"))} />{pinned.fresh && !seeingPins && <span aria-hidden="true" className="pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-full bg-good ring-2 ring-page" />}</span><span className="relative flex"><IconButton icon="globe" label={panel === "browser" ? "Hide the browser" : browserBusy ? "Browser (open)" : "Browser"} aria-pressed={panel === "browser"} className={panel === "browser" ? "bg-select text-ink" : ""} onClick={() => togglePanel("browser")} />{browserBusy && panel !== "browser" && <span aria-hidden="true" className="pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-full bg-working ring-2 ring-page" />}</span></>}
         />
         {finding && <FindBar query={query} onQuery={setQuery} count={found.count} current={found.current} onNext={found.next} onPrevious={found.previous} onClose={closeFind} />}
         <div className="relative min-h-0 flex-1">
           <div ref={scroller.box} style={{ paddingBottom: room }} className="h-full overflow-y-auto">
             <div className="mx-auto w-full max-w-3xl px-4 py-5">
               {chat.more && <p className="flex items-center justify-center gap-2 pb-4 text-xs text-ink-3">{chat.loadingEarlier ? <><Icon name="spinner" size={12} /> Loading earlier messages…</> : <button type="button" onClick={() => void chat.loadEarlier()} className="underline">Load earlier messages</button>}</p>}
-              {!chat.ready ? <LoadingChat /> : fresh ? <EmptyChat name={agent.name} avatar={avatarOf(agent)} shortcuts={shortcuts} onPick={(text) => put({ text, images: [] })} /> : <MessageList messages={chat.messages} busy={chat.busy} asking={chat.asking} onAnswer={chat.answer} onReply={reply} onRetry={retry} onEdit={put} queued={chat.queued} onUnqueue={unqueue} onPins={showPins} extras={answers} working={chat.busy && <WorkingPill avatar={avatarOf(agent)} doing={chat.doing} waiting={!!chat.asking} onStop={chat.stop} />} note={chat.note === NO_REPLY ? problem("No reply came. Send your message again, or try another model.", ["retry", "model"], "info") : chat.note} />}
+              {!chat.ready ? <LoadingChat /> : fresh ? <EmptyChat name={agent.name} avatar={avatarOf(agent)} shortcuts={shortcuts} onPick={(text) => put({ text, images: [] })} /> : <MessageList messages={chat.messages} busy={chat.busy} asking={chat.asking} onAnswer={chat.answer} onReply={reply} onRetry={retry} onEdit={put} queued={chat.queued} onUnqueue={unqueue} onPins={showPins} extras={answers} agentName={agent.name} sending={chat.compacting && outgoing ? outgoing : undefined} working={(chat.busy || chat.compacting) && <WorkingPill avatar={avatarOf(agent)} doing={chat.doing} waiting={!!chat.asking} summarizing={chat.compacting} onStop={chat.stop} />} note={chat.note === NO_REPLY ? problem("No reply came. Send your message again, or try another model.", ["retry", "model"], "info") : chat.note} />}
             </div>
           </div>
+          <p role="status" className="sr-only">{said}</p>
           <div ref={dock} className="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-page from-55% to-transparent pt-8">
             <div className="pointer-events-auto mx-auto flex w-full max-w-3xl flex-col gap-2 px-3 pb-[max(0.75rem,var(--safe-bottom))] sm:px-4 sm:pb-[max(1rem,var(--safe-bottom))]">
               {away && (

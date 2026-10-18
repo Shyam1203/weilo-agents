@@ -12,6 +12,7 @@ import { Select } from "../../components/ui/Select";
 import { Switch } from "../../components/ui/Switch";
 import type { SettingsPage } from "../settings/SettingsView";
 import { Toggles } from "../../components/ui/Toggles";
+import { finePointer } from "../../lib/keys";
 import { useAction } from "../../lib/useAction";
 import { Icon } from "../../components/ui/Icon";
 import { STARTERS } from "../setup/starters";
@@ -113,7 +114,7 @@ export function AgentForm({ agent, agents, providers, skills, plugins, extension
         )}
         <AvatarPicker value={draft.avatar} onChange={(avatar) => change({ avatar })} />
         <Field label="Name" hint={agent && (agent.isolated ? <>Works in its own folder, <code>isolated/{agent.folder}/</code>.</> : <>Works in its folder, <code>{agent.folder}/</code>, in the workspace.</>)}>
-          <input autoFocus value={draft.name} onChange={(e) => change({ name: e.target.value })} placeholder="For example: Research assistant" className="input" />
+          <input autoFocus={!agent && finePointer()} value={draft.name} onChange={(e) => change({ name: e.target.value })} placeholder="For example: Research assistant" className="input" />
         </Field>
         <Field label="Instructions">
           <textarea

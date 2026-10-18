@@ -88,8 +88,8 @@ export function SkillsPage({ skills, agents, onChange }: Props) {
             >
               {others.length > 0 && (
                 <Menu
-                  trigger={({ toggle }) => (
-                    <Button size="sm" variant="ghost" icon="plus" busy={busy === s.id} onClick={toggle}>
+                  trigger={({ open, toggle }) => (
+                    <Button size="sm" variant="ghost" icon="plus" busy={busy === s.id} aria-haspopup="menu" aria-expanded={open} onClick={toggle}>
                       Turn on
                     </Button>
                   )}

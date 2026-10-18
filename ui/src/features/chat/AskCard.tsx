@@ -13,6 +13,7 @@ interface Props {
   onAnswer?: (value?: string) => Promise<void>;
 }
 
+const ALT = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌥" : "Alt+";
 const NO_ANSWER = "The user did not answer.";
 
 export function AskCard({ question, options, answer, secret = false, onAnswer }: Props) {
@@ -29,9 +30,9 @@ export function AskCard({ question, options, answer, secret = false, onAnswer }:
   useEffect(() => {
     if (!onAnswer || !options?.length) return;
     const onKey = (event: KeyboardEvent) => {
-      const box = event.target as HTMLTextAreaElement | null;
-      const emptyBox = box?.tagName === "TEXTAREA" && !box.value && !event.ctrlKey && !event.metaKey && !event.altKey;
-      if ((isFreeKey(event) || emptyBox) && pick.current(event.key)) event.preventDefault();
+      const alt = event.altKey && !event.ctrlKey && !event.metaKey;
+      const key = alt ? event.code.replace(/^(Digit|Numpad)/, "") : event.key;
+      if ((alt || isFreeKey(event)) && pick.current(key)) event.preventDefault();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
@@ -47,7 +48,7 @@ export function AskCard({ question, options, answer, secret = false, onAnswer }:
         <>
           <div className="mt-2.5 flex flex-wrap gap-2">
             {options.map((o, i) => (
-              <PickButton key={o} label={o} picked={answer === o} onPick={onAnswer && !busy ? () => void send(o) : undefined} shortcut={onAnswer && i < 9 ? String(i + 1) : undefined} />
+              <PickButton key={o} label={o} picked={answer === o} onPick={onAnswer && !busy ? () => void send(o) : undefined} shortcut={onAnswer && i < 9 ? `${ALT}${i + 1}` : undefined} />
             ))}
           </div>
           {onAnswer && <p className="mt-2 text-xs text-ink-3">Or type your own answer in the message box.</p>}

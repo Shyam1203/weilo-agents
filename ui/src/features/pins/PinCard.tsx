@@ -38,7 +38,7 @@ export function PinCard({ pin, lit, action, onTick, onRemove, onOpenAction }: Pr
         <Icon name={pin.icon} size={14} className="shrink-0 text-ink-2" />
         <h3 className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{pin.title}</h3>
         <span className="shrink-0 truncate text-xs text-ink-3">{pin.kind === "list" ? `${left} left` : pin.source || shortWhen(pin.updatedAt / 1000)}</span>
-        <Menu trigger={({ toggle }) => <button type="button" aria-label={`More for ${pin.title}`} onClick={toggle} className="-mr-1.5 flex size-7 items-center justify-center rounded-lg text-ink-3 hover:bg-select"><Icon name="more" size={15} /></button>}>
+        <Menu trigger={({ open, toggle }) => <button type="button" aria-label={`More for ${pin.title}`} aria-haspopup="menu" aria-expanded={open} onClick={toggle} className="-mr-1.5 flex size-7 items-center justify-center rounded-lg text-ink-3 hover:bg-select"><Icon name="more" size={15} /></button>}>
           {(close) => <MenuItem icon="close" label="Remove pin" onClick={() => (close(), onRemove())} />}
         </Menu>
       </header>

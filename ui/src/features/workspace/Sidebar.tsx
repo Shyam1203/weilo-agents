@@ -9,6 +9,7 @@ import { plainText, shortWhen } from "../../lib/format";
 import { avatarOf } from "../agents/avatars";
 import { SearchBox, SearchResults } from "./ChatSearch";
 import { useDragOrder } from "./useDragOrder";
+import { Dots } from "../chat/WorkingPill";
 
 interface Props {
   agents: Agent[];
@@ -25,7 +26,7 @@ interface Props {
 }
 
 export function Sidebar({ agents, unread, selected, update, onSelect, onFound, onReorder, onNew, onSettings, onAbout, onContact }: Props) {
-  const { order, dragging, itemProps, wasDrag } = useDragOrder(
+  const { order, dragging, itemProps, wasDrag, moved } = useDragOrder(
     agents.map((a) => a.id),
     onReorder,
   );
@@ -34,7 +35,7 @@ export function Sidebar({ agents, unread, selected, update, onSelect, onFound, o
   return (
     <nav aria-label="Agents" className="flex h-full w-full shrink-0 flex-col border-r border-line bg-panel pb-[var(--safe-bottom)] md:w-72">
       <div className="flex h-14 shrink-0 items-center justify-between pr-4 pl-5">
-        <h1 className="text-[15px] font-semibold tracking-tight">Weilo Agents</h1>
+        <p aria-hidden="true" className="text-[15px] font-semibold tracking-tight">Weilo Agents</p>
         <IconButton icon="plus" label="New agent" onClick={onNew} />
       </div>
       <SearchBox query={query} onQuery={setQuery} />
@@ -65,9 +66,7 @@ export function Sidebar({ agents, unread, selected, update, onSelect, onFound, o
                       ) : a.working ? (
                         <span className="working-dots block truncate text-xs text-working">
                           {doingText(a.doing)}
-                          <span>.</span>
-                          <span>.</span>
-                          <span>.</span>
+                          <Dots />
                         </span>
                       ) : (
                         <span className={`block truncate text-xs ${unread.has(a.id) ? "text-ink" : "text-ink-3"}`}>{a.last ? `${a.last.role === "user" ? "You: " : ""}${a.last.shown ? "Showed you something" : plainText(a.last.text)}` : "No messages yet"}</span>
@@ -81,6 +80,7 @@ export function Sidebar({ agents, unread, selected, update, onSelect, onFound, o
           ))}
         </ul>
       )}
+      <p role="status" className="sr-only">{moved && `${agents.find((a) => a.id === moved.id)?.name ?? "Agent"} moved to ${moved.at} of ${agents.length}.`}</p>
       <div className="flex flex-col border-t border-line p-2">
         {update?.available && (
           <Button variant="ghost" icon="download" onClick={onAbout} className="w-full justify-start text-ink">

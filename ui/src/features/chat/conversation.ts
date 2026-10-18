@@ -48,6 +48,7 @@ export interface PiEvent extends Partial<Asking> {
   asking?: (Asking & { method?: string }) | null;
   messages?: PiMessage[];
   busy?: boolean;
+  compacting?: boolean;
   message?: PiMessage;
   toolName?: string;
   error?: string;

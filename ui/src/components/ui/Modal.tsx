@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { finePointer } from "../../lib/keys";
 import { EXIT_MS } from "../../lib/useExit";
 import { IconButton } from "./Button";
 
@@ -31,7 +32,7 @@ export function Modal({ title, onBack, onClose, width = "max-w-lg", hidden = fal
   useEffect(() => {
     const box = dialog.current;
     if (box && !box.contains(document.activeElement)) {
-      const first = [...box.querySelectorAll<HTMLElement>(FOCUSABLE)].find((el) => el.getAttribute("aria-label") !== "Close");
+      const first = finePointer() ? [...box.querySelectorAll<HTMLElement>(FOCUSABLE)].find((el) => el.getAttribute("aria-label") !== "Close") : null;
       (first ?? box).focus();
     }
     return () => before?.focus?.();
@@ -45,7 +46,7 @@ export function Modal({ title, onBack, onClose, width = "max-w-lg", hidden = fal
         const items = [...dialog.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
         if (!items.length) return;
         const [first, last] = [items[0], items[items.length - 1]];
-        if (e.shiftKey && document.activeElement === first) (e.preventDefault(), last.focus());
+        if (e.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) (e.preventDefault(), last.focus());
         else if (!e.shiftKey && document.activeElement === last) (e.preventDefault(), first.focus());
       }
     };

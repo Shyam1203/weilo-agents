@@ -21,7 +21,7 @@ export function ContextMeter({ context, compacting, busy, onCompact }: Props) {
   const ref = useDismiss<HTMLDivElement>(open, close);
   return (
     <div ref={ref} className="group relative flex h-9 shrink-0 items-center justify-center">
-      <button type="button" aria-label={tokens === null ? "Context use" : `Context ${Math.round(used * 100)}% used`} aria-expanded={open} onClick={() => setOpen((v) => !v)} className={`flex h-9 items-center gap-1 rounded-lg px-1.5 text-xs tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-line-strong ${tight ? "text-bad" : "text-ink-3"}`}>
+      <button type="button" aria-label={tokens === null ? "Context use" : `Context ${Math.round(used * 100)}% used`} aria-expanded={open} onClick={() => setOpen((v) => !v)} className={`flex h-9 items-center gap-1 rounded-lg px-1.5 text-xs tabular-nums ${tight ? "text-bad" : "text-ink-3"}`}>
         <span className={`relative h-1.5 w-4 overflow-hidden rounded-full bg-line-strong ${compacting ? "animate-pulse" : ""}`} aria-hidden>
           <span className={`absolute inset-y-0 left-0 rounded-full ${tight ? "bg-bad" : "bg-ink-3"}`} style={{ width: `${Math.max(used * 100, 8)}%` }} />
         </span>

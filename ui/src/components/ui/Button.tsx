@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, ComponentProps, ReactNode } from "react";
 import { Icon, type IconName } from "./Icon";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
@@ -39,7 +39,7 @@ export function Button({ variant = "secondary", size = "md", icon, busy = false,
   );
 }
 
-export function IconButton({ icon, label, className = "", ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { icon: IconName; label: string }) {
+export function IconButton({ icon, label, className = "", ...rest }: ComponentProps<"button"> & { icon: IconName; label: string }) {
   return (
     <button
       type="button"

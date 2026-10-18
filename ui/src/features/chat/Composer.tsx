@@ -5,7 +5,7 @@ import { Icon, type IconName } from "../../components/ui/Icon";
 import { Menu, MenuItem } from "../../components/ui/Menu";
 import { matches } from "../../components/ui/Search";
 import { toImageDataUrl } from "../../lib/attachments";
-import { finePointer, isFreeKey } from "../../lib/keys";
+import { composing, finePointer, isFreeKey } from "../../lib/keys";
 import { MAX_FILE_MB, MAX_FILES, MAX_IMAGES } from "../../lib/limits";
 import { draftKey, read, write } from "../../lib/storage";
 import { useDictation } from "../../lib/useDictation";
@@ -14,6 +14,7 @@ import { COMMAND_LIST, CommandMenu, type Shortcut } from "./CommandMenu";
 import { continueList } from "./lists";
 
 const MAX_HEIGHT = 200;
+const STOP_MS = 2000;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 const joined = (typed: string, heard: string) => (typed && !/\s$/.test(typed) ? `${typed} ${heard}` : typed + heard);
 
@@ -50,6 +51,17 @@ export function Composer({ agentId, onEdit, shortcuts, to, busy, waiting, onAnsw
   const box = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const caret = useRef<number | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => void (mounted.current = false);
+  }, []);
+  const [stopArmed, setStopArmed] = useState(false);
+  useEffect(() => {
+    if (!stopArmed) return;
+    const off = setTimeout(() => setStopArmed(false), STOP_MS);
+    return () => clearTimeout(off);
+  }, [stopArmed]);
   const [active, setActive] = useState(0);
   const [closedFor, setClosedFor] = useState<string | null>(null);
   const typing = /^\/([^\s/]*)$/.exec(text)?.[1];
@@ -59,20 +71,24 @@ export function Composer({ agentId, onEdit, shortcuts, to, busy, waiting, onAnsw
   const hint = open && !offered.length ? (shortcuts.length ? "No match." : "No skills or plugins are on for this agent.") : undefined;
   const dictation = useDictation((heard) => setText((current) => joined(current, heard)));
 
-  useLayoutEffect(() => {
+  const fit = () => {
     const el = box.current;
     if (!el) return;
-    const fit = () => {
-      el.style.height = "auto";
-      el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT)}px`;
-      el.style.overflowY = el.scrollHeight > MAX_HEIGHT ? "auto" : "hidden";
-    };
-    fit();
+    const scrolled = el.scrollTop;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT)}px`;
+    el.style.overflowY = el.scrollHeight > MAX_HEIGHT ? "auto" : "hidden";
+    el.scrollTop = scrolled;
+  };
+  useLayoutEffect(fit, [text, dictation.interim]);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
     let width = el.clientWidth;
     const observer = new ResizeObserver(() => el.clientWidth !== width && ((width = el.clientWidth), fit()));
     observer.observe(el);
     return () => observer.disconnect();
-  }, [text, dictation.interim]);
+  }, []);
 
   useEffect(() => write(draftKey(agentId), text.trim() ? text : null), [agentId, text]);
 
@@ -96,7 +112,11 @@ export function Composer({ agentId, onEdit, shortcuts, to, busy, waiting, onAnsw
   }, []);
 
   useLayoutEffect(() => {
-    if (caret.current !== null && box.current) box.current.setSelectionRange(caret.current, caret.current);
+    const el = box.current;
+    if (caret.current !== null && el) {
+      el.setSelectionRange(caret.current, caret.current);
+      if (caret.current === el.value.length) el.scrollTop = el.scrollHeight;
+    }
     caret.current = null;
   }, [text]);
 
@@ -126,20 +146,28 @@ export function Composer({ agentId, onEdit, shortcuts, to, busy, waiting, onAnsw
     event?.preventDefault();
     if (!hasContent || sending || disabled) return;
     dictation.stop();
+    const typed = text;
     const sent = { text: text.trim(), images, files };
     setSending(true);
     setError(null);
+    setText("");
+    setImages([]);
+    setFiles([]);
+    write(draftKey(agentId), null);
     try {
       if (onAnswer && sent.text && !images.length && !files.length) await onAnswer(sent.text);
       else await onSend({ ...sent, when });
-      setText("");
-      setImages([]);
-      setFiles([]);
     } catch (e) {
+      if (!mounted.current) return write(draftKey(agentId), typed.trim() ? typed : null);
+      setText((now) => (now.trim() ? `${typed.trimEnd()}\n${now}` : typed));
+      setImages((now) => [...sent.images, ...now]);
+      setFiles((now) => [...sent.files, ...now]);
       if (!(e as { shown?: boolean }).shown) setError(messageOf(e));
     } finally {
-      setSending(false);
-      box.current?.focus();
+      if (mounted.current) {
+        setSending(false);
+        box.current?.focus();
+      }
     }
   };
 
@@ -165,13 +193,15 @@ export function Composer({ agentId, onEdit, shortcuts, to, busy, waiting, onAnsw
     }
     if (event.key === "Escape" && busy && !waiting) {
       event.preventDefault();
+      if (!stopArmed) return setStopArmed(true);
+      setStopArmed(false);
       return onStop();
     }
     if (event.key === "ArrowUp" && !hasContent && last && (last.text || last.images.length)) {
       event.preventDefault();
       return put(last);
     }
-    if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+    if (event.key !== "Enter" || composing(event.nativeEvent)) return;
     const newLine = event.shiftKey || !finePointer();
     if (!newLine) {
       event.preventDefault();
@@ -199,8 +229,8 @@ export function Composer({ agentId, onEdit, shortcuts, to, busy, waiting, onAnsw
     void attach([...event.dataTransfer.files]);
   };
 
-  const note = error ?? dictation.error ?? (dictation.listening ? "Listening… Tap the microphone to stop." : null);
-  const keys = busy && hasContent && !onAnswer ? "Enter tells it now · Alt+Enter sends it when it finishes" : waiting && onAnswer ? "Enter to send your answer" : busy ? "Enter to send · Esc to stop" : "Enter to send · Shift+Enter for a new line · / for commands · ↑ for your last message";
+  const note = error ?? dictation.error ?? (stopArmed && busy ? "Press Esc again to stop." : dictation.listening ? "Listening… Tap the microphone to stop." : null);
+  const keys = busy && hasContent && !onAnswer ? "Enter tells it now · Alt+Enter sends it when it finishes" : waiting && onAnswer ? "Enter to send your answer" : busy ? "Enter to send · Esc twice to stop" : "Enter to send · Shift+Enter for a new line · / for commands · ↑ for your last message";
 
   return (
     <form
@@ -216,7 +246,7 @@ export function Composer({ agentId, onEdit, shortcuts, to, busy, waiting, onAnsw
       className="relative flex flex-col"
     >
       {open && <CommandMenu shortcuts={offered} active={highlighted} onPick={pick} hint={hint} onEdit={shortcuts.length ? undefined : onEdit} />}
-      <div className={`flex flex-col rounded-2xl border bg-page transition-colors focus-within:border-ink-3 ${dragging ? "border-dashed border-ink-2" : waiting ? "border-ink-2 ring-2 ring-ink-3/30" : "border-line-strong"}`}>
+      <div className={`flex flex-col rounded-2xl border bg-page transition-colors focus-within:border-ink-2 ${dragging ? "border-dashed border-ink-2" : waiting ? "border-ink-2 ring-2 ring-ink-3/30" : "border-line-strong"}`}>
         {(files.length > 0 || images.length > 0) && (
           <ul className="flex flex-wrap gap-2 px-3 pt-3" aria-label="Attachments">
             {images.map((url, i) => (
@@ -245,7 +275,7 @@ export function Composer({ agentId, onEdit, shortcuts, to, busy, waiting, onAnsw
               e.target.value = "";
             }}
           />
-          <Menu placement="above-start" trigger={({ open, toggle }) => <RoundButton icon="plus" label="Add files and photos" open={open} disabled={disabled} onClick={toggle} />}>
+          <Menu placement="above-start" trigger={({ open, toggle }) => <RoundButton icon="plus" label="Add files and photos" menu open={open} disabled={disabled} onClick={toggle} />}>
             {(close) => (
               <>
                 <MenuItem icon="attach" label="Files and photos" onClick={() => (close(), picker.current?.click())} />
@@ -267,8 +297,9 @@ export function Composer({ agentId, onEdit, shortcuts, to, busy, waiting, onAnsw
             readOnly={dictation.listening && !!dictation.interim}
             placeholder={dragging ? "Drop files to attach" : onAnswer ? "Type your answer" : `Message ${to}`}
             aria-label={onAnswer ? "Your answer" : `Message ${to}`}
-            role="combobox"
-            aria-expanded={offered.length > 0}
+            role={open ? "combobox" : undefined}
+            aria-autocomplete={open ? "list" : undefined}
+            aria-expanded={open ? offered.length > 0 : undefined}
             aria-controls={offered.length ? COMMAND_LIST : undefined}
             aria-activedescendant={offered.length ? `${COMMAND_LIST}-${highlighted}` : undefined}
             className="block min-w-0 flex-1 resize-none bg-transparent px-1 py-1.5 text-[15px] leading-6 outline-none placeholder:truncate placeholder:text-ink-3 focus-visible:outline-none"
@@ -284,13 +315,13 @@ export function Composer({ agentId, onEdit, shortcuts, to, busy, waiting, onAnsw
           )}
         </div>
       </div>
-      {note ? <p className={`px-4 text-xs ${error || dictation.error ? "text-bad" : "text-ink-3"}`}>{note}</p> : <p aria-hidden={!focused} className={`hidden truncate px-4 text-[11px] text-ink-3 transition-opacity pointer-fine:block ${focused ? "" : "opacity-0"}`}>{keys}</p>}
+      {note ? <p role={error || dictation.error ? "alert" : "status"} className={`px-4 text-xs ${error || dictation.error ? "text-bad" : "text-ink-3"}`}>{note}</p> : <p aria-hidden={!focused} className={`hidden truncate px-4 text-[11px] text-ink-3 transition-opacity pointer-fine:block ${focused ? "" : "opacity-0"}`}>{keys}</p>}
       {camera && <CameraDialog onCapture={(file) => void attach([file])} onClose={() => setCamera(false)} />}
     </form>
   );
 }
 
-function RoundButton({ icon, label, solid = false, active = false, open = false, type = "button", disabled, onClick }: { icon: IconName; label: string; solid?: boolean; active?: boolean; open?: boolean; type?: "button" | "submit"; disabled?: boolean; onClick?: () => void }) {
+function RoundButton({ icon, label, solid = false, active = false, menu = false, open = false, type = "button", disabled, onClick }: { icon: IconName; label: string; solid?: boolean; active?: boolean; menu?: boolean; open?: boolean; type?: "button" | "submit"; disabled?: boolean; onClick?: () => void }) {
   const [last, setLast] = useState(icon);
   const [swapped, setSwapped] = useState(false);
   if (icon !== last) (setLast(icon), setSwapped(true));
@@ -300,7 +331,8 @@ function RoundButton({ icon, label, solid = false, active = false, open = false,
       aria-label={label}
       title={label}
       aria-pressed={active || undefined}
-      aria-expanded={open || undefined}
+      aria-haspopup={menu || undefined}
+      aria-expanded={menu ? open : undefined}
       disabled={disabled}
       onClick={onClick}
       className={`relative flex size-9 shrink-0 items-center justify-center rounded-lg transition-[opacity,background-color] disabled:opacity-30 ${
@@ -317,7 +349,7 @@ function RoundButton({ icon, label, solid = false, active = false, open = false,
 
 function RemoveButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <button type="button" aria-label={label} onClick={onClick} className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-ink text-page shadow-pop">
+    <button type="button" aria-label={label} onClick={onClick} className="absolute -top-2 -right-2 flex size-6 items-center justify-center rounded-full bg-ink text-page shadow-pop">
       <Icon name="close" size={11} />
     </button>
   );
