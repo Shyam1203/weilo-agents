@@ -3,7 +3,7 @@
   "private": true,
   "description": "The pi coding agent and the browser driver, pinned with their lockfile for the image.",
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "1.2.0",
+    "@earendil-works/pi-coding-agent": "1.3.0",
     "playwright-core": "1.64.0"
   }
 }
