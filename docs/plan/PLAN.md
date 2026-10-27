@@ -2,7 +2,7 @@
 
 **Status:** draft v2. Nothing here is built yet.
 
-This version folds in four independent reviews: architecture and performance, security, layman UX and developer experience, and feasibility. §19 lists what each review changed. The UI mock is the "Weilo 1.0 UI mock" design canvas; per CLAUDE.md, no UI is built until the mock is approved.
+This version folds in four independent reviews: architecture and performance, security, layman UX and developer experience, and feasibility. §19 lists what each review changed. The UI mock is the [Weilo 1.0 UI mock](https://claude.ai/artifact/5P63PzD8BABXgWRzTxwAkP) design canvas (private to the owner): desktop agent chat, desktop session, phone home, phone call and first run; per CLAUDE.md, no UI is built until the mock is approved.
 
 There is **no backward compatibility**. This is a clean design. We keep the *ideas* that work today: the token gateway, sandboxed agents, approvals, Instant actions, pins, memory and the curator, the browser live view, and "Show how" teaching.
 
