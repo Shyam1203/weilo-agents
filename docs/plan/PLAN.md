@@ -1,8 +1,14 @@
 # Weilo 1.0: design and architecture plan
 
-**Status:** draft v5. Nothing here is built yet.
+**Status:** draft v6. Nothing here is built yet.
 
-**Reviews behind it:** three rounds of independent review. Round 1 covered architecture, security, UX, feasibility and consistency. Round 2 was the owner's review plus two UI critics. Round 3 was four system judges and two UI critics. §20 lists what each round changed.
+**Reviews behind it:** five rounds of independent review.
+
+- Round 1: architecture, security, UX, feasibility and consistency.
+- Round 2: the owner's review and two UI critics.
+- Rounds 3 to 5: the same four system judges (data, architecture, security, product) and two UI judges, re-scoring each version until every score reached 9.5.
+
+§20 lists what each round changed.
 
 **UI mock:** the [Weilo 1.0 UI mock](https://claude.ai/artifact/5P63PzD8BABXgWRzTxwAkP) design canvas (private to the owner). Per CLAUDE.md, no UI is built until the mock is approved.
 
@@ -61,9 +67,9 @@ Goals, in order of weight:
 | Still active in week 4 | ≥ 40% |
 | Calls per active user per week | ≥ 2 |
 | Approvals later overturned, plus "Did this send?" cases | < 1% |
-| Median approval decided from a phone | ≥ 50% (proves the phone matters) |
+| Share of approvals made on a phone | ≥ 50% (proves the phone matters) |
 
-**Kill or pivot signal:** in week 4, if fewer than 20% are still active, release 1 is re-scoped around the single most-used flow.
+**Kill or pivot signal:** at the week-4 beta review the owner decides. If fewer than 20% are still active, release 1 is re-scoped around the single most-used flow.
 
 ### Requirements, and when each lands
 
@@ -73,7 +79,7 @@ Goals, in order of weight:
 | Coding sessions on your Weilo computer (cloud or local) | §5.2 | 1; on a second computer at the same time in *Your computer* |
 | Real-time voice with tool use (Dots-level) | §8 | **1** (Talk v1); voice codes and phone calls in *Talk+* |
 | Codex-level computer use on your computer | §9 | *Your computer* (eval-gated) |
-| Its own computer (cloud) | §4, §9 | 1 (browser and Screen); full desktop in *Your computer* |
+| Its own computer (cloud) | §4, §9 | 1 when home is a cloud VM (browser and Screen); alongside a laptop home, and the full desktop, in *Your computer* |
 | Always on | §4 | 1 with a cloud home: hosted pilot or bring-your-own (§19.1) |
 | Decks, docs and designs at Artifacts quality | §10.2 | *Make* (eval-gated) |
 | Mobile UI like Duet | §11.4 | 1 (PWA); native in *Native* |
@@ -157,6 +163,9 @@ Goals, in order of weight:
 - **Clients talk only to home,** through the relay or directly on the same network or Tailscale.
 - **The web app is served from a per-home subdomain** (`<id>.home.weilo.app`).
   - Its TLS certificate is held only by home (ACME on home).
+  - Certificates come from ACME **DNS-01**: home writes a TXT record through a relay API scoped to its own name and signed with its host key.
+  - A **CAA record with `accounturi`** (RFC 8657) pins issuance to home's own ACME account.
+  - Home **watches Certificate Transparency logs** for its name. Any certificate it didn't request lands in Needs you on every device.
   - The relay passes TLS through by SNI and never holds a certificate for it, so it can't serve its own code.
   - Link-only confirmation pages (§10.3) are served the same way.
   - Desktop and native apps carry a signed, pinned bundle.
@@ -312,8 +321,8 @@ What an engine says about its own permissions is advisory; the host enforces.
   macOS `sandbox-exec` is deprecated by Apple. We track this risk; the fallback is a per-engine macOS user plus an Endpoint Security check.
 
   The sandbox **denies reading and writing `~/.weilo-agents/`** (§16), and all outbound traffic goes through the host's proxy allowlist.
-- **Engine web access.** An engine's own web and fetch tools go through the host proxy; outside content they fetch taints that turn (§16).
-- **Protected files.** The sandbox denies writes to `.git/hooks`, `.git/config`, `.envrc`, `.vscode/`, `.claude/` and `.github/workflows` unless a card allows it. Before "Open in terminal", changes to those files are listed.
+- **Engine web access.** An engine's own web and fetch tools go through the host proxy; outside content they fetch **taints the session from then on**. A clean session needs a new engine context (§16).
+- **Protected files.** The sandbox denies writes to `.git/hooks`, `.git/config`, `.envrc`, `.vscode/`, `.claude/`, `.husky/`, package-manager script hooks and `.github/workflows` unless a card allows it. Before "Open in terminal", changes to those files are listed.
 - **Unbound engines** (`bindsApprovals: false`) get the sandbox only: no laptop, no `sends` tools, no Chrome extension.
 
 ### 6.4 Credentials
@@ -387,7 +396,7 @@ Each is one of those plus one file (§14).
   - engines and plugins never get credentials.
 - **Settings:** `shared_buffers=32MB`, `max_connections=20`, `work_mem=4MB`, `default_toast_compression=lz4`, data checksums on, and `wal_sync_method=fsync_writethrough` on macOS.
 - **Roles:** `weilo_owner` runs migrations. `weilo_app` (NOSUPERUSER, NOBYPASSRLS, not the owner) runs everything else.
-- **Space and actor columns:** every row has `space_id` and `actor_id` from day one. RLS policies (`FORCE ROW LEVEL SECURITY`, `SET LOCAL app.user_id`) are turned on when shared workspaces arrive. A CI test proves cross-space reads return nothing.
+- **Space and actor columns:** every **space-owned** row has `space_id` from day one. `actor_id` is on events, audit, approvals and effects. `devices`, `push_targets`, `ui_prefs` and `plugins` belong to a user or host; RLS covers them by `user_id` or host. RLS policies (`FORCE ROW LEVEL SECURITY`, `SET LOCAL app.user_id`) are turned on when shared workspaces arrive. A CI test proves cross-space reads return nothing.
 - **Bring your own Postgres** on a server: PG 18 with pgvector, a role that may create roles, TLS with `sslmode=verify-full`, and **no transaction pooling** in front of it.
 
 **Core schema** (ids are `uuidv7()`):
@@ -408,11 +417,11 @@ routine_fires(space_id, routine_id, scheduled_for, run_id, skipped, pk(routine_i
 webhook_requests(space_id, routine_id, webhook_id, relay_received_at, body_file, pk(routine_id, webhook_id))  -- kept 7 d
 projector_cursors(projection, thread_id, seq, pk(projection, thread_id))
 approvals(id, space_id, thread_id, seq, class, payload_hash, state, expires_at, decided_by_device, decided_via, signature, decided_at)
-allow_rules(id, agent_id, tool, scope, created_by_device, revoked_at)
-secrets(id, space_id, kind, ciphertext, key_id, rotated_at) · connections(id, plugin_id, account, secret_id, scopes, status)
+allow_rules(id, space_id, agent_id, tool, scope, created_by_device, revoked_at)
+secrets(id, space_id, kind, ciphertext, key_id, rotated_at) · connections(id, space_id, plugin_id, account, secret_id, scopes, status)
 plugins(id, kind, name, version, manifest_hash, tools_hash, approved_at)
 files(sha256, space_id, size, mime, created_at, expires_at)  -- swept nightly · usage_events(id, space_id, agent_id, thread_id, model, tokens_in, tokens_out, cost_micros, at)
-budgets(agent_id, daily_cap_micros) · push_targets(device_id, provider, token_ciphertext) · notifications(id, user_id, ref, state, at)
+budgets(space_id, agent_id, daily_cap_micros) · push_targets(device_id, provider, token_ciphertext) · notifications(id, space_id, user_id, ref, state, at)
 ui_prefs(user_id, device_id, prefs jsonb)                   -- sidebar sections, collapsed state
 read_marks(space_id, user_id, thread_id, seq) · memory_chunks(id, space_id, agent_id, text, tsv, embedding halfvec(1024) null, source, tainted)
 audit_head(space_id, seq, hash) · audit(space_id, seq, at, actor, device_id, action, detail, prev_hash, hash)
@@ -460,7 +469,11 @@ Retries:
 
 **Backups**
 
-- **Method:** `pg_basebackup` with WAL, plus a snapshot of the file store's manifest. Files are copied first and the database second, so no reference dangles.
+- **Method:**
+  - The database is backed up first (`pg_basebackup`, ending at a known WAL position).
+  - Then every file the snapshot references is copied. Files are immutable and content-addressed.
+  - The nightly file sweep deletes nothing while a backup runs, and keeps expired files 48 h past `expires_at`.
+  - WAL is compressed (zstd) before it is encrypted.
 - **Retention:** 7 daily and 4 weekly backups.
 - **How much you can lose:** up to 24 h on a laptop; on a VM, WAL is archived every 5 min, so up to 5 min.
 - A backup runs whenever the newest one is over 24 h old, at the next idle moment.
@@ -491,6 +504,10 @@ Retries:
   - A same-seq mismatch (by `body_hash`) **raises an alarm and is never dropped**.
 - Order is by `seq`. Both `origin_at` and `created_at` are kept; neither decides order.
 - `weilo move` and reassignment raise the epoch, which fences the old owner.
+- **Restore on a new computer** is a move without the freeze, for a lost or broken home.
+  - The relay raises `home_epoch` when the restored home first connects.
+  - Import rewrites `threads.owner_host` and `owner_epoch` to the new host.
+  - Effects still in `intent` become `unknown` (Needs you: "Did this send?").
 - **Home fencing lives outside the database.**
   - The relay stores `(space_id, home_pubkey, home_epoch)`.
   - `weilo move` runs in this order:
@@ -514,7 +531,7 @@ One WebSocket per device:
 
 ### 7.6 Upgrades
 
-- **Migrations are expand-only** within a release; columns are dropped one release later. A backup is taken before every migration, and a downgrade restores it. `weilo_owner` runs migrations in one transaction, under an advisory lock.
+- **Migrations are expand-only** within a release; columns are dropped one release later. Because migrations are expand-only, release N−1 runs on the new schema. A backup is taken before every migration and is restored only if the migration fails. On bring-your-own Postgres, index builds use `CONCURRENTLY`, outside the migration transaction. `weilo_owner` runs migrations in one transaction, under an advisory lock.
 - Updates wait until no session is running, or ask.
 - Engines reattach with `session/resume`.
 - Desktop updates through Tauri's updater; servers through `weilo update`.
@@ -530,7 +547,7 @@ One WebSocket per device:
 | Engine crashes | Process exit | Resume once with `session/resume` | "The session restarted and picked up where it was." |
 | Chrome or the browser plugin dies | Process exit | Restart once with the same profile | "Screen restarted; Ava is retrying." |
 | Plugin dies | Process exit or an MCP error | Restart with backoff; then disable | "Gmail stopped working. [Reconnect]" |
-| Postgres down | Pool error | Supervised restart. Running turns pause at the next ACP boundary. Durable events wait in a bounded memory queue (≤ 1,000 or 30 s), then the turn fails as "interrupted". Reads come from cached projections. | "Your Weilo computer is restarting its data. (a few seconds)" |
+| Postgres down | Pool error | Supervised restart. Running turns pause at the next ACP boundary. Durable events wait in a bounded memory queue (≤ 1,000 or 30 s), then the turn fails as "interrupted". Reads come from the core's in-memory cache of open threads; anything else comes from the client's IndexedDB copy (§4). | "Your Weilo computer is restarting its data. (a few seconds)" |
 | Disk full | Free-space watch | See §7.3 | "Disk almost full. [Free space]" |
 | Model provider error | 5xx or 429 | Back off; fallback asks first (§6.5) | "Opus is busy. Use GPT-6 for this reply?" |
 | Effect outcome unknown | Timeout after the call | Never retried | Needs you: "Did this send? [Yes, it sent] [No, try again]" |
@@ -573,8 +590,8 @@ mic ─► WebRTC (TURN via the relay) ─► voice orchestrator in the Rust cor
 - **Tools never run from a partial transcript.**
 - **Approvals by voice:**
   - The agent reads the details back.
-  - **Talk v1 (release 1):** approvals are **tap only**; the card is on screen.
-  - **Talk+:** a spoken one-time code that matches the verb ("say *move 47*") for reversible actions and sends. Pay, delete and sign always need a tap.
+  - **Talk v1 (release 1):** approvals are **tap only**; the card is on screen. Sends need a tap plus a passkey, as in the app.
+  - **Talk+:** a spoken one-time code that matches the verb ("say *move 47*") for reversible actions only. Sends still need a tap plus a passkey. Pay, delete and sign always need a tap.
 - **The mouth.** It speaks fillers and the brain's words exactly. It never answers, rewords or calls tools. Its provider is named at the first call: "*Voice runs through OpenAI Realtime. Your audio goes to OpenAI. [OK] [Use strict mode]*".
 - **The call bar** (desktop and phone):
   - **Mute · Stop Ava · End**;
@@ -689,7 +706,7 @@ The rules:
 - Ava is made. She interviews you in a few questions and makes your channels, then writes first.
 - She offers *Plan my week* · *Tidy my inbox* · *Watch a website*.
 - Gmail and Calendar are in release 1, with Google verification started in week 1.
-- If Gmail is not verified by week 14, the beta runs as an unverified app (a 100-user test cap, which fits the 50-user beta). For everyone else, *Tidy my inbox* is replaced by *Watch a website*.
+- If Gmail is not verified by week 14, the beta runs as a **published but unverified** app (100-user cap, which fits the 50-user beta; never testing mode, whose sign-ins expire weekly). At sign-in the app says first: "*Google will warn that Weilo isn't verified yet. Choose Advanced, then Go to Weilo.*" For everyone else, *Tidy my inbox* is replaced by *Watch a website*.
 - The setup checks for disk encryption and warns if it is off.
 
 ### 11.2 Desktop and web
@@ -835,7 +852,7 @@ Weight 500 means interactive; 600 means a heading. Avatar letters are 12/16 at 6
 - **A routine** is a trigger (a time, a webhook, a connection event, a pin change), plus what to do (a prompt, or an Instant script with no model), plus who and where. Routines are written as sentences: "*Every weekday at 8:00 · Send me a brief*".
 - **Incoming webhooks:**
   - One URL per routine.
-  - **Standard Webhooks** HMAC is checked **on home**, on the original bytes. The 5-minute window is measured against the relay's signed receive time, so a request held in the mailbox still verifies. Signing secrets never leave home.
+  - **Standard Webhooks** HMAC is checked **on home**, on the original bytes. The 5-minute window is measured against the relay's signed receive time, so a request held in the mailbox still verifies. Signing secrets never leave home. Home also rejects a request whose own signed timestamp is more than 25 h older than home's clock, so the 7-day dedupe covers every possible replay.
   - Duplicates are dropped on home by `(routine_id, webhook_id)`.
   - At most 1 MiB, answered at once with `202 {run_id}`, or `202 {queued: webhook_id}` from the relay while home is offline.
   - A request log with replay (a replay stays tainted), **Send test event**, a curl example, and JSON-path filters.
@@ -877,7 +894,9 @@ Weight 500 means interactive; 600 means a heading. Avatar letters are 12/16 at 6
 - **Runtime:**
   - Local plugins run out of process, sandboxed, with `network` enforced by the proxy.
   - Remote plugins can't be enforced, and the install screen says so.
-- **What counts as a send.** The host decides. Read-only MCP annotations run without a card. **An unannotated tool counts as a send.** Weilo ships curated annotations for built-in and marketplace connections.
+- **What counts as a send.** The host decides.
+  - Read-only annotations run without a card **only when Weilo has curated them** (built-in and marketplace connections).
+  - For any other plugin, every tool counts as a send, whatever the plugin declares.
 - **Always allow has limits.**
   - It never covers pay, delete or sign.
   - A send rule names its recipients or domains and expires after 30 days.
@@ -885,7 +904,7 @@ Weight 500 means interactive; 600 means a heading. Avatar letters are 12/16 at 6
   - A rule proposed because of the card budget needs a passkey.
 - **Approval fatigue.** Each agent has a daily card budget. Past it, cards are grouped and the agent proposes an **Always allow rule** for you to read once (never in a tainted job). Approvals on send-class cards that come in under 1 s trigger a short pause ("Take a look first").
 - **Supply chain:**
-  - Engine CLIs and plugin runtimes install only from **lockfiles with integrity hashes** and Sigstore checks, into a host-managed folder. Never `npx -y` or `latest`.
+  - Engine CLIs and plugin runtimes install only from **lockfiles with integrity hashes** and Sigstore checks, into a host-managed folder. Never `npx -y` or `latest`. Installs run with `--ignore-scripts` (or the same for other runtimes), inside the sandbox.
   - Update signing keys (Tauri, `weilo update`) are kept offline, with a documented rotation plan.
   - Plugins are pinned by hash, with Sigstore provenance.
   - A change in tools or descriptions asks again.
@@ -949,7 +968,7 @@ What changes:
   - memory and skill writes without a card.
 - **No quiet exfiltration.** In a tainted job, any outbound request that could carry data counts as a send and needs a card. That means:
   - any request other than GET;
-  - a GET to a domain that isn't in the job's inputs.
+  - any GET except one to a URL that appears **exactly** in the job's inputs (no added or changed path or query) or to a domain on the agent's allowlist.
 - Clients never load remote images or media in agent output (CSP `img-src 'self' data:`), and links show their full domain.
 
 **Engines and plugins**
@@ -967,7 +986,7 @@ What changes:
 
 - Passkeys in the PWA; the Secure Enclave or Keystore in native apps.
 - A safety number at pairing.
-- Revoking, adding a device, Lost this computer and changing recovery all need a passkey or Face ID, and every device is told. A new device can't approve sends for 24 h unless an existing device confirms it.
+- Revoking, adding a device, Lost this computer and changing recovery all need a passkey or Face ID, and every device is told. A new device, including one added with only the recovery code, can't approve sends for 24 h unless an existing device confirms it, and every device is alerted.
 - Pairing endpoints on the relay are rate-limited.
 - A recovery code.
 - Push carries only an encrypted reference.
@@ -978,7 +997,7 @@ What changes:
 |---|---|---|---|---|---|
 | Read / look | No card | No card | — | No card | Per-app permission |
 | Reversible | Tap | Owner's click (signed) | Confirm page + passkey | Talk+: code; v1: tap | Device-signed card |
-| Send / post / submit | Tap + passkey or Face ID | "Open in app" | Not offered | Talk+: code; v1: tap | Device-signed card |
+| Send / post / submit | Tap + passkey or Face ID | "Open in app" | Not offered | Tap + passkey on the paired device (v1 and Talk+) | Device-signed card |
 | Pay / delete / sign | Tap + passkey or Face ID, always | Not offered | Not offered | Not offered | Device-signed card |
 
 **Audit:** hash-chained (§7.3), INSERT-only for the app role, with signed hourly checkpoints sent to your devices. It records engine tool calls, computer-use steps, and which device and surface approved each action.
@@ -1014,25 +1033,26 @@ What changes:
 
 | Weeks | Ships |
 |---|---|
-| 1–2 | Monorepo, `proto/`, tokens and component library, echo and replay engines, CI. **Embedded Postgres gate** (macOS, Linux). Browser measurement. **Start reviews:** Google OAuth verification and the CASA Tier 2 assessment Gmail's restricted scopes require (8–16 weeks, paid), Meta, TikTok, LinkedIn, Cloudflare signed agents, legal on subscription plans. |
-| 3–6 | `weilo-host`: Postgres, events, projector, jobs and effects, secrets in the keychain, pairing, **the relay with E2E, TURN and health**, one WebSocket, the gateway. Engines: generic ACP, Claude Code, Codex. Sessions with worktrees; Changes and Terminal. MCP hub. **Week 6 checkpoint.**
+| 1–2 | Monorepo, `proto/`, tokens and component library, echo and replay engines, CI. **Embedded Postgres gate** (macOS, Linux). Browser measurement. **Owner approves the UI mock** (first run, desktop, phone, call bar, Needs you); weeks 7–10 build only what is approved. **Hosting decided** (§19.1). **Start reviews:** Google OAuth verification and the CASA Tier 2 assessment Gmail's restricted scopes require (8–16 weeks, paid), Meta, TikTok, LinkedIn, Cloudflare signed agents, legal on subscription plans. |
+| 3–6 | `weilo-host`: Postgres, events, projector, jobs and effects, secrets in the keychain, pairing, **the relay with E2E, TURN and health**, **the per-home subdomain and its certificate (§4)**, one WebSocket, the gateway. Engines: generic ACP, Claude Code, Codex. Sessions with worktrees; Changes and Terminal. MCP hub. **Week 6 checkpoint** (below). |
+| 7–10 | Agents, memory (search), routines, Needs you, cards and MCP Apps, the interview that makes channels, rule-based filing. New layout, the customizable sidebar, ⌘K. **Gmail, Google Calendar, web.** Browser layers 2 and 7. Taint, the effects ledger, the failure table. |
+| 11–13 | **Talk v1:** mouth and brain, call bar, captions, tap approvals, latency gate. PWA with passkeys and push. First run. |
+| 14–16 | Incoming webhooks. Off-machine encrypted backups and restore drills. macOS and Linux installers (signed and notarized), the cloud VM image. **Cloud home:** the hosted pilot (if decided), or bring-your-own with Hetzner/DigitalOcean sign-in. Beta hardening. |
+
+**Week 6 checkpoint.**
 
 Pass criteria:
-- an echo session and a Claude Code session each run end to end through the relay on a phone;
-- event-to-screen and session-start budgets (§7.8) are met;
+- an echo session and a Claude Code session each run end to end through the relay on a phone, **in its browser (no install)**;
+- the event-to-screen and session-start budgets (§7.8) are met;
 - the Postgres gate passes.
 
 Cut order, fixed in advance, if a criterion fails or the schedule slips:
 1. hosted pilot → bring-your-own only;
 2. Codex engine → *Reach*;
-3. Gmail → testing mode (≤ 100 invited users) while CASA runs;
+3. Gmail → **published but unverified** (100-user cap, with Google's warning screen); **never testing mode**, whose sign-ins expire every 7 days;
 4. Talk v1 → strict mode only.
 
-Release 1 ships when the remaining scope passes its gates. |
-| 1–2 (cont.) | **Owner approves the UI mock** (first run, desktop, phone, call bar, Needs you). Weeks 7–10 build only what is approved. |
-| 7–10 | Agents, memory (search), routines, Needs you, cards and MCP Apps, the interview that makes channels, rule-based filing. New layout, the customizable sidebar, ⌘K. **Gmail, Google Calendar, web.** Browser layers 2 and 7. Taint, the effects ledger, the failure table. |
-| 11–13 | **Talk v1:** mouth and brain, call bar, captions, tap approvals, latency gate. PWA with passkeys and push. First run. |
-| 14–16 | Incoming webhooks. Off-machine encrypted backups and restore drills. macOS and Linux installers (signed and notarized), the cloud VM image. **Cloud home:** the hosted pilot (if decided), or bring-your-own with Hetzner/DigitalOcean sign-in. Beta hardening. |
+Release 1 ships when the remaining scope passes its gates.
 
 **After release 1**, two tracks run in parallel (one developer each), because both of the founder's headline gaps matter: your computer, and calls with the screen locked.
 
@@ -1077,9 +1097,20 @@ Then the phases follow in order:
    | Relay, TURN and push | about $0.50 |
 
    - **Price:** $29 a month for hosting and relay, plus model use at cost through credits. Or free with your own key and your own computer.
-   - **The default cap** stays at $5 a day: it bounds the worst case at about 1.5× a typical month. It is raised in one tap.
+   - **The default cap** stays at $5 a day: it bounds the worst case at $150 a month, 2–5× a typical month. Usage warns at 80% of the forecast. It is raised in one tap.
 
 ## 20. What the reviews changed
+
+### Rounds 4 and 5: the same judges, re-scored until 9.5
+
+| Judge | Score by round | Changes |
+|---|---|---|
+| Product | 6.5 → 8.0 → 9.3 → round 6 | §1.1 users and metrics; what release 1 delivers of the wedge; week-6 pass criteria and cut order; hosting decided by week 2; pricing; relay operator; iPhone voice limit; parallel tracks; numeric eval gates; Gmail as published but unverified (never testing mode); cap math fixed. |
+| Architecture | 6 → 7.5 → 8.8 → round 6 | Voice in the Rust core, voice providers as endpoints; single-host fixes; no backups to the mailbox; frame streams; pre-warm only with a client connected; more failure rows; per-home subdomain built in weeks 3–6; DNS-01 with CAA; a Postgres-down read path. |
+| Data | 5.5 → 8.0 → 9.0 → round 6 | Fencing through the relay; restore on a new computer; signed receive time; secrets restorable; backup order (database, then files), retention and RPO; expand-only migrations; projector cursors; effect retry rules; only the latest missed slot fires; `space_id` scope made exact. |
+| Security | 6 → 7.5 → 8.5 → round 6 | Per-home TLS (CAA `accounturi`, CT watch); the relay holds no secrets; 25 h replay bound; canonical signed approvals; exact-URL egress rule; engine taint per session; protected files; lockfiles with `--ignore-scripts`; curated-only read annotations; voice sends need a passkey; Always allow limits; device holds; a pen test. |
+| UI visual | 7.5 → 8.4 → … | Type tokens aligned (caption 400, caption-strong, transcript); inset top-bar lines; flex rules; no warning tint on safe cards; selected rows on accent-subtle; header and search overflow fixed; textarea message box. |
+| UX | 7.5 → 8.6 → … | One status word ("Needs you"); counts only where they ask for action; heads-up rows with Stop; Stop Ava in the message box; live lines instead of job counts; a risk line on voice cards; a confirm step for irreversible bulk sends; scoped "Always allow in this folder". |
 
 ### Round 3: four system judges, two UI critics
 
