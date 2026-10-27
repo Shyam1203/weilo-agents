@@ -56,9 +56,14 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #5B
 </div>
 
 <div style="padding: 0 24px 24px; max-width: 768px; width: 100%; box-sizing: border-box; margin: 0 auto">
-<div class="w-box" style="border: 1px solid #A8A29E; border-radius: 12px; padding: 12px; display: flex; align-items: center; gap: 8px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(28,25,23,0.06); min-height: 56px; box-sizing: border-box">
-<input type="text" placeholder="Tell this session what to change. Ava sees it too." aria-label="Message this session" style="flex: 1; min-width: 0; height: 32px; border: 0; outline: 0; font: inherit; color: #1C1917">
+<div class="w-box" style="border: 1px solid #A8A29E; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(28,25,23,0.06)">
+<textarea rows="1" placeholder="Tell this session what to change. Ava sees it too." aria-label="Message this session" style="width: 100%; box-sizing: border-box; height: 20px; border: 0; outline: 0; resize: none; padding: 0; font: inherit; color: #1C1917"></textarea>
+<div style="display: flex; align-items: center; gap: 4px">
+<button aria-label="Attach a file" class="w-ghost" style="width: 32px; height: 32px; border: 0; background: transparent; border-radius: 8px; color: #57534E; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
+<button aria-label="Record a voice message" class="w-ghost" style="width: 32px; height: 32px; border: 0; background: transparent; border-radius: 8px; color: #57534E; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path></svg></button>
+<div style="flex: 1"></div>
 <button style="height: 32px; border: 0; background: #5B4BC4; color: #FFFFFF; border-radius: 8px; padding: 0 12px; font-size: 13px; font-weight: 500">Send</button>
+</div>
 </div>
 <div style="font-size: 12px; line-height: 16px; color: #78716C; padding: 8px 4px 0">⌘. stops the session · about $0.38 so far</div>
 </div>
