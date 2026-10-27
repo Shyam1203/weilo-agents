@@ -57,6 +57,15 @@ Goals, in order of weight:
 - **Duet** (Claude). One ongoing conversation. The agent writes first, notifies only when needed, and shows an approval card before it sends, pays, signs or deletes.
 - **Dots** (OpenAI). Always-on agents with their own cloud computer that you can call.
 - **Grok Bot.** Draft cards (Send / Discard), secure forms, connector cards, its own email address, and webhooks on routines.
+- **Rakazo** (open source, "persistent AI teammates"). Postgres is its only data store. Patterns worth copying:
+  - an `events` table with `UNIQUE(thread_id, seq)`, where seq is allocated with a row lock on the thread;
+  - LISTEN/NOTIFY used only as a doorbell, after which clients catch up by seq;
+  - a job queue in the database (Graphile Worker, `SKIP LOCKED`);
+  - row-level security keyed on a space.
+
+  Its desktop app needs Docker for the database. We must do better for non-technical users.
+- **Buzz** (Block, open source). People and agents are equal members of channels, and every message, approval and workflow step is one signed event in Postgres. Agents interview you at setup and make one channel per project. You start with a ready-made team of three. Every agent card has a Stop button. A seen-reaction shows an agent picked a message up. Weak spots: crypto keys and relays in setup, no mobile, slow, and agent chatter that feels like noise.
+- **GPUI** (Zed's native Rust UI). Fast, but pre-1.0. It has no web or mobile target and no proven screen-reader support. Webviews can only be embedded on macOS and Windows, drawn on top of the window. Our product is mostly web content (mini apps, previews, the live screen), so **we stay on one React codebase** (§7.1).
 - **Browser blocks** come mainly from datacenter IPs, the `Runtime.enable` leak that automation tools add, mismatched fingerprints (software GPU, fonts, timezone versus IP), robotic input, and fresh profiles with no history.
 
 ## 3. Words
@@ -71,8 +80,13 @@ The words people learn come in three tiers.
 
 - **Agent:** a teammate who stays. It has a name, a face, instructions, memory, connections, routines, and the computers it may use.
 - **Session:** one piece of work in a folder, done by a coding engine, for example "Fix the checkout bug in shop". A person starts one, or an agent starts one for them ("Ava is working on *Fix checkout* · Open"). Sessions end and can be resumed.
-- **Channel:** a topic where related work lands (*Shop launch*, *Taxes 2026*). Channels are filed automatically (§5.3). They show with a plain icon; developers can turn on `#names`.
-- Display words: queue → "**1 waiting**". Steer → "**Say now**". Browser and Computer → "**Screen**". Tasks → "**To-do**".
+- **Channel:** a topic where related work lands, always shown with `#`: `#general`, `#shop-launch`, `#taxes-2026`, `#trip`. Names are lowercase, one or two words joined by hyphens. Channels are filed automatically (§5.3). A face means an agent; `#` means a place; a square work icon means a session.
+- Display words:
+  - queue → "**Next up**";
+  - steer → "**Tell now**" (split button: *Tell now* / *After this job*);
+  - browser and computer → "**Screen**", with "**Let me drive**" (take over) and "**Teach Ava this**" (show how);
+  - tasks → "**To-do**";
+  - risk lines on every card: "**Can undo**", "**Can't unsend after Fri 9:00**", "**Costs about $0.20 · $1.10 of $5 used today**".
 
 ## 4. Where things run
 
@@ -151,8 +165,9 @@ It also:
 
 ### 5.3 Channels that file themselves
 
-1. New work goes to **General**.
-2. When two or more threads share a subject, the classifier makes a channel and says so in one line: "*Filed in Taxes 2026 · Move*".
+1. New work goes to **#general**.
+2. When two or more threads share a subject, the classifier makes a channel and says so in one line: "*Filed in #taxes-2026 · Move*".
+   - At setup, the agent asks about your work and makes one channel per project you name (from Buzz).
 3. A thread in a repo goes to the repo's channel.
 
 Limits:
@@ -249,29 +264,103 @@ A worker without credentials reports "not signed in" through the engine's detect
 
 | Part | Language | Notes |
 |---|---|---|
-| Core: supervisor, event log, auth and pairing, relay link, ACP client, MCP hub, gateway (models, plugins, outbound proxy), scheduler, webhooks, memory search, file server, audit | **Rust** (tokio, axum, rusqlite, `agent-client-protocol` 2.x pinned, `rmcp`) | Always on. Low memory, no pauses. The core is one binary per platform; the full install is in §4. |
+| Core: supervisor, event log, auth and pairing, relay link, ACP client, MCP hub, gateway (models, plugins, outbound proxy), scheduler, webhooks, memory search, file server, audit | **Rust** (tokio, axum, `sqlx` on Postgres, `agent-client-protocol` 2.x pinned, `rmcp`), with an embedded Postgres it manages (§7.2) | Always on. Low memory, no pauses. The core is one binary per platform; the full install is in §4. |
 | Computer use (accessibility tree, input, screen) | **Rust**, macOS first, then Windows, then Linux (AX, UIA, AT-SPI; `xcap`, `enigo`) | Native APIs |
 | **`weilo-node` sidecar** (bundled Node runtime, installed for you) | TypeScript | Hosts the Claude Agent SDK driver, the Patchright browser driver, and TS plugins. Node is a real dependency; we say so. |
 | Plugins, built-in ones included (social, bridges, docs and decks, routines' Instant scripts) | Any language | **Every plugin is an out-of-process MCP server plus a manifest** (§14), run as its own OS user or in a sandbox |
-| UI | **React 19 + Tailwind + TanStack Router/Query** | One codebase for web, desktop and PWA |
+| UI | **React 19 + Tailwind + TanStack Router/Query**, tuned for speed: virtualized chats (TanStack Virtual), markdown and code highlighting in a Web Worker, `content-visibility`, lazy mini-app iframes, xterm.js with WebGL | One codebase for web, desktop and PWA. **Not GPUI**: no web or mobile target, weak webview embedding (our mini apps, previews and Screen are web content), and unproven screen-reader support. Revisit in 2027 for one native panel (terminal or diff) only if profiling demands it. |
 | Desktop | **Tauri 2**, embedding `weilo-host` and its updater | Small download |
 | Mobile | **PWA first**, then **Expo / React Native** | Native push actions, Live Activities, CallKit voice and widgets. Shares the generated protocol TS. |
 
-### 7.2 Event log
+### 7.2 Data: Postgres is the source of truth
 
-- SQLite in WAL mode: `events(thread_id, seq, at, kind, source, body)`, append-only. Bodies are ACP `session/update` payloads plus `weilo/*` events.
-- **Projections** (thread list, channel digests, Needs you, usage, search) update **in the same transaction** as the append, and can be rebuilt from the log.
-- Search uses FTS5. Trigram indexing covers only message text, not tool output, to keep the index small.
-- **Two sources of truth, each for one thing:**
-  - The engine's transcript decides **what the engine remembers**.
-  - Our log decides **what people see**: display, search and channels.
-  - After a hand-off or a fork outside the app, the host imports the difference with `session/load` (tagged `source: engine`) and marks any gaps.
-  - A fork makes a new thread with a `parent_seq`.
+Everything durable lives in **Postgres on home**:
+
+- events and messages;
+- agents and channels;
+- routines and jobs;
+- approvals and the audit;
+- memory, usage and logs.
+
+Files stay files in `~/.weilo-agents/files/`, content-addressed; rows point to them.
+
+**How Postgres runs**
+
+- **Version:** one pinned major version per app release (Postgres 18 now).
+- **Data folder:** `~/.weilo-agents/db/`.
+- **Laptop or desktop home:** Postgres ships inside the install (the `postgresql_embedded` crate with bundled binaries, plus a prebuilt pgvector). It is managed by `weilo-host`:
+  - a Unix socket, or on Windows localhost on a random port;
+  - a generated password;
+  - `shared_buffers=32MB`.
+
+  The user never sees it.
+- **VM or server home:** the same, or **bring your own Postgres** (a connection string). A managed database works.
+- **Workers** keep only a tiny **outbox** (append-only SQLite, no queries, no projections). It ships events to home over the WebSocket and is cleared on acknowledgement. All features run on one SQL dialect.
+
+**Schema core (Rakazo-style)**
+
+```sql
+-- every table has space_id → row-level security ready for shared workspaces later
+threads(id uuid pk, space_id, channel_id, kind, origin_host, last_seq bigint, title, parent_id, parent_seq, updated_at)
+events(thread_id, seq bigint, space_id, origin_host, kind text, source text, body jsonb, created_at,
+       primary key(thread_id, seq))                                  -- append-only
+jobs(id bigserial pk, queue, run_at, payload jsonb, locked_until, attempts, last_error)   -- SKIP LOCKED
+schedules(id uuid pk, routine_id, rule, tz, next_run_at)              -- the host owns the timers; no pg_cron
+approvals(id uuid pk, thread_id, class, state, decided_by_device, decided_via, expires_at)
+memory_chunks(id, space_id, agent_id, text, tsv tsvector generated, embedding vector(1024), source, tainted bool)
+audit(id bigserial pk, at, actor, action, detail jsonb, prev_hash, hash)   -- hash chain
+-- projections, rebuilt from events in the same transaction: thread_list, inbox, channel_digest, usage_daily
+```
+
+**Postgres features we use**
+
+| Feature | For |
+|---|---|
+| Append with `UPDATE threads SET last_seq = last_seq + 1 … RETURNING` in the same transaction | Gap-free `seq` per thread |
+| `LISTEN/NOTIFY` as a doorbell (`thread:seq`), then catch up by `after_seq` | Live updates to the host's socket fan-out. Payloads never carry data. |
+| `FOR UPDATE SKIP LOCKED` job queue | Routines, webhook deliveries, retries, the curator, push |
+| `UPDATE approvals SET state = … WHERE state = 'pending' RETURNING` | "First device to answer wins" (§7.4) |
+| `tsvector` + GIN | Search over messages and memory |
+| `pgvector` HNSW | Memory and knowledge recall |
+| JSONB + generated columns | Event bodies, with indexed fields lifted out |
+| Row-level security on `space_id` with an app role | Ready for shared workspaces (teams, Buzz-style) without a rewrite |
+| Declarative partitioning of `events` by month | Only once a home passes about 10 M events |
+
+**Backups and safety**
+
+- `weilo-host` runs a nightly `pg_dump` into `~/.weilo-agents/backups/` and keeps 7 days.
+- **Export everything** writes one file.
+- On a VM, WAL archiving gives point-in-time restore (pgBackRest, off by default).
+- The app tells you never to copy `db/` while it is running. `weilo backup` and `weilo move` do it safely.
+
+**Upgrades**
+
+- A release that changes the Postgres major version keeps the old binaries for one release.
+- The host takes a dump, then runs `pg_upgrade --link` by itself.
+- If that fails, it restores from the dump and stays on the old version, and Settings says so.
+
+**Two sources of truth, each for one thing**
+
+- The engine's transcript decides **what the engine remembers**.
+- Our events decide **what people see**: display, search and channels.
+- After a hand-off or a fork outside the app, the host imports the difference with `session/load` (tagged `source: engine`) and marks any gaps.
+- A fork makes a new thread with a `parent_seq`.
+
+**Phase 0 gate: measure embedded Postgres on macOS, Windows and Linux laptops**
+
+| Measure | Target |
+|---|---|
+| Idle memory | < 120 MB |
+| Cold start | < 2 s |
+| Upgrade | Survives a forced major upgrade |
+| Windows | Survives antivirus and sleep |
+
+If Windows fails, Windows laptops run home on a VM by default, and the app says why.
 
 ### 7.3 Several hosts
 
 - **The host that owns a thread is its only writer** and assigns its `seq`.
-- Home keeps a replica, pulled with the same `subscribe(thread, after_seq)` that clients use.
+- A worker's outbox replicates to home over our own WebSocket: an idempotent upsert on `(thread_id, seq)`. This is not Postgres logical replication, because laptops sit behind home routers and replication slots fill disks while home is away.
 - Clients subscribe only at home.
 
 One mechanism serves clients and hosts alike.
@@ -433,46 +522,123 @@ An agent is reachable from Slack, email (an address of its own) and Telegram; Di
 
 That is two taps when a key is found, and one paste otherwise. Then:
 
-**Done.** Ava is made and writes first: "*Hi, I'm Ava. What should I take off your plate this week?*" She offers three suggestions: *Plan my week* · *Tidy my inbox* · *Watch a website* (Gmail, Google Calendar and web connections ship in release 1).
+**Done.** A starter team is made: **Ava** (lead) plus a **Researcher** and a **Writer**, which you can remove with one tap (from Buzz). Ava interviews you in a few questions and makes one channel per project you name. Ava writes first: "*Hi, I'm Ava. What should I take off your plate this week?*" She offers three suggestions: *Plan my week* · *Tidy my inbox* · *Watch a website* (Gmail, Google Calendar and web connections ship in release 1).
 
 Her name and face can be changed later. Connections are asked for only when needed ("To read your email, connect Gmail. [Connect]").
 
 ### 11.2 Desktop and web
 
 ```
-┌────┬────────────────┬──────────────────────────────────────────┬──────────────┐
-│Home│ Needs you  2   │ Shop launch › Fix checkout   [tab][tab][+]│ Screen│Files │
-│    │ ───────────    │                                          │ To-do        │
-│Rout│ Agents         │  messages · cards · mini apps            │ (session:    │
-│    │  ● Ava  2 jobs │                                          │  Changes     │
-│Conn│  ○ Ravi        │                                          │  Terminal    │
-│    │ Channels       │                                          │  Preview)    │
-│    │  General       │  ┌────────────────────────────────────┐  │              │
-│Set │  Shop launch   │  │ Message Ava…        🎤  Send  1 waiting│              │
-│    │ Sessions       │  └────────────────────────────────────┘  │              │
-└────┴────────────────┴──────────────────────────────────────────┴──────────────┘
+┌────────┬──────────────────┬──────────────────────────────────────────┬──────────────┐
+│ W      │ [Search  ⌘K]     │ # shop-launch  Overview [A]Launch email + │ Screen Files │
+│ Home   │ Needs you    2   │                        (A)(M)  [Talk]  ▯  │ To-do        │
+│Routines│ ▾ Agents       + │  messages · cards with risk lines         │ (session:    │
+│Connect-│   (A) Ava        │  · mini apps                              │  Changes     │
+│  ions  │ ▾ Channels     + │                                           │  Terminal    │
+│        │   # general      │  ┌──────────────────────────────────────┐ │  Preview)    │
+│        │   # shop-launch  │  │ Next up: "…"                          │ │              │
+│Settings│ ▸ Sessions 2 · 1 │  │ Message #shop-launch…   + 🎤 [Tell now▾]│ │              │
+│        │ Customize sidebar│  └──────────────────────────────────────┘ │              │
+└────────┴──────────────────┴──────────────────────────────────────────┴──────────────┘
 ```
 
 - **Rail (4):** Home · Routines · Connections · Settings. Usage and Computers are in Settings.
-- **Sidebar:** Needs you · Agents (each with a live line, such as "2 jobs running") · Channels · Sessions (running first) · Archived.
-- **Main:** threads and sessions as tabs; panes on desktop; **Say now** / **Send when done** (Enter / Alt+Enter).
+- **Sidebar:** Needs you · Agents · Channels · Sessions · Archived.
+  - Agents show a face and a live line ("Writing the launch email").
+  - Channels show `#name`.
+  - Sessions show a work icon and "Started by Ava · working".
+  - **Every section collapses** (a chevron; collapsed, it shows a count such as "2 · 1 needs you").
+  - **Every section can be hidden.** Use **Customize sidebar** at the bottom, or ⋯ on a section, or ⌘K "Show Sessions". A hidden section still sends its alerts to Needs you.
+  - The state is remembered per person and per device.
+- **Who you're talking to.** A channel's header shows its members, with the lead first. The message box says "*Message #shop-launch. Ava answers; type @ to ask someone else.*" Each thread tab carries its owner's face. Clicking an agent in the sidebar opens that agent's own chat, titled with its name and no `#`.
+- **Agent activity.** A small "seen" mark when an agent picks up your message, and a Stop on every working agent. Chatter between agents is folded into one line by default ("Ava and Mia talked · 6 messages"). These come from Buzz.
+- **Main:** an **Overview** tab (the channel digest), then threads and sessions as tabs; panes on desktop. The message box says **Send** when the agent is free. While it works, it shows **Tell now** (Enter) and **After this job** (Alt+Enter), with the hint "*Ava is busy. Enter tells her now · Alt+Enter waits until this job is done*".
 - **Side panel**, closed by default:
   - for an agent: **Screen** (browser or computer, live), **Files**, **To-do** (routines and pins);
   - for a session: **Changes**, **Terminal**, **Preview** and **Files**.
 - **Voice:** the mic in the composer starts a call. A call bar stays on top while you move around.
 - **⌘K** opens a command palette for everything.
-- **Style:** today's (Geist, Tailwind tokens, light and dark). We take openbot's layout, not its colors.
+- **Style:** one design system (§11.5). We take openbot's layout, not its colors.
+
+### 11.5 Design system: enterprise-grade, on one set of tokens
+
+Every screen is built from these tokens. Nothing else is allowed in code, and lint fails on stray values.
+
+**Spacing** (4-px grid): 2 · 4 · 6 (icon to label only) · 8 · 12 · 16 · 20 · 24 · 32 · 40 · 48.
+- Card padding 16.
+- Column gutter 24.
+- Phone side margin 16.
+
+**Type** (Geist; Geist Mono for code):
+
+| Token | Size / line | Weight |
+|---|---|---|
+| caption | 12/16 | 500 |
+| body-sm | 13/20 | 400–500 |
+| body | 14/20 desktop, 16/24 phone | 400 |
+| title-sm | 15/20 | 600 |
+| title | 20/28 | 600 |
+| display | 28/34 | 600, first run only |
+
+500 means interactive; 600 means a heading.
+
+**Color** (light / dark):
+
+| Token | Light | Dark |
+|---|---|---|
+| bg | #FAFAF9 | #0C0A09 |
+| surface | #FFFFFF | #1C1917 |
+| surface-muted | #F5F5F4 | #292524 |
+| border | #E7E5E4 | #2E2A27 |
+| border-strong | #D6D3D1 | #44403C |
+| text | #1C1917 | #FAFAF9 |
+| text-secondary | #57534E | #A8A29E |
+| text-tertiary | #78716C | #78716C |
+| accent | #5B4BC4 | #8B7CF0 |
+| accent-subtle | #EEEBFB | #2A2350 |
+| accent-text | #43369A | #C4BAFF |
+
+Status pairs: success #15803D on #F0FDF4, warning #B45309 on #FFF7ED, danger #DC2626 on #FEF2F2, each with its dark pair. The focus ring is 2 px accent with a 2 px offset, on every control.
+
+**Radius:** 6 (chips, code) · 8 (buttons, rows, inputs) · 12 (cards, panels) · 16 (phone cards) · full (avatars, pills, Talk).
+
+**Elevation:** border only · e1 `0 1px 2px` at 6% · e2 `0 8px 24px` at 12% (popovers) · e3 `0 16px 48px` at 18% (dialogs). No coloured shadows.
+
+**Sizes:**
+- Buttons 28 / 32 (default) / 40 / 48 (phone call to action).
+- Icon buttons 28 or 32, with a 44 tap area on phones.
+- Inputs 32 (44 on phones). Message box at least 56.
+- Sidebar rows 32 (one line) / 44 (two lines). Avatars 24 in lists.
+- **Every column's top bar is 56**, so dividers meet.
+- Icons 16 inline, 20 in navigation, 24 on phone tabs; stroke 1.75.
+
+**Buttons:**
+- Primary is always accent; there are no black buttons.
+- Secondary is surface with a border.
+- Tertiary is text only.
+- Danger is red.
+- One primary per card.
+- For bulk sends, the primary on phones is **Look first**.
+
+**Sidebar section header:** 28 tall, a 12-px chevron, a caption label in text-tertiary, a count on the right, and "+" on hover. Rows have 2 px between them and 16 above each section.
+
+The mock follows this spec. A Storybook (or Ladle) holds every component in light and dark, with an accessibility check in CI.
 
 ### 11.3 Empty and error states
 
 Plain words, one line, and a button. Examples:
 
 - "**Connect your AI account to start chatting.** [Connect]"
-- "**Home is asleep since 14:02.** [Wake it]"
+- "**Home is asleep since 14:02.** Messages wait until it wakes. [Wake it]"
+- "**Ava hit today's $5 limit.** [Raise to $10] [Wait till tomorrow]"
+- "**Gmail disconnected.** [Reconnect]"
+- "**No channels yet.** Your assistant files work here as it comes in."
+- "**Nothing needs you.** Ava will ping you if that changes."
 
 ### 11.4 Mobile, Duet style
 
 - **Home is the chat with your main agent.** "**2 need you**" sits on top as a stack of cards you can swipe.
+- **First run on a phone** offers *On my computer* (pair with a code from the desktop app) or *In my cloud account*. Choosing a card moves on by itself.
 - **Bottom bar:** **Chat · Channels · ● Talk · Agents · You**. Talk is the raised centre button: tap for a call, hold for a voice message.
 - **Approval cards** have big buttons. They can be answered from a notification, with Face ID for sends.
 - **Setup on iPhone** includes "**Add to Home Screen**". iOS sends web push only to installed web apps.
@@ -632,7 +798,7 @@ What changes:
 
 | Weeks | Ships |
 |---|---|
-| 1–2 | Monorepo (`crates/`, `apps/`, `plugins/`, `proto/`). `just dev` and a devcontainer. Generated code committed; echo and replay engines; CI with tests. Browser measurement (§15, layer 1). **Start platform reviews:** Meta, TikTok, LinkedIn, Cloudflare signed agents, legal on subscription plans. |
+| 1–2 | Monorepo (`crates/`, `apps/`, `plugins/`, `proto/`). **Embedded Postgres gate** on macOS, Windows and Linux (§7.2). Design tokens and component library (§11.5). `just dev` and a devcontainer. Generated code committed; echo and replay engines; CI with tests. Browser measurement (§15, layer 1). **Start platform reviews:** Meta, TikTok, LinkedIn, Cloudflare signed agents, legal on subscription plans. |
 | 3–6 | `weilo-host`: event log, pairing, **the relay with E2E**, one WebSocket, the gateway, the sidecar. Engines: ACP, Claude, Codex, pi. Sessions with worktrees; Changes, Terminal and Preview. MCP hub. **Week 6: checkpoint** on parity with today's app; decide whether to continue or fix course. |
 | 7–10 | Agents, memory, routines, auto-filed channels, Needs you, cards. New desktop and web layout and ⌘K. **Gmail, Google Calendar and web connections.** A curated design system for cards. Browser layers 2, 4, 5 and 7. Taint tracking. |
 | 11–12 | Push and the mailbox. First run (§11.1). **Mobile PWA** with home chat, Needs you cards, push, passkey approvals and a voice-message button. Incoming webhooks. Installs on Linux and macOS (signed and notarized), plus a cloud VM. **Bring-your-own cloud computer**: a Hetzner, DigitalOcean or Fly token, or SSH; set up with cloud-init; **x86-64 machine types only**, because of Chrome. |
@@ -653,6 +819,8 @@ What changes:
 
 ## 18. Decisions for you
 
+0. **Postgres on laptops.** Embedded and managed by the app (recommended, gated by the phase-0 measurements in §7.2), or Postgres only on server homes, with laptops-as-home on SQLite?
+
 1. **Cloud computers.** Release 1 is bring-your-own (a provider token or SSH). Hosting them ourselves gives the best first run ("In the cloud", one tap) but means billing, abuse handling and support. *Recommendation: bring-your-own now; decide hosting after release 1.*
 2. **Mobile.** PWA in release 1, then **Expo** for native. *Recommended over Tauri mobile, which is weak for background audio, Live Activities and push actions.*
 3. **Subscription plans.** Using Claude or ChatGPT plans in an always-on third-party app depends on each provider's terms. *Recommendation: API keys by default; plans only where legal review confirms they are allowed.*
@@ -660,6 +828,19 @@ What changes:
 5. **License.** Open source (which license?) or source-available?
 
 ## 19. What the reviews changed
+
+### Round 2 (owner review)
+
+| Input | Change |
+|---|---|
+| Owner: GPUI | Researched. We stay on one React codebase with a speed pass. GPUI lacks web and mobile, embeds webviews poorly and has weak accessibility; revisit in 2027 for one panel (§7.1). |
+| Owner: Postgres as source of truth; Rakazo | Postgres on home holds everything (embedded on laptops, bring-your-own on servers). Rakazo's patterns: seq per thread, NOTIFY doorbell, `SKIP LOCKED` jobs, RLS on space. Workers keep only an outbox. Phase 0 gate on embedded Postgres per OS (§7.2–7.3). |
+| Owner: Buzz | Interview at setup that makes channels; starter team of three; seen mark; Stop on every agent; agent chatter folded by default; RLS ready for shared workspaces. |
+| Owner: `#` channels, collapsible and hideable sections | §3, §5.3, §11.2, and the mock's shared sidebar (try the chevrons and Customize sidebar). |
+| UI critic (visual) | One token set (§11.5): 4-px spacing, 6 type sizes, 6 neutrals, 5 radii, 56-px top bars everywhere, one primary color, focus rings, 32-px buttons. |
+| UI critic (UX) | Who-you're-talking-to rule; risk lines on cards; bulk sends need Look first; Tell now and Next up; "send 47" as the card title, with no hidden sends in voice; a phone first run that doesn't offer "this computer"; a Needs you page; Let me drive and Teach Ava this; plain-words session approvals with Stop, cost and Esc. |
+
+### Round 1
 
 | Review | Changes |
 |---|---|
