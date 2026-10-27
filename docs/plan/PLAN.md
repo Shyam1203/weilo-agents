@@ -846,7 +846,9 @@ Weight 500 means interactive; 600 means a heading. Avatar letters are 12/16 at 6
 - **Selected rows** (including Needs you) use accent-subtle with accent-text.
 - **Warning tint** (#FFF7ED) is only for something that can't be undone. A safe action's card is plain surface.
 - **Flex rules:** fixed controls in a header never shrink (`flex-shrink: 0`). Tab lists and search fields shrink (`min-width: 0`) and clip.
-- **The message box** is a textarea that grows from 1 to 6 lines.
+- **The message box** is a textarea on its own row that grows from 1 to 6 lines. Attach, mic and send sit on a toolbar row beneath it, so the text gets the full width.
+- **Status pills** ("Needs you", "Working") use accent-subtle or surface-muted. **Red** appears only on the confirm step of a destructive action, never on a header button, a row or a hint.
+- **Labels that can be cut** (tabs, rows) end with an ellipsis, never a hard clip.
 - **Messages:** the person's own messages are right-aligned on surface-muted; agents' are left-aligned with a face. The same on phones.
 
 ## 12. Routines and webhooks
