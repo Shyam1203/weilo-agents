@@ -14,7 +14,8 @@ body{margin:0}
 a{color:#43369A;text-decoration:none}a:hover{color:#43369A;text-decoration:underline}
 button{font-family:inherit;cursor:pointer}
 .w-row:hover{background:#F5F5F4;text-decoration:none}
-.w-sec .w-add{opacity:0}
+.w-sec{position:relative}
+.w-sec .w-add{opacity:0;position:absolute;right:4px;top:2px;background:#FAFAF9}
 .w-sec:hover .w-add,.w-sec:focus-within .w-add{opacity:1}
 .w-rail:hover{background:#E7E5E4;text-decoration:none}
 .w-ghost:hover{background:#F5F5F4}
@@ -36,15 +37,15 @@ button:focus-visible,a:focus-visible{outline:2px solid #5B4BC4;outline-offset:2p
 </nav>
 
 <aside aria-label="Sidebar" style="width: 272px; flex: 0 0 272px; background: #FAFAF9; border-right: 1px solid #E7E5E4; display: flex; flex-direction: column; box-sizing: border-box">
-<div style="height: 56px; flex: 0 0 56px; display: flex; align-items: center; padding: 0 12px; border-bottom: 1px solid #E7E5E4; box-sizing: border-box">
-<label class="w-search" style="flex: 1; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border: 1px solid #E7E5E4; border-radius: 8px; background: #FFFFFF; color: #78716C; box-sizing: border-box"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg><input type="text" placeholder="Search or jump to…" aria-label="Search" style="flex: 1; min-width: 0; border: 0; outline: 0; font: inherit; color: #1C1917; background: transparent"><span style="font-size: 12px; line-height: 16px; color: #78716C; border: 1px solid #E7E5E4; border-radius: 6px; padding: 0 4px">⌘K</span></label>
+<div style="height: 56px; flex: 0 0 56px; display: flex; align-items: center; padding: 0 12px; box-shadow: inset 0 -1px 0 #E7E5E4; box-sizing: border-box">
+<label class="w-search" style="flex: 1; min-width: 0; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border: 1px solid #E7E5E4; border-radius: 8px; background: #FFFFFF; color: #78716C; box-sizing: border-box"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg><input type="text" placeholder="Search or jump to…" aria-label="Search" style="flex: 1; min-width: 0; border: 0; outline: 0; font: inherit; color: #1C1917; background: transparent"><span style="font-size: 12px; line-height: 16px; color: #78716C; border: 1px solid #E7E5E4; border-radius: 6px; padding: 0 4px">⌘K</span></label>
 </div>
 
 <div style="flex: 1; overflow: hidden; padding: 12px 8px; display: flex; flex-direction: column; gap: 16px">
 <div style="display: flex; flex-direction: column; gap: 2px">
 <a href="NeedsYou.dc.html" class="w-row" aria-current="{{ needsCurrent }}" style="{{ needsStyle }}"><span style="flex: 0 0 24px; display: flex; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13h4l2 3h4l2-3h4M5 13l2-8h10l2 8v6H5z"></path></svg></span><span style="flex: 1">Needs you</span><span style="min-width: 20px; height: 20px; padding: 0 4px; box-sizing: border-box; border-radius: 999px; background: #B45309; color: #FFFFFF; font-size: 12px; line-height: 20px; font-weight: 600; text-align: center">2</span></a>
 <sc-if value="{{ pinAva }}" hint-placeholder-val="{{ false }}">
-<a href="#" class="w-row" style="height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: 8px; color: #1C1917; font-weight: 500; box-sizing: border-box"><span style="flex: 0 0 24px; height: 24px; border-radius: 999px; background: #EEEBFB; color: #43369A; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600">A</span>Chat with Ava</a>
+<a href="#" class="w-row" style="height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: 8px; color: #1C1917; font-weight: 500; box-sizing: border-box"><span style="flex: 0 0 24px; height: 24px; border-radius: 999px; background: #EEEBFB; color: #43369A; display: flex; align-items: center; justify-content: center; font-size: 12px; line-height: 16px; font-weight: 600">A</span>Chat with Ava</a>
 </sc-if>
 </div>
 
@@ -54,7 +55,7 @@ button:focus-visible,a:focus-visible{outline:2px solid #5B4BC4;outline-offset:2p
 
 <sc-for list="{{ sections }}" as="sec" hint-placeholder-count="3">
 <section aria-label="{{ sec.title }}" style="display: flex; flex-direction: column; gap: 2px">
-<div class="w-sec" style="height: 28px; display: flex; align-items: center; gap: 4px; padding: 0 4px 0 8px">
+<div class="w-sec" style="height: 28px; display: flex; align-items: center; padding: 0 8px">
 <button aria-expanded="{{ sec.open }}" onClick="{{ sec.toggle }}" style="flex: 1; height: 28px; display: flex; align-items: center; gap: 4px; border: 0; background: transparent; padding: 0; color: #78716C; font-size: 12px; line-height: 16px; font-weight: 500; text-align: left"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{ sec.chevron }}"><path d="M6 9l6 6 6-6"></path></svg><span style="flex: 1">{{ sec.title }}</span><span>{{ sec.countLabel }}</span></button>
 <button class="w-add w-ghost" aria-label="{{ sec.addLabel }}" style="width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: #57534E; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></button>
 </div>
@@ -72,7 +73,7 @@ button:focus-visible,a:focus-visible{outline:2px solid #5B4BC4;outline-offset:2p
 </div>
 
 <div style="padding: 8px; border-top: 1px solid #E7E5E4; position: relative">
-<button onClick="{{ toggleCustomize }}" aria-expanded="{{ customize }}" class="w-ghost" style="width: 100%; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: #57534E; font-size: 13px; text-align: left"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16"></path></svg><span style="flex: 1">Customize sidebar</span><sc-if value="{{ hiddenLive }}" hint-placeholder-val="{{ false }}"><span aria-label="A hidden section has live work" style="width: 6px; height: 6px; border-radius: 999px; background: #B45309"></span></sc-if></button>
+<button onClick="{{ toggleCustomize }}" aria-expanded="{{ customize }}" class="w-ghost" style="width: 100%; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: #57534E; font-size: 13px; line-height: 20px; font-weight: 500; text-align: left"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16"></path></svg><span style="flex: 1">Customize sidebar</span><sc-if value="{{ hiddenLive }}" hint-placeholder-val="{{ false }}"><span aria-label="A hidden section has live work" style="width: 6px; height: 6px; border-radius: 999px; background: #B45309"></span></sc-if></button>
 <sc-if value="{{ customize }}" hint-placeholder-val="{{ false }}">
 <div role="dialog" aria-label="Customize sidebar" style="position: absolute; left: 8px; bottom: 48px; width: 240px; background: #FFFFFF; border: 1px solid #E7E5E4; border-radius: 12px; box-shadow: 0 8px 24px rgba(28,25,23,0.12); padding: 8px; display: flex; flex-direction: column; gap: 2px; box-sizing: border-box">
 <div style="padding: 4px 8px 8px; font-size: 12px; line-height: 16px; font-weight: 500; color: #78716C">Show in sidebar</div>
@@ -114,7 +115,7 @@ class Component extends DCLogic {
       const sel = o.id === active;
       const two = !!o.sub;
       const lead = o.kind === 'agent'
-        ? 'flex: 0 0 24px; height: 24px; border-radius: 999px; background: ' + o.bg + '; color: ' + o.fg + '; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600'
+        ? 'flex: 0 0 24px; height: 24px; border-radius: 999px; background: ' + o.bg + '; color: ' + o.fg + '; display: flex; align-items: center; justify-content: center; font-size: 12px; line-height: 16px; font-weight: 600'
         : o.kind === 'channel'
           ? 'flex: 0 0 24px; text-align: center; font-size: 14px; font-weight: 500; color: ' + (sel ? '#43369A' : '#78716C')
           : 'flex: 0 0 24px; height: 24px; border-radius: 6px; background: ' + (sel ? '#FFFFFF' : '#F5F5F4') + '; color: #57534E; display: flex; align-items: center; justify-content: center';
@@ -128,14 +129,14 @@ class Component extends DCLogic {
         style: rowBase + 'height: ' + (two ? 44 : 32) + 'px; ' + (sel ? 'background: #EEEBFB;' : ''),
         leadStyle: lead,
         lead: o.kind === 'agent' ? o.initial : o.kind === 'channel' ? '#' : '',
-        nameStyle: 'white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: ' + (sel || o.dot ? 600 : 500) + '; color: ' + (sel ? '#43369A' : '#1C1917'),
+        nameStyle: 'white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; color: ' + (sel ? '#43369A' : '#1C1917'),
         subStyle: 'font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: ' + (o.subTone === 'ok' ? '#15803D' : o.subTone === 'warn' ? '#B45309' : (sel ? '#57534E' : '#78716C'))
       };
     };
     const toggle = (k) => () => this.setState({ open: { ...st.open, [k]: !st.open[k] } });
     const chev = (k) => 'transition: transform 120ms; transform: rotate(' + (st.open[k] ? 0 : -90) + 'deg)';
     const agents = [
-      { id: 'ava', kind: 'agent', initial: 'A', bg: '#EEEBFB', fg: '#43369A', name: 'Ava', sub: 'Writing the launch email', subTone: 'ok' },
+      { id: 'ava', kind: 'agent', initial: 'A', bg: '#EEEBFB', fg: '#43369A', name: 'Ava', sub: 'Checking the shop page', subTone: 'ok' },
       { id: 'mia', kind: 'agent', initial: 'M', bg: '#FCE7F3', fg: '#9D174D', name: 'Mia · Social', sub: 'Next post at 6 pm' }
     ].map(row);
     const channels = [
@@ -151,10 +152,10 @@ class Component extends DCLogic {
     const archived = [{ id: 'xmas', kind: 'channel', name: 'holiday-sale' }].map(row);
     const sec = (k, title, addLabel, count, rows) => ({ title, addLabel, open: st.open[k], toggle: toggle(k), chevron: chev(k), countLabel: st.open[k] ? '' : count, rows });
     const sections = [];
-    if (st.show.agents) sections.push(sec('agents', 'Agents', 'New agent', '2 · 1 working', agents));
-    if (st.show.channels) sections.push(sec('channels', 'Channels', 'New channel', '4 · 1 new', channels));
-    if (st.show.sessions) sections.push(sec('sessions', 'Sessions', 'New session', '2 · 1 needs you', sessions));
-    if (st.show.archived) sections.push(sec('archived', 'Archived', 'Archive a channel', '1', archived));
+    if (st.show.agents) sections.push(sec('agents', 'Agents', 'New agent', '1 working', agents));
+    if (st.show.channels) sections.push(sec('channels', 'Channels', 'New channel', '1 new', channels));
+    if (st.show.sessions) sections.push(sec('sessions', 'Sessions', 'New session', '1 needs you', sessions));
+    if (st.show.archived) sections.push(sec('archived', 'Archived', 'Archive a channel', '', archived));
     const sw = (k, label) => {
       const on = st.show[k];
       return {
@@ -176,7 +177,7 @@ class Component extends DCLogic {
       toggleCustomize: () => this.setState({ customize: !st.customize }),
       switches: [sw('agents', 'Agents'), sw('channels', 'Channels'), sw('sessions', 'Sessions'), sw('archived', 'Archived')],
       needsCurrent: needsSel ? 'page' : 'false',
-      needsStyle: rowBase + 'height: 32px; font-weight: ' + (needsSel ? 600 : 500) + '; color: ' + (needsSel ? '#B45309' : '#1C1917') + '; ' + (needsSel ? 'background: #FFF7ED;' : '')
+      needsStyle: rowBase + 'height: 32px; font-weight: 500; color: ' + (needsSel ? '#43369A' : '#1C1917') + '; ' + (needsSel ? 'background: #EEEBFB;' : '')
     };
   }
 }

@@ -22,7 +22,7 @@ button:focus-visible,a:focus-visible{outline:2px solid #5B4BC4;outline-offset:2p
 <dc-import name="Nav" active="needs" customize="{{ true }}" hide-sessions="{{ true }}" hint-size="352px,900px"></dc-import>
 
 <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; background: #FFFFFF; min-height: 900px">
-<header style="height: 56px; flex: 0 0 56px; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 24px; border-bottom: 1px solid #E7E5E4">
+<header style="height: 56px; flex: 0 0 56px; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 24px; box-shadow: inset 0 -1px 0 #E7E5E4">
 <h1 style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600; flex: 1">Needs you</h1>
 <span style="font-size: 12px; line-height: 16px; color: #78716C; white-space: nowrap">J / K to move · Enter to open · A to approve small items</span>
 </header>
@@ -35,10 +35,10 @@ button:focus-visible,a:focus-visible{outline:2px solid #5B4BC4;outline-offset:2p
 <h2 id="g1" style="margin: 0; height: 28px; display: flex; align-items: center; font-size: 12px; line-height: 16px; font-weight: 500; color: #78716C">Waiting on a yes · 2</h2>
 
 <article style="border: 1px solid #E7E5E4; border-radius: 12px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(28,25,23,0.06); padding: 16px; display: flex; gap: 12px; align-items: center">
-<span aria-hidden="true" style="flex: 0 0 32px; height: 32px; border-radius: 999px; background: #EEEBFB; color: #43369A; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px">A</span>
+<span aria-hidden="true" style="flex: 0 0 32px; height: 32px; border-radius: 999px; background: #EEEBFB; color: #43369A; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 12px; line-height: 16px">A</span>
 <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px">
 <div style="font-size: 12px; line-height: 16px; color: #78716C"><a href="Main.dc.html">#shop-launch</a> · Ava · 9:42</div>
-<div style="font-weight: 600">Schedule the launch email to 1,204 customers</div>
+<div style="font-size: 15px; line-height: 20px; font-weight: 600">Schedule the launch email to 1,204 customers</div>
 <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 16px; color: #B45309; font-weight: 500"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5M12 16v.5"></path></svg>Can't unsend after Fri 9:00</div>
 </div>
 <button style="height: 32px; border: 0; background: #5B4BC4; color: #FFFFFF; border-radius: 8px; padding: 0 12px; font-size: 13px; font-weight: 500">Open</button>
@@ -48,7 +48,7 @@ button:focus-visible,a:focus-visible{outline:2px solid #5B4BC4;outline-offset:2p
 <span aria-hidden="true" style="flex: 0 0 32px; height: 32px; border-radius: 8px; background: #F5F5F4; color: #57534E; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4"></path></svg></span>
 <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px">
 <div style="font-size: 12px; line-height: 16px; color: #78716C"><a href="Session.dc.html">Fix checkout</a> · session started by Ava · 9:51</div>
-<div style="font-weight: 600">Run the shop's checks on your MacBook</div>
+<div style="font-size: 15px; line-height: 20px; font-weight: 600">Run the shop's checks on your MacBook</div>
 <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 16px; color: #15803D; font-weight: 500"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>Changes nothing</div>
 </div>
 <div style="display: flex; gap: 8px"><button class="w-ghost" style="height: 32px; border: 1px solid #E7E5E4; background: #FFFFFF; border-radius: 8px; padding: 0 12px; font-size: 13px; font-weight: 500; color: #1C1917">Open</button><button style="height: 32px; border: 0; background: #5B4BC4; color: #FFFFFF; border-radius: 8px; padding: 0 12px; font-size: 13px; font-weight: 500">Allow</button></div>
@@ -56,13 +56,14 @@ button:focus-visible,a:focus-visible{outline:2px solid #5B4BC4;outline-offset:2p
 </section>
 
 <section aria-labelledby="g2" style="display: flex; flex-direction: column; gap: 8px">
-<h2 id="g2" style="margin: 0; height: 28px; display: flex; align-items: center; font-size: 12px; line-height: 16px; font-weight: 500; color: #78716C">Expired · 1</h2>
+<h2 id="g2" style="margin: 0; height: 28px; display: flex; align-items: center; font-size: 12px; line-height: 16px; font-weight: 500; color: #78716C">Expired</h2>
 <div style="border: 1px solid #E7E5E4; border-radius: 12px; background: #FFFFFF; height: 56px; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 16px"><span style="flex: 1">Ava's email to Mark wasn't approved in time</span><span style="font-size: 12px; color: #78716C">Yesterday</span><button class="w-ghost" style="height: 32px; border: 1px solid #E7E5E4; background: #FFFFFF; border-radius: 8px; padding: 0 12px; font-size: 13px; font-weight: 500; color: #1C1917">Ask again</button></div>
 </section>
 
 <section aria-labelledby="g3" style="display: flex; flex-direction: column; gap: 8px">
-<h2 id="g3" style="margin: 0; height: 28px; display: flex; align-items: center; font-size: 12px; line-height: 16px; font-weight: 500; color: #78716C">Done today · 2</h2>
+<h2 id="g3" style="margin: 0; height: 28px; display: flex; align-items: center; font-size: 12px; line-height: 16px; font-weight: 500; color: #78716C">Done today</h2>
 <div style="border: 1px solid #E7E5E4; border-radius: 12px; background: #FFFFFF">
+<div style="height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 16px; border-bottom: 1px solid #E7E5E4"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#57534E" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4"></path></svg><span style="flex: 1">Ava started a session: <a href="Session.dc.html">Fix checkout</a></span><span style="font-size: 12px; color: #78716C">9:43</span><button class="w-ghost" style="height: 28px; border: 1px solid #E7E5E4; background: #FFFFFF; border-radius: 6px; padding: 0 8px; font-size: 13px; font-weight: 500; color: #DC2626">Stop</button></div>
 <a href="#" style="height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 16px; border-bottom: 1px solid #E7E5E4; color: #1C1917"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#15803D" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg><span style="flex: 1">Mia posted the teaser on Bluesky</span><span style="font-size: 12px; color: #78716C">You approved · 9:30</span></a>
 <a href="#" style="height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 16px; color: #1C1917"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#15803D" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg><span style="flex: 1">Ava saved the rival price report</span><span style="font-size: 12px; color: #78716C">8:55</span></a>
 </div>
