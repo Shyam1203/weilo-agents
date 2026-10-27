@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>First run</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#43369A;text-decoration:none}
+button{font-family:inherit;cursor:pointer}
+button:focus-visible,a:focus-visible{outline:2px solid #5B4BC4;outline-offset:2px}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; font-family: Geist, system-ui, sans-serif; color: #1C1917; background: #FAFAF9; display: flex; flex-direction: column; font-size: 16px; line-height: 24px; padding: 48px 16px 34px; overflow: hidden">
+
+<div aria-label="Step 1 of 2" style="display: flex; align-items: center; gap: 4px; padding-top: 8px"><span aria-hidden="true" style="flex: 1; height: 4px; border-radius: 999px; background: #5B4BC4"></span><span aria-hidden="true" style="flex: 1; height: 4px; border-radius: 999px; background: #E7E5E4"></span></div>
+
+<div style="display: flex; flex-direction: column; gap: 8px; padding-top: 32px">
+<h1 style="margin: 0; font-size: 28px; line-height: 34px; font-weight: 600; letter-spacing: -0.01em">Where should your agent work?</h1>
+<p style="margin: 0; color: #57534E">You can move it later. Nothing is lost.</p>
+</div>
+
+<div role="radiogroup" aria-label="Where it works" style="display: flex; flex-direction: column; gap: 12px; padding-top: 24px">
+<button role="radio" aria-checked="true" style="text-align: left; border: 0; box-shadow: inset 0 0 0 2px #5B4BC4; background: #EEEBFB; border-radius: 16px; padding: 16px; display: flex; gap: 12px; align-items: center; color: #1C1917">
+<span aria-hidden="true" style="flex: 0 0 40px; height: 40px; border-radius: 12px; background: #FFFFFF; color: #43369A; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round"><path d="M7 18h10a4 4 0 0 0 .5-8 6 6 0 0 0-11.4 1.5A3.5 3.5 0 0 0 7 18z"></path></svg></span>
+<span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; line-height: 20px; font-weight: 600">In the cloud</span><span style="font-size: 13px; line-height: 20px; color: #57534E">Always on, even with your computer off.</span></span>
+<span aria-hidden="true" style="flex: 0 0 20px; height: 20px; border-radius: 999px; border: 2px solid #5B4BC4; box-sizing: border-box; display: flex; align-items: center; justify-content: center"><span style="width: 10px; height: 10px; border-radius: 999px; background: #5B4BC4"></span></span>
+</button>
+<button role="radio" aria-checked="false" style="text-align: left; border: 0; box-shadow: inset 0 0 0 1px #E7E5E4; background: #FFFFFF; border-radius: 16px; padding: 16px; display: flex; gap: 12px; align-items: center; color: #1C1917">
+<span aria-hidden="true" style="flex: 0 0 40px; height: 40px; border-radius: 12px; background: #F5F5F4; color: #57534E; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="2"></rect><path d="M8 20h8M12 16v4"></path></svg></span>
+<span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; line-height: 20px; font-weight: 600">On my computer</span><span style="font-size: 13px; line-height: 20px; color: #57534E">Pair with a code from the desktop app. Pauses when it sleeps.</span></span>
+<span aria-hidden="true" style="flex: 0 0 20px; height: 20px; border-radius: 999px; border: 2px solid #A8A29E; box-sizing: border-box"></span>
+</button>
+<a href="#" style="font-size: 13px; line-height: 20px; font-weight: 500; padding: 0 4px">No desktop app yet? Send me the link</a>
+</div>
+
+<div style="flex: 1"></div>
+
+<p style="margin: 0 0 16px; font-size: 13px; line-height: 20px; color: #57534E; text-align: center">Next, connect your AI. Then Ava asks a few questions and sets up your channels.</p>
+<button style="height: 48px; border: 0; background: #5B4BC4; color: #FFFFFF; border-radius: 8px; font-size: 15px; font-weight: 500">Continue</button>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

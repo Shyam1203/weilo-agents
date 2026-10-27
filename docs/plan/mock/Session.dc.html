@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Coding session</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#FAFAF9}
+a{color:#43369A;text-decoration:none}a:hover{color:#43369A;text-decoration:underline}
+button{font-family:inherit;cursor:pointer;white-space:nowrap}
+.w-ghost:hover{background:#F5F5F4}
+.w-box:focus-within{outline:2px solid #5B4BC4;outline-offset:2px}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #5B4BC4;outline-offset:2px}
+</style>
+</helmet>
+<div style="font-family: Geist, system-ui, sans-serif; color: #1C1917; background: #FAFAF9; width: 100%; min-height: 900px; display: flex; flex-wrap: wrap; font-size: 14px; line-height: 20px">
+
+<dc-import name="Nav" active="fix" hint-size="352px,900px"></dc-import>
+
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; background: #FFFFFF; min-height: 900px">
+<header style="height: 56px; flex: 0 0 56px; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 0 16px 0 24px; border-bottom: 1px solid #E7E5E4">
+<span aria-hidden="true" style="flex: 0 0 24px; height: 24px; border-radius: 6px; background: #F5F5F4; color: #57534E; display: flex; align-items: center; justify-content: center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4"></path></svg></span>
+<div style="display: flex; flex-direction: column; min-width: 0; flex: 1"><h1 style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600; white-space: nowrap">Fix checkout</h1><span style="font-size: 12px; line-height: 16px; color: #78716C; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Started by Ava in <a href="Main.dc.html">#shop-launch</a> · Your MacBook</span></div>
+<span style="flex: 0 0 auto; white-space: nowrap; height: 24px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 6px; background: #FFF7ED; font-size: 12px; line-height: 16px; color: #B45309; font-weight: 500"><span style="width: 6px; height: 6px; border-radius: 999px; background: #B45309"></span>Waiting for you</span>
+<button class="w-ghost" style="flex: 0 0 auto; height: 32px; border: 1px solid #E7E5E4; background: #FFFFFF; border-radius: 8px; padding: 0 12px; font-size: 13px; font-weight: 500; color: #1C1917">Ask Ava</button>
+<button class="w-ghost" style="flex: 0 0 auto; height: 32px; border: 1px solid #E7E5E4; background: #FFFFFF; border-radius: 8px; padding: 0 12px; font-size: 13px; font-weight: 500; color: #DC2626">Stop</button>
+</header>
+
+<div style="flex: 1; padding: 24px; display: flex; flex-direction: column; gap: 16px; max-width: 768px; width: 100%; box-sizing: border-box; margin: 0 auto">
+<div style="display: flex; gap: 12px">
+<span aria-hidden="true" style="flex: 0 0 32px; height: 32px; border-radius: 999px; background: #EEEBFB; color: #43369A; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px">A</span>
+<div style="display: flex; flex-direction: column; gap: 4px"><div style="font-size: 12px; line-height: 16px; color: #78716C"><span style="color: #1C1917; font-weight: 500">Ava</span> · 9:43</div><div>Customers can't pay with a saved card. Find out why and fix it.</div></div>
+</div>
+
+<ul aria-label="Steps" style="margin: 0 0 0 44px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: #57534E">
+<li style="display: flex; gap: 8px; align-items: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#15803D" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>Read the checkout code</li>
+<li style="display: flex; gap: 8px; align-items: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#15803D" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>Found the cause: the saved card's ID was sent in the wrong format</li>
+<li style="display: flex; gap: 8px; align-items: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#15803D" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>Fixed it and added a check for saved cards</li>
+</ul>
+
+<section aria-label="Approval" style="margin-left: 44px; border: 1px solid #E7E5E4; background: #FFF7ED; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px">
+<div style="font-size: 15px; line-height: 20px; font-weight: 600">Run the shop's checks on your MacBook?</div>
+<details style="font-size: 13px; color: #57534E"><summary style="cursor: pointer">Show the command</summary><div style="margin-top: 8px; height: 32px; display: flex; align-items: center; padding: 0 8px; font-family: 'Geist Mono', monospace; background: #FFFFFF; border: 1px solid #E7E5E4; border-radius: 6px; color: #1C1917">npm test -- checkout</div></details>
+<div style="display: flex; align-items: center; gap: 8px">
+<span style="flex: 1; display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 16px; color: #15803D; font-weight: 500"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>Changes nothing · about $0.05</span>
+<button class="w-ghost" style="height: 32px; border: 0; background: transparent; border-radius: 8px; padding: 0 12px; font-size: 13px; font-weight: 500; color: #57534E">Not now</button>
+<button class="w-ghost" style="height: 32px; border: 1px solid #E7E5E4; background: #FFFFFF; border-radius: 8px; padding: 0 12px; font-size: 13px; font-weight: 500; color: #1C1917">Always allow here</button>
+<button style="height: 32px; border: 0; background: #5B4BC4; color: #FFFFFF; border-radius: 8px; padding: 0 12px; font-size: 13px; font-weight: 500">Allow</button>
+</div>
+</section>
+</div>
+
+<div style="padding: 0 24px 24px; max-width: 768px; width: 100%; box-sizing: border-box; margin: 0 auto">
+<div class="w-box" style="border: 1px solid #A8A29E; border-radius: 12px; padding: 12px; display: flex; align-items: center; gap: 8px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(28,25,23,0.06); min-height: 56px; box-sizing: border-box">
+<input type="text" placeholder="Message this session. Ava is watching." aria-label="Message this session" style="flex: 1; min-width: 0; height: 32px; border: 0; outline: 0; font: inherit; color: #1C1917">
+<button style="height: 32px; border: 0; background: #5B4BC4; color: #FFFFFF; border-radius: 8px; padding: 0 12px; font-size: 13px; font-weight: 500">Send</button>
+</div>
+<div style="font-size: 12px; line-height: 16px; color: #78716C; padding: 8px 4px 0">⌘. stops the session · about $0.38 so far</div>
+</div>
+</main>
+
+<aside aria-label="Side panel" style="flex: 0 0 400px; border-left: 1px solid #E7E5E4; background: #FAFAF9; display: flex; flex-direction: column">
+<div style="height: 56px; flex: 0 0 56px; box-sizing: border-box; display: flex; align-items: center; padding: 0 16px; border-bottom: 1px solid #E7E5E4">
+<div role="tablist" aria-label="Panel" style="display: flex; gap: 4px">
+<button role="tab" aria-selected="true" style="height: 28px; border: 0; background: #F5F5F4; border-radius: 6px; padding: 0 8px; font-size: 13px; font-weight: 500; color: #1C1917; display: flex; align-items: center; gap: 6px">Changes<span style="font-size: 12px; color: #57534E">2</span></button>
+<button role="tab" aria-selected="false" class="w-ghost" style="height: 28px; border: 0; background: transparent; border-radius: 6px; padding: 0 8px; font-size: 13px; font-weight: 500; color: #57534E">Terminal</button>
+<button role="tab" aria-selected="false" class="w-ghost" style="height: 28px; border: 0; background: transparent; border-radius: 6px; padding: 0 8px; font-size: 13px; font-weight: 500; color: #57534E">Files</button>
+</div>
+</div>
+<div style="padding: 16px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; gap: 8px; font-size: 12px; line-height: 16px; color: #57534E"><span style="font-family: 'Geist Mono', monospace; color: #1C1917">fix-checkout</span><span style="color: #15803D">+13</span><span style="color: #DC2626">−1</span><span style="flex: 1"></span><span>Claude Code</span></div>
+<div style="border: 1px solid #E7E5E4; border-radius: 12px; overflow: hidden; background: #FFFFFF; font-family: 'Geist Mono', monospace; font-size: 13px; line-height: 20px">
+<div style="height: 32px; box-sizing: border-box; padding: 0 12px; background: #F5F5F4; border-bottom: 1px solid #E7E5E4; display: flex; align-items: center; justify-content: space-between; font-size: 12px"><span>checkout/payment.ts</span><span><span style="color: #15803D">+1</span> <span style="color: #DC2626">−1</span></span></div>
+<div style="padding: 0 12px; color: #57534E">42  const card = await savedCard(user)</div>
+<div style="padding: 0 12px; background: #FEF2F2; color: #DC2626">43− pay({ cardId: card.id })</div>
+<div style="padding: 0 12px; background: #F0FDF4; color: #15803D">43+ pay({ cardId: String(card.id) })</div>
+<div style="padding: 0 12px; color: #57534E">44  return receipt</div>
+</div>
+<div style="border: 1px solid #E7E5E4; border-radius: 12px; overflow: hidden; background: #FFFFFF; font-family: 'Geist Mono', monospace; font-size: 13px; line-height: 20px">
+<div style="height: 32px; box-sizing: border-box; padding: 0 12px; background: #F5F5F4; border-bottom: 1px solid #E7E5E4; display: flex; align-items: center; justify-content: space-between; font-size: 12px"><span>checkout/payment.test.ts</span><span style="color: #15803D">+12</span></div>
+<div style="padding: 0 12px; background: #F0FDF4; color: #15803D">+ test("pays with a saved card", …)</div>
+</div>
+<div style="display: flex; gap: 8px"><button class="w-ghost" style="flex: 1; height: 32px; border: 1px solid #E7E5E4; background: #FFFFFF; border-radius: 8px; font-size: 13px; font-weight: 500; color: #1C1917">Open pull request</button><button class="w-ghost" style="flex: 1; height: 32px; border: 1px solid #E7E5E4; background: #FFFFFF; border-radius: 8px; font-size: 13px; font-weight: 500; color: #1C1917">Open in terminal</button></div>
+<div style="font-size: 12px; line-height: 16px; color: #78716C">Weilo's safety rules pause while the session is open in a terminal.</div>
+</div>
+</aside>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
