@@ -143,6 +143,7 @@ Goals, in order of weight:
   - "Can undo"
   - "Can't unsend after Fri 9:00"
   - "Costs about $0.20 · $1.10 of $5 used today"
+  - Risk and cost may share one line, risk first: "Changes nothing · about $0.05".
 
 ## 4. Where things run
 
@@ -474,6 +475,7 @@ Retries:
   - Then every file the snapshot references is copied. Files are immutable and content-addressed.
   - The nightly file sweep deletes nothing while a backup runs, and keeps expired files 48 h past `expires_at`.
   - WAL is compressed (zstd) before it is encrypted.
+  - **On a VM, each new file is uploaded before the WAL segment that first references it is archived** (a file-then-WAL barrier in the archiver). A point-in-time restore checks every referenced file and marks any missing one as a gap in the thread.
 - **Retention:** 7 daily and 4 weekly backups.
 - **How much you can lose:** up to 24 h on a laptop; on a VM, WAL is archived every 5 min, so up to 5 min.
 - A backup runs whenever the newest one is over 24 h old, at the next idle moment.
@@ -505,7 +507,7 @@ Retries:
 - Order is by `seq`. Both `origin_at` and `created_at` are kept; neither decides order.
 - `weilo move` and reassignment raise the epoch, which fences the old owner.
 - **Restore on a new computer** is a move without the freeze, for a lost or broken home.
-  - The relay raises `home_epoch` when the restored home first connects.
+  - The relay raises `home_epoch` when the restored home first connects, and rebinds `home_pubkey` **only with a signature from a paired device or the recovery code**, so a backup alone can't take over a home.
   - Import rewrites `threads.owner_host` and `owner_epoch` to the new host.
   - Effects still in `intent` become `unknown` (Needs you: "Did this send?").
 - **Home fencing lives outside the database.**
@@ -590,8 +592,8 @@ mic ─► WebRTC (TURN via the relay) ─► voice orchestrator in the Rust cor
 - **Tools never run from a partial transcript.**
 - **Approvals by voice:**
   - The agent reads the details back.
-  - **Talk v1 (release 1):** approvals are **tap only**; the card is on screen. Sends need a tap plus a passkey, as in the app.
-  - **Talk+:** a spoken one-time code that matches the verb ("say *move 47*") for reversible actions only. Sends still need a tap plus a passkey. Pay, delete and sign always need a tap.
+  - **Talk v1 (release 1):** approvals happen on screen, never by voice. Sends need a tap plus a passkey, as in the app.
+  - **Talk+:** a spoken one-time code that matches the verb ("say *move 47*") for reversible actions only. Sends still need a tap plus a passkey. Pay, delete and sign are never approved by voice; they need a tap plus a passkey on a paired device.
 - **The mouth.** It speaks fillers and the brain's words exactly. It never answers, rewords or calls tools. Its provider is named at the first call: "*Voice runs through OpenAI Realtime. Your audio goes to OpenAI. [OK] [Use strict mode]*".
 - **The call bar** (desktop and phone):
   - **Mute · Stop Ava · End**;
@@ -759,7 +761,7 @@ Plain words, one line, and a button:
 
 ### 11.4 Mobile, Duet style
 
-- **Home** is the chat with your main agent. "**2 need you**" sits on top as cards you can swipe ("1 of 2"). **For a bulk send, Look first is the primary button.**
+- **Home** is the chat with your main agent. "**Needs you · 1 of 2**" sits on top as cards you can swipe. **For a bulk send, Look first is the primary button.**
 - **Bottom bar:** **Chat · Channels · ● Talk · Agents · You**. Talk is the raised centre button: tap for a call, hold for a voice message. The Chat badge shows "need you" items only while another tab is active.
 - **Notifications** have one setting with three choices: *Only when needed* (default) · *Also when done* · *Everything*.
 - **Setup on iPhone** includes "Add to Home Screen". Approvals use passkeys with Face ID.
@@ -969,6 +971,7 @@ What changes:
 - **No quiet exfiltration.** In a tainted job, any outbound request that could carry data counts as a send and needs a card. That means:
   - any request other than GET;
   - any GET except one to a URL that appears **exactly** in the job's inputs (no added or changed path or query) or to a domain on the agent's allowlist.
+  - The allowlist never includes hosts that serve user content or open redirects (paste sites, URL shorteners, form services). In a tainted job, a GET with a query string to an allowlisted domain still counts as a send.
 - Clients never load remote images or media in agent output (CSP `img-src 'self' data:`), and links show their full domain.
 
 **Engines and plugins**
