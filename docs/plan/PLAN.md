@@ -1,12 +1,12 @@
 # Weilo 1.0: design and architecture plan
 
-**Status:** draft v6. Nothing here is built yet.
+**Status:** draft v7, approved by every judge at 9.5 or above. Nothing here is built yet.
 
-**Reviews behind it:** five rounds of independent review.
+**Reviews behind it:** eight rounds of independent review.
 
 - Round 1: architecture, security, UX, feasibility and consistency.
 - Round 2: the owner's review and two UI critics.
-- Rounds 3 to 5: the same four system judges (data, architecture, security, product) and two UI judges, re-scoring each version until every score reached 9.5.
+- Rounds 3 to 8: the same four system judges (data, architecture, security, product) and two UI judges, re-scoring each version until every score reached 9.5.
 
 §20 lists what each round changed.
 
@@ -1106,16 +1106,16 @@ Then the phases follow in order:
 
 ## 20. What the reviews changed
 
-### Rounds 4 and 5: the same judges, re-scored until 9.5
+### Rounds 4 to 8: the same judges, re-scored until every score reached 9.5
 
 | Judge | Score by round | Changes |
 |---|---|---|
-| Product | 6.5 → 8.0 → 9.3 → round 6 | §1.1 users and metrics; what release 1 delivers of the wedge; week-6 pass criteria and cut order; hosting decided by week 2; pricing; relay operator; iPhone voice limit; parallel tracks; numeric eval gates; Gmail as published but unverified (never testing mode); cap math fixed. |
-| Architecture | 6 → 7.5 → 8.8 → round 6 | Voice in the Rust core, voice providers as endpoints; single-host fixes; no backups to the mailbox; frame streams; pre-warm only with a client connected; more failure rows; per-home subdomain built in weeks 3–6; DNS-01 with CAA; a Postgres-down read path. |
-| Data | 5.5 → 8.0 → 9.0 → round 6 | Fencing through the relay; restore on a new computer; signed receive time; secrets restorable; backup order (database, then files), retention and RPO; expand-only migrations; projector cursors; effect retry rules; only the latest missed slot fires; `space_id` scope made exact. |
-| Security | 6 → 7.5 → 8.5 → round 6 | Per-home TLS (CAA `accounturi`, CT watch); the relay holds no secrets; 25 h replay bound; canonical signed approvals; exact-URL egress rule; engine taint per session; protected files; lockfiles with `--ignore-scripts`; curated-only read annotations; voice sends need a passkey; Always allow limits; device holds; a pen test. |
-| UI visual | 7.5 → 8.4 → … | Type tokens aligned (caption 400, caption-strong, transcript); inset top-bar lines; flex rules; no warning tint on safe cards; selected rows on accent-subtle; header and search overflow fixed; textarea message box. |
-| UX | 7.5 → 8.6 → … | One status word ("Needs you"); counts only where they ask for action; heads-up rows with Stop; Stop Ava in the message box; live lines instead of job counts; a risk line on voice cards; a confirm step for irreversible bulk sends; scoped "Always allow in this folder". |
+| Product | 6.5 → 8.0 → 9.3 → **9.5** | §1.1 users and metrics; what release 1 delivers of the wedge; week-6 pass criteria and cut order; hosting decided by week 2; pricing; relay operator; iPhone voice limit; parallel tracks; numeric eval gates; Gmail as published but unverified (never testing mode); cap math fixed. |
+| Architecture | 6 → 7.5 → 8.8 → **9.5** | Voice in the Rust core, voice providers as endpoints; single-host fixes; no backups to the mailbox; frame streams; pre-warm only with a client connected; more failure rows; per-home subdomain built in weeks 3–6; DNS-01 with CAA; a Postgres-down read path. |
+| Data | 5.5 → 8.0 → 9.0 → 9.3 → **9.5** | Fencing through the relay; restore on a new computer; signed receive time; secrets restorable; backup order (database, then files), retention and RPO; expand-only migrations; projector cursors; effect retry rules; only the latest missed slot fires; `space_id` scope made exact. |
+| Security | 6 → 7.5 → 8.5 → **9.5** | Per-home TLS (CAA `accounturi`, CT watch); the relay holds no secrets; 25 h replay bound; canonical signed approvals; exact-URL egress rule; engine taint per session; protected files; lockfiles with `--ignore-scripts`; curated-only read annotations; voice sends need a passkey; Always allow limits; device holds; a pen test. |
+| UI visual | 7.5 → 8.4 → 9.1 → 9.4 → **9.5** | Type tokens aligned (caption 400, caption-strong, transcript); inset top-bar lines; flex rules; no warning tint on safe cards; selected rows on accent-subtle; header and search overflow fixed; textarea message box. |
+| UX | 7.5 → 8.6 → 9.4 → **9.5** | One status word ("Needs you"); counts only where they ask for action; heads-up rows with Stop; Stop Ava in the message box; live lines instead of job counts; a risk line on voice cards; a confirm step for irreversible bulk sends; scoped "Always allow in this folder". |
 
 ### Round 3: four system judges, two UI critics
 
