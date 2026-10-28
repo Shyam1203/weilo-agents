@@ -1,4 +1,10 @@
 {
-  "attribution": { "commit": "", "pr": "" },
-  "includeCoAuthoredBy": false
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "includeCoAuthoredBy": false,
+  "env": {
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "30"
+  }
 }
