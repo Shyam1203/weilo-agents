@@ -62,7 +62,7 @@ export function SettingsPage({ phone }: { phone?: boolean }) {
 
       <Group title="Your Weilo computer">
         <p className="m-0 text-body-sm text-text-secondary">
-          {hostName ?? "This computer"} · {keepAwake ? "Stays awake while charging." : "Sleeps as usual."}
+          {hostName ?? "This computer"} · {keepAwake ? "Stays awake while charging." : "Your agents pause when it sleeps."}
         </p>
       </Group>
 

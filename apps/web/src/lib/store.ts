@@ -75,6 +75,44 @@ export interface AppState {
   error: string | null;
 }
 
+// "Next up" lives in this browser until the host can hold and cancel queued messages.
+const QUEUED_KEY = "weilo.nextUp";
+
+/** Next up messages saved in this browser, per thread. Empty when storage is blocked or broken. */
+export function loadQueued(storage?: Pick<Storage, "getItem">): Record<string, Queued[]> {
+  try {
+    const raw = (storage ?? globalThis.localStorage)?.getItem(QUEUED_KEY);
+    if (!raw) return {};
+    const data: unknown = JSON.parse(raw);
+    if (!data || typeof data !== "object" || Array.isArray(data)) return {};
+    const out: Record<string, Queued[]> = {};
+    for (const [threadId, list] of Object.entries(data as Record<string, unknown>)) {
+      if (!Array.isArray(list)) continue;
+      const items = list.filter(
+        (q): q is Queued => !!q && typeof q === "object" && typeof (q as Queued).id === "string" && typeof (q as Queued).text === "string",
+      );
+      if (items.length) out[threadId] = items;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function saveQueued(
+  queued: Record<string, Queued[]>,
+  storage?: Pick<Storage, "setItem" | "removeItem">,
+): void {
+  try {
+    const st = storage ?? globalThis.localStorage;
+    const kept = Object.fromEntries(Object.entries(queued).filter(([, list]) => list.length > 0));
+    if (Object.keys(kept).length === 0) st?.removeItem(QUEUED_KEY);
+    else st?.setItem(QUEUED_KEY, JSON.stringify(kept));
+  } catch {
+    // Private windows and full storage: Next up still works until the page closes.
+  }
+}
+
 export const initialState: AppState = {
   conn: "connecting",
   hostName: null,
@@ -175,6 +213,38 @@ export function setDraft(s: AppState, threadId: string, text: string): AppState 
   return { ...s, drafts: { ...s.drafts, [threadId]: text } };
 }
 
+/**
+ * Undoes decideLocally after the host said no: puts back only that item, and only if
+ * nothing newer (a refresh from the host) has changed it since.
+ */
+export function undecideLocally(s: AppState, approvalId: string, allowed: boolean): AppState {
+  if (!s.snapshot) return s;
+  const mark = allowed ? "allowed" : "denied";
+  if (!s.snapshot.needs_you.some((n) => n.approval_id === approvalId && n.state === mark)) return s;
+  const needs_you = s.snapshot.needs_you.map((n) =>
+    n.approval_id === approvalId && n.state === mark ? { ...n, state: "pending" as const } : n,
+  );
+  return patchSnapshot(s, { needs_you });
+}
+
+/**
+ * After a failed save, puts back only the section settings this save changed, and only
+ * where they still hold what this save wrote (a newer change wins).
+ */
+export function revertPrefs(current: UiPrefs, before: UiPrefs, attempted: UiPrefs): UiPrefs {
+  let next = current;
+  for (const key of Object.keys(attempted) as Array<keyof UiPrefs>) {
+    for (const field of ["shown", "open"] as const) {
+      const was = before[key]?.[field];
+      const tried = attempted[key]?.[field];
+      if (was === undefined || tried === undefined || was === tried) continue;
+      if (next[key]?.[field] !== tried) continue;
+      next = { ...next, [key]: { ...next[key], [field]: was } };
+    }
+  }
+  return next;
+}
+
 /** Marks a Needs you item decided before the host confirms. */
 export function decideLocally(s: AppState, approvalId: string, allowed: boolean): AppState {
   if (!s.snapshot) return s;
@@ -227,7 +297,7 @@ export function pendingNeedsYou(s: AppState): NeedsYouItem[] {
 // The app's store
 // ---------------------------------------------------------------------------
 
-export const store = createStore<AppState>(initialState);
+export const store = createStore<AppState>({ ...initialState, queued: loadQueued() });
 
 /**
  * Reads a slice of the store. Derived arrays and objects are compared shallowly,

@@ -6,6 +6,8 @@ import { PairPage } from "./features/first-run/PairPage";
 import { Toast } from "./features/shell/Toast";
 import { navigate, useRoute } from "./lib/router";
 import { useApp } from "./lib/store";
+import { reconnectNow } from "./lib/app";
+import { Button } from "./ui/Button";
 import { useDesktop } from "./lib/useMedia";
 
 export function App() {
@@ -34,9 +36,22 @@ export function App() {
 }
 
 function Connecting({ reconnecting }: { reconnecting: boolean }) {
+  if (!reconnecting) {
+    return (
+      <div className="flex h-full items-center justify-center p-4 text-body-sm text-text-secondary" role="status">
+        Connecting to your Weilo computer…
+      </div>
+    );
+  }
   return (
-    <div className="flex h-full items-center justify-center p-4 text-body-sm text-text-secondary" role="status">
-      {reconnecting ? "Can't reach your Weilo computer. Trying again…" : "Connecting to your Weilo computer…"}
+    <div className="flex h-full items-center justify-center p-4">
+      <div role="status" className="flex max-w-[400px] flex-col items-start gap-3 text-body-sm text-text-secondary">
+        <p className="m-0">
+          <b className="font-semibold text-text">Can't reach your Weilo computer.</b> Check that it's on and online. We keep
+          trying.
+        </p>
+        <Button onClick={reconnectNow}>Try again</Button>
+      </div>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { useApp } from "../../lib/store";
 import { useDesktop } from "../../lib/useMedia";
 import { Button } from "../../ui/Button";
 import { Card } from "../../ui/Card";
+import { ErrorLine } from "../../ui/bits";
 import { ChevronDownIcon } from "../../ui/glyphs";
 
 type Step = "engine" | "awake" | "phone";
@@ -133,11 +134,7 @@ function AwakeStep({ engine, onDone }: { engine: string; onDone(): void }) {
           Not now
         </Button>
       </div>
-      {error && (
-        <p role="alert" className="m-0 text-body-sm text-danger">
-          {error}
-        </p>
-      )}
+      {error && <ErrorLine>{error}</ErrorLine>}
     </>
   );
 }

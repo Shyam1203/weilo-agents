@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Button } from "../../ui/Button";
+import { ErrorLine } from "../../ui/bits";
 import { inputClass } from "../../ui/Dialog";
 
 /** POST /api/pair; the host sets a cookie and we start again at home. */
@@ -63,11 +64,7 @@ export function PairPage({ code: initial }: { code: string }) {
               aria-describedby={error ? "pair-error" : undefined}
             />
           </label>
-          {error && (
-            <p id="pair-error" role="alert" className="m-0 text-body-sm text-danger">
-              {error}
-            </p>
-          )}
+          {error && <ErrorLine id="pair-error">{error}</ErrorLine>}
           <Button type="submit" variant="primary" size="lg" className="max-md:h-12 max-md:text-phone" disabled={busy || !code.trim()}>
             {busy ? "Pairing…" : "Pair"}
           </Button>

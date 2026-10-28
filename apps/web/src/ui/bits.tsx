@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { WorkState } from "../proto/WorkState";
 import { cx } from "../lib/format";
+import { AlertIcon } from "./glyphs";
 
 /** "Needs you" on accent-subtle, "Working" on surface-muted. Nothing when idle. */
 export function StatusPill({ state }: { state: WorkState }) {
@@ -76,5 +77,19 @@ export function TopBar({ children, className }: { children: ReactNode; className
 export function Kbd({ children }: { children: ReactNode }) {
   return (
     <kbd className="rounded-sm border border-border px-1 font-sans text-caption text-text-tertiary">{children}</kbd>
+  );
+}
+
+/** "That didn't work" in plain words: quiet, one line, never red (§11.3, §11.5). */
+export function ErrorLine({ children, id, className }: { children: ReactNode; id?: string; className?: string }) {
+  return (
+    <p
+      id={id}
+      role="alert"
+      className={cx("m-0 flex items-start gap-2 rounded-md bg-surface-muted px-3 py-2 text-body-sm text-text-secondary", className)}
+    >
+      <AlertIcon className="mt-0.5 shrink-0" />
+      <span className="min-w-0">{children}</span>
+    </p>
   );
 }

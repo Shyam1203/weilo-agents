@@ -153,7 +153,7 @@ function Item({ item, threadId, kind }: { item: AgentItem; threadId: string; kin
 
 export function StepIcon({ status }: { status: StepItem["status"] }) {
   if (status === "done") return <CheckIcon className="shrink-0 text-success" />;
-  if (status === "failed") return <XCircleIcon className="shrink-0 text-danger" />;
+  if (status === "failed") return <XCircleIcon className="shrink-0 text-warning" />;
   return <SpinnerIcon className="spin shrink-0 text-accent" />;
 }
 

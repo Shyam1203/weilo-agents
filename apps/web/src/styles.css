@@ -295,9 +295,18 @@
   .reveal-on-hover[aria-expanded="true"] {
     opacity: 1;
   }
+  /* What sits under revealed buttons (a collapsed section's "1 needs you") steps aside for them. */
+  .reveal-host:hover .reveal-under,
+  .reveal-host:focus-within .reveal-under {
+    opacity: 0;
+  }
   @media (hover: none) {
     .reveal-on-hover {
       opacity: 1;
+    }
+    .reveal-under {
+      opacity: 1 !important;
+      margin-right: 56px;
     }
   }
   .safe-bottom {

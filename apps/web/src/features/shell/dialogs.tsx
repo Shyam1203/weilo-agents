@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { create, loadEngines } from "../../lib/app";
-import { engineTitle, slugPreview } from "../../lib/format";
+import { cx, engineTitle, projectName, slugPreview } from "../../lib/format";
 import { navigate, paths } from "../../lib/router";
 import { useApp } from "../../lib/store";
 import { Dialog, Field, inputClass } from "../../ui/Dialog";
@@ -118,47 +118,140 @@ export function NewChannelDialog({ open, onClose }: Props) {
   );
 }
 
+/** Projects already worked on, newest first: the folders of earlier sessions. */
+export function knownProjects(threads: Array<{ kind: string; folder: string | null; updated_at: string }>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const t of [...threads].sort((a, b) => b.updated_at.localeCompare(a.updated_at))) {
+    if (t.kind !== "session" || !t.folder || seen.has(t.folder)) continue;
+    seen.add(t.folder);
+    out.push(t.folder);
+  }
+  return out;
+}
+
+const OTHER = "\u0000other";
+
+/** Choices drawn as a row of chips (a radio group), not a native select. */
+function ChoiceChips({
+  label,
+  value,
+  onChange,
+  items,
+}: {
+  label: string;
+  value: string;
+  onChange(v: string): void;
+  items: Array<{ id: string; label: string; title?: string }>;
+}) {
+  return (
+    <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1.5">
+      {items.map((it) => {
+        const on = it.id === value;
+        return (
+          <button
+            key={it.id}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            title={it.title}
+            onClick={() => onChange(it.id)}
+            className={cx(
+              "h-8 max-w-full rounded-md border px-3 text-body-sm font-medium max-md:h-11",
+              on ? "border-accent bg-accent-subtle text-accent-text" : "ghost border-border bg-surface text-text",
+            )}
+          >
+            <span className="ellipsis block">{it.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * New → Session (§5.2): what it should do and which project. The computer and the AI are
+ * prefilled; the AI can be changed.
+ */
 export function NewSessionDialog({ open, onClose }: Props) {
+  const threads = useApp((s) => s.snapshot?.threads ?? null);
+  const hostName = useApp((s) => s.hostName);
+  const projects = useMemo(() => knownProjects(threads ?? []), [threads]);
+  const [task, setTask] = useState("");
+  const [project, setProject] = useState("");
   const [folder, setFolder] = useState("");
   const [engine, setEngine] = useState("");
+  const [changeAi, setChangeAi] = useState(false);
   const engines = useEngines(open);
   useDefaultEngine(engines, engine, setEngine);
   const { busy, error, run } = useSubmit(onClose);
+  const chosen = project || projects[0] || OTHER;
+  const path = chosen === OTHER ? folder.trim() : chosen;
+  const ai = engines?.find((e) => e.id === engine);
   return (
     <Dialog
       open={open}
       onClose={onClose}
       title="New session"
-      description="One piece of work in a folder on this computer."
+      description="One piece of work in a project on your computer."
       submitLabel="Start session"
       busy={busy}
       error={error}
-      canSubmit={!!folder.trim() && !!engine}
+      canSubmit={!!task.trim() && !!path && !!engine}
       onSubmit={() =>
         run(async () => {
           const v = await create(
-            { method: "start_session", params: { folder: folder.trim(), engine, title: null, channel_id: null, agent_id: null } },
+            { method: "start_session", params: { folder: path, engine, title: task.trim(), channel_id: null, agent_id: null } },
             "thread",
           );
+          setTask("");
           setFolder("");
           navigate(paths.session(v.data.id));
         })
       }
     >
-      <Field label="Folder">
-        <input
-          className={`${inputClass} font-mono`}
-          value={folder}
-          onChange={(e) => setFolder(e.target.value)}
-          placeholder="~/code/shop"
-          spellCheck={false}
-          autoCapitalize="off"
-          autoFocus
-        />
+      <Field label="What should it do?">
+        <input className={inputClass} value={task} onChange={(e) => setTask(e.target.value)} placeholder="Fix the checkout bug" autoFocus />
       </Field>
-      <Field label="AI it uses">
-        <EngineSelect value={engine} onChange={setEngine} engines={engines} />
-      </Field>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-caption font-medium text-text-secondary">Project</span>
+        {projects.length > 0 && (
+          <ChoiceChips
+            label="Project"
+            value={chosen}
+            onChange={setProject}
+            items={[...projects.map((f) => ({ id: f, label: projectName(f) ?? f, title: f })), { id: OTHER, label: "Another folder" }]}
+          />
+        )}
+        {chosen === OTHER && (
+          <input
+            className={`${inputClass} font-mono`}
+            value={folder}
+            onChange={(e) => setFolder(e.target.value)}
+            placeholder="~/code/shop"
+            aria-label="Folder"
+            spellCheck={false}
+            autoCapitalize="off"
+          />
+        )}
+      </div>
+      <div className="flex flex-col gap-1.5 text-caption text-text-secondary">
+        <span>
+          Runs on {hostName ?? "this computer"}
+          {ai ? ` with ${engineTitle(ai.id, [ai])}` : ""}
+          {engines && engines.length > 1 && !changeAi && (
+            <>
+              {" · "}
+              <button type="button" onClick={() => setChangeAi(true)} className="border-0 bg-transparent p-0 font-medium text-accent-text hover:underline">
+                Change
+              </button>
+            </>
+          )}
+        </span>
+        {changeAi && engines && (
+          <ChoiceChips label="AI it uses" value={engine} onChange={setEngine} items={engines.map((e) => ({ id: e.id, label: engineTitle(e.id, [e]) }))} />
+        )}
+      </div>
     </Dialog>
   );
 }
@@ -175,7 +268,7 @@ export function MoveDialog({ open, onClose, threadId, currentChannelId }: Props 
     <Dialog
       open={open}
       onClose={onClose}
-      title="Move this thread"
+      title="Move this chat"
       description="Ava learns from where you put things."
       submitLabel="Move"
       busy={busy}

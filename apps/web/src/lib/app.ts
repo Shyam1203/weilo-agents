@@ -14,12 +14,15 @@ import {
   findThread,
   removeQueued,
   removeSending,
+  revertPrefs,
+  saveQueued,
   setDraft,
   setNeedsYou,
   setPrefs,
   setStreaming,
   store,
   threadState,
+  undecideLocally,
 } from "./store";
 
 let host: HostApi | null = null;
@@ -53,6 +56,13 @@ export const listener: HostListener = {
 export function connect(h: HostApi): void {
   host = h;
   h.start();
+}
+
+/** "Try again": drop the wait between attempts and connect now. */
+export function reconnectNow(): void {
+  if (!host) return;
+  host.stop();
+  host.start();
 }
 
 function need(): HostApi {
@@ -135,9 +145,8 @@ export async function send(threadId: string, text: string, when: SendWhen = "now
   const id = localId();
   store.set((s) => addSending(s, threadId, { id, text: trimmed }));
   try {
+    // The placeholder stays until the host echoes the message (appendEvent drops it then).
     await call({ method: "send", params: { thread_id: threadId, text: trimmed, when } });
-    // The host echoes the message as an event; drop the placeholder if it hasn't.
-    setTimeout(() => store.set((s) => removeSending(s, threadId, id)), 4000);
   } catch (e) {
     store.set((s) => setDraft(removeSending(s, threadId, id), threadId, trimmed));
     showError(e instanceof HostError ? e : new Error("Couldn't send that. Try again."));
@@ -149,11 +158,13 @@ export function queue(threadId: string, text: string): void {
   const trimmed = text.trim();
   if (!trimmed) return;
   store.set((s) => addQueued(s, threadId, { id: localId(), text: trimmed }));
+  saveQueued(store.get().queued);
   flushQueued(threadId);
 }
 
 export function unqueue(threadId: string, id: string): void {
   store.set((s) => removeQueued(s, threadId, id));
+  saveQueued(store.get().queued);
 }
 
 function flushQueued(threadId: string): void {
@@ -163,6 +174,7 @@ function flushQueued(threadId: string): void {
   const summary = findThread(s, threadId);
   if (!summary || threadState(summary, s.feeds[threadId]) === "working") return;
   store.set((st) => removeQueued(st, threadId, next.id));
+  saveQueued(store.get().queued);
   void send(threadId, next.text, "after_job");
 }
 
@@ -179,13 +191,13 @@ export async function stop(threadId: string): Promise<void> {
 }
 
 export async function decide(approvalId: string, decision: Decision): Promise<boolean> {
-  const before = store.get();
-  store.set((s) => decideLocally(s, approvalId, decision.kind !== "deny"));
+  const allowed = decision.kind !== "deny";
+  store.set((s) => decideLocally(s, approvalId, allowed));
   try {
     await call({ method: "decide", params: { approval_id: approvalId, decision } });
     return true;
   } catch (e) {
-    store.set((s) => (s.snapshot && before.snapshot ? setNeedsYou(s, before.snapshot.needs_you) : s));
+    store.set((s) => undecideLocally(s, approvalId, allowed));
     showError(e);
     return false;
   }
@@ -200,7 +212,7 @@ export async function savePrefs(prefs: UiPrefs): Promise<void> {
   try {
     await call({ method: "set_prefs", params: { prefs } });
   } catch (e) {
-    if (before) store.set((s) => setPrefs(s, before));
+    if (before) store.set((s) => (s.snapshot ? setPrefs(s, revertPrefs(s.snapshot.prefs, before, prefs)) : s));
     showError(e);
   }
 }

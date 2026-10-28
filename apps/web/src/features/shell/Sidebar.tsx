@@ -210,7 +210,7 @@ function Section({
         >
           <ChevronDownIcon size={12} className={cx("shrink-0 transition-transform duration-[120ms]", !open && "-rotate-90")} />
           <span className="flex-1">{section.title}</span>
-          {label && <span>{label}</span>}
+          {label && <span className="reveal-under">{label}</span>}
         </button>
         {/* Shown on hover and keyboard focus, on an opaque background so the collapsed label never shows through. */}
         <div className={cx("reveal-on-hover absolute top-0.5 right-1 flex items-center gap-0.5 rounded-sm bg-bg", menu && "opacity-100")}>

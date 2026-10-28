@@ -4,6 +4,10 @@ import { findThread, mainAgent, useApp } from "../../lib/store";
 import { Avatar } from "../../ui/Avatar";
 import { Dot, EmptyState } from "../../ui/bits";
 import { Link } from "../../ui/Link";
+import { IconButton } from "../../ui/IconButton";
+import { PlusIcon } from "../../ui/glyphs";
+import { NewAgentDialog, NewChannelDialog } from "./dialogs";
+import { useState } from "react";
 import { NeedsYouPage } from "../needs-you/NeedsYouPage";
 import { SettingsPage } from "../settings/SettingsPage";
 import { AgentChat } from "../thread/AgentChat";
@@ -68,11 +72,22 @@ function Missing({ title, line }: { title: string; line?: string }) {
 
 const listRow = "flex min-h-11 items-center gap-3 rounded-md px-2 text-text hover:bg-surface-muted hover:no-underline";
 
+/** The "+" in a list page's title bar: the same as the "+" on a sidebar section. */
+function AddButton({ label, phone, onClick }: { label: string; phone?: boolean; onClick(): void }) {
+  return (
+    <IconButton label={label} size={phone ? 44 : 32} className={phone ? "-mr-3" : undefined} onClick={onClick}>
+      <PlusIcon size={phone ? 24 : 16} />
+    </IconButton>
+  );
+}
+
 function ChannelList({ phone }: { phone?: boolean }) {
   const channels = useApp((s) => s.snapshot!.channels);
+  const [adding, setAdding] = useState(false);
   const open = channels.filter((c) => !c.archived);
   return (
-    <PageFrame title="Channels" phone={phone}>
+    <PageFrame title="Channels" phone={phone} actions={<AddButton label="New channel" phone={phone} onClick={() => setAdding(true)} />}>
+      <NewChannelDialog open={adding} onClose={() => setAdding(false)} />
       {open.length === 0 ? (
         <EmptyState title="No channels yet." line="Ava files work here as it comes in." />
       ) : (
@@ -97,8 +112,10 @@ function ChannelList({ phone }: { phone?: boolean }) {
 
 function AgentList({ phone }: { phone?: boolean }) {
   const agents = useApp((s) => s.snapshot!.agents);
+  const [adding, setAdding] = useState(false);
   return (
-    <PageFrame title="Agents" phone={phone}>
+    <PageFrame title="Agents" phone={phone} actions={<AddButton label="New agent" phone={phone} onClick={() => setAdding(true)} />}>
+      <NewAgentDialog open={adding} onClose={() => setAdding(false)} />
       <nav aria-label="Agents" className="flex flex-col gap-0.5">
         {agents.map((a) => (
           <Link key={a.id} href={paths.agent(a.id)} className={cx(listRow, "min-h-14")}>

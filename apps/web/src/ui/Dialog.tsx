@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, type FormEvent, type ReactNode } from "react";
 import { Button } from "./Button";
+import { ErrorLine } from "./bits";
 
 export interface DialogProps {
   open: boolean;
@@ -69,11 +70,7 @@ export function Dialog({
             )}
           </div>
           {children}
-          {error && (
-            <p role="alert" className="m-0 text-caption font-medium text-danger">
-              {error}
-            </p>
-          )}
+          {error && <ErrorLine>{error}</ErrorLine>}
           <div className="flex justify-end gap-2">
             <Button variant="tertiary" onClick={onClose}>
               Cancel
