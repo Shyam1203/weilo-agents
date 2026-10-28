@@ -35,6 +35,11 @@ pub enum HubMsg {
         delta: Delta,
     },
     Changed(Changed),
+    /// The host's health changed (`ServerFrame::Status`).
+    Status {
+        ok: bool,
+        message: Option<String>,
+    },
 }
 
 #[derive(Clone)]
@@ -64,7 +69,13 @@ pub struct Settings {
     pub self_exe: PathBuf,
     pub approval_ttl: Duration,
     pub engine_idle: Duration,
+    /// No word from an engine this long (no tool running, nobody asked) ends the turn.
+    pub engine_hang: Duration,
+    /// How long an engine has to honour Stop before it is ended.
+    pub stop_grace: Duration,
     pub job_poll: Duration,
+    /// Frames waiting for one socket before it counts as fallen behind.
+    pub ws_queue: usize,
 }
 
 impl Settings {
@@ -77,10 +88,15 @@ impl Settings {
                 .unwrap_or(default)
         };
         Self {
-            self_exe: std::env::current_exe().unwrap_or_else(|_| PathBuf::from("weilo")),
+            self_exe: std::env::current_exe()
+                .and_then(std::fs::canonicalize)
+                .unwrap_or_else(|_| PathBuf::from("weilo")),
             approval_ttl: Duration::from_secs(secs("WEILO_APPROVAL_TTL_SECS", 24 * 3600)),
             engine_idle: Duration::from_secs(secs("WEILO_ENGINE_IDLE_SECS", 600)),
+            engine_hang: Duration::from_secs(secs("WEILO_ENGINE_HANG_SECS", 180)),
+            stop_grace: Duration::from_secs(secs("WEILO_STOP_GRACE_SECS", 5)),
             job_poll: Duration::from_millis(secs("WEILO_JOB_POLL_MS", 1000)),
+            ws_queue: secs("WEILO_WS_QUEUE", 1024) as usize,
         }
     }
 }
@@ -100,6 +116,8 @@ pub struct App {
     pub call_locks: CallLocks,
     /// Cancelled when the host is stopping.
     pub shutdown: tokio_util::sync::CancellationToken,
+    /// False while Postgres is down and being restarted; new turns wait for it.
+    pub db_up: tokio::sync::watch::Sender<bool>,
     port: AtomicU16,
     /// The newest seq published per thread, so deltas can name it without a query.
     seqs: Mutex<HashMap<Uuid, i64>>,
@@ -130,6 +148,7 @@ impl App {
             keep_awake: KeepAwake::default(),
             call_locks: CallLocks::default(),
             shutdown: Default::default(),
+            db_up: tokio::sync::watch::Sender::new(true),
             port: AtomicU16::new(0),
             seqs: Mutex::new(HashMap::new()),
         })
@@ -181,6 +200,22 @@ impl App {
             .ok()
             .flatten()
             .unwrap_or(0)
+    }
+
+    /// Marks the database up or down, and tells every socket.
+    pub fn set_db_up(&self, up: bool) {
+        if self.db_up.send_replace(up) != up {
+            self.hub.send(HubMsg::Status {
+                ok: up,
+                message: self.status_message(),
+            });
+        }
+    }
+
+    /// The plain line to show while something is wrong, if anything is.
+    pub fn status_message(&self) -> Option<String> {
+        (!*self.db_up.borrow())
+            .then(|| "Your Weilo computer is restarting its data. (a few seconds)".to_string())
     }
 
     /// A temporary piece of a reply. Never stored.

@@ -1,79 +1,98 @@
 //! One WebSocket per device, speaking `weilo-proto` frames as JSON text.
 //!
+//! The device proves itself in its first frame (`hello` with its token), not with a
+//! cookie: cookies on 127.0.0.1 are shared by every port, the token in the app's own
+//! storage is not. A bad or missing token closes the socket with 4401.
+//!
 //! The socket subscribes to the broadcast when it opens, before any backlog is read,
 //! and sends each thread's events strictly in `seq` order: a live event that skips
 //! ahead first fills the gap from the database, and anything at or below the last
-//! sent `seq` is dropped. A socket that falls behind the broadcast is closed with
+//! sent `seq` is dropped. A socket that falls behind (the broadcast, or its own
+//! bounded queue of frames to write) or whose backlog can't be read is closed with
 //! code 4008 and must resubscribe with `after_seq`.
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::extract::State;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
-use axum::http::{HeaderMap, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use futures::{SinkExt, StreamExt};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{Semaphore, broadcast, mpsc, oneshot};
 use uuid::Uuid;
-use weilo_proto::{ClientFrame, Event, PROTOCOL_VERSION, ServerFrame};
+use weilo_proto::{ApiError, CallResult, ClientFrame, Event, PROTOCOL_VERSION, ServerFrame};
 
 use crate::app::{App, HubMsg};
 use crate::{auth, calls, events};
 
 pub const CLOSE_BEHIND: u16 = 4008;
+pub const CLOSE_UNPAIRED: u16 = 4401;
 pub const CLOSE_BAD_FRAME: u16 = 4400;
 pub const CLOSE_OLD_VERSION: u16 = 4426;
 
-pub async fn upgrade(
-    State(app): State<Arc<App>>,
-    headers: HeaderMap,
-    ws: WebSocketUpgrade,
-) -> Response {
-    let device = auth::device_for_request(&app.db, &headers)
-        .await
-        .ok()
-        .flatten();
-    let Some(device_id) = device else {
-        return (StatusCode::UNAUTHORIZED, "Pair this browser first.").into_response();
-    };
-    ws.on_upgrade(move |socket| Session::run(app, device_id, socket))
+/// Calls one socket may have running at once.
+pub const MAX_CALLS: usize = 32;
+/// How long a new socket has to say hello.
+const HELLO_WAIT: Duration = Duration::from_secs(10);
+
+pub async fn upgrade(State(app): State<Arc<App>>, ws: WebSocketUpgrade) -> Response {
+    ws.on_upgrade(move |socket| Session::run(app, socket))
 }
 
 struct Session {
     app: Arc<App>,
-    device_id: Uuid,
-    out: mpsc::UnboundedSender<Message>,
+    /// Set by a `hello` with a valid token.
+    device_id: Option<Uuid>,
+    out: mpsc::Sender<Message>,
     /// Followed threads and the last `seq` sent for each.
     subs: HashMap<Uuid, i64>,
-    greeted: bool,
+    calls: Arc<Semaphore>,
+    rets: mpsc::Sender<ServerFrame>,
 }
 
 /// Ends the session, with a close frame to send first.
 struct Close(u16, &'static str);
 
+const BEHIND: Close = Close(CLOSE_BEHIND, "Fell behind. Subscribe again.");
+
 impl Session {
-    async fn run(app: Arc<App>, device_id: Uuid, socket: WebSocket) {
+    async fn run(app: Arc<App>, socket: WebSocket) {
         let mut hub = app.hub.subscribe();
         let (mut sink, mut stream) = socket.split();
-        let (out, mut out_rx) = mpsc::unbounded_channel::<Message>();
+        let (out, mut out_rx) = mpsc::channel::<Message>(app.settings.ws_queue.max(1));
+        let (close_tx, mut close_rx) = oneshot::channel::<Message>();
+        // The close frame skips the queue: a full queue is one reason to close.
         let writer = tokio::spawn(async move {
-            while let Some(msg) = out_rx.recv().await {
-                let closing = matches!(msg, Message::Close(_));
-                if sink.send(msg).await.is_err() || closing {
-                    break;
+            loop {
+                tokio::select! {
+                    biased;
+                    close = &mut close_rx => {
+                        if let Ok(close) = close {
+                            let _ = sink.send(close).await;
+                        }
+                        break;
+                    }
+                    msg = out_rx.recv() => match msg {
+                        Some(msg) => if sink.send(msg).await.is_err() { break },
+                        None => break,
+                    },
                 }
             }
         });
         let shutdown = app.shutdown.clone();
+        let (rets, mut rets_rx) = mpsc::channel(MAX_CALLS);
         let mut s = Session {
             app,
-            device_id,
+            device_id: None,
             out,
             subs: HashMap::new(),
-            greeted: false,
+            calls: Arc::new(Semaphore::new(MAX_CALLS)),
+            rets,
         };
+        let hello_by = tokio::time::Instant::now() + HELLO_WAIT;
         let close = loop {
+            let greeted = s.device_id.is_some();
             let step = tokio::select! {
                 msg = stream.next() => match msg {
                     Some(Ok(Message::Text(text))) => s.on_frame(&text).await,
@@ -82,11 +101,13 @@ impl Session {
                 },
                 msg = hub.recv() => match msg {
                     Ok(msg) => s.on_hub(&msg).await,
-                    Err(broadcast::error::RecvError::Lagged(_)) => {
-                        Err(Close(CLOSE_BEHIND, "Fell behind. Subscribe again."))
-                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => Err(BEHIND),
                     Err(broadcast::error::RecvError::Closed) => break None,
                 },
+                Some(frame) = rets_rx.recv() => s.send(&frame),
+                _ = tokio::time::sleep_until(hello_by), if !greeted => {
+                    Err(Close(CLOSE_BAD_FRAME, "Say hello first."))
+                }
                 _ = shutdown.cancelled() => Err(Close(1001, "Weilo is stopping.")),
             };
             if let Err(close) = step {
@@ -94,7 +115,7 @@ impl Session {
             }
         };
         if let Some(Close(code, reason)) = close {
-            let _ = s.out.send(Message::Close(Some(CloseFrame {
+            let _ = close_tx.send(Message::Close(Some(CloseFrame {
                 code,
                 reason: reason.into(),
             })));
@@ -103,33 +124,29 @@ impl Session {
         let _ = writer.await;
     }
 
-    fn send(&self, frame: &ServerFrame) {
-        if let Ok(text) = serde_json::to_string(frame) {
-            let _ = self.out.send(Message::Text(text.into()));
+    /// Queues a frame. A full queue means the device can't keep up.
+    fn send(&self, frame: &ServerFrame) -> Result<(), Close> {
+        let Ok(text) = serde_json::to_string(frame) else {
+            return Ok(());
+        };
+        match self.out.try_send(Message::Text(text.into())) {
+            Ok(()) => Ok(()),
+            Err(mpsc::error::TrySendError::Full(_)) => Err(BEHIND),
+            Err(mpsc::error::TrySendError::Closed(_)) => Err(Close(1000, "")),
         }
     }
 
     async fn on_frame(&mut self, text: &str) -> Result<(), Close> {
         let frame: ClientFrame = serde_json::from_str(text)
             .map_err(|_| Close(CLOSE_BAD_FRAME, "That frame isn't valid."))?;
-        if !self.greeted && !matches!(frame, ClientFrame::Hello { .. }) {
-            return Err(Close(CLOSE_BAD_FRAME, "Say hello first."));
-        }
+        let Some(device_id) = self.device_id else {
+            let ClientFrame::Hello { version, token } = frame else {
+                return Err(Close(CLOSE_BAD_FRAME, "Say hello first."));
+            };
+            return self.hello(version, token).await;
+        };
         match frame {
-            ClientFrame::Hello { version } => {
-                if version.abs_diff(PROTOCOL_VERSION) > 1 || version == 0 {
-                    return Err(Close(
-                        CLOSE_OLD_VERSION,
-                        "Update Weilo to keep using this app.",
-                    ));
-                }
-                self.greeted = true;
-                self.send(&ServerFrame::Welcome {
-                    version: PROTOCOL_VERSION,
-                    host_name: self.app.host_name.clone(),
-                    device_id: self.device_id,
-                });
-            }
+            ClientFrame::Hello { .. } => {}
             ClientFrame::Sub {
                 thread_id,
                 after_seq,
@@ -138,15 +155,54 @@ impl Session {
                 self.subs.remove(&thread_id);
             }
             ClientFrame::Call { call_id, call } => {
-                let (app, out, device) = (self.app.clone(), self.out.clone(), self.device_id);
+                let Ok(permit) = self.calls.clone().try_acquire_owned() else {
+                    let result = CallResult::Failed {
+                        error: ApiError {
+                            code: "busy".into(),
+                            message: "Too many requests at once. Try again.".into(),
+                        },
+                    };
+                    return self.send(&ServerFrame::Ret { call_id, result });
+                };
+                let (app, rets) = (self.app.clone(), self.rets.clone());
                 tokio::spawn(async move {
-                    let result = calls::handle(&app, device, call_id, call).await;
-                    if let Ok(text) = serde_json::to_string(&ServerFrame::Ret { call_id, result }) {
-                        let _ = out.send(Message::Text(text.into()));
-                    }
+                    let result = calls::handle(&app, device_id, call_id, call).await;
+                    let _ = rets.send(ServerFrame::Ret { call_id, result }).await;
+                    drop(permit);
                 });
             }
             ClientFrame::Presence { .. } => {}
+        }
+        Ok(())
+    }
+
+    async fn hello(&mut self, version: u32, token: Option<String>) -> Result<(), Close> {
+        if version.abs_diff(PROTOCOL_VERSION) > 1 || version == 0 {
+            return Err(Close(
+                CLOSE_OLD_VERSION,
+                "Update Weilo to keep using this app.",
+            ));
+        }
+        let device = match token.as_deref().filter(|t| !t.is_empty()) {
+            Some(t) => auth::device_for_token(&self.app.db, t)
+                .await
+                .map_err(|_| Close(1011, "Weilo can't check this device right now."))?,
+            None => None,
+        };
+        let Some(device_id) = device else {
+            return Err(Close(CLOSE_UNPAIRED, "Pair this device first."));
+        };
+        self.device_id = Some(device_id);
+        self.send(&ServerFrame::Welcome {
+            version: PROTOCOL_VERSION,
+            host_name: self.app.host_name.clone(),
+            device_id,
+        })?;
+        if let Some(message) = self.app.status_message() {
+            self.send(&ServerFrame::Status {
+                ok: false,
+                message: Some(message),
+            })?;
         }
         Ok(())
     }
@@ -160,44 +216,48 @@ impl Session {
         .bind(self.app.space_id)
         .fetch_one(&self.app.db)
         .await
-        .unwrap_or(false);
+        .map_err(|_| BEHIND)?;
         if !in_space {
             return Ok(());
         }
         let last = after_seq.max(0);
         self.subs.insert(thread_id, last);
-        self.catch_up(thread_id, i64::MAX).await;
-        Ok(())
+        self.catch_up(thread_id, i64::MAX).await
     }
 
-    /// Sends stored events after the last sent one, up to `to`.
-    async fn catch_up(&mut self, thread_id: Uuid, to: i64) {
+    /// Sends stored events after the last sent one, up to `to`. When they can't be
+    /// read, the device would miss them: it is told to subscribe again.
+    async fn catch_up(&mut self, thread_id: Uuid, to: i64) -> Result<(), Close> {
         let Some(&from) = self.subs.get(&thread_id) else {
-            return;
+            return Ok(());
         };
         match events::read_range(&self.app.db, thread_id, from, to).await {
             Ok(evs) => {
                 for event in evs {
-                    self.send_event(thread_id, event);
+                    self.send_event(thread_id, event)?;
                 }
+                Ok(())
             }
-            Err(e) => tracing::warn!("backlog for {thread_id}: {e}"),
+            Err(e) => {
+                tracing::warn!("backlog for {thread_id}: {e}");
+                Err(BEHIND)
+            }
         }
     }
 
-    fn send_event(&mut self, thread_id: Uuid, event: Event) {
+    fn send_event(&mut self, thread_id: Uuid, event: Event) -> Result<(), Close> {
         let Some(last) = self.subs.get_mut(&thread_id) else {
-            return;
+            return Ok(());
         };
         if event.seq <= *last {
-            return;
+            return Ok(());
         }
         *last = event.seq;
-        self.send(&ServerFrame::Ev { thread_id, event });
+        self.send(&ServerFrame::Ev { thread_id, event })
     }
 
     async fn on_hub(&mut self, msg: &HubMsg) -> Result<(), Close> {
-        if !self.greeted {
+        if self.device_id.is_none() {
             return Ok(());
         }
         match msg {
@@ -206,9 +266,9 @@ impl Session {
                     return Ok(());
                 };
                 if event.seq > last + 1 {
-                    self.catch_up(*thread_id, event.seq - 1).await;
+                    self.catch_up(*thread_id, event.seq - 1).await?;
                 }
-                self.send_event(*thread_id, (**event).clone());
+                self.send_event(*thread_id, (**event).clone())
             }
             HubMsg::Delta {
                 thread_id,
@@ -216,17 +276,21 @@ impl Session {
                 sub_seq,
                 delta,
             } => {
-                if self.subs.contains_key(thread_id) {
-                    self.send(&ServerFrame::Delta {
-                        thread_id: *thread_id,
-                        after_seq: *after_seq,
-                        sub_seq: *sub_seq,
-                        delta: delta.clone(),
-                    });
+                if !self.subs.contains_key(thread_id) {
+                    return Ok(());
                 }
+                self.send(&ServerFrame::Delta {
+                    thread_id: *thread_id,
+                    after_seq: *after_seq,
+                    sub_seq: *sub_seq,
+                    delta: delta.clone(),
+                })
             }
             HubMsg::Changed(what) => self.send(&ServerFrame::Changed { what: *what }),
+            HubMsg::Status { ok, message } => self.send(&ServerFrame::Status {
+                ok: *ok,
+                message: message.clone(),
+            }),
         }
-        Ok(())
     }
 }

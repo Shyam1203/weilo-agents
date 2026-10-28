@@ -29,6 +29,7 @@ pub fn router(app: Arc<App>, web: Option<PathBuf>) -> Router {
     let api = Router::new()
         .route("/health", get(health))
         .route("/pair", post(pair))
+        .route("/token", post(token))
         .route("/ws", get(ws::upgrade))
         .fallback(|| async { (StatusCode::NOT_FOUND, "Not found.") })
         .layer(middleware::from_fn_with_state(app.clone(), guard))
@@ -50,8 +51,9 @@ pub fn router(app: Arc<App>, web: Option<PathBuf>) -> Router {
         ))
 }
 
-/// The built web app, with unknown paths falling back to `index.html`. Files under
-/// `/assets` have hashed names, so they are cached for good.
+/// The built web app, with unknown paths (the app's own routes, like `/s/<id>`) served
+/// `index.html` with 200. Files under `/assets` have hashed names, so they are cached
+/// for good; a missing asset is a real 404.
 fn web_app(dir: Option<PathBuf>) -> Router {
     let Some(dir) = dir.filter(|d| d.join("index.html").is_file()) else {
         return Router::new().fallback(|| async {
@@ -64,7 +66,7 @@ fn web_app(dir: Option<PathBuf>) -> Router {
             header::CACHE_CONTROL,
             HeaderValue::from_static("public, max-age=31536000, immutable"),
         ));
-    let pages = ServeDir::new(&dir).not_found_service(ServeFile::new(dir.join("index.html")));
+    let pages = ServeDir::new(&dir).fallback(ServeFile::new(dir.join("index.html")));
     Router::new()
         .nest("/assets", assets)
         .fallback_service(pages)
@@ -79,7 +81,10 @@ pub fn find_web_dir(arg: Option<PathBuf>) -> Option<PathBuf> {
     if let Some(dir) = arg.or_else(|| std::env::var_os("WEILO_WEB").map(PathBuf::from)) {
         return Some(dir);
     }
-    let exe = std::env::current_exe().ok();
+    // Resolved, so a symlink in ~/.local/bin finds the web/ beside the real binary.
+    let exe = std::env::current_exe()
+        .and_then(std::fs::canonicalize)
+        .ok();
     let beside = exe.as_deref().and_then(Path::parent).map(|d| d.join("web"));
     let in_repo = exe
         .as_deref()
@@ -146,23 +151,40 @@ struct PairBody {
     name: Option<String>,
 }
 
+/// Trades a pairing code for a device token: `{ device_id, token }`, plus the handoff
+/// cookie for `/api/token`.
 async fn pair(State(app): State<Arc<App>>, Json(body): Json<PairBody>) -> Response {
-    if !app.pairing.redeem(&body.code) {
-        // One wrong guess at a time, each a second long.
-        let _gate = app.pairing.wrong_code_gate.lock().await;
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "error": "That code didn't work." })),
-        )
-            .into_response();
+    // Every guess waits its turn, before the code is even looked at.
+    let gate = app.pairing.gate.lock().await;
+    match app.pairing.redeem(&body.code) {
+        auth::Redeem::Ok => {}
+        auth::Redeem::Wrong => {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": "That code didn't work." })),
+            )
+                .into_response();
+        }
+        auth::Redeem::Locked(left) => {
+            let minutes = left.as_secs().div_ceil(60).max(1);
+            let error = format!(
+                "Too many wrong codes. Wait {minutes} minutes, or run weilo pair for a new code."
+            );
+            return (StatusCode::TOO_MANY_REQUESTS, Json(json!({ "error": error })))
+                .into_response();
+        }
     }
+    drop(gate);
     match create_device(&app, body.name.as_deref()).await {
-        Ok((device_id, token)) => (
-            [(header::SET_COOKIE, auth::set_cookie(&token))],
-            Json(json!({ "device_id": device_id })),
-        )
-            .into_response(),
+        Ok((device_id, token)) => {
+            let secret = app.pairing.hand_off(&token);
+            (
+                [(header::SET_COOKIE, auth::handoff_cookie(&secret))],
+                Json(json!({ "device_id": device_id, "token": token })),
+            )
+                .into_response()
+        }
         Err(e) => {
             tracing::error!("pairing failed: {e:#}");
             (
@@ -171,6 +193,38 @@ async fn pair(State(app): State<Arc<App>>, Json(body): Json<PairBody>) -> Respon
             )
                 .into_response()
         }
+    }
+}
+
+/// Gives the app its device token once, for the handoff cookie set at pairing (or the
+/// cookie older versions used), and clears those cookies.
+async fn token(State(app): State<Arc<App>>, headers: HeaderMap) -> Response {
+    let from_handoff = auth::request_cookie(&headers, auth::HANDOFF_COOKIE)
+        .and_then(|secret| app.pairing.claim(secret));
+    let token = match from_handoff {
+        Some(t) => Some(t),
+        None => match auth::request_cookie(&headers, auth::LEGACY_COOKIE) {
+            Some(old) => match auth::device_for_token(&app.db, old).await {
+                Ok(Some(_)) => Some(old.to_string()),
+                Ok(None) => None,
+                Err(e) => {
+                    tracing::error!("token: {e}");
+                    return (StatusCode::SERVICE_UNAVAILABLE, "Try again.").into_response();
+                }
+            },
+            None => None,
+        },
+    };
+    let [a, b] = auth::clear_cookies();
+    let cleared = [(header::SET_COOKIE, a), (header::SET_COOKIE, b)];
+    match token {
+        Some(token) => (cleared, Json(json!({ "token": token }))).into_response(),
+        None => (
+            StatusCode::UNAUTHORIZED,
+            cleared,
+            Json(json!({ "error": "Pair this device first." })),
+        )
+            .into_response(),
     }
 }
 
