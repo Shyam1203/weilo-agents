@@ -129,8 +129,14 @@ fn is_local_host(host: &str, port: u16) -> bool {
     name_ok && port_ok
 }
 
-async fn health() -> Json<serde_json::Value> {
-    Json(json!({ "ok": true, "version": env!("CARGO_PKG_VERSION") }))
+/// Up, and whether this browser is paired (so the app can tell "unpaired" from "can't
+/// reach"). A database hiccup leaves `paired` out rather than sending people to pair.
+async fn health(State(app): State<Arc<App>>, headers: HeaderMap) -> Json<serde_json::Value> {
+    let mut body = json!({ "ok": true, "version": env!("CARGO_PKG_VERSION") });
+    if let Ok(device) = auth::device_for_request(&app.db, &headers).await {
+        body["paired"] = json!(device.is_some());
+    }
+    Json(body)
 }
 
 #[derive(Deserialize)]

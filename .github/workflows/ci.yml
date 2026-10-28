@@ -41,3 +41,42 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
+      WEILO_PG_BIN: /usr/lib/postgresql/16/bin
+      WEILO_E2E_REQUIRE_PG: "1"
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: Postgres 16 (from the PGDG repo when the runner's apt doesn't have it)
+        run: |
+          test -x "$WEILO_PG_BIN/initdb" && exit 0
+          sudo apt-get update
+          if ! apt-cache show postgresql-16 >/dev/null 2>&1; then
+            sudo apt-get install -y postgresql-common
+            sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          fi
+          sudo apt-get install -y postgresql-16
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - name: Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+      - name: Keep the traces of failed tests
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: e2e-results
+          path: apps/web/e2e/.results
+          retention-days: 7

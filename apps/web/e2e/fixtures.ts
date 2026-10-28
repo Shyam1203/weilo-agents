@@ -34,11 +34,24 @@ export function pairingCode(): string {
   return code;
 }
 
-/** Asserts the page doesn't scroll sideways. */
+/**
+ * Asserts nothing scrolls sideways: not the page, and not any scroll area in it (swipe
+ * carousels, which scroll sideways on purpose, are left out).
+ */
 export async function expectNoSideScroll(page: Page): Promise<void> {
-  const { scroll, client } = await page.evaluate(() => ({
-    scroll: document.documentElement.scrollWidth,
-    client: document.documentElement.clientWidth,
-  }));
-  expect(scroll, "page scrolls sideways").toBeLessThanOrEqual(client);
+  const found = await page.evaluate(() => {
+    const out: string[] = [];
+    const root = document.scrollingElement ?? document.documentElement;
+    if (root.scrollWidth > root.clientWidth) out.push(`page: ${root.scrollWidth} > ${root.clientWidth}`);
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>("body *"))) {
+      const x = getComputedStyle(el).overflowX;
+      if (x !== "auto" && x !== "scroll") continue;
+      if (el.closest("[aria-roledescription=carousel]")) continue;
+      if (el.scrollWidth > el.clientWidth + 1) {
+        out.push(`<${el.tagName.toLowerCase()} class="${el.className}">: ${el.scrollWidth} > ${el.clientWidth}`);
+      }
+    }
+    return out;
+  });
+  expect(found, "these scroll sideways").toEqual([]);
 }

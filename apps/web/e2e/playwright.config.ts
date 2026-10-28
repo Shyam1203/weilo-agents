@@ -1,7 +1,14 @@
+/**
+ * End-to-end tests against the real host (`weilo up`) serving the built web app, with the
+ * built-in echo engine. `npm run e2e`. Settings:
+ *   WEILO_PG_BIN          Postgres bin folder (else found like the host does; tests skip without it)
+ *   WEILO_E2E_REQUIRE_PG  fail instead of skipping when Postgres is missing (CI)
+ *   WEILO_E2E_QUIET_BUILD hide cargo and vite build output
+ *   WEILO_E2E_KEEP        keep the temp home (logs in host.log) after the run
+ *   WEILO_E2E_CHROMIUM    a Chromium binary to use instead of Playwright's
+ */
 import { defineConfig } from "@playwright/test";
 
-// Chromium comes pre-installed in some environments (PLAYWRIGHT_BROWSERS_PATH); CI runs
-// `npx playwright install chromium`. WEILO_E2E_CHROMIUM points at a specific binary.
 const executablePath = process.env.WEILO_E2E_CHROMIUM || undefined;
 
 export default defineConfig({

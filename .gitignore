@@ -6,3 +6,5 @@ dist/
 .DS_Store
 Thumbs.db
 target/
+apps/web/e2e/.results/
+playwright-report/

@@ -357,8 +357,10 @@ export function socketUrl(loc: Pick<Location, "protocol" | "host"> = window.loca
   return `${loc.protocol === "https:" ? "wss:" : "ws:"}//${loc.host}/api/ws`;
 }
 
-/** Asks the host whether this browser is paired. */
-export async function checkPaired(): Promise<"ok" | "unpaired"> {
-  const res = await fetch("/api/health", { credentials: "same-origin" });
-  return res.status === 401 || res.status === 403 ? "unpaired" : "ok";
+/** Asks the host whether this browser is paired (`/api/health` says `paired: false` when not). */
+export async function checkPaired(fetcher: typeof fetch = fetch): Promise<"ok" | "unpaired"> {
+  const res = await fetcher("/api/health", { credentials: "same-origin" });
+  if (res.status === 401 || res.status === 403) return "unpaired";
+  const body: unknown = await res.json().catch(() => null);
+  return body && typeof body === "object" && (body as { paired?: unknown }).paired === false ? "unpaired" : "ok";
 }

@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use axum::extract::State;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use futures::{SinkExt, StreamExt};
 use tokio::sync::{broadcast, mpsc};
@@ -30,15 +30,10 @@ pub async fn upgrade(
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Response {
-    let token = headers
-        .get(header::COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|c| auth::cookie_value(c, auth::COOKIE))
-        .map(str::to_owned);
-    let device = match token {
-        Some(t) => auth::device_for_token(&app.db, &t).await.ok().flatten(),
-        None => None,
-    };
+    let device = auth::device_for_request(&app.db, &headers)
+        .await
+        .ok()
+        .flatten();
     let Some(device_id) = device else {
         return (StatusCode::UNAUTHORIZED, "Pair this browser first.").into_response();
     };

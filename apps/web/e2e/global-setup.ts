@@ -5,7 +5,6 @@
  */
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -66,6 +65,7 @@ function postgresPid(home: string): number | null {
 export default async function globalSetup(): Promise<() => Promise<void>> {
   const pg = findPgBin();
   if (!pg) {
+    if (process.env.WEILO_E2E_REQUIRE_PG) throw new Error("Postgres isn't installed, and WEILO_E2E_REQUIRE_PG is set.");
     const why = "Postgres isn't installed (set WEILO_PG_BIN or install postgresql-16); skipping the e2e tests.";
     console.warn(`\n  ${why}\n`);
     process.env.WEILO_E2E_SKIP = why;
@@ -77,7 +77,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   execFileSync("npm", ["run", "build"], { cwd: WEB, stdio: ["ignore", quiet, "inherit"] });
 
   // /tmp, made passable, so Postgres (which runs as WEILO_PG_USER when we're root) can reach it.
-  const dir = mkdtempSync(join(tmpdir(), "weilo-e2e-"));
+  const dir = mkdtempSync("/tmp/weilo-e2e-");
   chmodSync(dir, 0o711);
   const home = join(dir, "home");
   mkdirSync(home, { recursive: true });

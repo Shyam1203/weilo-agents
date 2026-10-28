@@ -226,10 +226,15 @@ async fn approval_allow_then_conflict() {
         })
         .await;
     assert!(matches!(again, CallResult::Failed { error } if error.code == "conflict"));
+    // Still listed, as allowed, so the app can show it under Done today.
     let CallValue::NeedsYou(items) = c.ok(Call::NeedsYou).await else {
         panic!()
     };
-    assert!(items.is_empty());
+    assert_eq!(items.len(), 1);
+    assert_eq!(
+        (items[0].approval_id, items[0].state),
+        (approval_id, ApprovalState::Allowed)
+    );
 }
 
 #[tokio::test]
@@ -416,4 +421,20 @@ async fn guard_and_pairing_reject_strangers() {
     // No cookie, or a made-up one: no socket.
     assert!(Client::connect(&host, None).await.is_err());
     assert!(Client::connect(&host, Some("not-a-token")).await.is_err());
+
+    // Health tells the app whether this browser is paired.
+    let paired = |cookie: Option<String>| {
+        let mut req = http.get(host.url("/api/health"));
+        if let Some(c) = cookie {
+            req = req.header("cookie", c);
+        }
+        async move {
+            let body: serde_json::Value = req.send().await.unwrap().json().await.unwrap();
+            body["paired"].clone()
+        }
+    };
+    assert_eq!(paired(None).await, false);
+    assert_eq!(paired(Some("weilo_device=not-a-token".into())).await, false);
+    let token = host.pair().await;
+    assert_eq!(paired(Some(format!("weilo_device={token}"))).await, true);
 }

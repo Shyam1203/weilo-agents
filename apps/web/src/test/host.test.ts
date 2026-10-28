@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { HostConnection, HostError, streamingText, type HostListener, type SocketLike } from "../lib/host";
+import { checkPaired, HostConnection, HostError, streamingText, type HostListener, type SocketLike } from "../lib/host";
 import type { Event } from "../proto/Event";
 
 class FakeSocket implements SocketLike {
@@ -218,5 +218,20 @@ describe("streamingText", () => {
     ]);
     expect(streamingText({ deltas })).toBe("ab");
     expect(streamingText({ deltas: new Map() })).toBeNull();
+  });
+});
+
+describe("checkPaired", () => {
+  const reply = (status: number, body: unknown) => (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
+
+  it("reads paired from health", async () => {
+    expect(await checkPaired(reply(200, { ok: true, paired: false }))).toBe("unpaired");
+    expect(await checkPaired(reply(200, { ok: true, paired: true }))).toBe("ok");
+  });
+
+  it("treats a refusal as unpaired and anything unclear as ok", async () => {
+    expect(await checkPaired(reply(401, {}))).toBe("unpaired");
+    expect(await checkPaired(reply(200, { ok: true }))).toBe("ok");
+    expect(await checkPaired((async () => new Response("oops", { status: 500 })) as unknown as typeof fetch)).toBe("ok");
   });
 });

@@ -98,6 +98,21 @@ pub async fn device_for_token(pool: &PgPool, token: &str) -> sqlx::Result<Option
     .await
 }
 
+/// The paired device whose cookie came with this request, if any.
+pub async fn device_for_request(
+    pool: &PgPool,
+    headers: &axum::http::HeaderMap,
+) -> sqlx::Result<Option<Uuid>> {
+    let token = headers
+        .get(axum::http::header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|c| cookie_value(c, COOKIE));
+    match token {
+        Some(t) => device_for_token(pool, t).await,
+        None => Ok(None),
+    }
+}
+
 /// Reads one cookie from a `Cookie` header.
 pub fn cookie_value<'a>(header: &'a str, name: &str) -> Option<&'a str> {
     header.split(';').find_map(|part| {

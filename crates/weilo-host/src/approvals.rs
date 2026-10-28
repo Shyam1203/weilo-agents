@@ -252,7 +252,8 @@ pub async fn always_allowed(app: &App, agent_id: Option<Uuid>, tool: &str, scope
     .unwrap_or(false)
 }
 
-/// Waiting approvals, and those that expired in the last day (shown under Expired).
+/// Waiting approvals, and those decided or expired in the last day (the app shows them
+/// under Done today and Expired).
 pub async fn needs_you(app: &App) -> sqlx::Result<Vec<NeedsYouItem>> {
     let rows = sqlx::query(
         "SELECT a.id, a.thread_id, a.card, a.created_at, a.expires_at, a.state,
@@ -262,7 +263,7 @@ pub async fn needs_you(app: &App) -> sqlx::Result<Vec<NeedsYouItem>> {
          LEFT JOIN channels c ON c.id = t.channel_id
          LEFT JOIN agents ag ON ag.id = t.agent_id
          WHERE a.space_id = $1
-           AND (a.state = 'pending' OR (a.state = 'expired' AND a.decided_at > now() - interval '1 day'))
+           AND (a.state = 'pending' OR a.decided_at > now() - interval '1 day')
          ORDER BY a.created_at",
     )
     .bind(app.space_id)
