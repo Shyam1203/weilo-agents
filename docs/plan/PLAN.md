@@ -1,12 +1,12 @@
 # Weilo 1.0: design and architecture plan
 
-**Status:** draft v9 (local first, bring your own engine), being re-checked by the judges. Nothing here is built yet.
+**Status:** draft v10 (local first, bring your own engine). Nothing here is built yet.
 
-**Reviews behind it:** eight rounds of independent review.
+**Reviews behind it:** ten rounds of independent review.
 
 - Round 1: architecture, security, UX, feasibility and consistency.
 - Round 2: the owner's review and two UI critics.
-- Rounds 3 to 8: the same four system judges (data, architecture, security, product) and two UI judges, re-scoring each version until every score reached 9.5.
+- Rounds 3 to 10: the same four system judges (data, architecture, security, product) and two UI judges, re-scoring each version until every score reached 9.5.
 
 §20 lists what each round changed.
 
@@ -344,7 +344,7 @@ You bring the engine and its sign-in. Weilo never resells model access and never
 | How you connect | How it works |
 |---|---|
 | **Weilo's built-in AI (pi)** with an API key, or a plan sign-in **only for providers whose terms allow third-party apps** (cleared by legal review per provider in weeks 1–2) | The gateway keeps the real token and swaps it into each request, as the app does today. pi only ever holds a stand-in. A Claude plan runs through Claude Code, Anthropic's own client; pi with Claude uses an API key unless review clears more. |
-| **Claude Code or Codex** with your own sign-in | **A Weilo-managed config folder** (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`). Only the sign-in is copied into it; Weilo keeps it fresh and writes refreshes back. Your own settings, hooks and MCP servers are **never loaded** (`--strict-mcp-config`; Weilo's MCP only). Commands the engine runs (shell, scripts, tests) run in a **child sandbox that can't read the sign-in**. The proxy blocks any request carrying the token to a host other than the provider's. The session is labelled "Uses your Claude sign-in". |
+| **Claude Code or Codex** with your own sign-in | **A Weilo-managed config folder** (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`). You sign in once **inside that folder** (Weilo opens the engine's own login), so Weilo has its own sign-in and never copies or refreshes yours. If the provider allows only one sign-in, Weilo reads your current token at session start and never refreshes it. Your own settings, hooks and MCP servers are **never loaded** (`--strict-mcp-config`; Weilo's MCP only), and neither are a repo's project settings (`--setting-sources` limited to Weilo's). Commands the engine runs (shell, scripts, tests) run in a **child sandbox that can't read the sign-in**. The proxy blocks any request carrying the token to a host other than the provider's. The session is labelled "Uses your Claude sign-in". |
 | Any engine with an API key | Stand-in plus gateway swap, as for pi |
 | Local models (Ollama, LM Studio) | Through the gateway; no secret |
 
@@ -496,7 +496,9 @@ Retries:
 - Backups are **encrypted** (age) to a key in the OS keychain plus your recovery code.
 - **Signed and ordered.**
   - Each backup is signed by home's key, carries an increasing number, and records the previous backup's hash.
-  - A restore checks the signature against a paired device or the recovery code, and warns if the backup isn't the newest one known.
+  - A restore checks the signature against a paired device or the recovery code, and warns if the backup isn't the newest one known. The relay stores the latest backup number next to `home_epoch`.
+  - WAL segments are listed in the signed manifest chain too, so no single segment can be swapped or rolled back.
+  - A restore verified with the recovery code alone alerts every paired device, as a recovery-code device add does.
 - **The recovery code** is 128-bit random (never chosen by you). The key wrapped to it uses a memory-hard KDF (Argon2id).
 - **Safe on synced folders and USB drives.**
   - Each backup is written under a temporary name, then renamed; its manifest of hashes is written last.
@@ -961,7 +963,7 @@ Weight 500 means interactive; 600 means a heading. Avatar letters are 12/16 at 6
 | 6 | **Your own proxy**, sticky per site. Bring your own only. | *Grow* | Off; opt-in |
 | 7 | **Hand-off to you** for a CAPTCHA, 2FA or press-and-hold. No solver services. | 1 | On |
 | 8 | **Human-like input.** | *Grow* | Off; opt-in per site |
-| 9 | **Web Bot Auth** (RFC 9421) and Cloudflare signed agents, and **legal review of plan sign-ins per provider** (§6.4). | *Grow* | On where accepted |
+| 9 | **Web Bot Auth** (RFC 9421) and Cloudflare signed agents | *Grow* | On where accepted |
 
 **Signed-in profiles.**
 
@@ -1072,7 +1074,7 @@ What changes:
 
 | Weeks | Ships |
 |---|---|
-| 1–2 | Monorepo, `proto/`, tokens and component library, echo and replay engines, CI. **Embedded Postgres gate** (macOS, Linux). Browser measurement. **Owner approves the UI mock** (first run, desktop, phone, call bar, Needs you); weeks 7–10 build only what is approved. **Start reviews:** Google OAuth verification and the CASA Tier 2 assessment Gmail's restricted scopes require (8–16 weeks, paid), Meta, TikTok, LinkedIn, Cloudflare signed agents. |
+| 1–2 | Monorepo, `proto/`, tokens and component library, echo and replay engines, CI. **Embedded Postgres gate** (macOS, Linux). Browser measurement. **Owner approves the UI mock** (first run, desktop, phone, call bar, Needs you); weeks 7–10 build only what is approved. **Start reviews:** Google OAuth verification and the CASA Tier 2 assessment Gmail's restricted scopes require (8–16 weeks, paid), Meta, TikTok, LinkedIn, Cloudflare signed agents, **legal review of plan sign-ins per provider** (§6.4). |
 | 3–6 | `weilo-host`: Postgres, events, projector, jobs and effects, secrets in the keychain, pairing, **the relay with E2E, TURN and health**, **the per-home subdomain and its certificate (§4)**, one WebSocket, the gateway. Engines: **pi (default)**, generic ACP, Claude Code, Codex, each with your own sign-in. Sessions with worktrees; Changes and Terminal. MCP hub. **Week 6 checkpoint** (below). |
 | 7–10 | Agents, memory (search), routines, Needs you, cards and MCP Apps, the interview that makes channels, rule-based filing. New layout, the customizable sidebar, ⌘K. **Gmail, Google Calendar, web.** Browser layers 2 and 7. Taint, the effects ledger, the failure table. |
 | 11–13 | **Talk v1:** on-device speech (strict mode) plus an optional realtime mouth with your own key; call bar, captions, tap approvals, latency gate. PWA with passkeys and push. First run. |
