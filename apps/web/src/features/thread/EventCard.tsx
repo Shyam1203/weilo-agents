@@ -58,8 +58,14 @@ export function EventCard({ card, decided, threadId, detailsLabel = "Show detail
     setConfirming(null);
   };
 
+  // Closed because the session or agent was stopped (by the host, or here before it says so).
+  const stoppedHere = useApp((s) => !!card.approval_id && !!s.stoppedCards[card.approval_id]);
   const outcome = decided
-    ? { text: outcomeWords(decided.decision, card.kind), at: decided.at, yes: decided.decision.kind !== "deny" }
+    ? decided.via === "stopped" || decided.via === "interrupted"
+      ? { text: "Stopped", at: decided.at, yes: false }
+      : { text: outcomeWords(decided.decision, card.kind), at: decided.at, yes: decided.decision.kind !== "deny" }
+    : stoppedHere
+      ? { text: "Stopped", at: null, yes: false }
     : itemState === "allowed"
       ? { text: outcomeWords({ kind: "allow" }, card.kind), at: null, yes: true }
       : itemState === "denied"

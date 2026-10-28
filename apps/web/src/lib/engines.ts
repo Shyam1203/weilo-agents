@@ -81,3 +81,45 @@ export function needKind(needs: EngineNeed | null | undefined): ProblemKind | nu
       return null;
   }
 }
+
+/** For comparing lines: no backticks, case, extra spaces or end punctuation. */
+function norm(s: string): string {
+  return s.replace(/`/g, "").replace(/\s+/g, " ").trim().replace(/[.!?]+$/, "").toLowerCase();
+}
+
+/** True when `message` already says `line` (so the line isn't shown twice). */
+export function alreadySays(message: string | null | undefined, line: string | null | undefined): boolean {
+  if (!message || !line) return false;
+  const l = norm(line);
+  return l.length > 0 && norm(message).includes(l);
+}
+
+/**
+ * The ways an engine can sign in, as one sentence: "You can sign in with ChatGPT or an API key."
+ * Null when it named none.
+ */
+export function signInWays(methods: Array<{ name: string }>): string | null {
+  const ways = methods
+    .map((m) =>
+      m.name
+        .trim()
+        .replace(/^(sign|log) ?in (with|using) /i, "")
+        .replace(/^use /i, "")
+        .replace(/[.]+$/, ""),
+    )
+    .filter(Boolean)
+    .map((w) => (/^(A|An|The|Your) /.test(w) ? w[0]!.toLowerCase() + w.slice(1) : w));
+  const unique = [...new Set(ways)];
+  if (unique.length === 0) return null;
+  const list = unique.length === 1 ? unique[0]! : `${unique.slice(0, -1).join(", ")} or ${unique[unique.length - 1]}`;
+  return `You can sign in with ${list}.`;
+}
+
+/**
+ * One plain line for an AI in a list. Ones that can't be used yet say what to do instead
+ * of what's wrong ("Get Node.js from nodejs.org, then check again.").
+ */
+export function engineLine(e: EngineInfo): string {
+  if (!canPick(e) && e.how?.trim()) return e.how.trim();
+  return statusLine(e);
+}

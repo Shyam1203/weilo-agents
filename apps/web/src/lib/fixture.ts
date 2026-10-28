@@ -325,7 +325,7 @@ export class FixtureHost implements HostApi {
     this.later(() => {
       this.listener.status?.("online");
       this.listener.welcome?.({ hostName: "Your MacBook", deviceId: "fixture" });
-      if (this.down) this.listener.health?.(false, "Your Weilo computer is restarting its data.");
+      if (this.down) this.listener.health?.(false, "Your Weilo computer is restarting its data. (a few seconds)");
     }, 0);
   }
 

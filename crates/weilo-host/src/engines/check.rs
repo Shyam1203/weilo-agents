@@ -29,6 +29,15 @@ pub fn explain(m: &Manifest, f: &Failure) -> Explained {
             action: "Install",
         };
     }
+    if f.text.contains(super::INSTALL_TIMED_OUT) {
+        return Explained {
+            needs: EngineNeed::Error,
+            message: format!(
+                "Downloading {title} took too long. Check your internet connection, then try again."
+            ),
+            action: "Try again",
+        };
+    }
     if f.missing_program {
         let how = m.install.as_ref().and_then(|i| i.how.clone());
         return Explained {
@@ -183,6 +192,16 @@ mod tests {
             ..Failure::default()
         };
         assert_eq!(explain(&manifest("pi"), &f).action, "Add a key");
+    }
+
+    #[test]
+    fn a_slow_download_says_so() {
+        let e = explain(
+            &manifest("pi"),
+            &Failure::other(super::super::INSTALL_TIMED_OUT),
+        );
+        assert_eq!(e.action, "Try again");
+        assert!(e.message.starts_with("Downloading Weilo's built-in AI took too long."));
     }
 
     #[test]

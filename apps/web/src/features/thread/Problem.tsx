@@ -2,6 +2,7 @@ import { useState } from "react";
 import { retryLast } from "../../lib/app";
 import { problemKind } from "../../lib/engines";
 import { engineOfThread, useApp } from "../../lib/store";
+import { TextWithCode } from "../../ui/bits";
 import { Button } from "../../ui/Button";
 import { AlertIcon } from "../../ui/glyphs";
 import { EngineHelpDialog } from "../engines/EngineHelpDialog";
@@ -46,7 +47,9 @@ export function Problem({
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md bg-surface-muted px-3 py-2 text-body-sm text-text-secondary" role="note">
       <AlertIcon className="shrink-0" />
-      <span className="min-w-0 flex-1">{message}</span>
+      <span className="min-w-0 flex-1">
+        <TextWithCode text={message} />
+      </span>
       {shown && (
         <Button size="sm" onClick={() => void onClick()} disabled={busy || (kind === "retry" && paused)}>
           {action}

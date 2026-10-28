@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { checkEngine, showNotice } from "../../lib/app";
+import { alreadySays, signInWays } from "../../lib/engines";
 import { engineTitle } from "../../lib/format";
 import { useApp } from "../../lib/store";
 import type { EngineCheck } from "../../proto/EngineCheck";
@@ -16,7 +17,8 @@ export function helpText(kind: "sign_in" | "install", title: string, how: string
   return {
     title: kind === "sign_in" ? `Sign in to ${title}` : `Install ${title}`,
     line,
-    methods: kind === "sign_in" ? (check?.auth_methods ?? []) : [],
+    /** "You can sign in with ChatGPT or an API key." */
+    ways: kind === "sign_in" ? signInWays(check?.auth_methods ?? []) : null,
   };
 }
 
@@ -70,22 +72,12 @@ export function EngineHelpDialog({
         }
       }}
     >
-      <p className="m-0 text-body-sm text-text">
-        <TextWithCode text={text.line} />
-      </p>
-      {text.methods.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <span className="text-caption font-medium text-text-secondary">Ways to sign in</span>
-          <ul className="m-0 flex list-none flex-col gap-1 p-0 text-body-sm">
-            {text.methods.map((m) => (
-              <li key={m.id} className="flex flex-col">
-                <span className="font-medium">{m.name}</span>
-                {m.description && <span className="text-caption text-text-secondary">{m.description}</span>}
-              </li>
-            ))}
-          </ul>
-        </div>
+      {!alreadySays(result, text.line) && (
+        <p className="m-0 text-body-sm text-text">
+          <TextWithCode text={text.line} />
+        </p>
       )}
+      {text.ways && <p className="m-0 text-body-sm text-text-secondary">{text.ways}</p>}
       <p className="m-0 text-caption text-text-secondary">When you're done, check again here.</p>
     </Dialog>
   );

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { create, showError, stop } from "../../lib/app";
 import { shortName, slugText } from "../../lib/format";
 import { navigate, paths, threadPath } from "../../lib/router";
@@ -11,7 +11,7 @@ import { EmptyState, StatusPill, TopBar } from "../../ui/bits";
 import { PlusIcon } from "../../ui/glyphs";
 import { IconButton } from "../../ui/IconButton";
 import { Link } from "../../ui/Link";
-import { MenuItem, Popover } from "../../ui/Popover";
+import { Menu, MenuItem } from "../../ui/Menu";
 import { Tabs } from "../../ui/Tabs";
 import { PanelToggle, ThreadScreen } from "./ThreadScreen";
 import { BackButton } from "../mobile/TabBar";
@@ -105,6 +105,8 @@ function ChannelHeader({
 }) {
   const phone = useVariant() === "phone";
   const [menu, setMenu] = useState(false);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const closeMenu = useCallback(() => setMenu(false), []);
   const tabs = [
     { id: OVERVIEW, label: "Overview" },
     ...threads.map((t) => {
@@ -150,6 +152,7 @@ function ChannelHeader({
         {!phone && tabList}
         <div className="relative shrink-0">
           <IconButton
+            ref={menuButton}
             label="New chat"
             size={28}
             aria-haspopup="menu"
@@ -158,14 +161,14 @@ function ChannelHeader({
           >
             <PlusIcon />
           </IconButton>
-          <Popover open={menu} onClose={() => setMenu(false)} label="New chat" role="menu" className={phone ? "top-9 right-0 w-56" : "top-9 left-0 w-56"}>
+          <Menu open={menu} onClose={closeMenu} anchor={menuButton} label="New chat" align={phone ? "end" : "start"} className="w-56">
             {agents.map((a) => (
               <MenuItem key={a.id} onSelect={() => void newThread(a)}>
                 <Avatar name={a.name} color={a.color} size={20} />
                 New chat with {shortName(a.name)}
               </MenuItem>
             ))}
-          </Popover>
+          </Menu>
         </div>
       </div>
       {members.length > 0 && !phone && (

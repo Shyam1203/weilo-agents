@@ -51,5 +51,26 @@ export const useVariant = () => useContext(VariantContext);
 
 /** Asks the open message box to take focus (after Edit or Ask Ava). */
 export function focusComposer(): void {
+  if (typeof window === "undefined") return;
   window.dispatchEvent(new CustomEvent("weilo:focus-composer"));
+}
+
+let composerFocusWanted = false;
+
+/** Like focusComposer, for a page that is about to open: its message box takes focus when it shows. */
+export function focusComposerSoon(): void {
+  composerFocusWanted = true;
+  // A page that kept its message box: no new box takes the request, so ask the open one.
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      if (takeComposerFocus()) focusComposer();
+    }),
+  );
+}
+
+/** True once after focusComposerSoon (the message box calls this when it mounts). */
+export function takeComposerFocus(): boolean {
+  const wanted = composerFocusWanted;
+  composerFocusWanted = false;
+  return wanted;
 }

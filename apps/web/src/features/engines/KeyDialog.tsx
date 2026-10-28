@@ -117,7 +117,7 @@ export function KeyFields({ form, autoFocus }: { form: KeyForm; autoFocus?: bool
         <input
           id={id}
           type="password"
-          className={`${inputClass} font-mono`}
+          className={`${inputClass} font-mono placeholder:font-sans`}
           value={form.key}
           onChange={(e) => form.setKey(e.target.value)}
           placeholder={chosen.has_key ? "Paste a new key to replace it" : "Paste your key"}

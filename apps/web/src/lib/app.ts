@@ -24,6 +24,7 @@ import {
   setNeedsYou,
   setPrefs,
   setStreaming,
+  stopLocally,
   store,
   threadState,
   undecideLocally,
@@ -81,20 +82,23 @@ export function call(c: Call): Promise<CallValue> {
   return need().call(c);
 }
 
+/** Something you asked for didn't work: said as an alert. */
 export function showError(e: unknown): void {
   const message = e instanceof Error ? e.message : "Something went wrong. Try again.";
-  store.set((s) => ({ ...s, error: message }));
+  store.set((s) => ({ ...s, error: message, notice: null }));
   if (errorTimer) clearTimeout(errorTimer);
   errorTimer = setTimeout(() => store.set((s) => ({ ...s, error: null })), 6000);
 }
 
-/** A calm one-line note that something worked (same place as errors). */
+/** A calm one-line note that something worked: said politely, in the same place. */
 export function showNotice(message: string): void {
-  showError(new Error(message));
+  store.set((s) => ({ ...s, notice: message, error: null }));
+  if (errorTimer) clearTimeout(errorTimer);
+  errorTimer = setTimeout(() => store.set((s) => ({ ...s, notice: null })), 6000);
 }
 
 export function clearError(): void {
-  store.set((s) => ({ ...s, error: null }));
+  store.set((s) => ({ ...s, error: null, notice: null }));
 }
 
 // -- Refreshing what the sidebar and Needs you show ---------------------------
@@ -216,6 +220,17 @@ export function setComposerDraft(threadId: string, text: string): void {
 export async function stop(threadId: string): Promise<void> {
   try {
     await call({ method: "stop", params: { thread_id: threadId } });
+    store.set((s) => stopLocally(s, threadId));
+  } catch (e) {
+    showError(e);
+  }
+}
+
+/** Stops an agent's work in its own chat. */
+export async function stopAgent(agent: { id: string; main_thread_id: string }): Promise<void> {
+  try {
+    await call({ method: "stop_agent", params: { agent_id: agent.id } });
+    store.set((s) => stopLocally(s, agent.main_thread_id));
   } catch (e) {
     showError(e);
   }

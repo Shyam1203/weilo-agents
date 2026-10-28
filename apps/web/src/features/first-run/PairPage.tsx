@@ -2,8 +2,9 @@ import { useState, type FormEvent } from "react";
 import { Button } from "../../ui/Button";
 import { ErrorLine } from "../../ui/bits";
 import { inputClass } from "../../ui/Dialog";
+import { saveToken } from "../../lib/host";
 
-/** POST /api/pair; the host sets a cookie and we start again at home. */
+/** POST /api/pair; the token in the answer is kept in the app's storage, then we start again at home. */
 export async function pair(code: string): Promise<string | null> {
   try {
     const res = await fetch("/api/pair", {
@@ -12,7 +13,13 @@ export async function pair(code: string): Promise<string | null> {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ code: code.trim() }),
     });
-    if (res.ok) return null;
+    if (res.ok) {
+      const body: unknown = await res.json().catch(() => null);
+      const token = body && typeof body === "object" ? (body as { token?: unknown }).token : null;
+      if (typeof token !== "string" || !token) return "Your Weilo computer couldn't pair this device. Try again.";
+      saveToken(token);
+      return null;
+    }
     if (res.status === 400 || res.status === 401 || res.status === 403 || res.status === 404) {
       return "That code didn't work. Check it and try again.";
     }

@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { archiveAgent, changeAgentEngine, create } from "../../lib/app";
 import { canPick, preferredEngine, statusLine } from "../../lib/engines";
-import { engineTitle, projectName, shortName, slugPreview } from "../../lib/format";
+import { engineTitle, lowerYour, projectName, shortName, slugPreview } from "../../lib/format";
 import { navigate, paths, useRoute } from "../../lib/router";
 import { useApp } from "../../lib/store";
 import type { AgentSummary } from "../../proto/AgentSummary";
@@ -136,6 +136,7 @@ export function NewSessionDialog({ open, onClose }: Props) {
   const chosen = project || projects[0] || OTHER;
   const path = chosen === OTHER ? folder.trim() : chosen;
   const ai = engines?.find((e) => e.id === engine);
+  const folderHelp = useId();
   return (
     <Dialog
       open={open}
@@ -172,20 +173,26 @@ export function NewSessionDialog({ open, onClose }: Props) {
           />
         )}
         {chosen === OTHER && (
-          <input
-            className={`${inputClass} font-mono`}
-            value={folder}
-            onChange={(e) => setFolder(e.target.value)}
-            placeholder="~/code/shop"
-            aria-label="Folder"
-            spellCheck={false}
-            autoCapitalize="off"
-          />
+          <>
+            <input
+              className={inputClass}
+              value={folder}
+              onChange={(e) => setFolder(e.target.value)}
+              placeholder="~/Documents/shop"
+              aria-label="Folder"
+              aria-describedby={folderHelp}
+              spellCheck={false}
+              autoCapitalize="off"
+            />
+            <span id={folderHelp} className="text-caption text-text-secondary">
+              The folder's path, like ~/Documents/shop
+            </span>
+          </>
         )}
       </div>
       <div className="flex flex-col gap-1.5 text-caption text-text-secondary">
         <span>
-          Runs on {hostName ?? "this computer"}
+          Runs on {lowerYour(hostName) ?? "this computer"}
           {ai ? ` with ${engineTitle(ai.id, [ai])}` : ""}
           {ai && !ai.ready && !changeAi ? `. ${statusLine(ai)}` : ""}
           {engines && engines.filter(canPick).length > 1 && !changeAi && (
@@ -258,14 +265,14 @@ export function ChangeAiDialog({ open, onClose, agent }: Props & { agent: AgentS
         onClose();
       }}
       title={`Change ${name}'s AI`}
-      description={`${name}'s next reply starts a new conversation.`}
+      description={`${name} will start fresh and won't remember this chat.`}
       submitLabel="Change AI"
       busy={busy}
       error={error}
       canSubmit={!!engine && engine !== agent.engine}
       onSubmit={() => run(() => changeAgentEngine(agent.id, engine))}
     >
-      <EnginePicker label="AI it uses" engines={engines} value={engine} onChange={setEngine} />
+      <EnginePicker label="AI it uses" engines={engines} value={engine} onChange={setEngine} autoFocus={open} />
     </Dialog>
   );
 }

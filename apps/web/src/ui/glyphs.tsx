@@ -112,3 +112,5 @@ export const FolderIcon = glyph(<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 
 export const FileIcon = glyph(<path d="M6 3h8l4 4v14H6zM14 3v4h4" />);
 export const TodoIcon = glyph(<path d="M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2" />);
 export const TerminalIcon = glyph(<path d="M4 6l5 6-5 6M12 18h8" />);
+/** A step that ended before it finished: a circle with a bar, quiet. */
+export const StopIcon = glyph(<path d="M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M8 12h8" />);

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, type FormEvent, type ReactNode } from "react";
 import { Button } from "./Button";
-import { ErrorLine } from "./bits";
+import { ErrorLine, TextWithCode } from "./bits";
 
 export interface DialogProps {
   open: boolean;
@@ -36,14 +36,28 @@ export function Dialog({
   cancelLabel = "Cancel",
 }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
   const titleId = useId();
   const descId = useId();
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
-    if (open && !d.open) d.showModal?.();
-    if (!open && d.open) d.close();
+    if (open && !d.open) {
+      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      d.showModal?.();
+    }
+    if (!open && d.open) {
+      d.close();
+      returnFocus(opener.current);
+    }
   }, [open]);
+  // Closed by going away (its row was removed): focus still goes somewhere sensible.
+  useEffect(
+    () => () => {
+      if (ref.current?.open) returnFocus(opener.current);
+    },
+    [],
+  );
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (!busy && canSubmit) void onSubmit();
@@ -61,7 +75,7 @@ export function Dialog({
       onClick={(e) => {
         if (e.target === ref.current) onClose();
       }}
-      className="m-auto w-[min(400px,calc(100vw-32px))] rounded-lg border border-border bg-surface p-0 text-text shadow-e3 backdrop:bg-text/30"
+      className="m-auto w-[min(400px,calc(100vw-32px))] rounded-lg border border-border bg-surface p-0 text-text shadow-e3 backdrop:bg-[rgba(12,10,9,0.5)]"
     >
       {open && (
         <form onSubmit={submit} className="flex flex-col gap-4 p-4">
@@ -76,7 +90,11 @@ export function Dialog({
             )}
           </div>
           {children}
-          {error && <ErrorLine>{error}</ErrorLine>}
+          {error && (
+            <ErrorLine>
+              <TextWithCode text={error} />
+            </ErrorLine>
+          )}
           <div className="flex justify-end gap-2">
             <Button variant="tertiary" onClick={onClose}>
               {cancelLabel}
@@ -89,6 +107,22 @@ export function Dialog({
       )}
     </dialog>
   );
+}
+
+/**
+ * Puts focus back on what opened a dialog (the ⋯ button, say). When that is gone, the
+ * page's main area takes it, so keyboard users don't start over at the top.
+ */
+export function returnFocus(opener: HTMLElement | null): void {
+  if (typeof document === "undefined") return;
+  if (opener && opener.isConnected && opener !== document.body && !opener.closest("[inert], [hidden]")) {
+    opener.focus({ preventScroll: true });
+    if (document.activeElement === opener) return;
+  }
+  const main = document.querySelector<HTMLElement>("main");
+  if (!main) return;
+  if (!main.hasAttribute("tabindex")) main.setAttribute("tabindex", "-1");
+  main.focus({ preventScroll: true });
 }
 
 /** A labelled input row for dialogs. */

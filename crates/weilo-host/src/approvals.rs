@@ -146,6 +146,9 @@ pub async fn decide(
     audit::append(&mut tx, app.space_id, entry).await?;
     tx.commit().await?;
     app.committed(thread_id, vec![ev]).await;
+    if let Decision::AllowAlways { .. } = &decision {
+        app.hub.changed(weilo_proto::Changed::AllowRules);
+    }
     app.runners.send_if_running(
         thread_id,
         Cmd::Decided {

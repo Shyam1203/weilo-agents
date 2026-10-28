@@ -45,6 +45,11 @@ pub enum EngineMsg {
         result: Result<StopReason, Failure>,
     },
     Closed,
+    /// An engine download the runner started has finished. Not tied to a connection.
+    Installed {
+        id: u64,
+        result: Result<(), String>,
+    },
 }
 
 /// A message and the connection generation it came from.

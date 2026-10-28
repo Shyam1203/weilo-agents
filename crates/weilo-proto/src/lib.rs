@@ -101,6 +101,10 @@ pub enum Changed {
     NeedsYou,
     Engines,
     Prefs,
+    /// Paired devices (`list_devices`).
+    Devices,
+    /// Always-allow rules (`list_allow_rules`).
+    AllowRules,
 }
 
 // ---------------------------------------------------------------------------
@@ -202,6 +206,19 @@ pub enum Call {
         engine: String,
         keep_awake: bool,
     },
+    /// Devices paired with this computer, newest first.
+    ListDevices,
+    /// Unpairs a device. Its open connections close at once (4401). Refused for the
+    /// last paired device; the app confirms before removing the device it runs on.
+    RevokeDevice {
+        device_id: Id,
+    },
+    /// Every "Always allow" rule still in force.
+    ListAllowRules,
+    /// Ends an "Always allow" rule: the agent asks again next time.
+    RevokeAllowRule {
+        rule_id: Id,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -251,6 +268,32 @@ pub enum CallValue {
     EngineCheck(EngineCheck),
     /// One plain line saying what happened.
     Message(String),
+    Devices(Vec<DeviceInfo>),
+    AllowRules(Vec<AllowRuleInfo>),
+}
+
+/// A paired device, for Settings.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DeviceInfo {
+    pub id: Id,
+    /// The name it gave when it paired ("Browser").
+    pub name: String,
+    pub paired_at: String,
+    pub last_seen_at: Option<String>,
+    /// The device making this call.
+    pub this_device: bool,
+}
+
+/// An "Always allow" rule, for Settings.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct AllowRuleInfo {
+    pub id: Id,
+    pub agent_id: Option<Id>,
+    /// One plain line: "Ava may always run `npm test` in shop".
+    pub description: String,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

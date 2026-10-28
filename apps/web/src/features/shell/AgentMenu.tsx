@@ -1,11 +1,11 @@
-import { useState } from "react";
-import { call, showError } from "../../lib/app";
+import { useCallback, useRef, useState } from "react";
+import { stopAgent } from "../../lib/app";
 import { shortName } from "../../lib/format";
 import { useApp } from "../../lib/store";
 import type { AgentSummary } from "../../proto/AgentSummary";
 import { MoreIcon } from "../../ui/glyphs";
 import { IconButton } from "../../ui/IconButton";
-import { MenuItem, Popover } from "../../ui/Popover";
+import { Menu, MenuItem } from "../../ui/Menu";
 import { ChangeAiDialog, RemoveAgentDialog } from "./dialogs";
 
 /**
@@ -27,7 +27,7 @@ export function useAgentActions(agent: AgentSummary | undefined, close: () => vo
         <MenuItem
           onSelect={() => {
             close();
-            call({ method: "stop_agent", params: { agent_id: agent.id } }).catch(showError);
+            void stopAgent(agent);
           }}
         >
           Stop {name}
@@ -49,10 +49,13 @@ export function useAgentActions(agent: AgentSummary | undefined, close: () => vo
 /** The ⋯ in an agent's own header. */
 export function AgentMenuButton({ agent, phone }: { agent: AgentSummary; phone?: boolean }) {
   const [open, setOpen] = useState(false);
-  const { items, dialogs } = useAgentActions(agent, () => setOpen(false));
+  const trigger = useRef<HTMLButtonElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  const { items, dialogs } = useAgentActions(agent, close);
   return (
     <div className="relative">
       <IconButton
+        ref={trigger}
         label={`More for ${shortName(agent.name)}`}
         size={phone ? 44 : 32}
         aria-haspopup="menu"
@@ -61,9 +64,9 @@ export function AgentMenuButton({ agent, phone }: { agent: AgentSummary; phone?:
       >
         <MoreIcon />
       </IconButton>
-      <Popover open={open} onClose={() => setOpen(false)} label={`${shortName(agent.name)} actions`} role="menu" className="top-10 right-0 w-48">
+      <Menu open={open} onClose={close} anchor={trigger} label={`${shortName(agent.name)} actions`} className="w-48">
         {items}
-      </Popover>
+      </Menu>
       {dialogs}
     </div>
   );

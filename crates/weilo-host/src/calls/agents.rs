@@ -119,7 +119,10 @@ pub async fn update(
     let mut tx = app.db.begin().await?;
     let done = sqlx::query(
         "UPDATE agents SET name = COALESCE($3, name), model = COALESCE($4, model),
-                instructions = COALESCE($5, instructions), engine = COALESCE($6, engine)
+                instructions = COALESCE($5, instructions), engine = COALESCE($6, engine),
+                instructions_rev = instructions_rev
+                    + CASE WHEN $5::text IS NOT NULL AND $5 IS DISTINCT FROM instructions
+                           THEN 1 ELSE 0 END
          WHERE id = $1 AND space_id = $2 AND stopped_at IS NULL",
     )
     .bind(agent_id)
@@ -133,9 +136,10 @@ pub async fn update(
     if done.rows_affected() == 0 {
         return Err(CallError::not_found("That agent is gone."));
     }
-    // A new engine, model or instructions: the engine's next conversation starts fresh
-    // (a new engine can't pick up another's conversation).
-    let restart = engine.is_some() || model.is_some() || instructions.is_some();
+    // A new engine or model: the next message starts a new engine process (a new engine
+    // can't pick up another's conversation). New instructions need no restart: the
+    // thread's next message carries them (see `instructions_rev`).
+    let restart = engine.is_some() || model.is_some();
     let agent_threads: Vec<Uuid> = if restart {
         let reset = if engine.is_some() {
             "UPDATE threads SET engine_session_id = NULL

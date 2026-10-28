@@ -154,6 +154,14 @@ fn add(out: &mut BTreeMap<String, Manifest>, bytes: &[u8], from: &str) {
     }
 }
 
+/// A file shipped beside a built-in manifest (`engines/<engine>/<file>`), like the
+/// engine's `package-lock.json`.
+pub fn built_in_file(engine: &str, file: &str) -> Option<&'static [u8]> {
+    BUILT_IN
+        .get_file(Path::new(engine).join(file))
+        .map(|f| f.contents())
+}
+
 /// Values for `{self}`, `{install}`, `{engine_home}`, `{model}` and `{PATH}`, and the
 /// sign-in variables (passed-through and saved keys) for the engine.
 #[derive(Debug, Clone)]

@@ -3,8 +3,9 @@
 //! The device proves itself in its first frame (`hello` with its token), not with a
 //! cookie: cookies on 127.0.0.1 are shared by every port, the token in the app's own
 //! storage is not. A bad token closes the socket with 4401 (unpaired). A hello with no
-//! token closes it with 4001: the app may still hold a fresh pairing to trade for its
-//! token (`POST /api/token`), so it checks before it calls itself unpaired.
+//! token closes it with 4001: the app may still hold an old device cookie to trade for a
+//! token (`POST /api/token`), so it checks before it calls itself unpaired. A device
+//! unpaired from Settings has its sockets closed with 4401 at once.
 //!
 //! The socket subscribes to the broadcast when it opens, before any backlog is read,
 //! and sends each thread's events strictly in `seq` order: a live event that skips
@@ -294,6 +295,10 @@ impl Session {
                 ok: *ok,
                 message: message.clone(),
             }),
+            HubMsg::DeviceRevoked(id) if self.device_id == Some(*id) => {
+                Err(Close(CLOSE_UNPAIRED, "This device was removed."))
+            }
+            HubMsg::DeviceRevoked(_) => Ok(()),
         }
     }
 }

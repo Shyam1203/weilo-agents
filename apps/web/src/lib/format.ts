@@ -110,3 +110,9 @@ export function listWords(words: string[], locale?: string): string {
     return words.join(", ");
   }
 }
+
+/** A computer's name for the middle of a sentence: "Your MacBook" → "your MacBook". */
+export function lowerYour(name: string | null | undefined): string | null {
+  if (!name) return null;
+  return name.replace(/^Your\b/, "your");
+}

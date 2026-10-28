@@ -48,18 +48,25 @@ function worst(states: WorkState[]): WorkState {
   return "idle";
 }
 
-export function buildRows(snap: Snapshot): Record<SectionKey, SidebarRow[]> {
-  const agents: SidebarRow[] = snap.agents.map((a) => ({
+/**
+ * `problems` holds a short line for chats whose last reply ended in a problem nobody has
+ * fixed yet ("Needs an API key"); an idle agent or session shows it instead of its live line.
+ */
+export function buildRows(snap: Snapshot, problems: Record<string, string> = {}): Record<SectionKey, SidebarRow[]> {
+  const agents: SidebarRow[] = snap.agents.map((a) => {
+    const problem = a.state === "idle" ? problems[a.main_thread_id] : undefined;
+    return {
     id: a.id,
     kind: "agent",
     name: a.name,
-    sub: a.live_line || null,
-    tone: a.state === "idle" ? "quiet" : toneOf(a.state),
+    sub: problem ?? (a.live_line || null),
+    tone: problem ? "warn" : a.state === "idle" ? "quiet" : toneOf(a.state),
     href: paths.agent(a.id),
     state: a.state,
     unread: false,
     agent: a,
-  }));
+    };
+  });
   const channelRow = (c: Snapshot["channels"][number]): SidebarRow => ({
     id: c.id,
     kind: "channel",
@@ -77,13 +84,14 @@ export function buildRows(snap: Snapshot): Record<SectionKey, SidebarRow[]> {
     .filter((t) => t.kind === "session")
     .map((t) => {
       const by = startedByName(t.started_by, snap.agents);
-      const state = t.state === "idle" ? "" : ` · ${t.state === "needs_you" ? "needs you" : "working"}`;
+      const problem = t.state === "idle" ? problems[t.id] : undefined;
+      const state = problem ? ` · ${problem.toLowerCase()}` : t.state === "idle" ? "" : ` · ${t.state === "needs_you" ? "needs you" : "working"}`;
       return {
         id: t.id,
         kind: "session",
         name: t.title,
         sub: `Started by ${by}${state}`,
-        tone: toneOf(t.state),
+        tone: problem ? "warn" : toneOf(t.state),
         href: paths.session(t.id),
         state: t.state,
         unread: false,
@@ -120,8 +128,8 @@ export function matches(row: SidebarRow, query: string): boolean {
  * shows (with an empty line and a Start button until there is one), so the first session
  * can be started from the sidebar.
  */
-export function buildSections(snap: Snapshot, query = ""): SidebarSection[] {
-  const rows = buildRows(snap);
+export function buildSections(snap: Snapshot, query = "", problems: Record<string, string> = {}): SidebarSection[] {
+  const rows = buildRows(snap, problems);
   return SECTION_KEYS.filter((k) => snap.prefs[k].shown)
     .filter((k) => (k === "archived" ? rows[k].length > 0 : true))
     .map((key) => ({

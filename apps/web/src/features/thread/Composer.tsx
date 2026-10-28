@@ -5,7 +5,8 @@ import { useApp, type Queued } from "../../lib/store";
 import { Button } from "../../ui/Button";
 import { ChevronDownIcon, CloseIcon, SendIcon } from "../../ui/glyphs";
 import { IconButton } from "../../ui/IconButton";
-import { MenuItem, Popover } from "../../ui/Popover";
+import { Menu, MenuItem } from "../../ui/Menu";
+import { takeComposerFocus } from "./useThread";
 import { useTouchOnly } from "../../lib/platform";
 
 const NO_QUEUE: Queued[] = [];
@@ -28,7 +29,9 @@ export interface ComposerProps {
 export function Composer({ threadId, placeholder, label, working, agentName, onStop, hint, phone }: ComposerProps) {
   const [text, setText] = useState("");
   const [menu, setMenu] = useState(false);
+  const closeMenu = useCallback(() => setMenu(false), []);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
   const queued = useApp((s) => s.queued[threadId] ?? NO_QUEUE);
   const touch = useTouchOnly();
   const draft = useApp((s) => s.drafts[threadId]);
@@ -50,6 +53,8 @@ export function Composer({ threadId, placeholder, label, working, agentName, onS
 
   useEffect(() => {
     const onFocus = () => ref.current?.focus();
+    // Asked for before this box was on screen (Search → Enter opens a new page).
+    if (takeComposerFocus()) onFocus();
     window.addEventListener("weilo:focus-composer", onFocus);
     return () => window.removeEventListener("weilo:focus-composer", onFocus);
   }, []);
@@ -116,37 +121,32 @@ export function Composer({ threadId, placeholder, label, working, agentName, onS
     </div>
   );
 
-  const name = agentName ?? "It";
   const workingHint = working && (
     <>
-      <span>{name} is working</span>
+      <span>{agentName ? `${agentName} is working` : "This session is working"}</span>
       <span aria-hidden="true">·</span>
       <button
         type="button"
         onClick={onStop}
         className="-mx-0.5 h-6 border-0 bg-transparent px-0.5 text-caption font-medium text-text-secondary underline underline-offset-2 max-md:h-11"
       >
-        Stop {agentName ?? ""}
+        {agentName ? `Stop ${agentName}` : "Stop"}
       </button>
-      {phone ? (
-        <>
-          <span aria-hidden="true">·</span>
-          <button
-            type="button"
-            onClick={afterJob}
-            disabled={blocked}
-            className="h-11 border-0 bg-transparent px-0.5 text-caption font-medium text-text-secondary underline underline-offset-2 disabled:no-underline disabled:opacity-60"
-          >
-            After this job
-          </button>
-        </>
-      ) : touch ? null : (
+      {!phone && !touch && (
         <>
           <span aria-hidden="true">·</span>
           <span>Enter: Tell now · Alt+Enter: After this job</span>
         </>
       )}
     </>
+  );
+  const sendMenu = (
+    <Menu open={menu} onClose={closeMenu} anchor={menuButton} label="Send options" prefer="above" className="w-56">
+      <MenuItem onSelect={afterJob} disabled={blocked}>
+        <span className="flex-1">After this job</span>
+        {!phone && !touch && <span className="text-caption text-text-tertiary">Alt+Enter</span>}
+      </MenuItem>
+    </Menu>
   );
   const hintLine = hint ?? workingHint;
 
@@ -163,6 +163,7 @@ export function Composer({ threadId, placeholder, label, working, agentName, onS
             onKeyDown={onKey}
             placeholder={placeholder}
             aria-label={label}
+            data-composer=""
             className="my-2.5 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 text-phone text-text outline-none"
           />
           <button
@@ -175,6 +176,21 @@ export function Composer({ threadId, placeholder, label, working, agentName, onS
           >
             <SendIcon size={20} />
           </button>
+          {working && (
+            <IconButton
+              ref={menuButton}
+              label="More ways to send"
+              size={44}
+              aria-haspopup="menu"
+              aria-expanded={menu}
+              disabled={paused !== null}
+              onClick={() => setMenu((v) => !v)}
+              className="rounded-full"
+            >
+              <ChevronDownIcon size={16} />
+            </IconButton>
+          )}
+          {working && sendMenu}
         </div>
         {hintLine && <div className="flex flex-wrap items-center gap-1.5 px-1 text-caption text-text-tertiary">{hintLine}</div>}
       </div>
@@ -193,6 +209,7 @@ export function Composer({ threadId, placeholder, label, working, agentName, onS
           onKeyDown={onKey}
           placeholder={placeholder}
           aria-label={label}
+          data-composer=""
           className="block w-full resize-none border-0 bg-transparent p-0 text-body text-text outline-none"
         />
         <div className="flex items-center gap-1">
@@ -210,21 +227,19 @@ export function Composer({ threadId, placeholder, label, working, agentName, onS
                 Tell now
               </Button>
               <button
+                ref={menuButton}
                 type="button"
                 aria-label="More ways to send"
                 aria-haspopup="menu"
                 aria-expanded={menu}
+                disabled={paused !== null}
+                title={paused ?? undefined}
                 onClick={() => setMenu((v) => !v)}
-                className="flex h-8 w-7 items-center justify-center rounded-r-md border-0 bg-accent p-0 text-on-accent shadow-[inset_1px_0_0_var(--on-accent-divider)] hover:bg-accent-hover"
+                className="flex h-8 w-7 items-center justify-center rounded-r-md border-0 bg-accent p-0 text-on-accent shadow-[inset_1px_0_0_var(--on-accent-divider)] hover:bg-accent-hover disabled:opacity-50 disabled:hover:bg-accent"
               >
                 <ChevronDownIcon size={12} />
               </button>
-              <Popover open={menu} onClose={() => setMenu(false)} label="Send options" role="menu" className="right-0 bottom-10 w-56">
-                <MenuItem onSelect={afterJob} disabled={blocked}>
-                  <span className="flex-1">After this job</span>
-                  <span className="text-caption text-text-tertiary">Alt+Enter</span>
-                </MenuItem>
-              </Popover>
+              {sendMenu}
             </div>
           ) : (
             <Button variant="primary" onClick={sendNow} aria-disabled={blocked} disabled={paused !== null} title={paused ?? "Enter"}>

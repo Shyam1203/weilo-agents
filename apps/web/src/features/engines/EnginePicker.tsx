@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { loadEngines } from "../../lib/app";
-import { canPick, pickOrder, statusLine } from "../../lib/engines";
+import { canPick, engineLine, pickOrder } from "../../lib/engines";
 import { cx, engineTitle } from "../../lib/format";
 import { useApp } from "../../lib/store";
 import type { EngineInfo } from "../../proto/EngineInfo";
@@ -25,13 +25,29 @@ export function EnginePicker({
   engines,
   value,
   onChange,
+  autoFocus,
 }: {
   label: string;
   engines: EngineInfo[] | null;
   value: string;
   onChange(id: string): void;
+  /** Focus the chosen AI as soon as the list shows (Change AI opens on the picker). */
+  autoFocus?: boolean;
 }) {
   const group = useRef<HTMLDivElement>(null);
+  const focused = useRef(false);
+  const ready = !!engines;
+  useEffect(() => {
+    if (!autoFocus || !ready || focused.current) return;
+    // After the dialog around it has opened and placed its own focus.
+    const raf = requestAnimationFrame(() => {
+      const el = group.current?.querySelector<HTMLElement>("[role=radio][tabindex='0']");
+      if (!el) return;
+      focused.current = true;
+      el.focus();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [autoFocus, ready, value]);
   if (!engines) return <p className="m-0 text-body-sm text-text-secondary">Looking for AI apps…</p>;
   const list = pickOrder(engines);
   const pickable = list.filter(canPick);
@@ -88,13 +104,7 @@ export function EnginePicker({
                 {engineTitle(e.id, [e])}
               </span>
               <span className="text-caption text-text-secondary">
-                <TextWithCode text={statusLine(e)} />
-                {!ok && e.how ? (
-                  <>
-                    {" "}
-                    <TextWithCode text={e.how} />
-                  </>
-                ) : null}
+                <TextWithCode text={engineLine(e)} />
               </span>
             </span>
           </button>

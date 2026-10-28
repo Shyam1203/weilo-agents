@@ -8,6 +8,7 @@ mod agents;
 mod channels;
 mod engines;
 pub mod read;
+mod settings;
 mod setup;
 mod threads;
 
@@ -87,7 +88,12 @@ async fn run_once(app: &Arc<App>, device_id: Uuid, call_id: Uuid, call: Call) ->
 fn only_reads(call: &Call) -> bool {
     matches!(
         call,
-        Call::Snapshot | Call::ListEngines | Call::NeedsYou | Call::SetupStatus
+        Call::Snapshot
+            | Call::ListEngines
+            | Call::NeedsYou
+            | Call::SetupStatus
+            | Call::ListDevices
+            | Call::ListAllowRules
     )
 }
 
@@ -276,6 +282,16 @@ async fn dispatch(app: &Arc<App>, device: Uuid, call: Call) -> Result<CallValue,
         Call::SetupStatus => V::Setup(read::setup(app).await?),
         Call::FinishSetup { engine, keep_awake } => {
             V::Setup(setup::finish(app, device, &engine, keep_awake).await?)
+        }
+        Call::ListDevices => V::Devices(settings::devices(app, device).await?),
+        Call::RevokeDevice { device_id } => {
+            settings::revoke_device(app, device, device_id).await?;
+            V::None
+        }
+        Call::ListAllowRules => V::AllowRules(settings::allow_rules(app).await?),
+        Call::RevokeAllowRule { rule_id } => {
+            settings::revoke_allow_rule(app, device, rule_id).await?;
+            V::None
         }
     })
 }

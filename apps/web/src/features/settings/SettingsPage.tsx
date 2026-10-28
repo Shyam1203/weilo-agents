@@ -25,7 +25,7 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-/** Kept small: how it looks, what the sidebar shows, and how to add a phone. */
+/** Kept small: how it looks, what the sidebar shows, the AI apps and this computer. */
 export function SettingsPage({ phone }: { phone?: boolean }) {
   const prefs = useApp((s) => s.snapshot!.prefs);
   const hostName = useApp((s) => s.hostName);
@@ -66,9 +66,7 @@ export function SettingsPage({ phone }: { phone?: boolean }) {
       </Group>
 
       <Group title="Devices">
-        <p className="m-0 text-body-sm text-text-secondary">
-          To add a phone, run <code className="rounded-sm bg-surface-muted px-1 text-text">weilo pair</code> on your Weilo computer and open the link it shows.
-        </p>
+        <p className="m-0 text-body-sm text-text-secondary">Using Weilo on your phone is coming in the next version.</p>
       </Group>
 
       <Group title="Your Weilo computer">

@@ -16,6 +16,7 @@ mod runner;
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -49,13 +50,33 @@ const PREFERRED: [&str; 4] = ["claude-code", "codex", "gemini", "pi"];
 pub struct Registry {
     manifests: BTreeMap<String, Manifest>,
     home: Home,
+    /// One download at a time per engine.
+    install_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    /// How long a download may take before it counts as failed.
+    install_timeout: Duration,
+    /// Held while the saved keys file is read, changed and written.
+    keys_lock: Mutex<()>,
 }
+
+/// Written inside an engine's install folder once its download is complete; an install
+/// folder without it is unfinished and is replaced.
+const INSTALLED_MARKER: &str = ".weilo-installed";
+
+/// The install error when a download takes too long (explained plainly).
+pub const INSTALL_TIMED_OUT: &str = "the download took too long";
 
 impl Registry {
     pub fn load(home: &Home) -> Self {
+        let secs = std::env::var("WEILO_INSTALL_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(600);
         Self {
             manifests: manifest::load_all(&home.engines()),
             home: home.clone(),
+            install_locks: Mutex::default(),
+            install_timeout: Duration::from_secs(secs),
+            keys_lock: Mutex::default(),
         }
     }
 
@@ -136,6 +157,8 @@ impl Registry {
         if key.chars().any(char::is_whitespace) || key.len() > 4096 {
             return Err("That doesn't look like a key.".into());
         }
+        // Two saves at once must not lose one another's key.
+        let _held = self.keys_lock.lock().expect("keys lock");
         let mut keys = self.saved_keys(&m.name);
         if key.is_empty() {
             keys.remove(provider);
@@ -172,8 +195,8 @@ impl Registry {
         if m.command[0] == "{self}" || m.detect.always {
             return true;
         }
-        if m.install.as_ref().is_some_and(|i| !i.npm.is_empty()) {
-            return self.npm_bin(&m.name).is_dir();
+        if is_npm(m) {
+            return self.install_dir(&m.name).join(INSTALLED_MARKER).is_file();
         }
         which(&m.command[0]).is_some()
     }
@@ -193,36 +216,78 @@ impl Registry {
         self.home.engine_install(name)
     }
 
-    fn npm_bin(&self, name: &str) -> PathBuf {
-        self.install_dir(name).join("node_modules").join(".bin")
+    /// True when the engine must be downloaded before it can start.
+    pub fn needs_download(&self, m: &Manifest) -> bool {
+        is_npm(m) && !self.is_installed(m)
     }
 
-    /// `npm install` of the manifest's exact packages, never `npx -y`. Scripts don't run.
+    fn install_lock(&self, name: &str) -> Arc<tokio::sync::Mutex<()>> {
+        self.install_locks
+            .lock()
+            .expect("install locks")
+            .entry(name.to_string())
+            .or_default()
+            .clone()
+    }
+
+    /// Downloads the manifest's exact packages with npm, never `npx -y`, and runs no
+    /// install scripts. From the lockfile shipped with the engine (`npm ci`) when there
+    /// is one. One download per engine at a time, into a fresh folder that replaces
+    /// the install folder only once npm is done; the marker is written last.
     pub async fn install(&self, m: &Manifest) -> Result<(), String> {
         let Some(pkgs) = m.install.as_ref().map(|i| &i.npm).filter(|p| !p.is_empty()) else {
             return Ok(());
         };
-        if self.npm_bin(&m.name).is_dir() {
+        let lock = self.install_lock(&m.name);
+        let _held = lock.lock().await;
+        if self.is_installed(m) {
+            // Another thread finished it while this one waited.
             return Ok(());
         }
         let npm = which("npm").ok_or(NO_NPM)?;
         let dir = self.install_dir(&m.name);
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let out = tokio::process::Command::new(npm)
-            .args(["install", "--prefix"])
-            .arg(&dir)
-            .args([
-                "--ignore-scripts",
-                "--no-audit",
-                "--no-fund",
-                "--save-exact",
-            ])
-            .args(pkgs)
+        let parent = dir.parent().ok_or("no folder for engines")?.to_path_buf();
+        std::fs::create_dir_all(&parent).map_err(|e| e.to_string())?;
+        remove_leftovers(&parent, &m.name);
+        let staging = parent.join(format!(".install-{}-{}", m.name, crate::auth::new_token()));
+        std::fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
+        let result = self.npm(&npm, m, pkgs, &staging).await;
+        let result = result.and_then(|()| put_in_place(&staging, &dir, &parent, &m.name));
+        if result.is_err() {
+            let _ = std::fs::remove_dir_all(&staging);
+        }
+        result?;
+        write_private(&dir.join(INSTALLED_MARKER), b"ok\n").map_err(|e| e.to_string())
+    }
+
+    async fn npm(
+        &self,
+        npm: &Path,
+        m: &Manifest,
+        pkgs: &[String],
+        dir: &Path,
+    ) -> Result<(), String> {
+        let (package, lockfile) = npm_files(m, pkgs);
+        std::fs::write(dir.join("package.json"), package).map_err(|e| e.to_string())?;
+        let verb = match lockfile {
+            Some(lock) => {
+                std::fs::write(dir.join("package-lock.json"), lock).map_err(|e| e.to_string())?;
+                "ci"
+            }
+            None => "install",
+        };
+        let run = tokio::process::Command::new(npm)
+            .args([verb, "--ignore-scripts", "--no-audit", "--no-fund"])
+            .current_dir(dir)
             .env_clear()
             .envs(base_env())
-            .output()
-            .await
-            .map_err(|e| e.to_string())?;
+            .stdin(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .output();
+        let out = match tokio::time::timeout(self.install_timeout, run).await {
+            Err(_) => return Err(INSTALL_TIMED_OUT.into()),
+            Ok(out) => out.map_err(|e| e.to_string())?,
+        };
         if out.status.success() {
             Ok(())
         } else {
@@ -234,6 +299,60 @@ impl Registry {
                 .to_string())
         }
     }
+}
+
+/// `package.json` for the engine's packages, and the lockfile shipped with it when that
+/// lockfile is for exactly these packages.
+fn npm_files(m: &Manifest, pkgs: &[String]) -> (Vec<u8>, Option<&'static [u8]>) {
+    let wanted: BTreeMap<String, String> = pkgs
+        .iter()
+        .filter_map(|p| {
+            let at = p.rfind('@').filter(|&i| i > 0)?;
+            Some((p[..at].to_string(), p[at + 1..].to_string()))
+        })
+        .collect();
+    let shipped = manifest::built_in_file(&m.name, "package.json")
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(b).ok())
+        .and_then(|v| serde_json::from_value::<BTreeMap<String, String>>(v["dependencies"].clone()).ok());
+    let lockfile = manifest::built_in_file(&m.name, "package-lock.json")
+        .filter(|_| shipped.as_ref() == Some(&wanted));
+    let package = serde_json::json!({
+        "name": format!("weilo-engine-{}", m.name),
+        "private": true,
+        "dependencies": wanted,
+    });
+    (package.to_string().into_bytes(), lockfile)
+}
+
+/// Removes downloads that never finished (Weilo stopped, or Stop was pressed).
+fn remove_leftovers(parent: &Path, name: &str) {
+    let prefixes = [format!(".install-{name}-"), format!(".old-{name}-")];
+    for entry in std::fs::read_dir(parent).into_iter().flatten().flatten() {
+        let file = entry.file_name();
+        let file = file.to_string_lossy();
+        if prefixes.iter().any(|p| file.starts_with(p.as_str())) {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
+/// Moves a finished download into the install folder, replacing an unfinished one but
+/// keeping a manifest the person put there.
+fn put_in_place(staging: &Path, dir: &Path, parent: &Path, name: &str) -> Result<(), String> {
+    let old = parent.join(format!(".old-{name}-{}", crate::auth::new_token()));
+    let had_old = dir.exists();
+    if had_old {
+        std::fs::rename(dir, &old).map_err(|e| e.to_string())?;
+    }
+    std::fs::rename(staging, dir).map_err(|e| e.to_string())?;
+    if had_old {
+        let manifest = old.join("weilo.json");
+        if manifest.is_file() {
+            let _ = std::fs::copy(&manifest, dir.join("weilo.json"));
+        }
+        let _ = std::fs::remove_dir_all(&old);
+    }
+    Ok(())
 }
 
 /// The install error when npm is missing (explained as "needs Node.js").
@@ -552,6 +671,46 @@ mod tests {
     fn echo_needs_nothing() {
         let dir = tempfile::tempdir().unwrap();
         assert!(readiness(&manifest("echo"), probe(dir.path(), false)).ready());
+    }
+
+    #[test]
+    fn keys_saved_at_once_are_all_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = Home::new(dir.path());
+        let reg = Arc::new(Registry::load(&home));
+        let mut m = reg.get("pi").unwrap().clone();
+        m.keys = (0..24)
+            .map(|i| manifest::KeySpec {
+                id: format!("p{i}"),
+                title: format!("P{i}"),
+                env: format!("WEILO_TEST_KEY_{i}"),
+            })
+            .collect();
+        let m = Arc::new(m);
+        let threads: Vec<_> = (0..24)
+            .map(|i| {
+                let (reg, m) = (reg.clone(), m.clone());
+                std::thread::spawn(move || reg.save_key(&m, &format!("p{i}"), "k").unwrap())
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        assert_eq!(reg.saved_keys("pi").len(), 24);
+    }
+
+    #[test]
+    fn a_shipped_lockfile_is_used_only_for_its_own_packages() {
+        for name in ["claude-code", "codex", "pi"] {
+            let m = manifest(name);
+            let pkgs = m.install.as_ref().unwrap().npm.clone();
+            let (package, lock) = npm_files(&m, &pkgs);
+            assert!(lock.is_some(), "{name} has no lockfile for its packages");
+            let package: serde_json::Value = serde_json::from_slice(&package).unwrap();
+            assert_eq!(package["dependencies"].as_object().unwrap().len(), pkgs.len());
+            let (_, lock) = npm_files(&m, &["other@1.0.0".to_string()]);
+            assert!(lock.is_none());
+        }
     }
 
     #[test]

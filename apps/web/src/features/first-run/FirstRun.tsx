@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
-import { checkEngine, closeFirstRun, finishSetup } from "../../lib/app";
-import { canPick, needKind, problemKind, statusLine } from "../../lib/engines";
+import { checkEngine, closeFirstRun, finishSetup, loadEngines } from "../../lib/app";
+import { alreadySays, canPick, engineLine, needKind, problemKind, statusLine } from "../../lib/engines";
 import { cx, engineTitle } from "../../lib/format";
 import { useApp } from "../../lib/store";
 import { useDesktop } from "../../lib/useMedia";
@@ -14,20 +14,23 @@ import { helpText } from "../engines/EngineHelpDialog";
 import { useEngineList } from "../engines/EnginePicker";
 import { KeyFields, useKeyForm } from "../engines/KeyDialog";
 
-type Step = "engine" | "awake" | "phone";
+type Step = "engine" | "awake";
 
-/** Connect your AI → keep it awake → get Ava on your phone. Two taps when an AI app is found. */
+/**
+ * Connect your AI → keep it awake. Two taps when an AI app is found. (Getting Ava on a phone
+ * comes with phone access in the next version.)
+ */
 export function FirstRun() {
   const setup = useApp((s) => s.snapshot!.setup);
-  const [step, setStep] = useState<Step>(setup.done ? "phone" : "engine");
+  const [step, setStep] = useState<Step>("engine");
   const [engine, setEngine] = useState<string | null>(null);
   const desktop = useDesktop();
-  const n = step === "engine" ? 1 : step === "awake" ? 2 : 3;
+  const n = step === "engine" ? 1 : 2;
 
   return (
     <div className="flex h-full justify-center overflow-y-auto bg-bg">
       <main className={cx("flex w-full max-w-[480px] flex-col gap-6", desktop ? "px-6 pt-24 pb-12" : "safe-top px-4 pt-16 pb-8")}>
-        <span className="text-caption font-medium text-text-tertiary">Step {n} of 3</span>
+        <span className="text-caption font-medium text-text-tertiary">Step {n} of 2</span>
         {step === "engine" && (
           <EngineStep
             found={setup.found_engines}
@@ -37,8 +40,7 @@ export function FirstRun() {
             }}
           />
         )}
-        {step === "awake" && engine && <AwakeStep engine={engine} onDone={() => setStep("phone")} />}
-        {step === "phone" && <PhoneStep />}
+        {step === "awake" && engine && <AwakeStep engine={engine} onDone={closeFirstRun} />}
       </main>
     </div>
   );
@@ -121,7 +123,7 @@ function EngineStep({ found, onPick }: { found: string[]; onPick(id: string): vo
                 )}
               </div>
             </div>
-            <Button variant="primary" size={size} onClick={() => void run(best)} autoFocus>
+            <Button variant="primary" size={size} onClick={() => void run(best)}>
               Use it
             </Button>
           </>
@@ -143,32 +145,56 @@ function EngineStep({ found, onPick }: { found: string[]; onPick(id: string): vo
         {others && (
           <ul id="other-ai" className="m-0 flex list-none flex-col rounded-lg border border-border bg-surface p-0">
             {!engines && <li className="p-4 text-body-sm text-text-secondary">Looking for AI apps…</li>}
-            {rest.map((e, i) => {
-              const ok = canPick(e);
-              return (
-                <li key={e.id} className={cx("flex min-h-14 items-center gap-3 px-4 py-2", i < rest.length - 1 && "shadow-line")}>
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className={cx("font-medium", !ok && "text-text-secondary")}>{engineTitle(e.id, [e])}</span>
-                    <span className="text-caption text-text-secondary">
-                      <TextWithCode text={statusLine(e)} />
-                      {!ok && e.how ? (
-                        <>
-                          {" "}
-                          <TextWithCode text={e.how} />
-                        </>
-                      ) : null}
-                    </span>
-                  </span>
-                  <Button size={desktop ? "md" : "phone"} disabled={!ok} onClick={() => void run(e.id)}>
-                    Use
-                  </Button>
-                </li>
-              );
-            })}
+            {rest.map((e, i) => (
+              <OtherApp key={e.id} engine={e} last={i === rest.length - 1} onUse={() => void run(e.id)} />
+            ))}
           </ul>
         )}
       </div>
     </>
+  );
+}
+
+/**
+ * A row under Other AI apps. One that can't be used yet says what to do in one line and
+ * offers Check again, so it's never a dead end.
+ */
+function OtherApp({ engine: e, last, onUse }: { engine: EngineInfo; last: boolean; onUse(): void }) {
+  const desktop = useDesktop();
+  const [checking, setChecking] = useState(false);
+  const [line, setLine] = useState<string | null>(null);
+  const ok = canPick(e);
+  const again = async () => {
+    setChecking(true);
+    setLine(null);
+    try {
+      const c = await checkEngine(e.id);
+      await loadEngines();
+      if (!c.ready) setLine(c.message);
+    } catch (err) {
+      setLine(err instanceof Error ? err.message : "That check didn't work. Try again.");
+    } finally {
+      setChecking(false);
+    }
+  };
+  return (
+    <li className={cx("flex min-h-14 items-center gap-3 px-4 py-2", !last && "shadow-line")}>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className={cx("font-medium", !ok && "text-text-secondary")}>{engineTitle(e.id, [e])}</span>
+        <span className="text-caption text-text-secondary" aria-live="polite">
+          {checking ? "Checking…" : <TextWithCode text={line ?? engineLine(e)} />}
+        </span>
+      </span>
+      {ok ? (
+        <Button size={desktop ? "md" : "phone"} onClick={onUse}>
+          Use
+        </Button>
+      ) : (
+        <Button size={desktop ? "md" : "phone"} disabled={checking} onClick={() => void again()}>
+          Check again
+        </Button>
+      )}
+    </li>
   );
 }
 
@@ -204,7 +230,7 @@ function BuiltIn({ engines, size, onUse }: { engines: EngineInfo[] | null; size:
         </form>
       ) : (
         <div className="flex flex-col items-start gap-2">
-          <Button variant="primary" size={size} className="w-full" onClick={onUse} autoFocus disabled={!engines}>
+          <Button variant="primary" size={size} className="w-full" onClick={onUse} disabled={!engines}>
             Use it
           </Button>
           {takesKey && (
@@ -283,7 +309,9 @@ function CheckCard({
       )}
       {result && !checking && !result.ready && (
         <>
-          <ErrorLine>{result.message}</ErrorLine>
+          <ErrorLine>
+            <TextWithCode text={result.message} />
+          </ErrorLine>
           {wantsKey ? (
             <form
               className="flex flex-col gap-4"
@@ -300,21 +328,12 @@ function CheckCard({
             </form>
           ) : (
             <>
-              {help && help.line !== result.message && (
+              {help && !alreadySays(result.message, help.line) && (
                 <p className="m-0 text-body-sm text-text">
                   <TextWithCode text={help.line} />
                 </p>
               )}
-              {help && help.methods.length > 0 && (
-                <ul className="m-0 flex list-none flex-col gap-1 p-0 text-body-sm">
-                  {help.methods.map((m) => (
-                    <li key={m.id} className="flex flex-col">
-                      <span className="font-medium">{m.name}</span>
-                      {m.description && <span className="text-caption text-text-secondary">{m.description}</span>}
-                    </li>
-                  ))}
-                </ul>
-              )}
+              {help?.ways && <p className="m-0 text-body-sm text-text-secondary">{help.ways}</p>}
               <Button variant="primary" size={size} onClick={onRetry} autoFocus>
                 {need === "retry" || !need ? "Try again" : "Check again"}
               </Button>
@@ -360,23 +379,6 @@ function AwakeStep({ engine, onDone }: { engine: string; onDone(): void }) {
         </Button>
       </div>
       {error && <ErrorLine>{error}</ErrorLine>}
-    </>
-  );
-}
-
-function PhoneStep() {
-  const main = useApp((s) => s.snapshot?.agents[0]?.name ?? "Ava");
-  const desktop = useDesktop();
-  return (
-    <>
-      <Heading
-        title={`Get ${main} on your phone`}
-        line="On your Weilo computer, open a terminal and run this. It shows a link to open on your phone."
-      />
-      <code className="flex h-11 items-center rounded-md border border-border bg-surface px-3 font-mono text-body text-text">weilo pair</code>
-      <Button size={desktop ? "lg" : "phone"} className="w-fit max-md:w-full" onClick={closeFirstRun}>
-        Skip
-      </Button>
     </>
   );
 }

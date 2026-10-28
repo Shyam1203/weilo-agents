@@ -75,9 +75,15 @@ export interface AppState {
   sending: Record<string, Sending[]>;
   /** Text to put in a thread's message box (Edit, Ask Ava). */
   drafts: Record<string, string>;
-  /** First run stays open for the phone step after setup is saved. */
+  /** First run stays open until its last step is done, even after setup is saved. */
   firstRunOpen: boolean;
   error: string | null;
+  /** A calm line that something worked (said politely, not as an alert). */
+  notice: string | null;
+  /** Threads stopped from this device, with the newest seq at the time (for the "Stopped." line). */
+  stopped: Record<string, bigint>;
+  /** Approvals closed here by Stop, before the host says so. */
+  stoppedCards: Record<string, true>;
 }
 
 // "Next up" lives in this browser until the host can hold and cancel queued messages.
@@ -131,6 +137,9 @@ export const initialState: AppState = {
   drafts: {},
   firstRunOpen: false,
   error: null,
+  notice: null,
+  stopped: {},
+  stoppedCards: {},
 };
 
 export const EMPTY_FEED: Feed = { events: [], streaming: null };
@@ -193,8 +202,21 @@ export function appendEvent(s: AppState, threadId: string, event: Event): AppSta
 /** Shown when the host says it isn't ok but gives no line of its own. */
 export const PAUSED_FALLBACK = "Your Weilo computer isn't ready. It will be back in a moment.";
 
+/**
+ * The host's "not ready" line in plain words. A restart reads "Back in a few seconds."; a
+ * trailing aside in brackets, like "(a few seconds)", is never shown raw.
+ */
+export function pausedLine(message: string | null | undefined): string {
+  const m = message?.trim() ?? "";
+  if (!m) return PAUSED_FALLBACK;
+  if (/\brestart/i.test(m)) return "Your Weilo computer is restarting. Back in a few seconds.";
+  const plain = m.replace(/\s*\([^)]*\)\s*\.?$/, "").trim();
+  if (!plain) return PAUSED_FALLBACK;
+  return /[.!?]$/.test(plain) ? plain : `${plain}.`;
+}
+
 export function setHealth(s: AppState, ok: boolean, message: string | null): AppState {
-  const paused = ok ? null : message?.trim() || PAUSED_FALLBACK;
+  const paused = ok ? null : pausedLine(message);
   return s.paused === paused ? s : { ...s, paused };
 }
 
@@ -280,6 +302,24 @@ export function revertPrefs(current: UiPrefs, before: UiPrefs, attempted: UiPref
     }
   }
   return next;
+}
+
+/**
+ * Stop, before the host confirms: the thread gets its "Stopped." line, and its open
+ * approvals close (the host closes them too, as "stopped").
+ */
+export function stopLocally(s: AppState, threadId: string): AppState {
+  const events = s.feeds[threadId]?.events ?? [];
+  const last = events[events.length - 1]?.seq ?? findThread(s, threadId)?.last_seq ?? 0n;
+  let next: AppState = { ...s, stopped: { ...s.stopped, [threadId]: last } };
+  if (!s.snapshot) return next;
+  const closed = s.snapshot.needs_you.filter((n) => n.thread_id === threadId && n.state === "pending" && n.card.kind !== "heads_up");
+  if (closed.length === 0) return next;
+  const ids = new Set(closed.map((n) => n.approval_id));
+  next = { ...next, stoppedCards: { ...s.stoppedCards, ...Object.fromEntries([...ids].map((id) => [id, true as const])) } };
+  return patchSnapshot(next, {
+    needs_you: s.snapshot.needs_you.map((n) => (ids.has(n.approval_id) ? { ...n, state: "denied" as const } : n)),
+  });
 }
 
 /** Marks a Needs you item decided before the host confirms. */
@@ -368,4 +408,111 @@ export function shallowEqual(a: unknown, b: unknown): boolean {
     if (!Object.is((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k])) return false;
   }
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Problems that ended a reply (Needs you → Didn't work)
+// ---------------------------------------------------------------------------
+
+export interface OpenProblem {
+  seq: bigint;
+  at: string;
+  message: string;
+  action: string | null;
+}
+
+/**
+ * The newest problem in a chat that nothing has fixed yet: a later reply from the agent
+ * clears it. (The host sends problems only as chat events, so Needs you derives these.)
+ */
+export function openProblem(events: Event[]): OpenProblem | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i]!;
+    const b = e.body;
+    if (b.kind === "agent_message") return null;
+    if (b.kind === "problem") return { seq: e.seq, at: e.at, message: b.message, action: b.action };
+  }
+  return null;
+}
+
+const problemCache = new WeakMap<Event[], OpenProblem | null>();
+function cachedProblem(events: Event[]): OpenProblem | null {
+  if (!problemCache.has(events)) problemCache.set(events, openProblem(events));
+  return problemCache.get(events)!;
+}
+
+/** What a chat's sidebar line says while a problem is open. */
+export function problemLine(p: Pick<OpenProblem, "action" | "message">): string {
+  switch (p.action?.trim().toLowerCase()) {
+    case "add a key":
+      return "Needs an API key";
+    case "sign in":
+      return "Needs you to sign in";
+    case "install":
+      return "Needs an app installed";
+    case "choose another folder":
+      return "Can't open its folder";
+    default:
+      return /api key/i.test(p.message) ? "Needs an API key" : "Didn't work";
+  }
+}
+
+/** Open problems by thread: the sidebar's line for each. */
+export function problemLines(s: AppState): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [threadId, feed] of Object.entries(s.feeds)) {
+    const p = cachedProblem(feed.events);
+    if (p) out[threadId] = problemLine(p);
+  }
+  return out;
+}
+
+const itemCache = new WeakMap<Event[], NeedsYouItem>();
+
+/** Open problems as Needs you items (under "Didn't work"), unless the host already lists one for that chat. */
+export function problemNeedsYou(s: AppState): NeedsYouItem[] {
+  const snap = s.snapshot;
+  if (!snap) return [];
+  const out: NeedsYouItem[] = [];
+  for (const t of snap.threads) {
+    const feed = s.feeds[t.id];
+    if (!feed) continue;
+    const p = cachedProblem(feed.events);
+    if (!p) continue;
+    if (snap.needs_you.some((n) => n.thread_id === t.id && (n.card.kind === "failed" || n.card.kind === "problem"))) continue;
+    let item = itemCache.get(feed.events);
+    if (!item || item.thread_id !== t.id) {
+      item = {
+        approval_id: `problem:${t.id}:${p.seq}`,
+        thread_id: t.id,
+        source: sourceOf(snap, t),
+        card: {
+          kind: "problem",
+          approval_id: null,
+          title: p.message,
+          body: null,
+          details: null,
+          risk: "read",
+          risk_line: "",
+          actions: [],
+          fallback_text: p.message,
+        },
+        created_at: p.at,
+        expires_at: p.at,
+        state: "pending",
+      };
+      itemCache.set(feed.events, item);
+    }
+    out.push(item);
+  }
+  return out;
+}
+
+function sourceOf(snap: Snapshot, t: ThreadSummary): string {
+  const agent = snap.agents.find((a) => a.id === t.agent_id);
+  const name = agent ? agent.name.split(" · ")[0]!.trim() : null;
+  if (t.kind === "session") return `${t.title} · session`;
+  const channel = snap.channels.find((c) => c.id === t.channel_id);
+  if (channel) return name ? `#${channel.slug} · ${name}` : `#${channel.slug}`;
+  return name ?? t.title;
 }

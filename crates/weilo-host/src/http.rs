@@ -149,8 +149,7 @@ struct PairBody {
     name: Option<String>,
 }
 
-/// Trades a pairing code for a device token: `{ device_id, token }`, plus the handoff
-/// cookie for `/api/token`.
+/// Trades a pairing code for a device token: `{ device_id, token }`, in the body only.
 async fn pair(State(app): State<Arc<App>>, Json(body): Json<PairBody>) -> Response {
     // Every guess waits its turn, before the code is even looked at.
     let gate = app.pairing.gate.lock().await;
@@ -179,12 +178,7 @@ async fn pair(State(app): State<Arc<App>>, Json(body): Json<PairBody>) -> Respon
     drop(gate);
     match create_device(&app, body.name.as_deref()).await {
         Ok((device_id, token)) => {
-            let secret = app.pairing.hand_off(&token);
-            (
-                [(header::SET_COOKIE, auth::handoff_cookie(&secret))],
-                Json(json!({ "device_id": device_id, "token": token })),
-            )
-                .into_response()
+            Json(json!({ "device_id": device_id, "token": token })).into_response()
         }
         Err(e) => {
             tracing::error!("pairing failed: {e:#}");
@@ -197,27 +191,20 @@ async fn pair(State(app): State<Arc<App>>, Json(body): Json<PairBody>) -> Respon
     }
 }
 
-/// Gives the app its device token once, for the handoff cookie set at pairing (or the
-/// cookie older versions used), and clears those cookies.
+/// Trades the device cookie older versions set for a new token, once: the old token
+/// stops working and the cookie is cleared.
 async fn token(State(app): State<Arc<App>>, headers: HeaderMap) -> Response {
-    let from_handoff = auth::request_cookie(&headers, auth::HANDOFF_COOKIE)
-        .and_then(|secret| app.pairing.claim(secret));
-    let token = match from_handoff {
-        Some(t) => Some(t),
-        None => match auth::request_cookie(&headers, auth::LEGACY_COOKIE) {
-            Some(old) => match auth::device_for_token(&app.db, old).await {
-                Ok(Some(_)) => Some(old.to_string()),
-                Ok(None) => None,
-                Err(e) => {
-                    tracing::error!("token: {e}");
-                    return (StatusCode::SERVICE_UNAVAILABLE, "Try again.").into_response();
-                }
-            },
-            None => None,
+    let token = match auth::request_cookie(&headers, auth::LEGACY_COOKIE) {
+        Some(old) => match auth::replace_token(&app.db, old).await {
+            Ok(token) => token,
+            Err(e) => {
+                tracing::error!("token: {e}");
+                return (StatusCode::SERVICE_UNAVAILABLE, "Try again.").into_response();
+            }
         },
+        None => None,
     };
-    let [a, b] = auth::clear_cookies();
-    let cleared = [(header::SET_COOKIE, a), (header::SET_COOKIE, b)];
+    let cleared = [(header::SET_COOKIE, auth::clear_legacy_cookie())];
     match token {
         Some(token) => (cleared, Json(json!({ "token": token }))).into_response(),
         None => (

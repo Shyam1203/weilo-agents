@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useCallback, useRef, useState } from "react";
 import { call, showError, stop } from "../../lib/app";
 import { cx } from "../../lib/format";
 import type { SidebarRow as Row } from "../../lib/sidebar";
@@ -7,7 +7,7 @@ import { Dot } from "../../ui/bits";
 import { MoreIcon } from "../../ui/glyphs";
 import { IconButton } from "../../ui/IconButton";
 import { Link } from "../../ui/Link";
-import { MenuItem, Popover } from "../../ui/Popover";
+import { Menu, MenuItem } from "../../ui/Menu";
 import { useAgentActions } from "./AgentMenu";
 
 const SUB_TONE = { ok: "text-success", warn: "text-warning", quiet: "text-text-tertiary" };
@@ -15,9 +15,11 @@ const SUB_TONE = { ok: "text-success", warn: "text-warning", quiet: "text-text-t
 /** An agent (face + live line), a channel (`# slug`) or a session (code icon + who started it). */
 export const SidebarRow = memo(function SidebarRow({ row, selected }: { row: Row; selected: boolean }) {
   const [menu, setMenu] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const closeMenu = useCallback(() => setMenu(false), []);
   const two = !!row.sub;
-  const agentActions = useAgentActions(row.kind === "agent" ? row.agent : undefined, () => setMenu(false));
-  const menuItems = agentActions.items ?? rowMenu(row, () => setMenu(false));
+  const agentActions = useAgentActions(row.kind === "agent" ? row.agent : undefined, closeMenu);
+  const menuItems = agentActions.items ?? rowMenu(row, closeMenu);
   return (
     <div className="reveal-host relative">
       <Link
@@ -58,6 +60,7 @@ export const SidebarRow = memo(function SidebarRow({ row, selected }: { row: Row
       {menuItems && (
         <div className="absolute top-1/2 right-1 -translate-y-1/2">
           <IconButton
+            ref={trigger}
             label={`More for ${row.kind === "channel" ? `#${row.name}` : row.name}`}
             size={24}
             className="reveal-on-hover"
@@ -67,9 +70,9 @@ export const SidebarRow = memo(function SidebarRow({ row, selected }: { row: Row
           >
             <MoreIcon />
           </IconButton>
-          <Popover open={menu} onClose={() => setMenu(false)} label="Row actions" role="menu" className="top-7 right-0 w-48">
+          <Menu open={menu} onClose={closeMenu} anchor={trigger} label="Row actions" className="w-48">
             {menuItems}
-          </Popover>
+          </Menu>
         </div>
       )}
       {agentActions.dialogs}

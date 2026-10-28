@@ -40,6 +40,8 @@ pub enum HubMsg {
         ok: bool,
         message: Option<String>,
     },
+    /// This device was unpaired: its sockets close with 4401.
+    DeviceRevoked(Uuid),
 }
 
 #[derive(Clone)]

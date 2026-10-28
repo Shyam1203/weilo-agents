@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { call, showError } from "../../lib/app";
+import { stopAgent } from "../../lib/app";
 import { shortName } from "../../lib/format";
 import { useApp } from "../../lib/store";
 import type { AgentSummary } from "../../proto/AgentSummary";
@@ -19,7 +19,6 @@ export function AgentChat({ agent, home }: { agent: AgentSummary; home?: boolean
   const state = useThreadState(threadId);
   const name = shortName(agent.name);
   const live = useApp((s) => s.snapshot?.agents.find((a) => a.id === agent.id)?.live_line ?? "");
-  const stopAgent = () => call({ method: "stop_agent", params: { agent_id: agent.id } }).catch(showError);
 
   return (
     <ThreadScreen
@@ -50,7 +49,7 @@ export function AgentChat({ agent, home }: { agent: AgentSummary; home?: boolean
         label: `Message ${name}`,
         working: state === "working",
         agentName: name,
-        onStop: () => void stopAgent(),
+        onStop: () => void stopAgent(agent),
       }}
     />
   );

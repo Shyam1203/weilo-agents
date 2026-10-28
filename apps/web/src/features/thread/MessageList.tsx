@@ -6,7 +6,7 @@ import { showSteps } from "../../lib/steps";
 import { buildBlocks, type AgentItem, type Block, type StepItem } from "../../lib/timeline";
 import type { AgentSummary } from "../../proto/AgentSummary";
 import { Avatar } from "../../ui/Avatar";
-import { CheckIcon, ChevronDownIcon, SpinnerIcon, XCircleIcon } from "../../ui/glyphs";
+import { CheckIcon, ChevronDownIcon, SpinnerIcon, StopIcon, XCircleIcon } from "../../ui/glyphs";
 import { Link } from "../../ui/Link";
 import { Markdown } from "../../ui/Markdown";
 import { MoveDialog } from "../shell/dialogs";
@@ -30,7 +30,8 @@ export interface MessageListProps {
 /** The conversation. Rows are memoised, so only the reply being written re-renders while it streams. */
 export function MessageList({ threadId, agentId, kind, empty, faces = true }: MessageListProps) {
   const events = useEvents(threadId);
-  const blocks = useMemo(() => buildBlocks(events, agentId), [events, agentId]);
+  const stoppedAt = useApp((s) => s.stopped[threadId] ?? null);
+  const blocks = useMemo(() => buildBlocks(events, agentId, stoppedAt), [events, agentId, stoppedAt]);
   const sending = useApp((s) => s.sending[threadId] ?? NO_SENDING);
   const variant = useVariant();
   const gap = variant === "phone" ? "gap-3" : kind === "session" ? "gap-4" : "gap-6";
@@ -156,16 +157,19 @@ function Item({
       return <Filed channelId={item.channelId} threadId={threadId} canMove={kind === "chat"} />;
     case "problem":
       return <Problem threadId={threadId} agentId={agentId} message={item.message} action={item.action} />;
+    case "note":
+      return <p className="m-0 text-body-sm text-text-secondary">{item.text}</p>;
   }
 }
 
 export function StepIcon({ status }: { status: StepItem["status"] }) {
   if (status === "done") return <CheckIcon className="shrink-0 text-success" />;
   if (status === "failed") return <XCircleIcon className="shrink-0 text-warning" />;
+  if (status === "stopped") return <StopIcon className="shrink-0 text-text-tertiary" />;
   return <SpinnerIcon className="spin shrink-0 text-accent" />;
 }
 
-const STATUS_WORD = { done: "done", failed: "didn't work", running: "in progress" };
+const STATUS_WORD = { done: "done", failed: "didn't work", running: "in progress", stopped: "stopped" };
 
 /**
  * Steps in plain words ("Read a file", "Ran a command"). The files and commands, and any

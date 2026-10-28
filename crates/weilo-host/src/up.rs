@@ -30,6 +30,9 @@ pub async fn run(opts: UpOptions) -> Result<()> {
     let Some(_lock) = try_lock(&home.lock_file())? else {
         return Err(already_running(&home));
     };
+    // Before anything starts: what a crashed run left running ends here.
+    process::end_leftovers(&home.live_engines(), process::GRACE);
+    process::record_in(home.live_engines());
     let mut pg = Postgres::start(&home).await?;
     let db = match db::open(&pg).await {
         Ok(db) => db,

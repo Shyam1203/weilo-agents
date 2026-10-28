@@ -23,7 +23,7 @@ use sqlx::Row;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 use uuid::Uuid;
-use weilo_proto::{Decision, Delta, EventBody, SendWhen, StepStatus, WorkState};
+use weilo_proto::{Decision, Delta, EngineNeed, EventBody, SendWhen, StepStatus, WorkState};
 
 use super::acp::{Connection, EngineMsg, EngineTx, Failure, Started, Tagged};
 use super::card::{ToolInfo, allow_once, permission_card, rule_key, tool_info};
@@ -53,8 +53,10 @@ pub fn spawn(app: Arc<App>, thread_id: Uuid) -> mpsc::UnboundedSender<Cmd> {
             tools: HashMap::new(),
             running_tools: HashSet::new(),
             pending: HashMap::new(),
-            preamble: None,
+            fresh: false,
             restart: false,
+            installs: 0,
+            installing: None,
         };
         runner.run(rx, engine_rx).await;
     });
@@ -66,6 +68,10 @@ struct ThreadCtx {
     agent_id: Option<Uuid>,
     agent_name: String,
     instructions: Option<String>,
+    /// Bumped each time the instructions change.
+    instructions_rev: i64,
+    /// The revision this thread's engine was last told (`None`: before revisions).
+    instructions_sent: Option<i64>,
     session: bool,
     engine: String,
     model: Option<String>,
@@ -98,6 +104,23 @@ impl Pending {
     }
 }
 
+/// An engine download in progress; the message that needs it waits here. Dropping it
+/// stops the download.
+struct Installing {
+    id: u64,
+    text: String,
+    manifest: Manifest,
+    step_id: String,
+    title: String,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for Installing {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
 struct Runner {
     app: Arc<App>,
     thread_id: Uuid,
@@ -119,11 +142,14 @@ struct Runner {
     /// Tool calls started and not yet done; a running tool may be quiet a long time.
     running_tools: HashSet<String>,
     pending: HashMap<Uuid, Pending>,
-    /// Who the agent is and its instructions, sent with the first prompt of a new
-    /// engine conversation.
-    preamble: Option<String>,
+    /// A new engine conversation began: the next prompt starts with who the agent is
+    /// and its instructions.
+    fresh: bool,
     /// Start a new engine process once this turn ends (the agent was changed).
     restart: bool,
+    /// Bumped for every engine download.
+    installs: u64,
+    installing: Option<Installing>,
 }
 
 impl Runner {
@@ -192,7 +218,6 @@ impl Runner {
             Cmd::Restart => {
                 if self.turn.is_none() {
                     self.drop_conn();
-                    self.preamble = None;
                 } else {
                     self.restart = true;
                 }
@@ -201,6 +226,10 @@ impl Runner {
     }
 
     async fn on_engine(&mut self, tagged: Tagged) {
+        if let EngineMsg::Installed { id, result } = tagged.msg {
+            self.installed(id, result).await;
+            return;
+        }
         if tagged.generation != self.generation {
             // From an engine process that was replaced: nothing it says matters now.
             if let EngineMsg::Permission { responder, .. } = tagged.msg {
@@ -228,12 +257,13 @@ impl Runner {
                     self.end_turn(Ok(StopReason::Cancelled)).await;
                 }
             }
+            EngineMsg::Installed { .. } => {}
         }
     }
 
     async fn start_next(&mut self) {
-        if !*self.app.db_up.borrow() {
-            // Postgres is restarting; the queue waits for it.
+        if !*self.app.db_up.borrow() || self.installing.is_some() {
+            // Postgres is restarting, or the engine is downloading; the queue waits.
             return;
         }
         let Some(text) = self
@@ -244,15 +274,22 @@ impl Runner {
             return;
         };
         self.set_state(WorkState::Working, "").await;
+        if self.conn.is_none() {
+            match self.download_needed().await {
+                Ok(Some(m)) => return self.begin_install(m, text).await,
+                Ok(None) => {}
+                Err(e) => return self.start_failed(e).await,
+            }
+        }
+        self.begin_turn(text).await;
+    }
+
+    /// Connects if needed, then sends the prompt.
+    async fn begin_turn(&mut self, text: String) {
         if self.conn.is_none()
             && let Err(e) = self.connect().await
         {
-            tracing::warn!("engine start failed for {}: {}", self.thread_id, e.1);
-            self.problem(&e.0.message, Some(e.0.action)).await;
-            self.now_queue.clear();
-            self.after_queue.clear();
-            self.set_state(WorkState::Idle, "").await;
-            return;
+            return self.start_failed(e).await;
         }
         self.turns += 1;
         self.turn = Some(Turn {
@@ -261,26 +298,108 @@ impl Runner {
             heard_at: Instant::now(),
             said: String::new(),
         });
-        let mut blocks: Vec<String> = self.preamble.take().into_iter().collect();
+        let mut blocks = Vec::new();
+        let mut told = None;
+        match load_ctx(&self.app, self.thread_id).await {
+            Ok(ctx) => {
+                if std::mem::take(&mut self.fresh) {
+                    blocks.push(preamble(&ctx));
+                    told = Some(ctx.instructions_rev);
+                } else if ctx.instructions_sent.unwrap_or(0) != ctx.instructions_rev {
+                    // The instructions changed after this conversation began.
+                    blocks.push(changed_instructions(&ctx));
+                    told = Some(ctx.instructions_rev);
+                }
+            }
+            Err(e) => tracing::warn!("no thread context for {}: {e:#}", self.thread_id),
+        }
         blocks.push(text);
         let conn = self.conn.as_ref().expect("connected");
         conn.prompt(blocks, self.turns);
+        if let Some(rev) = told {
+            let saved = sqlx::query("UPDATE threads SET instructions_rev_sent = $2 WHERE id = $1")
+                .bind(self.thread_id)
+                .bind(rev)
+                .execute(&self.app.db)
+                .await;
+            if let Err(e) = saved {
+                tracing::warn!("couldn't note the instructions sent: {e}");
+            }
+        }
+    }
+
+    async fn start_failed(&mut self, e: (Explained, String)) {
+        tracing::warn!("engine start failed for {}: {}", self.thread_id, e.1);
+        self.problem(&e.0.message, Some(e.0.action)).await;
+        self.now_queue.clear();
+        self.after_queue.clear();
+        self.set_state(WorkState::Idle, "").await;
+    }
+
+    /// The thread's engine, when it must be downloaded before it can start.
+    async fn download_needed(&self) -> Result<Option<Manifest>, (Explained, String)> {
+        let ctx = load_ctx(&self.app, self.thread_id)
+            .await
+            .map_err(internal)?;
+        let m = self
+            .app
+            .engines
+            .get(&ctx.engine)
+            .with_context(|| format!("no engine named {}", ctx.engine))
+            .map_err(internal)?;
+        Ok(self.app.engines.needs_download(m).then(|| m.clone()))
+    }
+
+    /// Downloads the engine in the background, so Stop still works meanwhile; the
+    /// message waits for it.
+    async fn begin_install(&mut self, m: Manifest, text: String) {
+        let step_id = format!("install-{}", m.name);
+        let title = format!("Installing {}", m.title);
+        self.step(&step_id, &title, StepStatus::Running).await;
+        self.installs += 1;
+        let id = self.installs;
+        let (app, tx, manifest) = (self.app.clone(), self.engine_tx.clone(), m.clone());
+        let task = tokio::spawn(async move {
+            let result = app.engines.install(&manifest).await;
+            let msg = EngineMsg::Installed { id, result };
+            let _ = tx.send(Tagged { generation: 0, msg });
+        });
+        self.installing = Some(Installing {
+            id,
+            text,
+            manifest: m,
+            step_id,
+            title,
+            task,
+        });
+    }
+
+    async fn installed(&mut self, id: u64, result: Result<(), String>) {
+        if self.installing.as_ref().is_none_or(|i| i.id != id) {
+            return;
+        }
+        let Some(inst) = self.installing.take() else {
+            return;
+        };
+        let status = if result.is_ok() {
+            StepStatus::Done
+        } else {
+            StepStatus::Failed
+        };
+        self.step(&inst.step_id, &inst.title, status).await;
+        match result {
+            Ok(()) => self.begin_turn(inst.text.clone()).await,
+            Err(e) => {
+                let f = Failure::other(e);
+                let explained = (explain(&inst.manifest, &f), f.text);
+                self.start_failed(explained).await;
+            }
+        }
     }
 
     /// Starts the engine, picking up the thread's earlier engine conversation when the
     /// engine can. Errors are explained for people (and kept whole for the log).
     async fn connect(&mut self) -> Result<(), (Explained, String)> {
-        let internal = |e: anyhow::Error| {
-            let text = format!("{e:#}");
-            (
-                Explained {
-                    needs: weilo_proto::EngineNeed::Error,
-                    message: "Couldn't start the engine. Try again.".into(),
-                    action: "Try again",
-                },
-                text,
-            )
-        };
         let ctx = load_ctx(&self.app, self.thread_id)
             .await
             .map_err(internal)?;
@@ -292,12 +411,6 @@ impl Runner {
             .with_context(|| format!("no engine named {}", ctx.engine))
             .map_err(internal)?;
         let explained = |f: Failure| (explain(&manifest, &f), f.text.clone());
-        self.install(&manifest).await.map_err(|e| {
-            explained(Failure {
-                text: e,
-                ..Failure::default()
-            })
-        })?;
         let spec = spec_for(&self.app, &manifest, ctx.model.clone()).map_err(explained)?;
         std::fs::create_dir_all(&ctx.cwd).map_err(|e| internal(e.into()))?;
         let log = self
@@ -324,8 +437,8 @@ impl Runner {
             .execute(&self.app.db)
             .await
             .map_err(|e| internal(e.into()))?;
+        self.fresh = conn.started == Started::New;
         if conn.started == Started::New {
-            self.preamble = Some(preamble(&ctx));
             if resume.is_some() {
                 let message = format!(
                     "{} started a fresh conversation; earlier messages aren't in its memory.",
@@ -336,30 +449,6 @@ impl Runner {
         }
         self.conn = Some(conn);
         Ok(())
-    }
-
-    async fn install(&mut self, m: &Manifest) -> Result<(), String> {
-        let needs = m.install.as_ref().is_some_and(|i| !i.npm.is_empty())
-            && !self
-                .app
-                .engines
-                .install_dir(&m.name)
-                .join("node_modules/.bin")
-                .is_dir();
-        if !needs {
-            return Ok(());
-        }
-        let step_id = format!("install-{}", m.name);
-        let title = format!("Installing {}", m.title);
-        self.step(&step_id, &title, StepStatus::Running).await;
-        let result = self.app.engines.install(m).await;
-        let status = if result.is_ok() {
-            StepStatus::Done
-        } else {
-            StepStatus::Failed
-        };
-        self.step(&step_id, &title, status).await;
-        result
     }
 
     async fn on_update(&mut self, update: SessionUpdate) {
@@ -546,6 +635,14 @@ impl Runner {
     async fn stop(&mut self) {
         self.now_queue.clear();
         self.after_queue.clear();
+        if let Some(inst) = self.installing.take() {
+            let (step_id, title) = (inst.step_id.clone(), inst.title.clone());
+            // Dropping it stops the download.
+            drop(inst);
+            self.step(&step_id, &title, StepStatus::Failed).await;
+            self.set_state(WorkState::Idle, "").await;
+            return;
+        }
         let Some(turn) = self.turn.as_mut() else {
             return;
         };
@@ -556,13 +653,20 @@ impl Runner {
         if let Some(conn) = &self.conn {
             conn.cancel();
         }
-        self.close_pending().await;
+        self.close_pending(true).await;
     }
 
-    async fn close_pending(&mut self) {
+    /// Closes the cards still waiting: as stopped (Stop was pressed) or interrupted (the
+    /// turn ended without an answer, say because the engine died).
+    async fn close_pending(&mut self, stopped: bool) {
         for (approval_id, p) in std::mem::take(&mut self.pending) {
             p.answer(cancelled());
-            if let Err(e) = approvals::close_stopped(&self.app, approval_id).await {
+            let closed = if stopped {
+                approvals::close_stopped(&self.app, approval_id).await
+            } else {
+                approvals::close_interrupted(&self.app, approval_id).await
+            };
+            if let Err(e) = closed {
                 tracing::warn!("couldn't close approval {approval_id}: {e:#}");
             }
         }
@@ -597,9 +701,7 @@ impl Runner {
         };
         self.flush_text().await;
         self.running_tools.clear();
-        for (_, p) in std::mem::take(&mut self.pending) {
-            p.answer(cancelled());
-        }
+        self.close_pending(false).await;
         let manifest = load_ctx(&self.app, self.thread_id)
             .await
             .ok()
@@ -611,6 +713,8 @@ impl Runner {
             (Ok(_), Some(m)) if asks_to_sign_in(&turn.said) => {
                 let e = needs_sign_in(&m);
                 self.problem(&e.message, Some(e.action)).await;
+                // A new key or sign-in only reaches a new engine process.
+                self.drop_conn();
             }
             (Ok(_), _) => {}
             (Err(f), m) => {
@@ -619,6 +723,9 @@ impl Runner {
                     Some(m) => {
                         let e = explain(&m, &f);
                         self.problem(&e.message, Some(e.action)).await;
+                        if matches!(e.needs, EngineNeed::SignIn | EngineNeed::Key) {
+                            self.drop_conn();
+                        }
                     }
                     None => {
                         self.problem(
@@ -632,7 +739,6 @@ impl Runner {
         }
         if std::mem::take(&mut self.restart) {
             self.drop_conn();
-            self.preamble = None;
         }
         if self.now_queue.is_empty() && self.after_queue.is_empty() {
             self.set_state(WorkState::Idle, "").await;
@@ -713,6 +819,29 @@ fn preamble(ctx: &ThreadCtx) -> String {
     out
 }
 
+/// Sent on a continued conversation when the instructions changed since it began.
+fn changed_instructions(ctx: &ThreadCtx) -> String {
+    match ctx.instructions.as_deref().map(str::trim) {
+        Some(i) if !i.is_empty() => {
+            format!("The person changed their instructions for you. From now on:\n{i}")
+        }
+        _ => "The person removed their instructions for you. Ignore the earlier ones.".into(),
+    }
+}
+
+/// An error people can't act on, explained plainly (and kept whole for the log).
+fn internal(e: anyhow::Error) -> (Explained, String) {
+    let text = format!("{e:#}");
+    (
+        Explained {
+            needs: EngineNeed::Error,
+            message: "Couldn't start the engine. Try again.".into(),
+            action: "Try again",
+        },
+        text,
+    )
+}
+
 async fn sleep_until(at: Option<Instant>) {
     match at {
         Some(at) => tokio::time::sleep_until(at).await,
@@ -749,8 +878,9 @@ fn folder_scope(cwd: &std::path::Path) -> String {
 async fn load_ctx(app: &App, thread_id: Uuid) -> Result<ThreadCtx> {
     let row = sqlx::query(
         "SELECT t.kind, t.agent_id, t.engine AS thread_engine, t.folder, t.worktree,
-                t.engine_session_id, a.name, a.slug, a.engine AS agent_engine, a.model,
-                a.instructions
+                t.engine_session_id, t.instructions_rev_sent, a.name, a.slug,
+                a.engine AS agent_engine, a.model, a.instructions,
+                COALESCE(a.instructions_rev, 0) AS instructions_rev
          FROM threads t LEFT JOIN agents a ON a.id = t.agent_id WHERE t.id = $1",
     )
     .bind(thread_id)
@@ -777,6 +907,8 @@ async fn load_ctx(app: &App, thread_id: Uuid) -> Result<ThreadCtx> {
         agent_id: row.get("agent_id"),
         agent_name: agent_name.unwrap_or_else(|| "The agent".into()),
         instructions: row.get("instructions"),
+        instructions_rev: row.get("instructions_rev"),
+        instructions_sent: row.get("instructions_rev_sent"),
         session,
         engine: engine.context("the thread has no engine")?,
         model: row.get("model"),
@@ -794,6 +926,8 @@ mod tests {
             agent_id: None,
             agent_name: "Ava".into(),
             instructions: instructions.map(Into::into),
+            instructions_rev: 0,
+            instructions_sent: None,
             session,
             engine: "echo".into(),
             model: None,

@@ -64,6 +64,11 @@ impl Home {
     pub fn lock_file(&self) -> PathBuf {
         self.root.join("lock")
     }
+    /// The engines' process groups while they run, so the next start can end any
+    /// left behind by a crash.
+    pub fn live_engines(&self) -> PathBuf {
+        self.root.join("engines-live")
+    }
     /// Written while the host runs: its port and pid.
     pub fn host_file(&self) -> PathBuf {
         self.root.join("host.json")
@@ -154,7 +159,8 @@ pub fn ensure_private_dir(dir: &Path) -> io::Result<()> {
 pub fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
-    let tmp = path.with_extension("tmp");
+    // A name of its own, so two writes at once can't mix their bytes.
+    let tmp = path.with_extension(format!("tmp-{}", crate::auth::new_token()));
     let mut f = fs::OpenOptions::new()
         .write(true)
         .create(true)

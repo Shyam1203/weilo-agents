@@ -4,11 +4,11 @@ import { cx, listWords, shortName, timeOf, whenLabel } from "../../lib/format";
 import { actionable, approveKey, groupNeedsYou, isHeadsUp, isSmall, yesAction, type NeedsYouGroup } from "../../lib/needsYou";
 import { navigate, threadPath } from "../../lib/router";
 import { SECTION_TITLES, withSection, type SectionKey } from "../../lib/sidebar";
-import { useApp } from "../../lib/store";
+import { problemNeedsYou, useApp } from "../../lib/store";
 import type { NeedsYouItem } from "../../proto/NeedsYouItem";
 import type { Snapshot } from "../../proto/Snapshot";
 import { Avatar, SessionMark } from "../../ui/Avatar";
-import { EmptyState, TopBar } from "../../ui/bits";
+import { EmptyState, TextWithCode, TopBar } from "../../ui/bits";
 import { Button } from "../../ui/Button";
 import { CheckIcon, CodeIcon, XCircleIcon } from "../../ui/glyphs";
 import { Link } from "../../ui/Link";
@@ -24,7 +24,9 @@ function pathFor(snap: Snapshot, item: NeedsYouItem): string {
 /** Approvals, questions and failures, in one calm list. J/K move, Enter opens, A approves small items. */
 export function NeedsYouPage({ phone }: { phone?: boolean }) {
   const snap = useApp((s) => s.snapshot)!;
-  const groups = useMemo(() => groupNeedsYou(snap.needs_you), [snap.needs_you]);
+  // Failures the host only sent as chat events are added here, under "Didn't work".
+  const problems = useApp(problemNeedsYou);
+  const groups = useMemo(() => groupNeedsYou([...snap.needs_you, ...problems]), [snap.needs_you, problems]);
   const order = useMemo(() => actionable(groups), [groups]);
   const [cursor, setCursor] = useState<string | null>(null);
   const rows = useRef(new Map<string, HTMLElement>());
@@ -269,7 +271,9 @@ function PastRow({ item, snap, selected, onFocus, ref, expired, phone }: RowProp
       )}
     >
       <span className={cx("flex min-w-0 flex-1", phone ? "flex-col" : "items-baseline gap-3")}>
-        <span className={cx("min-w-0", phone ? "break-words" : "ellipsis flex-1")}>{item.card.title}</span>
+        <span className={cx("min-w-0", phone ? "break-words" : "ellipsis flex-1")}>
+          <TextWithCode text={item.card.title} />
+        </span>
         <span className="shrink-0 text-caption text-text-tertiary">{whenLabel(item.created_at)}</span>
       </span>
       {expired ? (

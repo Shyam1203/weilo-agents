@@ -107,7 +107,7 @@ export function savedToken(): string | null {
   }
 }
 
-function saveToken(token: string | null): void {
+export function saveToken(token: string | null): void {
   try {
     if (typeof localStorage === "undefined") return;
     if (token) localStorage.setItem(TOKEN_KEY, token);
@@ -398,7 +398,7 @@ export function socketUrl(loc: Pick<Location, "protocol" | "host"> = window.loca
 
 /**
  * Asks the host whether this browser is paired (`/api/health` says `paired: false` when not).
- * Right after pairing, first trades the one-time pairing cookie for the token (`/api/token`).
+ * Without a token, first trades the device cookie older versions set for one (`/api/token`).
  */
 export async function checkPaired(fetcher: typeof fetch = fetch): Promise<"ok" | "unpaired"> {
   if (!savedToken()) {

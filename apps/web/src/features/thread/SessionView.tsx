@@ -33,6 +33,8 @@ export function SessionView({ thread }: { thread: ThreadSummary }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === ".") {
+        // Typing in another box (search, a dialog): leave the key alone.
+        if (!stopKeyApplies(e.target)) return;
         e.preventDefault();
         void stop(thread.id);
       }
@@ -96,6 +98,15 @@ export function SessionView({ thread }: { thread: ThreadSummary }) {
       }}
     />
   );
+}
+
+/** ⌘. stops a session unless you are typing somewhere other than its message box. */
+export function stopKeyApplies(target: EventTarget | null): boolean {
+  const el = target as { closest?: (sel: string) => Element | null; hasAttribute?: (n: string) => boolean } | null;
+  if (!el?.closest) return true;
+  if (el.closest("dialog")) return false;
+  const field = el.closest("input, textarea, select, [contenteditable=''], [contenteditable=true]");
+  return !field || field.hasAttribute("data-composer");
 }
 
 /** "⌘. stops the session · about $0.38 so far"; no key hint on touch screens. */

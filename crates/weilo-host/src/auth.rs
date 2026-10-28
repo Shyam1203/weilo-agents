@@ -5,11 +5,10 @@
 //! to this origin, port included) and sends in the socket's `hello` and as
 //! `Authorization: Bearer` on HTTP. Only the token's SHA-256 is stored.
 //!
-//! Cookies on 127.0.0.1 are shared with every other port, so the token is never one.
-//! The pair answer also sets a short-lived, one-time handoff cookie (path `/api/token`
-//! only) that the app trades for the token at `POST /api/token` once, so a pairing
-//! page that doesn't read the answer's body still works. The old `weilo_device`
-//! cookie is traded the same way, once, and cleared.
+//! Cookies on 127.0.0.1 are shared with every other port, so the token is never one:
+//! it travels only in the pair answer's body. The `weilo_device` cookie older versions
+//! set is traded once at `POST /api/token` for a new token (the old one stops working)
+//! and cleared.
 //!
 //! Wrong codes are answered one at a time, a second each; after 10 in a row pairing
 //! is locked for 10 minutes, or until `weilo pair` makes a new code.
@@ -26,8 +25,6 @@ use crate::ids::new_id;
 
 /// The cookie older versions kept the token in. Only traded for the token now.
 pub const LEGACY_COOKIE: &str = "weilo_device";
-pub const HANDOFF_COOKIE: &str = "weilo_handoff";
-const HANDOFF_TTL: Duration = Duration::from_secs(300);
 const CODE_TTL: Duration = Duration::from_secs(600);
 pub const MAX_WRONG_CODES: u32 = 10;
 pub const LOCKED_FOR: Duration = Duration::from_secs(600);
@@ -41,8 +38,6 @@ pub struct Pairing {
     /// so guesses go strictly one at a time.
     pub gate: tokio::sync::Mutex<()>,
     wrong: Mutex<Wrong>,
-    /// One-time handoff secrets (hashed) and the token each one gives.
-    handoffs: Mutex<Vec<(Vec<u8>, String, Instant)>>,
 }
 
 #[derive(Default)]
@@ -98,25 +93,6 @@ impl Pairing {
         }
         Redeem::Wrong
     }
-
-    /// A one-time secret that `claim` trades for `token` within a few minutes.
-    pub fn hand_off(&self, token: &str) -> String {
-        let secret = new_token();
-        let mut list = self.handoffs.lock().expect("pairing lock");
-        list.retain(|(_, _, at)| at.elapsed() < HANDOFF_TTL);
-        list.push((token_hash(&secret), token.to_string(), Instant::now()));
-        secret
-    }
-
-    pub fn claim(&self, secret: &str) -> Option<String> {
-        let hash = token_hash(secret);
-        let mut list = self.handoffs.lock().expect("pairing lock");
-        list.retain(|(_, _, at)| at.elapsed() < HANDOFF_TTL);
-        let i = list
-            .iter()
-            .position(|(h, _, _)| constant_time_eq(h, &hash))?;
-        Some(list.remove(i).1)
-    }
 }
 
 fn normalize(code: &str) -> String {
@@ -155,6 +131,21 @@ pub async fn create_device(
         .execute(pool)
         .await?;
     Ok((id, token))
+}
+
+/// Trades a token for a new one on the same device; the old token stops working.
+/// `None` when the old token isn't a paired device's.
+pub async fn replace_token(pool: &PgPool, old: &str) -> sqlx::Result<Option<String>> {
+    let token = new_token();
+    let id: Option<Uuid> = sqlx::query_scalar(
+        "UPDATE devices SET token_hash = $2, last_seen_at = now()
+         WHERE token_hash = $1 AND revoked_at IS NULL RETURNING id",
+    )
+    .bind(token_hash(old))
+    .bind(token_hash(&token))
+    .fetch_optional(pool)
+    .await?;
+    Ok(id.map(|_| token))
 }
 
 /// The paired, unrevoked device this token belongs to.
@@ -205,20 +196,9 @@ pub fn cookie_value<'a>(header: &'a str, name: &str) -> Option<&'a str> {
     })
 }
 
-/// The handoff cookie: only sent to `/api/token`, gone in five minutes.
-pub fn handoff_cookie(secret: &str) -> String {
-    format!(
-        "{HANDOFF_COOKIE}={secret}; HttpOnly; SameSite=Strict; Path=/api/token; Max-Age={}",
-        HANDOFF_TTL.as_secs()
-    )
-}
-
-/// Headers that delete the handoff cookie and the old device cookie.
-pub fn clear_cookies() -> [String; 2] {
-    [
-        format!("{HANDOFF_COOKIE}=; HttpOnly; SameSite=Strict; Path=/api/token; Max-Age=0"),
-        format!("{LEGACY_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"),
-    ]
+/// The header that deletes the old device cookie.
+pub fn clear_legacy_cookie() -> String {
+    format!("{LEGACY_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0")
 }
 
 #[cfg(test)]
@@ -248,15 +228,6 @@ mod tests {
         assert!(matches!(p.redeem(&code), Redeem::Locked(_)));
         let code = p.mint();
         assert_eq!(p.redeem(&code), Redeem::Ok);
-    }
-
-    #[test]
-    fn handoffs_work_once() {
-        let p = Pairing::default();
-        let secret = p.hand_off("tok");
-        assert_eq!(p.claim("nope"), None);
-        assert_eq!(p.claim(&secret).as_deref(), Some("tok"));
-        assert_eq!(p.claim(&secret), None);
     }
 
     #[test]

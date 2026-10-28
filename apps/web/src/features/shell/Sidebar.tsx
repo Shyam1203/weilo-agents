@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { savePrefs } from "../../lib/app";
 import { cx, shortName } from "../../lib/format";
 import { navigate, paths, type Route } from "../../lib/router";
@@ -12,15 +12,16 @@ import {
   type SectionKey,
   type SidebarSection,
 } from "../../lib/sidebar";
-import { pendingNeedsYou, useApp } from "../../lib/store";
+import { pendingNeedsYou, problemLines, useApp } from "../../lib/store";
 import { Avatar } from "../../ui/Avatar";
 import { Badge, EmptyState } from "../../ui/bits";
 import { Button } from "../../ui/Button";
 import { ChevronDownIcon, InboxIcon, MoreIcon, PlusIcon, SearchIcon } from "../../ui/glyphs";
 import { IconButton } from "../../ui/IconButton";
 import { Link } from "../../ui/Link";
-import { MenuItem, Popover } from "../../ui/Popover";
+import { Menu, MenuItem } from "../../ui/Menu";
 import { shortcut, useTouchOnly } from "../../lib/platform";
+import { focusComposerSoon } from "../thread/useThread";
 import { CustomizeSidebar } from "./CustomizeSidebar";
 import { NewAgentDialog, NewChannelDialog, NewSessionDialog } from "./dialogs";
 import { SidebarRow } from "./SidebarRow";
@@ -53,7 +54,8 @@ export function Sidebar({ route, floating }: { route: Route; floating?: boolean 
   const [dialog, setDialog] = useState<SectionKey | null>(null);
   const search = useRef<HTMLInputElement>(null);
 
-  const sections = useMemo(() => buildSections(snap, query), [snap, query]);
+  const problems = useApp(problemLines);
+  const sections = useMemo(() => buildSections(snap, query, problems), [snap, query, problems]);
   const hiddenLive = useMemo(() => hiddenHasLiveWork(snap), [snap]);
   const selected = selectedId(route, snap.agents);
   const main = snap.agents[0];
@@ -96,8 +98,11 @@ export function Sidebar({ route, floating }: { route: Route; floating?: boolean 
             onKeyDown={(e) => {
               if (e.key === "Escape") setQuery("");
               if (e.key === "Enter" && firstMatch) {
-                navigate(firstMatch.href);
+                e.preventDefault();
+                e.currentTarget.blur();
                 setQuery("");
+                navigate(firstMatch.href);
+                focusComposerSoon();
               }
             }}
             placeholder="Search or jump to…"
@@ -197,6 +202,8 @@ function Section({
   searching: boolean;
 }) {
   const [menu, setMenu] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const closeMenu = useCallback(() => setMenu(false), []);
   if (searching && section.rows.length === 0) return null;
   const label = open ? "" : collapsedLabel(section.rows);
   const listId = `sidebar-${section.key}`;
@@ -218,6 +225,7 @@ function Section({
         {/* Shown on hover and keyboard focus, on an opaque background so the collapsed label never shows through. */}
         <div className={cx("reveal-on-hover absolute top-0.5 right-1 flex items-center gap-0.5 rounded-sm bg-bg", menu && "opacity-100")}>
           <IconButton
+            ref={trigger}
             label={`More for ${section.title}`}
             size={24}
             aria-haspopup="menu"
@@ -231,7 +239,7 @@ function Section({
               <PlusIcon />
             </IconButton>
           )}
-          <Popover open={menu} onClose={() => setMenu(false)} label={`${section.title} actions`} role="menu" className="top-7 right-0 w-44">
+          <Menu open={menu} onClose={closeMenu} anchor={trigger} label={`${section.title} actions`} className="w-44">
             <MenuItem
               onSelect={() => {
                 setMenu(false);
@@ -240,7 +248,7 @@ function Section({
             >
               Hide section
             </MenuItem>
-          </Popover>
+          </Menu>
         </div>
       </div>
       {open && (
