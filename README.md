@@ -16,8 +16,12 @@ curl -fsSL https://github.com/Shyam1203/weilo-agents/releases/latest/download/in
 ```
 
 Weilo keeps its data in Postgres. The installer tells you how to add it if it's missing
-(`brew install postgresql@16` on a Mac, `sudo apt install postgresql-16` on Debian or Ubuntu).
-Weilo starts and stops its own copy, so there is nothing to set up.
+(`brew install postgresql@16` on a Mac, `sudo apt install postgresql` on Debian or Ubuntu).
+Weilo starts and stops its own copy, so there is nothing to set up. Weilo's built-in AI
+and some AI apps also need [Node.js](https://nodejs.org).
+
+If the GitHub CLI (`gh`) is installed and signed in, the installer also checks that the
+download is the one GitHub built for Weilo.
 
 You can also download the file for your computer from the
 [releases](https://github.com/Shyam1203/weilo-agents/releases) and check it against `SHA256SUMS`.

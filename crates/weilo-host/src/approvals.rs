@@ -189,6 +189,11 @@ pub async fn close_stopped(app: &Arc<App>, approval_id: Uuid) -> Result<()> {
     close(app, approval_id, "denied", "stopped", "true").await
 }
 
+/// Weilo stopped while the approval waited: the engine that asked is gone.
+pub async fn close_interrupted(app: &Arc<App>, approval_id: Uuid) -> Result<()> {
+    close(app, approval_id, "denied", "interrupted", "true").await
+}
+
 async fn close(
     app: &Arc<App>,
     approval_id: Uuid,

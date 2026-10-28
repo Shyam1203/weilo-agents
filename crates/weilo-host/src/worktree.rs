@@ -61,6 +61,88 @@ fn candidates(slug: &str) -> impl Iterator<Item = String> + '_ {
     })
 }
 
+/// The session branch of a worktree made by `prepare` (`weilo/<its folder name>`).
+pub fn branch_of(worktree: &str) -> Option<String> {
+    let name = Path::new(worktree).file_name()?.to_str()?;
+    Some(format!("weilo/{name}"))
+}
+
+/// Brings a session's work back into the repo it came from: commits what the session
+/// left uncommitted in its worktree, then merges its branch into the repo's current
+/// branch. Changes nothing when the repo has unsaved changes or the merge would
+/// clash. Answers with one plain line either way.
+pub async fn merge_back(folder: &Path, worktree: &Path, title: &str) -> Result<String, String> {
+    let branch = branch_of(&worktree.to_string_lossy()).ok_or("This session has no branch.")?;
+    let repo = repo_root(folder)
+        .await
+        .ok_or("The original folder isn't a git repo any more.")?;
+    if !worktree.is_dir() {
+        return Err("This session's copy of the repo is gone.".into());
+    }
+    let id = identity(&repo).await;
+    let ident: Vec<&str> = id.iter().map(String::as_str).collect();
+    let pending = git(worktree, &["status", "--porcelain"])
+        .await
+        .map_err(|_| "Couldn't read the session's changes.")?;
+    if !pending.is_empty() {
+        git(worktree, &["add", "-A"])
+            .await
+            .map_err(|_| "Couldn't save the session's changes.")?;
+        let message = format!("Changes from the Weilo session \"{title}\"");
+        let args = [ident.as_slice(), &["commit", "-q", "-m", &message]].concat();
+        git(worktree, &args)
+            .await
+            .map_err(|_| "Couldn't save the session's changes.")?;
+    }
+    let dirty = git(&repo, &["status", "--porcelain", "--untracked-files=no"])
+        .await
+        .map_err(|_| "Couldn't read the original folder.")?;
+    if !dirty.is_empty() {
+        return Err(
+            "The original folder has unsaved changes. Commit or put them aside, then try again."
+                .into(),
+        );
+    }
+    let range = format!("HEAD..{branch}");
+    let ahead = git(&repo, &["rev-list", "--count", &range])
+        .await
+        .map_err(|_| "Couldn't find the session's branch.")?;
+    if ahead.trim() == "0" {
+        return Ok("There's nothing new to bring back.".into());
+    }
+    let args = [
+        ident.as_slice(),
+        &["merge", "--no-ff", "--no-edit", &branch],
+    ]
+    .concat();
+    if git(&repo, &args).await.is_err() {
+        let _ = git(&repo, &["merge", "--abort"]).await;
+        return Err(
+            "These changes clash with changes in the original folder, so nothing was changed."
+                .into(),
+        );
+    }
+    let place = repo
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "the original folder".into());
+    Ok(format!("Brought the session's changes into {place}."))
+}
+
+/// `-c user.name/-c user.email` when the repo has no identity of its own, so a commit
+/// can't fail for want of one.
+async fn identity(repo: &Path) -> Vec<String> {
+    if git(repo, &["config", "user.email"])
+        .await
+        .is_ok_and(|e| !e.is_empty())
+    {
+        return Vec::new();
+    }
+    ["-c", "user.name=Weilo", "-c", "user.email=weilo@localhost"]
+        .map(String::from)
+        .to_vec()
+}
+
 async fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
     let out = Command::new("git")
         .arg("-C")

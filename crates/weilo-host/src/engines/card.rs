@@ -226,7 +226,10 @@ mod tests {
         let a = tool_info(&request(ToolKind::Execute, "Run the checks"), None);
         let b = tool_info(&request(ToolKind::Execute, "Something else"), None);
         assert_eq!(rule_key(&a), rule_key(&b));
-        assert_eq!(rule_key(&a).as_deref(), Some("execute:npm test -- checkout"));
+        assert_eq!(
+            rule_key(&a).as_deref(),
+            Some("execute:npm test -- checkout")
+        );
         let mut c = a.clone();
         c.raw_input = Some(serde_json::json!({ "command": "npm  test --  checkout && rm -rf /" }));
         assert_ne!(rule_key(&a), rule_key(&c));

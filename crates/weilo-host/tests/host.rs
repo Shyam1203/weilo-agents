@@ -2,35 +2,12 @@
 
 mod common;
 
-use common::{Client, Host, setup_with_echo};
+use common::{Client, Host, agent_text, is_state, send, setup_with_echo};
 use uuid::Uuid;
 use weilo_proto::{
-    ApprovalState, Call, CallResult, CallValue, Decision, Delta, EventBody, RiskClass, SendWhen,
-    ServerFrame, StepStatus, WorkState,
+    ApprovalState, Call, CallResult, CallValue, Decision, Delta, EventBody, RiskClass, ServerFrame,
+    StepStatus, WorkState,
 };
-
-fn agent_text(f: &ServerFrame) -> Option<&str> {
-    match f {
-        ServerFrame::Ev { event, .. } => match &event.body {
-            EventBody::AgentMessage { text, .. } => Some(text),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
-fn is_state(f: &ServerFrame, want: WorkState) -> bool {
-    matches!(f, ServerFrame::Ev { event, .. } if matches!(event.body, EventBody::State { state, .. } if state == want))
-}
-
-async fn send(c: &mut Client, thread_id: Uuid, text: &str) {
-    let call = Call::Send {
-        thread_id,
-        text: text.into(),
-        when: SendWhen::AfterJob,
-    };
-    assert!(matches!(c.ok(call).await, CallValue::None));
-}
 
 #[tokio::test]
 async fn setup_send_and_replay() {
@@ -297,18 +274,16 @@ async fn sessions_use_a_worktree_or_report_a_missing_folder() {
         channel_id: None,
         agent_id: None,
     };
-    let CallValue::Thread(t) = c.ok(missing).await else {
+    // A missing folder is refused before anything is made.
+    let refused = c.call(missing).await;
+    assert!(
+        matches!(&refused, CallResult::Failed { error } if error.message == "This folder doesn't exist."),
+        "{refused:?}"
+    );
+    let CallValue::Snapshot(snap) = c.ok(Call::Snapshot).await else {
         panic!()
     };
-    assert_eq!(
-        (t.folder.as_deref(), t.started_by.as_deref()),
-        (Some("/nowhere/at/all"), Some("you"))
-    );
-    c.sub(t.id, 0).await;
-    let problem = c.next(|f| matches!(f, ServerFrame::Ev { event, .. } if matches!(event.body, EventBody::Problem { .. }))).await;
-    assert!(
-        matches!(problem, ServerFrame::Ev { event, .. } if matches!(&event.body, EventBody::Problem { message, .. } if message == "This folder doesn't exist."))
-    );
+    assert!(snap.threads.iter().all(|t| t.folder.is_none()));
 
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path().join("shop");
@@ -418,15 +393,18 @@ async fn guard_and_pairing_reject_strangers() {
     assert_eq!(pair(code.clone()).await.unwrap().status(), 200);
     assert_eq!(pair(code).await.unwrap().status(), 401);
 
-    // No cookie, or a made-up one: no socket.
-    assert!(Client::connect(&host, None).await.is_err());
-    assert!(Client::connect(&host, Some("not-a-token")).await.is_err());
+    // No token, or a made-up one: no socket. A cookie alone isn't enough any more.
+    assert_eq!(Client::connect(&host, None).await.err(), Some(Some(4001)));
+    assert_eq!(
+        Client::connect(&host, Some("not-a-token")).await.err(),
+        Some(Some(4401))
+    );
 
-    // Health tells the app whether this browser is paired.
-    let paired = |cookie: Option<String>| {
+    // Health tells the app whether this browser is paired, from its token.
+    let paired = |header: Option<(&'static str, String)>| {
         let mut req = http.get(host.url("/api/health"));
-        if let Some(c) = cookie {
-            req = req.header("cookie", c);
+        if let Some((name, value)) = header {
+            req = req.header(name, value);
         }
         async move {
             let body: serde_json::Value = req.send().await.unwrap().json().await.unwrap();
@@ -434,7 +412,17 @@ async fn guard_and_pairing_reject_strangers() {
         }
     };
     assert_eq!(paired(None).await, false);
-    assert_eq!(paired(Some("weilo_device=not-a-token".into())).await, false);
+    assert_eq!(
+        paired(Some(("authorization", "Bearer not-a-token".into()))).await,
+        false
+    );
     let token = host.pair().await;
-    assert_eq!(paired(Some(format!("weilo_device={token}"))).await, true);
+    assert_eq!(
+        paired(Some(("authorization", format!("Bearer {token}")))).await,
+        true
+    );
+    assert_eq!(
+        paired(Some(("cookie", format!("weilo_device={token}")))).await,
+        false
+    );
 }

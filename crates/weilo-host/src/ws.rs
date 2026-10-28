@@ -2,7 +2,9 @@
 //!
 //! The device proves itself in its first frame (`hello` with its token), not with a
 //! cookie: cookies on 127.0.0.1 are shared by every port, the token in the app's own
-//! storage is not. A bad or missing token closes the socket with 4401.
+//! storage is not. A bad token closes the socket with 4401 (unpaired). A hello with no
+//! token closes it with 4001: the app may still hold a fresh pairing to trade for its
+//! token (`POST /api/token`), so it checks before it calls itself unpaired.
 //!
 //! The socket subscribes to the broadcast when it opens, before any backlog is read,
 //! and sends each thread's events strictly in `seq` order: a live event that skips
@@ -28,6 +30,7 @@ use crate::{auth, calls, events};
 
 pub const CLOSE_BEHIND: u16 = 4008;
 pub const CLOSE_UNPAIRED: u16 = 4401;
+pub const CLOSE_NO_TOKEN: u16 = 4001;
 pub const CLOSE_BAD_FRAME: u16 = 4400;
 pub const CLOSE_OLD_VERSION: u16 = 4426;
 
@@ -183,12 +186,12 @@ impl Session {
                 "Update Weilo to keep using this app.",
             ));
         }
-        let device = match token.as_deref().filter(|t| !t.is_empty()) {
-            Some(t) => auth::device_for_token(&self.app.db, t)
-                .await
-                .map_err(|_| Close(1011, "Weilo can't check this device right now."))?,
-            None => None,
+        let Some(token) = token.filter(|t| !t.is_empty()) else {
+            return Err(Close(CLOSE_NO_TOKEN, "Send this device's token."));
         };
+        let device = auth::device_for_token(&self.app.db, &token)
+            .await
+            .map_err(|_| Close(1011, "Weilo can't check this device right now."))?;
         let Some(device_id) = device else {
             return Err(Close(CLOSE_UNPAIRED, "Pair this device first."));
         };

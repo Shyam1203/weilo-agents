@@ -18,8 +18,8 @@ use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::schema::v1::{
     AuthMethod, CancelNotification, ErrorCode, InitializeRequest, InitializeResponse,
     LoadSessionRequest, NewSessionRequest, PromptRequest, RequestPermissionRequest,
-    RequestPermissionResponse, ResumeSessionRequest, SessionId, SessionNotification,
-    SessionUpdate, StopReason,
+    RequestPermissionResponse, ResumeSessionRequest, SessionId, SessionNotification, SessionUpdate,
+    StopReason,
 };
 use agent_client_protocol::{
     Agent, ByteStreams, Client, ConnectionTo, Responder, on_receive_notification,

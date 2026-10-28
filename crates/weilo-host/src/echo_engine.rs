@@ -1,19 +1,28 @@
 //! `weilo engine echo`: an ACP agent for tests and demos. It needs no key and no network.
 //!
-//! It answers "You said: …" in small pieces, shows one step, and asks before running a
-//! fake command when the message contains "approve". With "slow" it takes about 3 s, so
-//! Stop can be tried.
+//! It answers "You said: …" (to the last block of the prompt) in small pieces, shows one
+//! step, and asks before running a fake command when the message contains "approve".
+//! Other words in the message, for tests:
+//! - "slow": takes about 3 s, so Stop can be tried; "stubborn": ignores Stop.
+//! - "hang": says nothing until stopped.
+//! - "login": answers like an engine that isn't signed in.
+//! - "who are you": repeats the instructions it was given at the start of the session.
+//! - "helper": starts a background `sleep` and says its pid.
+//!
+//! It can load a session it started before (its instructions are kept in
+//! `WEILO_ECHO_STATE`), unless `WEILO_ECHO_NO_LOAD` is set.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{
-    CancelNotification, ContentBlock, ContentChunk, InitializeRequest, InitializeResponse,
-    NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind, PromptRequest,
-    PromptResponse, RequestPermissionOutcome, RequestPermissionRequest, SessionId,
-    SessionNotification, SessionUpdate, StopReason, ToolCall, ToolCallStatus, ToolCallUpdate,
-    ToolCallUpdateFields, ToolKind,
+    AgentCapabilities, CancelNotification, ContentBlock, ContentChunk, InitializeRequest,
+    InitializeResponse, LoadSessionRequest, LoadSessionResponse, NewSessionRequest,
+    NewSessionResponse, PermissionOption, PermissionOptionKind, PromptRequest, PromptResponse,
+    RequestPermissionOutcome, RequestPermissionRequest, SessionId, SessionNotification,
+    SessionUpdate, StopReason, ToolCall, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields,
+    ToolKind,
 };
 use agent_client_protocol::{
     Agent, ByteStreams, Client, ConnectionTo, on_receive_notification, on_receive_request,
@@ -36,7 +45,18 @@ pub async fn run() -> anyhow::Result<()> {
         .name("echo")
         .on_receive_request(
             async |req: InitializeRequest, responder, _cx| {
-                responder.respond(InitializeResponse::new(req.protocol_version))
+                let loads = std::env::var_os("WEILO_ECHO_NO_LOAD").is_none();
+                let caps = AgentCapabilities::new().load_session(loads);
+                responder
+                    .respond(InitializeResponse::new(req.protocol_version).agent_capabilities(caps))
+            },
+            on_receive_request!(),
+        )
+        .on_receive_request(
+            async |req: LoadSessionRequest, responder, cx: ConnectionTo<Client>| {
+                // Replays the history, as real engines do; the host ignores it.
+                say(&cx, &req.session_id, "(earlier messages)".into())?;
+                responder.respond(LoadSessionResponse::new())
             },
             on_receive_request!(),
         )
@@ -86,8 +106,40 @@ async fn answer(
     cancel: &CancellationToken,
 ) -> agent_client_protocol::Result<StopReason> {
     let sid = req.session_id.clone();
-    let text = prompt_text(req);
+    let mut blocks = prompt_blocks(req);
+    let text = blocks.pop().unwrap_or_default();
+    if !blocks.is_empty() {
+        remember(&sid, &blocks.join("\n\n"));
+    }
     let slow = text.contains("slow");
+    let never = CancellationToken::new();
+    let cancel = if text.contains("stubborn") {
+        &never
+    } else {
+        cancel
+    };
+    if text.contains("hang") {
+        cancel.cancelled().await;
+        return Ok(StopReason::Cancelled);
+    }
+    if text.contains("login") {
+        say(cx, &sid, "Invalid API key · Please run /login".into())?;
+        return Ok(StopReason::EndTurn);
+    }
+    if text.contains("who are you") {
+        let told = recall(&sid).unwrap_or_else(|| "nothing".into());
+        say(cx, &sid, format!("I was told: {told}"))?;
+        return Ok(StopReason::EndTurn);
+    }
+    if text.contains("helper") {
+        let out = std::process::Command::new("sh")
+            .args(["-c", "sleep 4242 >/dev/null 2>&1 & echo $!"])
+            .output()
+            .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))?;
+        let pid = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        say(cx, &sid, format!("Helper {pid}."))?;
+        return Ok(StopReason::EndTurn);
+    }
 
     let read = ToolCall::new("read-1", "Read the request")
         .kind(ToolKind::Read)
@@ -113,7 +165,8 @@ async fn answer(
     }
 
     if text.contains("approve") {
-        let allowed = ask_to_run_checks(cx, &sid).await?;
+        let picked = ask_to_run_checks(cx, &sid).await?;
+        let allowed = picked.is_some();
         if cancel.is_cancelled() {
             return Ok(StopReason::Cancelled);
         }
@@ -128,11 +181,13 @@ async fn answer(
             &sid,
             SessionUpdate::ToolCallUpdate(ToolCallUpdate::new("run-1", fields)),
         )?;
-        say(
-            cx,
-            &sid,
-            if allowed { "Allowed." } else { "Not allowed." }.into(),
-        )?;
+        // An engine told "always" stops asking; Weilo keeps that rule itself.
+        let said = match picked.as_deref() {
+            Some("always") => "Always allowed.",
+            Some(_) => "Allowed.",
+            None => "Not allowed.",
+        };
+        say(cx, &sid, said.into())?;
     }
     Ok(StopReason::EndTurn)
 }
@@ -140,7 +195,7 @@ async fn answer(
 async fn ask_to_run_checks(
     cx: &ConnectionTo<Client>,
     sid: &SessionId,
-) -> agent_client_protocol::Result<bool> {
+) -> agent_client_protocol::Result<Option<String>> {
     let input = serde_json::json!({ "command": "npm test -- checkout" });
     let call = ToolCall::new("run-1", "Run the shop's checks")
         .kind(ToolKind::Execute)
@@ -159,21 +214,45 @@ async fn ask_to_run_checks(
     let request =
         RequestPermissionRequest::new(sid.clone(), ToolCallUpdate::new("run-1", fields), options);
     let response = cx.send_request(request).block_task().await?;
-    Ok(matches!(
-        response.outcome,
-        RequestPermissionOutcome::Selected(s) if s.option_id.0.starts_with("allow") || s.option_id.0.as_ref() == "always"
-    ))
+    Ok(match response.outcome {
+        RequestPermissionOutcome::Selected(s)
+            if s.option_id.0.starts_with("allow") || s.option_id.0.as_ref() == "always" =>
+        {
+            Some(s.option_id.0.to_string())
+        }
+        _ => None,
+    })
 }
 
-fn prompt_text(req: &PromptRequest) -> String {
+fn prompt_blocks(req: &PromptRequest) -> Vec<String> {
     req.prompt
         .iter()
         .filter_map(|b| match b {
-            ContentBlock::Text(t) => Some(t.text.as_str()),
+            ContentBlock::Text(t) => Some(t.text.clone()),
             _ => None,
         })
-        .collect::<Vec<_>>()
-        .join(" ")
+        .collect()
+}
+
+fn told_file(sid: &SessionId) -> Option<std::path::PathBuf> {
+    let dir = std::env::var_os("WEILO_ECHO_STATE")?;
+    let name: String = sid
+        .0
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .collect();
+    Some(std::path::Path::new(&dir).join(format!("{name}.told")))
+}
+
+fn remember(sid: &SessionId, told: &str) {
+    if let Some(path) = told_file(sid) {
+        let _ = std::fs::create_dir_all(path.parent().unwrap_or(&path));
+        let _ = std::fs::write(path, told);
+    }
+}
+
+fn recall(sid: &SessionId) -> Option<String> {
+    std::fs::read_to_string(told_file(sid)?).ok()
 }
 
 fn update(

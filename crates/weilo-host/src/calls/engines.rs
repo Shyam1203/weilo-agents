@@ -28,7 +28,8 @@ pub async fn set_key(
         .save_key(m, provider, key)
         .map_err(CallError::invalid)?;
     let mut tx = app.db.begin().await?;
-    let detail = json!({ "engine": engine, "provider": provider, "removed": key.trim().is_empty() });
+    let detail =
+        json!({ "engine": engine, "provider": provider, "removed": key.trim().is_empty() });
     let entry = audit::Entry {
         actor: "device",
         device_id: Some(device),

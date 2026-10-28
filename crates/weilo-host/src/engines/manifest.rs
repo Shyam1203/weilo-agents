@@ -311,7 +311,8 @@ mod tests {
     #[test]
     fn pinned_env_wins_over_everything() {
         let mut m = load_all(Path::new("/nonexistent"))["claude-code"].clone();
-        m.env.insert("CLAUDE_CODE_DISABLE_BYPASS".into(), "0".into());
+        m.env
+            .insert("CLAUDE_CODE_DISABLE_BYPASS".into(), "0".into());
         let mut v = vars(None);
         v.credentials
             .insert("CLAUDE_CODE_DISABLE_BYPASS".into(), "0".into());

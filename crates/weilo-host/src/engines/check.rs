@@ -173,10 +173,7 @@ mod tests {
     fn sign_in_errors_ask_to_sign_in_and_pi_asks_for_a_key() {
         let f = Failure::other("Invalid API key · Please run /login");
         let e = explain(&manifest("claude-code"), &f);
-        assert_eq!(
-            (e.needs, e.action),
-            (EngineNeed::SignIn, "Sign in")
-        );
+        assert_eq!((e.needs, e.action), (EngineNeed::SignIn, "Sign in"));
         assert_eq!(
             e.message,
             "Claude Code isn't signed in. Open Terminal, run `claude` and sign in."
@@ -196,7 +193,9 @@ mod tests {
 
     #[test]
     fn other_errors_keep_the_whole_message_on_one_line() {
-        let f = Failure::other("Request failed for the OAuth provider.: {\n  \"error\": \"overloaded\"\n}");
+        let f = Failure::other(
+            "Request failed for the OAuth provider.: {\n  \"error\": \"overloaded\"\n}",
+        );
         let e = explain(&manifest("codex"), &f);
         assert_eq!(e.action, "Try again");
         assert_eq!(

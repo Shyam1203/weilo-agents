@@ -54,6 +54,7 @@ pub fn spawn(app: Arc<App>, thread_id: Uuid) -> mpsc::UnboundedSender<Cmd> {
             running_tools: HashSet::new(),
             pending: HashMap::new(),
             preamble: None,
+            restart: false,
         };
         runner.run(rx, engine_rx).await;
     });
@@ -121,6 +122,8 @@ struct Runner {
     /// Who the agent is and its instructions, sent with the first prompt of a new
     /// engine conversation.
     preamble: Option<String>,
+    /// Start a new engine process once this turn ends (the agent was changed).
+    restart: bool,
 }
 
 impl Runner {
@@ -190,6 +193,8 @@ impl Runner {
                 if self.turn.is_none() {
                     self.drop_conn();
                     self.preamble = None;
+                } else {
+                    self.restart = true;
                 }
             }
         }
@@ -218,11 +223,8 @@ impl Runner {
             }
             EngineMsg::Closed => {
                 if self.conn.take().is_some() && self.turn.is_some() {
-                    self.problem(
-                        "The engine stopped unexpectedly.",
-                        Some("Try again"),
-                    )
-                    .await;
+                    self.problem("The engine stopped unexpectedly.", Some("Try again"))
+                        .await;
                     self.end_turn(Ok(StopReason::Cancelled)).await;
                 }
             }
@@ -279,7 +281,9 @@ impl Runner {
                 text,
             )
         };
-        let ctx = load_ctx(&self.app, self.thread_id).await.map_err(internal)?;
+        let ctx = load_ctx(&self.app, self.thread_id)
+            .await
+            .map_err(internal)?;
         let manifest = self
             .app
             .engines
@@ -288,12 +292,12 @@ impl Runner {
             .with_context(|| format!("no engine named {}", ctx.engine))
             .map_err(internal)?;
         let explained = |f: Failure| (explain(&manifest, &f), f.text.clone());
-        self.install(&manifest)
-            .await
-            .map_err(|e| explained(Failure {
+        self.install(&manifest).await.map_err(|e| {
+            explained(Failure {
                 text: e,
                 ..Failure::default()
-            }))?;
+            })
+        })?;
         let spec = spec_for(&self.app, &manifest, ctx.model.clone()).map_err(explained)?;
         std::fs::create_dir_all(&ctx.cwd).map_err(|e| internal(e.into()))?;
         let log = self
@@ -421,16 +425,20 @@ impl Runner {
         if let Some(turn) = self.turn.as_mut() {
             turn.said.push_str(&text);
         }
-        // Pinned when the reply begins: durable events in between don't move it.
-        let after_seq = match self.reply_after {
-            Some(seq) => seq,
-            None => {
-                let seq = self.app.last_seq(self.thread_id).await;
-                self.reply_after = Some(seq);
-                seq
+        // Pinned when the reply begins. If another event lands in the thread meanwhile
+        // (a message from the person, say), devices drop pieces older than it, so the
+        // reply starts again under the new seq, with the text so far as piece 0.
+        self.text.push_str(&text);
+        let now = self.app.last_seq(self.thread_id).await;
+        let text = match self.reply_after {
+            Some(seq) if seq >= now => text,
+            _ => {
+                self.reply_after = Some(now);
+                self.sub_seq = 0;
+                self.text.clone()
             }
         };
-        self.text.push_str(&text);
+        let after_seq = self.reply_after.unwrap_or(now);
         self.app.publish_delta(
             self.thread_id,
             after_seq,
@@ -622,6 +630,10 @@ impl Runner {
                 }
             }
         }
+        if std::mem::take(&mut self.restart) {
+            self.drop_conn();
+            self.preamble = None;
+        }
         if self.now_queue.is_empty() && self.after_queue.is_empty() {
             self.set_state(WorkState::Idle, "").await;
         } else {
@@ -642,6 +654,7 @@ impl Runner {
     }
 
     async fn set_state(&mut self, state: WorkState, live_line: &str) {
+        self.flush_text().await;
         self.append(
             EventBody::State {
                 state,

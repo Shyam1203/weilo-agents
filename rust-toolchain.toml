@@ -1,0 +1,5 @@
+# The Rust used to build, test and release Weilo. CI and the release read this file.
+[toolchain]
+channel = "1.97.0"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

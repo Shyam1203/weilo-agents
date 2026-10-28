@@ -105,15 +105,18 @@ impl Registry {
     /// Readiness against this computer: its environment, saved keys and home folder.
     pub fn readiness(&self, m: &Manifest) -> Readiness {
         let installable = self.is_installed(m) || (is_npm(m) && which("npm").is_some());
-        readiness(m, Probe {
-            installed: self.is_installed(m),
-            installable,
-            npm_engine: is_npm(m),
-            has_credentials: !self.credentials(m).is_empty(),
-            engine_home: self.home.engine_state(&m.name),
-            user_home: dirs::home_dir(),
-            keychain: &keychain_has,
-        })
+        readiness(
+            m,
+            Probe {
+                installed: self.is_installed(m),
+                installable,
+                npm_engine: is_npm(m),
+                has_credentials: !self.credentials(m).is_empty(),
+                engine_home: self.home.engine_state(&m.name),
+                user_home: dirs::home_dir(),
+                keychain: &keychain_has,
+            },
+        )
     }
 
     /// API keys saved in Weilo for an engine, by provider.
@@ -300,7 +303,7 @@ pub fn readiness(m: &Manifest, p: Probe<'_>) -> Readiness {
             how: Some(how),
         };
     }
-    let wants_sign_in = m.sign_in.is_some() || !m.keys.is_empty() || !m.pass_env.is_empty();
+    let wants_sign_in = m.sign_in.is_some() || !m.keys.is_empty();
     if !wants_sign_in {
         return Readiness {
             needs: None,
@@ -567,6 +570,9 @@ mod tests {
         assert_eq!(mode & 0o777, 0o600);
         assert_eq!(reg.credentials(&pi)["OPENAI_API_KEY"], "sk-test");
         reg.save_key(&pi, "openai", "").unwrap();
-        assert!(!reg.credentials(&pi).contains_key("OPENAI_API_KEY") || std::env::var_os("OPENAI_API_KEY").is_some());
+        assert!(
+            !reg.credentials(&pi).contains_key("OPENAI_API_KEY")
+                || std::env::var_os("OPENAI_API_KEY").is_some()
+        );
     }
 }

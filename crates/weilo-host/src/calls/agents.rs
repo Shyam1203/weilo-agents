@@ -90,31 +90,66 @@ pub async fn create_in(
     Ok(id)
 }
 
+/// What `update` changes; `None` keeps the current value.
+pub struct Change {
+    pub name: Option<String>,
+    pub model: Option<String>,
+    pub instructions: Option<String>,
+    pub engine: Option<String>,
+}
+
 pub async fn update(
-    app: &App,
+    app: &Arc<App>,
     device: Uuid,
     agent_id: Uuid,
-    name: Option<String>,
-    model: Option<String>,
-    instructions: Option<String>,
+    change: Change,
 ) -> CallResult<AgentSummary> {
+    let Change {
+        name,
+        model,
+        instructions,
+        engine,
+    } = change;
     let name = name.map(|n| clean_name(&n)).transpose()?;
+    if let Some(engine) = &engine
+        && app.engines.get(engine).is_none()
+    {
+        return Err(CallError::invalid("That engine isn't available."));
+    }
     let mut tx = app.db.begin().await?;
     let done = sqlx::query(
         "UPDATE agents SET name = COALESCE($3, name), model = COALESCE($4, model),
-                instructions = COALESCE($5, instructions)
-         WHERE id = $1 AND space_id = $2",
+                instructions = COALESCE($5, instructions), engine = COALESCE($6, engine)
+         WHERE id = $1 AND space_id = $2 AND stopped_at IS NULL",
     )
     .bind(agent_id)
     .bind(app.space_id)
     .bind(&name)
     .bind(&model)
     .bind(&instructions)
+    .bind(&engine)
     .execute(&mut *tx)
     .await?;
     if done.rows_affected() == 0 {
         return Err(CallError::not_found("That agent is gone."));
     }
+    // A new engine, model or instructions: the engine's next conversation starts fresh
+    // (a new engine can't pick up another's conversation).
+    let restart = engine.is_some() || model.is_some() || instructions.is_some();
+    let agent_threads: Vec<Uuid> = if restart {
+        let reset = if engine.is_some() {
+            "UPDATE threads SET engine_session_id = NULL
+             WHERE agent_id = $1 AND kind <> 'session' RETURNING id"
+        } else {
+            "SELECT id FROM threads WHERE agent_id = $1 AND kind <> 'session'"
+        };
+        sqlx::query_scalar(reset)
+            .bind(agent_id)
+            .fetch_all(&mut *tx)
+            .await?
+    } else {
+        Vec::new()
+    };
     if let Some(name) = &name {
         sqlx::query("UPDATE threads SET title = $2 WHERE agent_id = $1 AND kind = 'agent'")
             .bind(agent_id)
@@ -122,7 +157,7 @@ pub async fn update(
             .execute(&mut *tx)
             .await?;
     }
-    let detail = json!({ "agent_id": agent_id, "name": name, "model": model, "instructions_changed": instructions.is_some() });
+    let detail = json!({ "agent_id": agent_id, "name": name, "model": model, "engine": engine, "instructions_changed": instructions.is_some() });
     audit::append(
         &mut tx,
         app.space_id,
@@ -135,8 +170,40 @@ pub async fn update(
     )
     .await?;
     tx.commit().await?;
+    for thread_id in agent_threads {
+        app.runners.send_if_running(thread_id, Cmd::Restart);
+    }
     app.hub.changed(Changed::Agents);
     read::agent(app, agent_id).await
+}
+
+/// Takes the agent out of the sidebar and stops what it is doing. Its threads and
+/// history are kept.
+pub async fn archive(app: &Arc<App>, device: Uuid, agent_id: Uuid) -> CallResult<()> {
+    let mut tx = app.db.begin().await?;
+    let done = sqlx::query(
+        "UPDATE agents SET stopped_at = now()
+         WHERE id = $1 AND space_id = $2 AND stopped_at IS NULL",
+    )
+    .bind(agent_id)
+    .bind(app.space_id)
+    .execute(&mut *tx)
+    .await?;
+    if done.rows_affected() == 0 {
+        return Err(CallError::not_found("That agent is gone."));
+    }
+    let entry = audit::Entry {
+        actor: "device",
+        device_id: Some(device),
+        action: "agent.archive",
+        detail: json!({ "agent_id": agent_id }),
+    };
+    audit::append(&mut tx, app.space_id, entry).await?;
+    tx.commit().await?;
+    stop(app, agent_id).await?;
+    app.hub.changed(Changed::Agents);
+    app.hub.changed(Changed::Threads);
+    Ok(())
 }
 
 /// Stops whatever the agent is doing, in every thread it owns.

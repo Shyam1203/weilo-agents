@@ -100,10 +100,12 @@ pub async fn channel(app: &App, id: Uuid) -> CallResult<ChannelSummary> {
 
 pub async fn threads(app: &App, only: Option<Uuid>) -> CallResult<Vec<ThreadSummary>> {
     let rows = sqlx::query(
-        "SELECT id, kind, channel_id, agent_id, title, state, live_line, last_seq, engine, folder,
-                started_by, updated_at
-         FROM threads WHERE space_id = $1 AND ($2::uuid IS NULL OR id = $2)
-         ORDER BY updated_at DESC",
+        "SELECT t.id, t.kind, t.channel_id, t.agent_id, t.title, t.state, t.live_line, t.last_seq,
+                t.engine, t.folder, t.worktree, t.started_by, t.updated_at
+         FROM threads t LEFT JOIN agents a ON a.id = t.agent_id
+         WHERE t.space_id = $1 AND ($2::uuid IS NULL OR t.id = $2)
+           AND NOT (t.kind = 'agent' AND a.stopped_at IS NOT NULL)
+         ORDER BY t.updated_at DESC",
     )
     .bind(app.space_id)
     .bind(only)
@@ -121,6 +123,7 @@ pub async fn thread(app: &App, id: Uuid) -> CallResult<ThreadSummary> {
 
 fn thread_from_row(r: &PgRow) -> ThreadSummary {
     let updated_at: DateTime<Utc> = r.get("updated_at");
+    let worktree: Option<String> = r.get("worktree");
     ThreadSummary {
         id: r.get("id"),
         kind: match r.get::<&str, _>("kind") {
@@ -138,6 +141,8 @@ fn thread_from_row(r: &PgRow) -> ThreadSummary {
         folder: r.get("folder"),
         started_by: r.get("started_by"),
         updated_at: updated_at.to_rfc3339(),
+        branch: worktree.as_deref().and_then(crate::worktree::branch_of),
+        worktree,
     }
 }
 
@@ -171,5 +176,6 @@ pub async fn setup(app: &App) -> CallResult<SetupStatus> {
         done: saved["done"].as_bool().unwrap_or(false),
         found_engines: app.engines.found(),
         keep_awake: saved["keep_awake"].as_bool().unwrap_or(false),
+        check: None,
     })
 }

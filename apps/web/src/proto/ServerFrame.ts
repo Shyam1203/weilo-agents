@@ -4,4 +4,4 @@ import type { Changed } from "./Changed";
 import type { Delta } from "./Delta";
 import type { Event } from "./Event";
 
-export type ServerFrame = { "t": "welcome", version: number, host_name: string, device_id: string, } | { "t": "ev", thread_id: string, event: Event, } | { "t": "delta", thread_id: string, after_seq: bigint, sub_seq: bigint, delta: Delta, } | { "t": "ret", call_id: string, result: CallResult, } | { "t": "changed", what: Changed, };
+export type ServerFrame = { "t": "welcome", version: number, host_name: string, device_id: string, } | { "t": "ev", thread_id: string, event: Event, } | { "t": "delta", thread_id: string, after_seq: bigint, sub_seq: bigint, delta: Delta, } | { "t": "ret", call_id: string, result: CallResult, } | { "t": "changed", what: Changed, } | { "t": "status", ok: boolean, message: string | null, };

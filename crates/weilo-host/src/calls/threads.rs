@@ -14,6 +14,7 @@ use crate::audit;
 use crate::engines::{Cmd, expand_tilde};
 use crate::error::{CallError, CallResult};
 use crate::events::{self, Source};
+use crate::home::is_within;
 use crate::ids::new_id;
 use crate::slug::slugify;
 use crate::worktree::{self, Prepared};
@@ -116,6 +117,12 @@ pub async fn start_session(app: &App, device: Uuid, s: NewSession) -> CallResult
     if !folder.is_absolute() {
         return Err(CallError::invalid("Use a full folder path."));
     }
+    if !folder.is_dir() {
+        return Err(CallError::invalid("This folder doesn't exist."));
+    }
+    if let Some(why) = off_limits(app, &folder) {
+        return Err(CallError::invalid(why));
+    }
     if let Some(channel_id) = s.channel_id {
         require(app, "channels", channel_id, "That channel is gone.").await?;
     }
@@ -162,9 +169,26 @@ pub async fn start_session(app: &App, device: Uuid, s: NewSession) -> CallResult
     read::thread(app, thread.id).await
 }
 
+/// Folders a session may not work in: Weilo's own data folder (and anything inside
+/// it), any folder that holds it, and the whole home folder.
+fn off_limits(app: &App, folder: &std::path::Path) -> Option<&'static str> {
+    let data = app.home.root();
+    if is_within(folder, data) {
+        return Some("That's Weilo's own data folder. Choose a project folder.");
+    }
+    if is_within(data, folder) {
+        return Some("That folder holds Weilo's data. Choose a project folder inside it.");
+    }
+    if dirs::home_dir().is_some_and(|home| is_within(&home, folder)) {
+        return Some("Choose a project folder, not your whole home folder.");
+    }
+    None
+}
+
 fn problem_for(p: &Prepared) -> Option<EventBody> {
     let message = match p {
         Prepared::Missing => "This folder doesn't exist.",
+        Prepared::Plain => "This folder isn't a git repo, so changes go straight into it.",
         Prepared::Failed { .. } => {
             "Couldn't make a separate copy of the repo, so this session works in the folder itself."
         }
@@ -217,6 +241,42 @@ async fn session_problem(app: &App, thread_id: Uuid) -> CallResult<Option<CallEr
         }
         _ => None,
     })
+}
+
+/// Brings a session's changes back into its folder (see `worktree::merge_back`).
+pub async fn merge_session(app: &App, device: Uuid, thread_id: Uuid) -> CallResult<String> {
+    let row: Option<(Option<String>, Option<String>, String)> = sqlx::query_as(
+        "SELECT folder, worktree, title FROM threads
+         WHERE id = $1 AND space_id = $2 AND kind = 'session'",
+    )
+    .bind(thread_id)
+    .bind(app.space_id)
+    .fetch_optional(&app.db)
+    .await?;
+    let Some((Some(folder), worktree, title)) = row else {
+        return Err(CallError::not_found("That session is gone."));
+    };
+    let Some(worktree) = worktree else {
+        return Err(CallError::invalid(
+            "This session works in the folder itself, so its changes are already there.",
+        ));
+    };
+    let result = worktree::merge_back(
+        std::path::Path::new(&folder),
+        std::path::Path::new(&worktree),
+        &title,
+    )
+    .await;
+    let mut tx = app.db.begin().await?;
+    let entry = audit::Entry {
+        actor: "device",
+        device_id: Some(device),
+        action: "session.merge",
+        detail: json!({ "thread_id": thread_id, "worktree": worktree, "ok": result.is_ok() }),
+    };
+    audit::append(&mut tx, app.space_id, entry).await?;
+    tx.commit().await?;
+    result.map_err(CallError::conflict)
 }
 
 pub async fn stop(app: &App, thread_id: Uuid) -> CallResult<()> {

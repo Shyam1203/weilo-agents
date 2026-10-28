@@ -18,6 +18,7 @@ pub mod jobs;
 pub mod keep_awake;
 pub mod pg;
 pub mod projector;
+pub mod recovery;
 pub mod slug;
 pub mod up;
 pub mod worktree;

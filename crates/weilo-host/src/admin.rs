@@ -70,8 +70,3 @@ pub async fn request(socket: &Path, what: &str) -> Result<Value> {
     BufReader::new(read).read_line(&mut line).await?;
     Ok(serde_json::from_str(&line)?)
 }
-
-/// True when a host already answers on this socket.
-pub async fn is_running(socket: &Path) -> bool {
-    UnixStream::connect(socket).await.is_ok()
-}

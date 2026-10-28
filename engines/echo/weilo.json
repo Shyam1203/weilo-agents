@@ -6,5 +6,7 @@
   "description": "Answers with what you wrote. For tests; needs no key.",
   "command": ["{self}", "engine", "echo"],
   "bindsApprovals": true,
-  "hidden": true
+  "hidden": true,
+  "env": { "WEILO_ECHO_STATE": "{engine_home}" },
+  "passEnv": ["WEILO_ECHO_NO_LOAD"]
 }

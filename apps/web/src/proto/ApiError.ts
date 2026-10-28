@@ -2,7 +2,8 @@
 
 export type ApiError = { 
 /**
- * Stable code for programs (`not_found`, `conflict`, `invalid`, `engine`, `internal`).
+ * Stable code for programs (`not_found`, `conflict`, `invalid`, `engine`, `busy`,
+ * `unknown` (it may or may not have happened), `internal`).
  */
 code: string, 
 /**

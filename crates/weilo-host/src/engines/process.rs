@@ -53,22 +53,21 @@ impl Group {
 
 impl Drop for Group {
     fn drop(&mut self) {
-        LIVE.lock()
-            .expect("groups lock")
-            .retain(|&g| g != self.pgid);
         let pgid = self.pgid;
         signal(pgid, libc::SIGTERM);
-        // Waiting would block the runner, so a small thread finishes the job.
+        // Waiting would block the runner, so a small thread finishes the job. The group
+        // stays listed until then, so a host shutdown meanwhile still kills it.
         std::thread::spawn(move || {
             wait_gone(&[pgid], GRACE);
             signal(pgid, libc::SIGKILL);
+            forget(&[pgid]);
         });
     }
 }
 
 /// Ends every live group: SIGTERM, then SIGKILL for any still there after `grace`.
 pub fn kill_all(grace: Duration) {
-    let groups: Vec<i32> = std::mem::take(&mut *LIVE.lock().expect("groups lock"));
+    let groups: Vec<i32> = LIVE.lock().expect("groups lock").clone();
     for &g in &groups {
         signal(g, libc::SIGTERM);
     }
@@ -76,6 +75,13 @@ pub fn kill_all(grace: Duration) {
     for g in left {
         signal(g, libc::SIGKILL);
     }
+    forget(&groups);
+}
+
+fn forget(groups: &[i32]) {
+    LIVE.lock()
+        .expect("groups lock")
+        .retain(|g| !groups.contains(g));
 }
 
 /// Waits until no process is left in these groups, or `grace` is over. Returns the
@@ -113,8 +119,8 @@ mod tests {
         // A zombie still answers kill(0); /proc tells them apart on Linux.
         let state = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
         // SAFETY: signal 0 only checks.
-        unsafe { libc::kill(pid, 0) == 0 }
-            && !state.split(") ").nth(1).is_some_and(|s| s.starts_with('Z'))
+        let exists = unsafe { libc::kill(pid, 0) == 0 };
+        exists && !state.split(") ").nth(1).is_some_and(|s| s.starts_with('Z'))
     }
 
     #[tokio::test]
@@ -123,7 +129,10 @@ mod tests {
         let pidfile = dir.path().join("pid");
         let mut cmd = tokio::process::Command::new("sh");
         cmd.arg("-c")
-            .arg(format!("sleep 4242 & echo $! > {}; wait", pidfile.display()))
+            .arg(format!(
+                "sleep 4242 & echo $! > {}; wait",
+                pidfile.display()
+            ))
             .kill_on_drop(true);
         configure(&mut cmd);
         let child = cmd.spawn().unwrap();

@@ -87,6 +87,26 @@ interface PendingCall {
 
 const OPEN = 1;
 const UNPAIRED_CODES = new Set([1008, 4401, 4403]);
+const TOKEN_KEY = "weilo.device";
+
+/** This device's token from pairing, kept in the app's own storage (not a cookie). */
+export function savedToken(): string | null {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function saveToken(token: string | null): void {
+  try {
+    if (typeof localStorage === "undefined") return;
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* private mode: pairing lasts for this page only */
+  }
+}
 
 export class HostConnection implements HostApi {
   private readonly opts: Required<Omit<HostOptions, "checkAuth">> & Pick<HostOptions, "checkAuth">;
@@ -203,7 +223,8 @@ export class HostConnection implements HostApi {
     }
     this.socket = socket;
     socket.onopen = () => {
-      this.write(socket, { t: "hello", version: PROTOCOL_VERSION });
+      const token = savedToken();
+      this.write(socket, token ? { t: "hello", version: PROTOCOL_VERSION, token } : { t: "hello", version: PROTOCOL_VERSION });
     };
     socket.onmessage = (ev) => {
       if (typeof ev.data !== "string") return;
@@ -225,6 +246,7 @@ export class HostConnection implements HostApi {
       this.welcomed = false;
       if (!this.running) return;
       if (UNPAIRED_CODES.has(ev.code)) {
+        saveToken(null);
         this.running = false;
         this.setStatus("unpaired");
         return;
@@ -357,9 +379,23 @@ export function socketUrl(loc: Pick<Location, "protocol" | "host"> = window.loca
   return `${loc.protocol === "https:" ? "wss:" : "ws:"}//${loc.host}/api/ws`;
 }
 
-/** Asks the host whether this browser is paired (`/api/health` says `paired: false` when not). */
+/**
+ * Asks the host whether this browser is paired (`/api/health` says `paired: false` when not).
+ * Right after pairing, first trades the one-time pairing cookie for the token (`/api/token`).
+ */
 export async function checkPaired(fetcher: typeof fetch = fetch): Promise<"ok" | "unpaired"> {
-  const res = await fetcher("/api/health", { credentials: "same-origin" });
+  if (!savedToken()) {
+    const res = await fetcher("/api/token", { method: "POST", credentials: "same-origin" }).catch(() => null);
+    const body: unknown = res?.ok ? await res.json().catch(() => null) : null;
+    const token = body && typeof body === "object" ? (body as { token?: unknown }).token : null;
+    if (typeof token === "string" && token) {
+      saveToken(token);
+      return "ok";
+    }
+  }
+  const token = savedToken();
+  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+  const res = await fetcher("/api/health", { credentials: "same-origin", headers });
   if (res.status === 401 || res.status === 403) return "unpaired";
   const body: unknown = await res.json().catch(() => null);
   return body && typeof body === "object" && (body as { paired?: unknown }).paired === false ? "unpaired" : "ok";

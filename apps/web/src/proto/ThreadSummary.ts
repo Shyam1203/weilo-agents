@@ -10,4 +10,12 @@ engine: string | null,
 /**
  * Folder for sessions.
  */
-folder: string | null, started_by: string | null, updated_at: string, };
+folder: string | null, started_by: string | null, updated_at: string, 
+/**
+ * For sessions in a git repo: the separate copy the session works in.
+ */
+worktree?: string, 
+/**
+ * The session's branch (`weilo/<name>`), merged back by `merge_session`.
+ */
+branch?: string, };

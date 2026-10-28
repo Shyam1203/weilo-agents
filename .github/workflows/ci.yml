@@ -16,8 +16,8 @@ jobs:
       WEILO_PG_BIN: /usr/lib/postgresql/16/bin
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - name: Rust toolchain
-        run: rustup toolchain install stable --profile minimal -c clippy,rustfmt && rustup default stable
+      - name: Rust toolchain (from rust-toolchain.toml)
+        run: rustup toolchain install
       - name: Postgres binaries
         run: test -x "$WEILO_PG_BIN/initdb" || (sudo apt-get update && sudo apt-get install -y postgresql-16)
       - run: cargo fmt --all --check
@@ -53,8 +53,8 @@ jobs:
         working-directory: apps/web
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - name: Rust toolchain
-        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: Rust toolchain (from rust-toolchain.toml)
+        run: rustup toolchain install
       - name: Postgres 16 (from the PGDG repo when the runner's apt doesn't have it)
         run: |
           test -x "$WEILO_PG_BIN/initdb" && exit 0

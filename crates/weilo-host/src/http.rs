@@ -82,9 +82,7 @@ pub fn find_web_dir(arg: Option<PathBuf>) -> Option<PathBuf> {
         return Some(dir);
     }
     // Resolved, so a symlink in ~/.local/bin finds the web/ beside the real binary.
-    let exe = std::env::current_exe()
-        .and_then(std::fs::canonicalize)
-        .ok();
+    let exe = std::env::current_exe().and_then(std::fs::canonicalize).ok();
     let beside = exe.as_deref().and_then(Path::parent).map(|d| d.join("web"));
     let in_repo = exe
         .as_deref()
@@ -171,7 +169,10 @@ async fn pair(State(app): State<Arc<App>>, Json(body): Json<PairBody>) -> Respon
             let error = format!(
                 "Too many wrong codes. Wait {minutes} minutes, or run weilo pair for a new code."
             );
-            return (StatusCode::TOO_MANY_REQUESTS, Json(json!({ "error": error })))
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(json!({ "error": error })),
+            )
                 .into_response();
         }
     }

@@ -6,6 +6,12 @@
 //! created with `useradd` when missing. That user must be able to pass through the
 //! home folder; when it can't (for example `/root` is 0700), the cluster lives in
 //! `/var/lib/weilo-agents/<hash of home>` instead.
+//!
+//! Sign-in uses peer auth over the Unix socket: only the OS user running the host may
+//! log in, as any of the three roles, and no password is kept on disk.
+//!
+//! When Postgres stops by itself, `supervise` starts it again with a growing pause and
+//! tells the app, which pauses turns meanwhile.
 
 use std::ffi::CString;
 use std::fs;
@@ -29,13 +35,11 @@ pub const OWNER_ROLE: &str = "weilo_owner";
 pub const APP_ROLE: &str = "weilo_app";
 pub const DATABASE: &str = "weilo";
 
-/// Passwords and the port, kept in `HOME/secrets/pg.json` (0600).
+/// The port, kept in `HOME/secrets/pg.json` (0600). Older homes also kept passwords
+/// there; they are dropped on the next start.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PgSecrets {
     pub port: u16,
-    pub admin_password: String,
-    pub owner_password: String,
-    pub app_password: String,
 }
 
 /// The OS user Postgres runs as, when it isn't us.
@@ -53,6 +57,8 @@ pub struct Layout {
     pub socket_dir: PathBuf,
     pub log_file: PathBuf,
     pub run_as: Option<RunAs>,
+    /// The OS user the host runs as: the only one peer auth lets in.
+    pub host_user: String,
 }
 
 pub struct Postgres {
@@ -74,35 +80,79 @@ impl Postgres {
         let secrets = load_or_create_secrets(home)?;
         prepare_dirs(&layout)?;
         if !layout.data_dir.join("PG_VERSION").exists() {
-            initdb(&layout, &secrets).await?;
+            initdb(&layout).await?;
         }
-        clear_stale_pid(&layout).await?;
-        let child = spawn_postgres(&layout, secrets.port)?;
         let mut pg = Self {
-            child: Some(child),
+            child: None,
             layout,
             secrets,
         };
-        if let Err(e) = pg.wait_ready().await {
-            pg.stop().await;
-            return Err(e);
-        }
+        pg.launch().await?;
         pg.bootstrap().await?;
         Ok(pg)
     }
 
+    /// Writes the sign-in rules, clears a stale pid file and starts the server.
+    async fn launch(&mut self) -> Result<()> {
+        write_auth_files(&self.layout)?;
+        clear_stale_pid(&self.layout).await?;
+        self.child = Some(spawn_postgres(&self.layout, self.secrets.port)?);
+        if let Err(e) = self.wait_ready().await {
+            self.stop().await;
+            return Err(e);
+        }
+        Ok(())
+    }
+
     pub fn options(&self, role: &str, database: &str) -> PgConnectOptions {
-        let password = match role {
-            ADMIN_ROLE => &self.secrets.admin_password,
-            OWNER_ROLE => &self.secrets.owner_password,
-            _ => &self.secrets.app_password,
-        };
         PgConnectOptions::new()
             .socket(&self.layout.socket_dir)
             .port(self.secrets.port)
             .username(role)
-            .password(password)
             .database(database)
+    }
+
+    /// Waits until Postgres exits by itself.
+    async fn exited(&mut self) -> String {
+        match self.child.as_mut() {
+            Some(child) => match child.wait().await {
+                Ok(status) => status.to_string(),
+                Err(e) => e.to_string(),
+            },
+            None => std::future::pending().await,
+        }
+    }
+
+    /// Keeps Postgres running until `stop` is cancelled, then stops it. `up` is told
+    /// when it goes down and when it is back.
+    pub async fn supervise(mut self, stop: tokio_util::sync::CancellationToken, up: impl Fn(bool)) {
+        let mut pause = Duration::from_millis(250);
+        loop {
+            let status = tokio::select! {
+                status = self.exited() => status,
+                _ = stop.cancelled() => break,
+            };
+            self.child = None;
+            tracing::warn!("Postgres stopped by itself ({status}); starting it again");
+            up(false);
+            loop {
+                tokio::select! {
+                    _ = tokio::time::sleep(pause) => {}
+                    _ = stop.cancelled() => return,
+                }
+                match self.launch().await {
+                    Ok(()) => break,
+                    Err(e) => {
+                        tracing::warn!("Postgres didn't start again: {e:#}");
+                        pause = (pause * 2).min(Duration::from_secs(30));
+                    }
+                }
+            }
+            tracing::info!("Postgres is back");
+            pause = Duration::from_millis(250);
+            up(true);
+        }
+        self.stop().await;
     }
 
     async fn wait_ready(&mut self) -> Result<()> {
@@ -128,13 +178,14 @@ impl Postgres {
         lines.into_iter().rev().collect::<Vec<_>>().join("\n")
     }
 
-    /// Roles and database. Safe to run on every start.
+    /// Roles and database. Safe to run on every start. Roles have no password: only
+    /// peer auth lets anyone in.
     async fn bootstrap(&self) -> Result<()> {
         let mut conn = PgConnection::connect_with(&self.options(ADMIN_ROLE, "postgres")).await?;
-        for (role, password, extra) in [
-            (OWNER_ROLE, &self.secrets.owner_password, ""),
-            (APP_ROLE, &self.secrets.app_password, " NOBYPASSRLS"),
-        ] {
+        sqlx::raw_sql(&format!("ALTER ROLE {ADMIN_ROLE} PASSWORD NULL"))
+            .execute(&mut conn)
+            .await?;
+        for (role, extra) in [(OWNER_ROLE, ""), (APP_ROLE, " NOBYPASSRLS")] {
             let exists: bool =
                 sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)")
                     .bind(role)
@@ -142,8 +193,7 @@ impl Postgres {
                     .await?;
             let verb = if exists { "ALTER" } else { "CREATE" };
             let sql = format!(
-                "{verb} ROLE {role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE{extra} PASSWORD {}",
-                quote_literal(password)
+                "{verb} ROLE {role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE{extra} PASSWORD NULL"
             );
             sqlx::raw_sql(&sql).execute(&mut conn).await?;
         }
@@ -198,10 +248,6 @@ fn signal(pid: u32, sig: i32) {
     }
 }
 
-fn quote_literal(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "''"))
-}
-
 /// `WEILO_PG_BIN`, then `pg_config --bindir`, then the newest Debian or Homebrew install.
 pub fn find_bin_dir() -> Result<PathBuf> {
     if let Some(dir) = std::env::var_os("WEILO_PG_BIN") {
@@ -248,7 +294,16 @@ pub fn find_bin_dir() -> Result<PathBuf> {
     found
         .pop()
         .map(|(_, p)| p)
-        .ok_or_else(|| anyhow!("Postgres isn't installed. Set WEILO_PG_BIN to its bin folder."))
+        .ok_or_else(|| anyhow!("{}", missing_postgres()))
+}
+
+/// What to do when Postgres isn't on this computer, in this computer's words.
+pub fn missing_postgres() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Weilo needs Postgres. Install it from Terminal: brew install postgresql@16"
+    } else {
+        "Weilo needs Postgres. Install it from Terminal: sudo apt install postgresql"
+    }
 }
 
 fn run_as_user() -> Result<Option<RunAs>> {
@@ -307,13 +362,59 @@ pub fn layout(home: &Home, run_as: Option<RunAs>) -> Result<Layout> {
         }
         _ => home.root().to_path_buf(),
     };
+    // A Unix socket path must fit in about 100 bytes; long homes use a short folder.
+    let mut socket_dir = data_root.join("run");
+    if socket_dir.as_os_str().len() + ".s.PGSQL.65535".len() + 1 > 100 {
+        let hash = hex::encode(&Sha256::digest(home.root().as_os_str().as_encoded_bytes())[..6]);
+        socket_dir = std::env::temp_dir().join(format!("weilo-pg-{hash}"));
+    }
     Ok(Layout {
         bin_dir,
         data_dir: data_root.join("db"),
-        socket_dir: data_root.join("run"),
+        socket_dir,
         log_file: home.logs().join("postgres.log"),
         run_as,
+        host_user: host_user()?,
     })
+}
+
+/// The name of the OS user running the host.
+fn host_user() -> Result<String> {
+    // SAFETY: getpwuid returns static storage or null; the name is copied at once.
+    unsafe {
+        let pw = libc::getpwuid(libc::geteuid());
+        if pw.is_null() {
+            bail!("This computer's user has no name, so Postgres can't check who you are.");
+        }
+        Ok(std::ffi::CStr::from_ptr((*pw).pw_name)
+            .to_string_lossy()
+            .into_owned())
+    }
+}
+
+/// Lets only the host's OS user in, over the Unix socket, as any of Weilo's roles.
+fn write_auth_files(layout: &Layout) -> Result<()> {
+    let user = &layout.host_user;
+    if user.is_empty()
+        || user
+            .chars()
+            .any(|c| c.is_whitespace() || c == '"' || c == '#')
+    {
+        bail!("This computer's user name can't be used with Postgres.");
+    }
+    let hba = "# Written by Weilo on every start.\nlocal all all peer map=weilo\n";
+    let ident = format!(
+        "# Written by Weilo on every start.\n\
+         weilo {user} {ADMIN_ROLE}\nweilo {user} {OWNER_ROLE}\nweilo {user} {APP_ROLE}\n"
+    );
+    for (name, text) in [("pg_hba.conf", hba), ("pg_ident.conf", ident.as_str())] {
+        let path = layout.data_dir.join(name);
+        write_private(&path, text.as_bytes())?;
+        if let Some(owner) = &layout.run_as {
+            std::os::unix::fs::chown(&path, Some(owner.uid), Some(owner.gid))?;
+        }
+    }
+    Ok(())
 }
 
 /// True when every folder above `dir` lets other users pass through.
@@ -328,13 +429,18 @@ fn others_can_pass(dir: &Path) -> bool {
 fn load_or_create_secrets(home: &Home) -> Result<PgSecrets> {
     let path = home.secrets().join("pg.json");
     if let Ok(bytes) = fs::read(&path) {
-        return serde_json::from_slice(&bytes).context("HOME/secrets/pg.json is damaged");
+        let old: serde_json::Value =
+            serde_json::from_slice(&bytes).context("HOME/secrets/pg.json is damaged")?;
+        let secrets: PgSecrets =
+            serde_json::from_value(old.clone()).context("HOME/secrets/pg.json is damaged")?;
+        // Passwords from before peer auth aren't needed any more.
+        if old.as_object().is_some_and(|o| o.len() > 1) {
+            write_private(&path, &serde_json::to_vec_pretty(&secrets)?)?;
+        }
+        return Ok(secrets);
     }
     let secrets = PgSecrets {
         port: 15432 + rand::rng().random_range(0..1000),
-        admin_password: random_secret(),
-        owner_password: random_secret(),
-        app_password: random_secret(),
     };
     write_private(&path, &serde_json::to_vec_pretty(&secrets)?)?;
     Ok(secrets)
@@ -380,29 +486,22 @@ fn command(layout: &Layout, program: &str) -> Command {
     cmd
 }
 
-async fn initdb(layout: &Layout, secrets: &PgSecrets) -> Result<()> {
-    let pwfile = layout.socket_dir.join("initdb.pw");
-    write_private(&pwfile, secrets.admin_password.as_bytes())?;
-    if let Some(user) = &layout.run_as {
-        std::os::unix::fs::chown(&pwfile, Some(user.uid), Some(user.gid))?;
-    }
+async fn initdb(layout: &Layout) -> Result<()> {
     let out = command(layout, "initdb")
         .arg("-D")
         .arg(&layout.data_dir)
         .args([
             "-U",
             ADMIN_ROLE,
-            "--auth=scram-sha-256",
+            "--auth=peer",
             "--data-checksums",
             "-E",
             "UTF8",
         ])
         .args(["--locale=C", "--no-instructions"])
-        .arg(format!("--pwfile={}", pwfile.display()))
         .output()
         .await
         .context("couldn't run initdb")?;
-    let _ = fs::remove_file(&pwfile);
     if !out.status.success() {
         // Leave an empty folder so the next start tries again.
         let _ = fs::remove_dir_all(&layout.data_dir);
@@ -414,8 +513,9 @@ async fn initdb(layout: &Layout, secrets: &PgSecrets) -> Result<()> {
     Ok(())
 }
 
-/// Removes `postmaster.pid` when its process is gone. A live Postgres left over from an
-/// earlier run of this home is stopped first.
+/// Removes `postmaster.pid` when its process is gone, or is not a Postgres for this
+/// data folder (pids get reused). A live Postgres left over from an earlier run of this
+/// home is stopped first.
 async fn clear_stale_pid(layout: &Layout) -> Result<()> {
     let pid_file = layout.data_dir.join("postmaster.pid");
     let Ok(text) = fs::read_to_string(&pid_file) else {
@@ -429,7 +529,11 @@ async fn clear_stale_pid(layout: &Layout) -> Result<()> {
         fs::remove_file(&pid_file)?;
         return Ok(());
     };
-    if !process_alive(pid) {
+    let ours = text
+        .lines()
+        .nth(1)
+        .is_some_and(|dir| same_dir(Path::new(dir.trim()), &layout.data_dir));
+    if !process_alive(pid) || !ours || !is_postgres(pid) {
         tracing::info!("Clearing a stale postmaster.pid ({pid})");
         fs::remove_file(&pid_file)?;
         return Ok(());
@@ -443,6 +547,27 @@ async fn clear_stale_pid(layout: &Layout) -> Result<()> {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     bail!("Another Postgres ({pid}) is using this home folder.")
+}
+
+fn same_dir(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
+/// Whether the process is a Postgres server, by its program name.
+fn is_postgres(pid: i32) -> bool {
+    let name = match fs::read_to_string(format!("/proc/{pid}/comm")) {
+        Ok(name) => name,
+        Err(_) => std::process::Command::new("ps")
+            .args(["-o", "comm=", "-p", &pid.to_string()])
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+            .unwrap_or_default(),
+    };
+    let name = name.trim();
+    name == "postgres" || name.ends_with("/postgres")
 }
 
 fn process_alive(pid: i32) -> bool {
@@ -476,4 +601,62 @@ fn spawn_postgres(layout: &Layout, port: u16) -> Result<Child> {
         cmd.args(["-c", "wal_sync_method=fsync_writethrough"]);
     }
     cmd.spawn().context("couldn't start postgres")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn layout_in(dir: &Path) -> Layout {
+        Layout {
+            bin_dir: dir.into(),
+            data_dir: dir.join("db"),
+            socket_dir: dir.join("run"),
+            log_file: dir.join("pg.log"),
+            run_as: None,
+            host_user: "me".into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_pid_file_naming_another_program_is_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = layout_in(dir.path());
+        fs::create_dir_all(&layout.data_dir).unwrap();
+        let pid_file = layout.data_dir.join("postmaster.pid");
+        // This test's own pid: alive, but not a Postgres. It must not be signalled.
+        let text = format!("{}\n{}\n", std::process::id(), layout.data_dir.display());
+        fs::write(&pid_file, text).unwrap();
+        clear_stale_pid(&layout).await.unwrap();
+        assert!(!pid_file.exists());
+    }
+
+    #[tokio::test]
+    async fn a_pid_file_for_another_folder_is_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = layout_in(dir.path());
+        fs::create_dir_all(&layout.data_dir).unwrap();
+        let pid_file = layout.data_dir.join("postmaster.pid");
+        fs::write(
+            &pid_file,
+            format!("{}\n/somewhere/else\n", std::process::id()),
+        )
+        .unwrap();
+        clear_stale_pid(&layout).await.unwrap();
+        assert!(!pid_file.exists());
+    }
+
+    #[test]
+    fn only_the_host_user_may_sign_in() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = layout_in(dir.path());
+        fs::create_dir_all(&layout.data_dir).unwrap();
+        write_auth_files(&layout).unwrap();
+        let hba = fs::read_to_string(layout.data_dir.join("pg_hba.conf")).unwrap();
+        assert!(hba.contains("local all all peer map=weilo"));
+        assert!(!hba.contains("host "));
+        let ident = fs::read_to_string(layout.data_dir.join("pg_ident.conf")).unwrap();
+        assert!(ident.contains("weilo me weilo_app"));
+        assert_eq!(ident.lines().filter(|l| l.starts_with("weilo ")).count(), 3);
+    }
 }

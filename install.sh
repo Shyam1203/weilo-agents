@@ -29,9 +29,12 @@ target="$arch-$os"
 if [ -n "${WEILO_VERSION:-}" ]; then
   tag="v${WEILO_VERSION#v}"
 else
-  tag="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$repo/releases/latest")"
+  tag="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$repo/releases/latest" 2>/dev/null || true)"
   tag="${tag##*/}"
-  case "$tag" in v*) ;; *) fail "the newest version couldn't be found." ;; esac
+  case "$tag" in
+    v*) ;;
+    *) fail "there's no released version to download yet. See https://github.com/$repo for news." ;;
+  esac
 fi
 version="${tag#v}"
 name="weilo-$version-$target"
@@ -52,6 +55,17 @@ else
   actual="$(shasum -a 256 "$tmp/$name.tar.gz" | cut -d' ' -f1)"
 fi
 [ "$actual" = "$expected" ] || fail "the download is damaged (checksum mismatch)."
+
+# Where it was built, when the GitHub CLI is here to check. Not signed in: just a note.
+if command -v gh >/dev/null 2>&1; then
+  if gh auth status >/dev/null 2>&1; then
+    gh attestation verify "$tmp/$name.tar.gz" --repo "$repo" >/dev/null 2>&1 ||
+      fail "the download isn't the one GitHub built for Weilo."
+    say "Checked: GitHub built this download for Weilo."
+  else
+    say "Note: sign in to the GitHub CLI (gh auth login) to also check where this download was built."
+  fi
+fi
 
 tar -xzf "$tmp/$name.tar.gz" -C "$tmp"
 dest="$prefix/share/weilo"
@@ -75,9 +89,14 @@ if [ "$has_pg" = 0 ]; then
   if [ "$os" = "apple-darwin" ]; then
     say "  brew install postgresql@16"
   else
-    say "  sudo apt install postgresql-16"
+    say "  sudo apt install postgresql"
   fi
   say "Weilo starts and stops its own copy, so you don't need to set it up or run it."
+fi
+
+if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+  say ""
+  say "Weilo's built-in AI and some AI apps need Node.js. Get it from https://nodejs.org"
 fi
 
 case ":$PATH:" in

@@ -62,10 +62,13 @@ pub enum ServerFrame {
         thread_id: Id,
         event: Event,
     },
-    /// A temporary piece of a reply being written. Never stored. Every piece of one reply
-    /// carries the same `after_seq` (the thread's last `seq` when the reply began) and a
-    /// `sub_seq` counting from 0. The reply is done when an `agent_message` event with a
-    /// `seq` above `after_seq` arrives; other events in between don't end it.
+    /// A temporary piece of a reply being written. Never stored. The pieces of one reply
+    /// carry the same `after_seq` (the thread's last `seq` when the reply began) and a
+    /// `sub_seq` counting from 0; the text is the pieces under the highest `after_seq`,
+    /// in `sub_seq` order. Any event with a `seq` above `after_seq` replaces them: the
+    /// host stores the reply so far before its own events, and when another event lands
+    /// mid-reply it starts again under the new `after_seq`, with the whole text so far
+    /// as `sub_seq` 0.
     Delta {
         thread_id: Id,
         after_seq: i64,
@@ -223,6 +226,8 @@ pub enum Decision {
     Deny,
 }
 
+// A short-lived wire value; boxing the large answer would only add an allocation.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "ok", rename_all = "snake_case")]
 #[ts(export)]

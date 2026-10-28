@@ -1,6 +1,9 @@
 //! A small job queue in Postgres, after Graphile Worker: jobs are claimed with
 //! `FOR UPDATE SKIP LOCKED` and leased with `locked_by`/`locked_until`, so a crashed
 //! worker's job runs again after its lease ends. Jobs run at least once.
+//!
+//! A finished job keeps its row (with `finished_at`) for 30 days; `maintenance.prune`
+//! clears those, and stored call results after 7 days, once a day.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,7 +11,7 @@ use std::time::Duration;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
-use sqlx::{PgConnection, Row};
+use sqlx::{PgConnection, PgPool, Row};
 use uuid::Uuid;
 
 use crate::app::App;
@@ -16,6 +19,7 @@ use crate::approvals;
 use crate::ids::new_id;
 
 pub const EXPIRE_APPROVAL: &str = "approvals.expire";
+pub const PRUNE: &str = "maintenance.prune";
 
 /// Adds a job, or moves an existing one with the same key to the new time.
 pub async fn enqueue(
@@ -30,7 +34,8 @@ pub async fn enqueue(
         "INSERT INTO jobs (id, space_id, queue, job_key, run_at, payload)
          VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (job_key) DO UPDATE
-         SET run_at = EXCLUDED.run_at, payload = EXCLUDED.payload, attempts = 0, last_error = NULL",
+         SET run_at = EXCLUDED.run_at, payload = EXCLUDED.payload, attempts = 0, last_error = NULL,
+             finished_at = NULL, locked_by = NULL, locked_until = NULL",
     )
     .bind(new_id())
     .bind(space_id)
@@ -55,7 +60,7 @@ pub fn spawn_worker(app: Arc<App>) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         loop {
             match claim(&app, &worker).await {
-                Ok(Some(job)) => finish(&app, &job, run(&app, &job).await).await,
+                Ok(Some(job)) => finish(&app, &worker, &job, run(&app, &job).await).await,
                 Ok(None) => tokio::time::sleep(app.settings.job_poll).await,
                 Err(e) => {
                     tracing::warn!("job queue: {e}");
@@ -72,7 +77,7 @@ async fn claim(app: &App, worker: &str) -> sqlx::Result<Option<Job>> {
                 attempts = attempts + 1
          WHERE id = (
              SELECT id FROM jobs
-             WHERE run_at <= now() AND attempts < max_attempts
+             WHERE run_at <= now() AND attempts < max_attempts AND finished_at IS NULL
                AND (locked_until IS NULL OR locked_until < now())
              ORDER BY run_at LIMIT 1
              FOR UPDATE SKIP LOCKED)
@@ -95,17 +100,52 @@ async fn run(app: &Arc<App>, job: &Job) -> Result<()> {
             let id: Uuid = serde_json::from_value(job.payload["approval_id"].clone())?;
             approvals::expire(app, id).await
         }
+        PRUNE => {
+            let (calls, jobs) = prune(&app.db).await?;
+            tracing::info!("pruned {calls} old call results and {jobs} old jobs");
+            schedule_prune(app, Utc::now() + chrono::Duration::days(1)).await?;
+            Ok(())
+        }
         other => anyhow::bail!("no handler for queue {other}"),
     }
 }
 
-async fn finish(app: &App, job: &Job, result: Result<()>) {
+/// Runs the prune at `at` (and from then on, once a day).
+pub async fn schedule_prune(app: &App, at: DateTime<Utc>) -> sqlx::Result<()> {
+    let mut conn = app.db.acquire().await?;
+    enqueue(&mut conn, app.space_id, PRUNE, PRUNE, at, Value::Null).await
+}
+
+/// Deletes call results older than 7 days, and jobs finished (or given up on) over
+/// 30 days ago. Returns how many of each.
+pub async fn prune(db: &PgPool) -> sqlx::Result<(u64, u64)> {
+    let calls = sqlx::query("DELETE FROM call_results WHERE at < now() - interval '7 days'")
+        .execute(db)
+        .await?
+        .rows_affected();
+    let jobs = sqlx::query(
+        "DELETE FROM jobs WHERE finished_at < now() - interval '30 days'
+            OR (finished_at IS NULL AND attempts >= max_attempts
+                AND created_at < now() - interval '30 days')",
+    )
+    .execute(db)
+    .await?
+    .rows_affected();
+    Ok((calls, jobs))
+}
+
+async fn finish(app: &App, worker: &str, job: &Job, result: Result<()>) {
     let outcome = match result {
+        // A job that queued itself again (same key) was unlocked by `enqueue`, and stays due.
         Ok(()) => {
-            sqlx::query("DELETE FROM jobs WHERE id = $1")
-                .bind(job.id)
-                .execute(&app.db)
-                .await
+            sqlx::query(
+                "UPDATE jobs SET finished_at = now(), locked_by = NULL, locked_until = NULL
+                 WHERE id = $1 AND locked_by = $2",
+            )
+            .bind(job.id)
+            .bind(worker)
+            .execute(&app.db)
+            .await
         }
         Err(e) => {
             tracing::warn!("job {} ({}) failed: {e:#}", job.id, job.queue);

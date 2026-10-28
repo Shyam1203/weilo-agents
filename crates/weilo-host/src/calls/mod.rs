@@ -65,7 +65,7 @@ async fn run_once(app: &Arc<App>, device_id: Uuid, call_id: Uuid, call: Call) ->
     }
     match begin(app, device_id, call_id).await {
         Ok(Begun::Fresh) => {}
-        Ok(Begun::Done(result)) => return result,
+        Ok(Begun::Done(result)) => return *result,
         Ok(Begun::Unknown) => {
             return failed(CallError::new(
                 "unknown",
@@ -108,7 +108,7 @@ enum Begun {
     /// No earlier try: this one runs.
     Fresh,
     /// An earlier try finished with this.
-    Done(CallResult),
+    Done(Box<CallResult>),
     /// An earlier try started and never finished.
     Unknown,
 }
@@ -138,7 +138,7 @@ async fn begin(app: &App, device_id: Uuid, call_id: Uuid) -> sqlx::Result<Begun>
     Ok(match row {
         Some((_, true)) => Begun::Unknown,
         Some((value, false)) => match serde_json::from_value(value) {
-            Ok(result) => Begun::Done(result),
+            Ok(result) => Begun::Done(Box::new(result)),
             Err(_) => Begun::Unknown,
         },
         // Removed between the two queries (a failed try): treat as unknown, not run.
