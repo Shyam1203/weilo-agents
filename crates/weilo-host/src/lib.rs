@@ -1,6 +1,7 @@
 pub mod app;
 pub mod approvals;
 pub mod audit;
+pub mod calls;
 pub mod auth;
 pub mod db;
 pub mod echo_engine;
@@ -14,3 +15,4 @@ pub mod keep_awake;
 pub mod pg;
 pub mod projector;
 pub mod slug;
+pub mod worktree;

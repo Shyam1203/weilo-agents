@@ -13,6 +13,7 @@ use uuid::Uuid;
 use weilo_proto::{Changed, Delta, Event, EventBody};
 
 use crate::auth::Pairing;
+use crate::calls::CallLocks;
 use crate::db::Fence;
 use crate::engines::{Registry, Runners};
 use crate::events::{self, Source};
@@ -83,6 +84,7 @@ pub struct App {
     pub settings: Settings,
     pub host_name: String,
     pub keep_awake: KeepAwake,
+    pub call_locks: CallLocks,
     port: AtomicU16,
     /// The newest seq published per thread, so deltas can name it without a query.
     seqs: Mutex<HashMap<Uuid, i64>>,
@@ -111,6 +113,7 @@ impl App {
             settings: p.settings,
             host_name: host_name(),
             keep_awake: KeepAwake::default(),
+            call_locks: CallLocks::default(),
             port: AtomicU16::new(0),
             seqs: Mutex::new(HashMap::new()),
         })
