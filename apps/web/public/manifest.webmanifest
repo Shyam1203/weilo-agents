@@ -1,0 +1,13 @@
+{
+  "name": "Weilo",
+  "short_name": "Weilo",
+  "description": "Your agents, channels and sessions.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FAFAF9",
+  "theme_color": "#FAFAF9",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
