@@ -6,7 +6,7 @@ use std::sync::Arc;
 use serde_json::json;
 use sqlx::PgConnection;
 use uuid::Uuid;
-use weilo_proto::{Changed, EventBody, SendWhen, ThreadSummary};
+use weilo_proto::{Changed, EventBody, SendWhen, SessionChanges, ThreadSummary};
 
 use super::read;
 use crate::app::App;
@@ -18,6 +18,9 @@ use crate::home::is_within;
 use crate::ids::new_id;
 use crate::slug::slugify;
 use crate::worktree::{self, Prepared};
+
+/// A chat's title until its first message names it.
+const NEW_CHAT: &str = "New chat";
 
 #[derive(Default)]
 pub struct NewThread {
@@ -71,7 +74,7 @@ pub async fn create(
         kind: "chat",
         channel_id: Some(channel_id),
         agent_id: Some(agent_id),
-        title: title.unwrap_or_else(|| "New thread".into()),
+        title: title.unwrap_or_else(|| NEW_CHAT.into()),
         ..NewThread::default()
     };
     let mut tx = app.db.begin().await?;
@@ -107,9 +110,15 @@ pub struct NewSession {
     pub title: Option<String>,
     pub channel_id: Option<Uuid>,
     pub agent_id: Option<Uuid>,
+    /// Sent as the first message.
+    pub task: Option<String>,
 }
 
-pub async fn start_session(app: &App, device: Uuid, s: NewSession) -> CallResult<ThreadSummary> {
+pub async fn start_session(
+    app: &Arc<App>,
+    device: Uuid,
+    s: NewSession,
+) -> CallResult<ThreadSummary> {
     if app.engines.get(&s.engine).is_none() {
         return Err(CallError::invalid("That engine isn't available."));
     }
@@ -162,10 +171,17 @@ pub async fn start_session(app: &App, device: Uuid, s: NewSession) -> CallResult
     };
     audit::append(&mut tx, app.space_id, entry).await?;
     tx.commit().await?;
+    let missing = matches!(prepared, Prepared::Missing);
     if let Some(problem) = problem_for(&prepared) {
         app.append(thread.id, problem, Source::Host).await?;
     }
     app.hub.changed(Changed::Threads);
+    let task = s.task.as_deref().map(str::trim).filter(|t| !t.is_empty());
+    if let Some(task) = task
+        && !missing
+    {
+        send(app, thread.id, task.to_string(), SendWhen::AfterJob).await?;
+    }
     read::thread(app, thread.id).await
 }
 
@@ -217,6 +233,19 @@ pub async fn send(app: &Arc<App>, thread_id: Uuid, text: String, when: SendWhen)
     if let Some(problem) = session_problem(app, thread_id).await? {
         return Err(problem);
     }
+    // An untitled chat is named after its first message.
+    let named = sqlx::query(
+        "UPDATE threads SET title = $2 WHERE id = $1 AND kind = 'chat' AND title = $3
+           AND NOT EXISTS (SELECT 1 FROM events WHERE thread_id = $1 AND kind = 'user_message')",
+    )
+    .bind(thread_id)
+    .bind(chat_title(&text))
+    .bind(NEW_CHAT)
+    .execute(&app.db)
+    .await?;
+    if named.rows_affected() > 0 {
+        app.hub.changed(Changed::Threads);
+    }
     let body = EventBody::UserMessage {
         text: text.clone(),
         when,
@@ -225,6 +254,16 @@ pub async fn send(app: &Arc<App>, thread_id: Uuid, text: String, when: SendWhen)
     app.runners
         .send(app, thread_id, Cmd::Message { text, when });
     Ok(())
+}
+
+/// The first line of a message, cut to a short title.
+fn chat_title(text: &str) -> String {
+    let line = text.lines().next().unwrap_or_default().trim();
+    if line.chars().count() <= 40 {
+        return line.to_string();
+    }
+    let cut: String = line.chars().take(40).collect();
+    format!("{}…", cut.trim_end())
 }
 
 /// A session whose folder is missing can't run.
@@ -245,17 +284,22 @@ async fn session_problem(app: &App, thread_id: Uuid) -> CallResult<Option<CallEr
 
 /// Brings a session's changes back into its folder (see `worktree::merge_back`).
 pub async fn merge_session(app: &App, device: Uuid, thread_id: Uuid) -> CallResult<String> {
-    let row: Option<(Option<String>, Option<String>, String)> = sqlx::query_as(
-        "SELECT folder, worktree, title FROM threads
+    let row: Option<(Option<String>, Option<String>, String, String)> = sqlx::query_as(
+        "SELECT folder, worktree, title, state FROM threads
          WHERE id = $1 AND space_id = $2 AND kind = 'session'",
     )
     .bind(thread_id)
     .bind(app.space_id)
     .fetch_optional(&app.db)
     .await?;
-    let Some((Some(folder), worktree, title)) = row else {
+    let Some((Some(folder), worktree, title, state)) = row else {
         return Err(CallError::not_found("That session is gone."));
     };
+    if state != "idle" {
+        return Err(CallError::conflict(
+            "The session is still working. Wait for it to finish, then try again.",
+        ));
+    }
     let Some(worktree) = worktree else {
         return Err(CallError::invalid(
             "This session works in the folder itself, so its changes are already there.",
@@ -277,6 +321,32 @@ pub async fn merge_session(app: &App, device: Uuid, thread_id: Uuid) -> CallResu
     audit::append(&mut tx, app.space_id, entry).await?;
     tx.commit().await?;
     result.map_err(CallError::conflict)
+}
+
+/// What a session changed so far, read from its copy of the repo (or its folder).
+pub async fn session_changes(app: &App, thread_id: Uuid) -> CallResult<SessionChanges> {
+    let row: Option<(
+        Option<String>,
+        Option<String>,
+        chrono::DateTime<chrono::Utc>,
+    )> = sqlx::query_as(
+        "SELECT folder, worktree, created_at FROM threads
+             WHERE id = $1 AND space_id = $2 AND kind = 'session'",
+    )
+    .bind(thread_id)
+    .bind(app.space_id)
+    .fetch_optional(&app.db)
+    .await?;
+    let Some((Some(folder), worktree, started)) = row else {
+        return Err(CallError::not_found("That session is gone."));
+    };
+    let changes = worktree::changes(
+        std::path::Path::new(&folder),
+        worktree.as_deref().map(std::path::Path::new),
+        started.into(),
+    )
+    .await;
+    changes.map_err(CallError::conflict)
 }
 
 pub async fn stop(app: &App, thread_id: Uuid) -> CallResult<()> {

@@ -99,13 +99,25 @@ pub async fn read_range<'e>(
     from: i64,
     to: i64,
 ) -> sqlx::Result<Vec<Event>> {
+    read_page(exec, thread_id, from, to, i64::MAX).await
+}
+
+/// The first `limit` events with `from < seq <= to`, in order.
+pub async fn read_page<'e>(
+    exec: impl PgExecutor<'e>,
+    thread_id: Uuid,
+    from: i64,
+    to: i64,
+    limit: i64,
+) -> sqlx::Result<Vec<Event>> {
     let rows = sqlx::query(
         "SELECT seq, created_at, source, tainted, body FROM events
-         WHERE thread_id = $1 AND seq > $2 AND seq <= $3 ORDER BY seq",
+         WHERE thread_id = $1 AND seq > $2 AND seq <= $3 ORDER BY seq LIMIT $4",
     )
     .bind(thread_id)
     .bind(from)
     .bind(to)
+    .bind(limit)
     .fetch_all(exec)
     .await?;
     rows.into_iter().map(event_from_row).collect()

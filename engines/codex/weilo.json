@@ -10,7 +10,9 @@
   "keys": [{ "id": "openai", "title": "OpenAI", "env": "OPENAI_API_KEY" }],
   "signIn": {
     "files": ["~/.codex/auth.json"],
-    "how": "Open Terminal, run `codex` and sign in."
+    "how": "Open Terminal, run `codex` and sign in.",
+    "command": "codex",
+    "get": "Install it from Terminal: npm install -g @openai/codex."
   },
   "model": { "env": { "CODEX_MODEL": "{model}" } },
   "detect": { "commands": ["codex"], "paths": ["~/.codex"] },

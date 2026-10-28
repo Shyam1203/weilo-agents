@@ -10,7 +10,7 @@
 //! was replaced can't end the turn that followed.
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use agent_client_protocol::Responder;
@@ -26,9 +26,9 @@ use uuid::Uuid;
 use weilo_proto::{Decision, Delta, EngineNeed, EventBody, SendWhen, StepStatus, WorkState};
 
 use super::acp::{Connection, EngineMsg, EngineTx, Failure, Started, Tagged};
-use super::card::{ToolInfo, allow_once, permission_card, rule_key, tool_info};
-use super::check::{Explained, explain, needs_sign_in};
-use super::{Cmd, Manifest, base_env, spec_for};
+use super::card::{AlwaysScope, ToolInfo, allow_once, permission_card, rule_key, tool_info};
+use super::check::{Explained, explain, looks_like_auth, needs_sign_in};
+use super::{Cmd, Manifest, base_env, engine_home, spec_for};
 use crate::app::App;
 use crate::approvals;
 use crate::events::Source;
@@ -57,6 +57,7 @@ pub fn spawn(app: Arc<App>, thread_id: Uuid) -> mpsc::UnboundedSender<Cmd> {
             restart: false,
             installs: 0,
             installing: None,
+            log: None,
         };
         runner.run(rx, engine_rx).await;
     });
@@ -86,6 +87,12 @@ struct Turn {
     heard_at: Instant,
     /// Everything the agent wrote in this turn, to spot "please sign in" replies.
     said: String,
+    /// Whether the engine did anything but write (a step, a question).
+    acted: bool,
+    /// Where the engine's log was when the turn began, and when it began: what it
+    /// wrote and stored since then explains a turn that ended without a word.
+    log_from: u64,
+    started: std::time::SystemTime,
 }
 
 struct Pending {
@@ -150,6 +157,8 @@ struct Runner {
     /// Bumped for every engine download.
     installs: u64,
     installing: Option<Installing>,
+    /// The engine's log, once it has started.
+    log: Option<PathBuf>,
 }
 
 impl Runner {
@@ -297,6 +306,13 @@ impl Runner {
             stop_by: None,
             heard_at: Instant::now(),
             said: String::new(),
+            acted: false,
+            log_from: self
+                .log
+                .as_ref()
+                .and_then(|l| std::fs::metadata(l).ok())
+                .map_or(0, |m| m.len()),
+            started: std::time::SystemTime::now(),
         });
         let mut blocks = Vec::new();
         let mut told = None;
@@ -391,7 +407,8 @@ impl Runner {
             Ok(()) => self.begin_turn(inst.text.clone()).await,
             Err(e) => {
                 let f = Failure::other(e);
-                let explained = (explain(&inst.manifest, &f), f.text);
+                let key = self.app.engines.key_in_use(&inst.manifest);
+                let explained = (explain(&inst.manifest, &f, key.as_deref()), f.text);
                 self.start_failed(explained).await;
             }
         }
@@ -410,7 +427,8 @@ impl Runner {
             .cloned()
             .with_context(|| format!("no engine named {}", ctx.engine))
             .map_err(internal)?;
-        let explained = |f: Failure| (explain(&manifest, &f), f.text.clone());
+        let key = self.app.engines.key_in_use(&manifest);
+        let explained = |f: Failure| (explain(&manifest, &f, key.as_deref()), f.text.clone());
         let spec = spec_for(&self.app, &manifest, ctx.model.clone()).map_err(explained)?;
         std::fs::create_dir_all(&ctx.cwd).map_err(|e| internal(e.into()))?;
         let log = self
@@ -418,6 +436,7 @@ impl Runner {
             .home
             .logs()
             .join(format!("engine-{}.log", manifest.name));
+        self.log = Some(log.clone());
         self.generation += 1;
         let resume = ctx.engine_session_id.clone();
         let conn = Connection::open(
@@ -438,14 +457,12 @@ impl Runner {
             .await
             .map_err(|e| internal(e.into()))?;
         self.fresh = conn.started == Started::New;
-        if conn.started == Started::New {
-            if resume.is_some() {
-                let message = format!(
-                    "{} started a fresh conversation; earlier messages aren't in its memory.",
-                    ctx.agent_name
-                );
-                self.problem(&message, None).await;
-            }
+        if conn.started == Started::New && resume.is_some() {
+            let message = format!(
+                "{} started a fresh conversation; earlier messages aren't in its memory.",
+                ctx.agent_name
+            );
+            self.problem(&message, None).await;
         }
         self.conn = Some(conn);
         Ok(())
@@ -454,7 +471,9 @@ impl Runner {
     async fn on_update(&mut self, update: SessionUpdate) {
         match update {
             SessionUpdate::AgentMessageChunk(chunk) => {
-                if let ContentBlock::Text(t) = chunk.content {
+                if let ContentBlock::Text(t) = chunk.content
+                    && !is_startup_banner(&t.text)
+                {
                     self.delta(t.text).await;
                 }
             }
@@ -554,6 +573,9 @@ impl Runner {
     }
 
     async fn step(&mut self, step_id: &str, title: &str, status: StepStatus) {
+        if let Some(turn) = self.turn.as_mut() {
+            turn.acted = true;
+        }
         self.flush_text().await;
         let body = EventBody::Step {
             step_id: step_id.into(),
@@ -568,6 +590,9 @@ impl Runner {
         request: Box<RequestPermissionRequest>,
         responder: Responder<RequestPermissionResponse>,
     ) {
+        if let Some(turn) = self.turn.as_mut() {
+            turn.acted = true;
+        }
         self.flush_text().await;
         let known = self.tools.get(request.tool_call.tool_call_id.0.as_ref());
         let tool = tool_info(&request, known);
@@ -579,7 +604,13 @@ impl Runner {
                 return;
             }
         };
-        let scope = folder_scope(&ctx.cwd);
+        // A session's rule covers its folder; an agent's chats have no folder of the
+        // person's, so their rule covers that agent.
+        let (always, scope) = if ctx.session {
+            (AlwaysScope::Folder, folder_scope(&ctx.cwd))
+        } else {
+            (AlwaysScope::Agent, "agent".to_string())
+        };
         // "Always allow" lives here, never in the engine: the engine only ever hears
         // "allow once", for this exact command in this folder.
         let key = rule_key(&tool);
@@ -590,7 +621,8 @@ impl Runner {
             return;
         }
         let approval_id = crate::ids::new_id();
-        let card = permission_card(&ctx.agent_name, approval_id, &tool, key.is_some());
+        let always = key.is_some().then_some(always);
+        let card = permission_card(&ctx.agent_name, approval_id, &tool, always);
         let opened = approvals::open(
             &self.app,
             approvals::NewApproval {
@@ -711,17 +743,24 @@ impl Runner {
                 self.problem("The engine refused this request.", None).await;
             }
             (Ok(_), Some(m)) if asks_to_sign_in(&turn.said) => {
-                let e = needs_sign_in(&m);
+                let f = Failure {
+                    auth_required: true,
+                    ..Failure::default()
+                };
+                let e = explain(&m, &f, self.app.engines.key_in_use(&m).as_deref());
                 self.problem(&e.message, Some(e.action)).await;
                 // A new key or sign-in only reaches a new engine process.
                 self.drop_conn();
+            }
+            (Ok(StopReason::EndTurn), Some(m)) if turn.said.trim().is_empty() && !turn.acted => {
+                self.no_answer(&m, &turn).await;
             }
             (Ok(_), _) => {}
             (Err(f), m) => {
                 tracing::warn!("turn failed in {}: {f}", self.thread_id);
                 match m {
                     Some(m) => {
-                        let e = explain(&m, &f);
+                        let e = explain(&m, &f, self.app.engines.key_in_use(&m).as_deref());
                         self.problem(&e.message, Some(e.action)).await;
                         if matches!(e.needs, EngineNeed::SignIn | EngineNeed::Key) {
                             self.drop_conn();
@@ -745,6 +784,40 @@ impl Runner {
         } else {
             self.start_next().await;
         }
+    }
+
+    /// A turn that ended normally without a word: said plainly, with the reason when the
+    /// engine's log or its stored conversation shows a key that didn't work.
+    async fn no_answer(&mut self, m: &Manifest, turn: &Turn) {
+        let name = load_ctx(&self.app, self.thread_id)
+            .await
+            .map_or_else(|_| "The agent".into(), |c| c.agent_name);
+        let mut found = self
+            .log
+            .as_ref()
+            .map(|l| log_since(l, turn.log_from))
+            .unwrap_or_default();
+        found.push_str(&stored_errors(
+            &engine_home(&self.app.home, &m.name),
+            turn.started,
+        ));
+        if !looks_like_auth(&found) {
+            let message = format!("{name} didn't answer.");
+            return self.problem(&message, Some("Try again")).await;
+        }
+        let (message, action) = match self.app.engines.key_in_use(m) {
+            Some(provider) => (
+                format!("{name} didn't answer: your {provider} key didn't work."),
+                "Change key",
+            ),
+            None => {
+                let e = needs_sign_in(m);
+                (format!("{name} didn't answer. {}", e.message), e.action)
+            }
+        };
+        self.problem(&message, Some(action)).await;
+        // A new key only reaches a new engine process.
+        self.drop_conn();
     }
 
     async fn problem(&mut self, message: &str, action: Option<&str>) {
@@ -776,6 +849,54 @@ impl Runner {
             tracing::error!("append to {} failed: {e:#}", self.thread_id);
         }
     }
+}
+
+/// pi-acp's startup notes ("pi v1.4.0", "---", what it loaded), sent as if the agent
+/// said them, and its "New version available" line: not part of any reply.
+fn is_startup_banner(text: &str) -> bool {
+    let mut lines = text.lines();
+    let first = lines.next().unwrap_or_default().trim();
+    let versioned = first
+        .strip_prefix("pi v")
+        .is_some_and(|v| v.starts_with(|c: char| c.is_ascii_digit()));
+    (versioned && lines.next().map(str::trim) == Some("---"))
+        || text.trim_start().starts_with("New version available: v")
+}
+
+/// The last part of what the engine wrote to its log since `from`.
+fn log_since(log: &Path, from: u64) -> String {
+    let bytes = std::fs::read(log).unwrap_or_default();
+    let from = usize::try_from(from).unwrap_or(0).min(bytes.len());
+    let start = from.max(bytes.len().saturating_sub(16 * 1024));
+    String::from_utf8_lossy(&bytes[start..]).into_owned()
+}
+
+/// Errors an engine stored with its conversation since `since`: pi keeps each
+/// conversation in `sessions/<folder>/<id>.jsonl`, a failed request's reason as
+/// `errorMessage`. Only the newest file's last part is read.
+fn stored_errors(engine_home: &Path, since: std::time::SystemTime) -> String {
+    let newest = std::fs::read_dir(engine_home.join("sessions"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .flat_map(|d| std::fs::read_dir(d.path()).into_iter().flatten().flatten())
+        .filter_map(|f| {
+            let modified = f.metadata().ok()?.modified().ok()?;
+            (modified >= since && f.path().extension().is_some_and(|e| e == "jsonl"))
+                .then(|| (modified, f.path()))
+        })
+        .max();
+    let Some((_, path)) = newest else {
+        return String::new();
+    };
+    let bytes = std::fs::read(path).unwrap_or_default();
+    let tail = &bytes[bytes.len().saturating_sub(32 * 1024)..];
+    String::from_utf8_lossy(tail)
+        .lines()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .filter_map(|v| v["message"]["errorMessage"].as_str().map(str::to_string))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// A short reply that is only the engine asking to sign in ("Please run /login").
@@ -816,6 +937,8 @@ fn preamble(ctx: &ThreadCtx) -> String {
         out.push_str("\n\nTheir instructions for you:\n");
         out.push_str(instructions);
     }
+    // A blank line, so engines that join the blocks keep the message apart.
+    out.push_str("\n\n");
     out
 }
 
@@ -823,9 +946,9 @@ fn preamble(ctx: &ThreadCtx) -> String {
 fn changed_instructions(ctx: &ThreadCtx) -> String {
     match ctx.instructions.as_deref().map(str::trim) {
         Some(i) if !i.is_empty() => {
-            format!("The person changed their instructions for you. From now on:\n{i}")
+            format!("The person changed their instructions for you. From now on:\n{i}\n\n")
         }
-        _ => "The person removed their instructions for you. Ignore the earlier ones.".into(),
+        _ => "The person removed their instructions for you. Ignore the earlier ones.\n\n".into(),
     }
 }
 
@@ -940,7 +1063,7 @@ mod tests {
     fn the_agent_learns_who_it_is_and_its_instructions() {
         let p = preamble(&ctx(false, Some("Answer in French.")));
         assert!(p.starts_with("You are Ava, a teammate"));
-        assert!(p.ends_with("Their instructions for you:\nAnswer in French."));
+        assert!(p.ends_with("Their instructions for you:\nAnswer in French.\n\n"));
         let p = preamble(&ctx(true, None));
         assert!(p.contains("coding session in /work/shop"));
         assert!(!p.contains("instructions"));
@@ -954,5 +1077,38 @@ mod tests {
             "{} please run /login",
             "long answer ".repeat(50)
         )));
+    }
+
+    #[test]
+    fn pi_startup_notes_are_not_a_reply() {
+        assert!(is_startup_banner("pi v1.4.0\n---\n"));
+        assert!(is_startup_banner(
+            "pi v1.4.0\n---\n\n## Context\n- /x/AGENTS.md\n"
+        ));
+        assert!(is_startup_banner(
+            "New version available: v1.5.0 (installed v1.4.0)."
+        ));
+        assert!(!is_startup_banner("pi version is fine\n---\n"));
+        assert!(!is_startup_banner("Here is the plan:\n---\n"));
+    }
+
+    #[test]
+    fn a_stored_error_since_the_turn_began_is_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let before = std::time::SystemTime::now() - std::time::Duration::from_secs(5);
+        assert_eq!(stored_errors(dir.path(), before), "");
+        let folder = dir.path().join("sessions/--shop--");
+        std::fs::create_dir_all(&folder).unwrap();
+        let lines = [
+            r#"{"type":"session","version":3}"#,
+            r#"{"type":"message","message":{"role":"user","content":[]}}"#,
+            r#"{"type":"message","message":{"role":"assistant","stopReason":"error","errorMessage":"401 {\"type\":\"authentication_error\"}"}}"#,
+        ];
+        std::fs::write(folder.join("a.jsonl"), lines.join("\n")).unwrap();
+        let found = stored_errors(dir.path(), before);
+        assert!(looks_like_auth(&found), "{found}");
+        // Files from before the turn don't count.
+        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(5);
+        assert_eq!(stored_errors(dir.path(), later), "");
     }
 }

@@ -1,6 +1,7 @@
 //! Says plainly why an engine can't work, and checks one by starting it once.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::sync::mpsc;
 use weilo_proto::{EngineCheck, EngineNeed};
@@ -20,7 +21,9 @@ pub struct Explained {
 /// The longest engine message shown; the whole text is in the engine's log.
 const MAX_SHOWN: usize = 300;
 
-pub fn explain(m: &Manifest, f: &Failure) -> Explained {
+/// `key` is the provider of the API key the engine was given ("Anthropic"), if any: a
+/// sign-in failure then means that key didn't work.
+pub fn explain(m: &Manifest, f: &Failure, key: Option<&str>) -> Explained {
     let title = &m.title;
     if f.text.contains(super::NO_NPM) {
         return Explained {
@@ -50,12 +53,24 @@ pub fn explain(m: &Manifest, f: &Failure) -> Explained {
         };
     }
     if f.auth_required || looks_like_auth(&f.text) {
-        return needs_sign_in(m);
+        return match key {
+            Some(provider) => key_failed(&format!("Your {provider} key didn't work.")),
+            None => needs_sign_in(m),
+        };
     }
     Explained {
         needs: EngineNeed::Error,
         message: format!("{title} hit a problem: {}", one_line(&f.text, MAX_SHOWN)),
         action: "Try again",
+    }
+}
+
+/// An API key the provider turned down.
+pub fn key_failed(message: &str) -> Explained {
+    Explained {
+        needs: EngineNeed::Key,
+        message: message.into(),
+        action: "Change key",
     }
 }
 
@@ -88,6 +103,8 @@ pub fn looks_like_auth(text: &str) -> bool {
         "authentication",
         "unauthorized",
         "invalid api key",
+        "incorrect api key",
+        "invalid_api_key",
         "invalid x-api-key",
         "api key not",
         "no api key",
@@ -115,6 +132,7 @@ pub fn one_line(text: &str, max: usize) -> String {
 /// it. Never sends a prompt, so it costs nothing.
 pub async fn run(app: &Arc<App>, m: &Manifest) -> EngineCheck {
     let readiness = app.engines.readiness(m);
+    let key = app.engines.key_in_use(m);
     let not_ready = |e: Explained, auth_methods| EngineCheck {
         engine: m.name.clone(),
         ready: false,
@@ -124,15 +142,26 @@ pub async fn run(app: &Arc<App>, m: &Manifest) -> EngineCheck {
         auth_methods,
     };
     if let Err(e) = app.engines.install(m).await {
-        return not_ready(explain(m, &Failure::other(e)), vec![]);
+        return not_ready(explain(m, &Failure::other(e), key.as_deref()), vec![]);
+    }
+    // Each key is tried with a free call to its provider; one that is turned down is
+    // named. When the provider can't be reached, the engine is still started.
+    for (spec, value) in app.engines.keys_in_use(m) {
+        if try_key(&spec.id, &value).await == Some(false) {
+            return not_ready(
+                key_failed(&format!("That {} key didn't work.", spec.title)),
+                vec![],
+            );
+        }
     }
     let spec = match spec_for(app, m, None) {
         Ok(spec) => spec,
-        Err(f) => return not_ready(explain(m, &f), vec![]),
+        Err(f) => return not_ready(explain(m, &f, key.as_deref()), vec![]),
     };
     let cwd = engine_home(&app.home, &m.name);
     if let Err(e) = std::fs::create_dir_all(&cwd) {
-        return not_ready(explain(m, &Failure::other(e.to_string())), vec![]);
+        let f = Failure::other(e.to_string());
+        return not_ready(explain(m, &f, key.as_deref()), vec![]);
     }
     let log = app.home.logs().join(format!("engine-{}.log", m.name));
     let (tx, _rx) = mpsc::unbounded_channel();
@@ -152,7 +181,58 @@ pub async fn run(app: &Arc<App>, m: &Manifest) -> EngineCheck {
                 auth_methods: methods,
             }
         }
-        Err(f) => not_ready(explain(m, &f), vec![]),
+        Err(f) => not_ready(explain(m, &f, key.as_deref()), vec![]),
+    }
+}
+
+/// How long a provider gets to answer a key check.
+const KEY_CHECK_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Asks the provider for its list of models, which costs nothing: `Some(false)` when it
+/// turns the key down, `Some(true)` when it takes it, `None` when it can't tell (no
+/// answer, a provider Weilo doesn't know, or any other reply).
+pub async fn try_key(provider: &str, key: &str) -> Option<bool> {
+    let (default, path) = match provider {
+        "anthropic" => ("https://api.anthropic.com", "/v1/models"),
+        "openai" => ("https://api.openai.com", "/v1/models"),
+        "google" => (
+            "https://generativelanguage.googleapis.com",
+            "/v1beta/models",
+        ),
+        _ => return None,
+    };
+    // Tests point this at a stand-in provider.
+    let base = std::env::var(format!("WEILO_PROVIDER_URL_{}", provider.to_uppercase()))
+        .unwrap_or_else(|_| default.into());
+    let client = reqwest::Client::builder()
+        .timeout(KEY_CHECK_TIMEOUT)
+        .build()
+        .ok()?;
+    let request = client.get(format!("{}{path}", base.trim_end_matches('/')));
+    let request = match provider {
+        "anthropic" => request
+            .header("x-api-key", key)
+            .header("anthropic-version", "2023-06-01"),
+        "openai" => request.bearer_auth(key),
+        _ => request.header("x-goog-api-key", key),
+    };
+    let response = match request.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::info!("couldn't reach {provider} to check a key: {e}");
+            return None;
+        }
+    };
+    let status = response.status().as_u16();
+    match status {
+        200..=299 => Some(true),
+        401 | 403 => Some(false),
+        // Google answers a bad key with 400 and says so in the body.
+        400 => {
+            let body = response.text().await.unwrap_or_default();
+            body.contains("API_KEY_INVALID").then_some(false)
+        }
+        _ => None,
     }
 }
 
@@ -166,13 +246,28 @@ mod tests {
     }
 
     #[test]
+    fn a_saved_key_that_fails_is_named() {
+        let f = Failure {
+            auth_required: true,
+            ..Failure::default()
+        };
+        let e = explain(&manifest("pi"), &f, Some("Anthropic"));
+        assert_eq!(e.needs, EngineNeed::Key);
+        assert_eq!(e.message, "Your Anthropic key didn't work.");
+        assert_eq!(e.action, "Change key");
+        let f = Failure::other("401 invalid x-api-key");
+        let e = explain(&manifest("claude-code"), &f, Some("Anthropic"));
+        assert_eq!(e.message, "Your Anthropic key didn't work.");
+    }
+
+    #[test]
     fn missing_gemini_says_it_isnt_installed() {
         let f = Failure {
             missing_program: true,
             text: "couldn't start gemini: No such file or directory".into(),
             ..Failure::default()
         };
-        let e = explain(&manifest("gemini"), &f);
+        let e = explain(&manifest("gemini"), &f, None);
         assert_eq!(e.needs, EngineNeed::Install);
         assert!(e.message.starts_with("Gemini CLI isn't on this computer."));
         assert_eq!(e.action, "Install");
@@ -181,7 +276,7 @@ mod tests {
     #[test]
     fn sign_in_errors_ask_to_sign_in_and_pi_asks_for_a_key() {
         let f = Failure::other("Invalid API key · Please run /login");
-        let e = explain(&manifest("claude-code"), &f);
+        let e = explain(&manifest("claude-code"), &f, None);
         assert_eq!((e.needs, e.action), (EngineNeed::SignIn, "Sign in"));
         assert_eq!(
             e.message,
@@ -191,7 +286,7 @@ mod tests {
             auth_required: true,
             ..Failure::default()
         };
-        assert_eq!(explain(&manifest("pi"), &f).action, "Add a key");
+        assert_eq!(explain(&manifest("pi"), &f, None).action, "Add a key");
     }
 
     #[test]
@@ -199,14 +294,22 @@ mod tests {
         let e = explain(
             &manifest("pi"),
             &Failure::other(super::super::INSTALL_TIMED_OUT),
+            None,
         );
         assert_eq!(e.action, "Try again");
-        assert!(e.message.starts_with("Downloading Weilo's built-in AI took too long."));
+        assert!(
+            e.message
+                .starts_with("Downloading Weilo's built-in AI took too long.")
+        );
     }
 
     #[test]
     fn no_npm_needs_node() {
-        let e = explain(&manifest("codex"), &Failure::other(super::super::NO_NPM));
+        let e = explain(
+            &manifest("codex"),
+            &Failure::other(super::super::NO_NPM),
+            None,
+        );
         assert_eq!((e.needs, e.action), (EngineNeed::Node, "Install"));
     }
 
@@ -215,7 +318,7 @@ mod tests {
         let f = Failure::other(
             "Request failed for the OAuth provider.: {\n  \"error\": \"overloaded\"\n}",
         );
-        let e = explain(&manifest("codex"), &f);
+        let e = explain(&manifest("codex"), &f, None);
         assert_eq!(e.action, "Try again");
         assert_eq!(
             e.message,

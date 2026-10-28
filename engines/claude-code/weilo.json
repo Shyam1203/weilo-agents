@@ -15,7 +15,9 @@
   "signIn": {
     "files": ["~/.claude/.credentials.json"],
     "keychain": ["Claude Code-credentials"],
-    "how": "Open Terminal, run `claude` and sign in."
+    "how": "Open Terminal, run `claude` and sign in.",
+    "command": "claude",
+    "get": "Install it from Terminal: npm install -g @anthropic-ai/claude-code."
   },
   "model": { "env": { "ANTHROPIC_MODEL": "{model}", "ANTHROPIC_SMALL_FAST_MODEL": "{model}" } },
   "detect": { "commands": ["claude"], "paths": ["~/.claude"] },

@@ -8,6 +8,10 @@
 //! - "login": answers like an engine that isn't signed in.
 //! - "who are you": repeats the instructions it was given at the start of the session.
 //! - "helper": starts a background `sleep` and says its pid.
+//! - "check the key": says "Key is set." when `WEILO_ECHO_KEY` is set, else fails the
+//!   turn as ACP `auth_required`, like an engine without a working key.
+//! - "say nothing": sends pi-acp's startup notes, then ends the turn without a word. With
+//!   `WEILO_ECHO_KEY` set to "bad" it first logs a provider's 401, as pi does.
 //!
 //! It can load a session it started before (its instructions are kept in
 //! `WEILO_ECHO_STATE`), unless `WEILO_ECHO_NO_LOAD` is set.
@@ -75,8 +79,11 @@ pub async fn run() -> anyhow::Result<()> {
                     .insert(req.session_id.0.to_string(), token.clone());
                 let conn = cx.clone();
                 cx.spawn(async move {
-                    let reason = answer(&conn, &req, &token).await?;
-                    responder.respond(PromptResponse::new(reason))
+                    // An error ends this turn, not the connection.
+                    match answer(&conn, &req, &token).await {
+                        Ok(reason) => responder.respond(PromptResponse::new(reason)),
+                        Err(e) => responder.respond_with_error(e),
+                    }
                 })?;
                 Ok(())
             },
@@ -129,6 +136,22 @@ async fn answer(
     if text.contains("who are you") {
         let told = recall(&sid).unwrap_or_else(|| "nothing".into());
         say(cx, &sid, format!("I was told: {told}"))?;
+        return Ok(StopReason::EndTurn);
+    }
+    if text.contains("check the key") {
+        if std::env::var_os("WEILO_ECHO_KEY").is_none() {
+            return Err(agent_client_protocol::Error::auth_required());
+        }
+        say(cx, &sid, "Key is set.".into())?;
+        return Ok(StopReason::EndTurn);
+    }
+    if text.contains("say nothing") {
+        say(cx, &sid, "pi v1.4.0\n---\n".into())?;
+        if std::env::var("WEILO_ECHO_KEY").is_ok_and(|k| k == "bad") {
+            eprintln!(
+                "Error: 401 {{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"}}"
+            );
+        }
         return Ok(StopReason::EndTurn);
     }
     if text.contains("helper") {

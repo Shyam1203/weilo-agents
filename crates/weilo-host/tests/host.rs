@@ -273,6 +273,7 @@ async fn sessions_use_a_worktree_or_report_a_missing_folder() {
         title: Some("Fix checkout".into()),
         channel_id: None,
         agent_id: None,
+        task: None,
     };
     // A missing folder is refused before anything is made.
     let refused = c.call(missing).await;
@@ -317,6 +318,7 @@ async fn sessions_use_a_worktree_or_report_a_missing_folder() {
         title: Some("Fix checkout".into()),
         channel_id: None,
         agent_id: None,
+        task: None,
     };
     let CallValue::Thread(t) = c.ok(start).await else {
         panic!()

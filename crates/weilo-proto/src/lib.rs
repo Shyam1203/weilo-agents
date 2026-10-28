@@ -179,6 +179,11 @@ pub enum Call {
         title: Option<String>,
         channel_id: Option<Id>,
         agent_id: Option<Id>,
+        /// What it should do ("Fix the checkout bug"): sent as the session's first
+        /// message once it starts.
+        #[serde(default)]
+        #[ts(optional)]
+        task: Option<String>,
     },
     Send {
         thread_id: Id,
@@ -218,6 +223,11 @@ pub enum Call {
     /// Ends an "Always allow" rule: the agent asks again next time.
     RevokeAllowRule {
         rule_id: Id,
+    },
+    /// What a session has changed so far: its files and the diff, from its copy of the
+    /// repo (for a folder that isn't a git repo, the files changed since it started).
+    SessionChanges {
+        thread_id: Id,
     },
 }
 
@@ -270,6 +280,39 @@ pub enum CallValue {
     Message(String),
     Devices(Vec<DeviceInfo>),
     AllowRules(Vec<AllowRuleInfo>),
+    SessionChanges(SessionChanges),
+}
+
+/// What a session changed, for its Changes panel.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SessionChanges {
+    pub files: Vec<ChangedFile>,
+    /// The whole diff as text, cut near 200 KB; `None` when there is none to show (a
+    /// folder that isn't a git repo).
+    pub diff: Option<String>,
+    /// The diff was cut short.
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ChangedFile {
+    /// Relative to the session's folder.
+    pub path: String,
+    pub status: FileChange,
+    /// Lines added and removed (both 0 for binary files and outside git).
+    pub added: u32,
+    pub removed: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum FileChange {
+    Added,
+    Modified,
+    Deleted,
 }
 
 /// A paired device, for Settings.

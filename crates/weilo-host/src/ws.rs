@@ -10,9 +10,11 @@
 //! The socket subscribes to the broadcast when it opens, before any backlog is read,
 //! and sends each thread's events strictly in `seq` order: a live event that skips
 //! ahead first fills the gap from the database, and anything at or below the last
-//! sent `seq` is dropped. A socket that falls behind (the broadcast, or its own
-//! bounded queue of frames to write) or whose backlog can't be read is closed with
-//! code 4008 and must resubscribe with `after_seq`.
+//! sent `seq` is dropped. The backlog is read a page at a time and waits for room in
+//! the socket's queue, so a long chat opens on a slow device too. A socket that falls
+//! behind on live frames (the broadcast, or its own bounded queue of frames to write)
+//! or whose backlog can't be read is closed with code 4008 and must resubscribe with
+//! `after_seq`.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -37,6 +39,8 @@ pub const CLOSE_OLD_VERSION: u16 = 4426;
 
 /// Calls one socket may have running at once.
 pub const MAX_CALLS: usize = 32;
+/// Events read from the database at a time for a backlog.
+const BACKLOG_PAGE: i64 = 500;
 /// How long a new socket has to say hello.
 const HELLO_WAIT: Duration = Duration::from_secs(10);
 
@@ -229,35 +233,58 @@ impl Session {
         self.catch_up(thread_id, i64::MAX).await
     }
 
-    /// Sends stored events after the last sent one, up to `to`. When they can't be
-    /// read, the device would miss them: it is told to subscribe again.
+    /// Sends stored events after the last sent one, up to `to`, a page at a time,
+    /// waiting for room in the queue. When they can't be read, the device would miss
+    /// them: it is told to subscribe again.
     async fn catch_up(&mut self, thread_id: Uuid, to: i64) -> Result<(), Close> {
-        let Some(&from) = self.subs.get(&thread_id) else {
-            return Ok(());
-        };
-        match events::read_range(&self.app.db, thread_id, from, to).await {
-            Ok(evs) => {
-                for event in evs {
-                    self.send_event(thread_id, event)?;
+        loop {
+            let Some(&from) = self.subs.get(&thread_id) else {
+                return Ok(());
+            };
+            let page = events::read_page(&self.app.db, thread_id, from, to, BACKLOG_PAGE)
+                .await
+                .map_err(|e| {
+                    tracing::warn!("backlog for {thread_id}: {e}");
+                    BEHIND
+                })?;
+            let full = page.len() as i64 == BACKLOG_PAGE;
+            for event in page {
+                if let Some(frame) = self.next_event(thread_id, event) {
+                    self.send_waiting(&frame).await?;
                 }
-                Ok(())
             }
-            Err(e) => {
-                tracing::warn!("backlog for {thread_id}: {e}");
-                Err(BEHIND)
+            if !full {
+                return Ok(());
             }
         }
     }
 
-    fn send_event(&mut self, thread_id: Uuid, event: Event) -> Result<(), Close> {
-        let Some(last) = self.subs.get_mut(&thread_id) else {
+    /// Queues a frame, waiting for room.
+    async fn send_waiting(&self, frame: &ServerFrame) -> Result<(), Close> {
+        let Ok(text) = serde_json::to_string(frame) else {
             return Ok(());
         };
+        self.out
+            .send(Message::Text(text.into()))
+            .await
+            .map_err(|_| Close(1000, ""))
+    }
+
+    fn send_event(&mut self, thread_id: Uuid, event: Event) -> Result<(), Close> {
+        match self.next_event(thread_id, event) {
+            Some(frame) => self.send(&frame),
+            None => Ok(()),
+        }
+    }
+
+    /// The frame for an event the device hasn't had yet, noting it as sent.
+    fn next_event(&mut self, thread_id: Uuid, event: Event) -> Option<ServerFrame> {
+        let last = self.subs.get_mut(&thread_id)?;
         if event.seq <= *last {
-            return Ok(());
+            return None;
         }
         *last = event.seq;
-        self.send(&ServerFrame::Ev { thread_id, event })
+        Some(ServerFrame::Ev { thread_id, event })
     }
 
     async fn on_hub(&mut self, msg: &HubMsg) -> Result<(), Close> {

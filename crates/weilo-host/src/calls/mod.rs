@@ -94,6 +94,7 @@ fn only_reads(call: &Call) -> bool {
             | Call::SetupStatus
             | Call::ListDevices
             | Call::ListAllowRules
+            | Call::SessionChanges { .. }
     )
 }
 
@@ -245,6 +246,7 @@ async fn dispatch(app: &Arc<App>, device: Uuid, call: Call) -> Result<CallValue,
             title,
             channel_id,
             agent_id,
+            task,
         } => {
             let s = threads::NewSession {
                 folder,
@@ -252,6 +254,7 @@ async fn dispatch(app: &Arc<App>, device: Uuid, call: Call) -> Result<CallValue,
                 title,
                 channel_id,
                 agent_id,
+                task,
             };
             V::Thread(threads::start_session(app, device, s).await?)
         }
@@ -292,6 +295,9 @@ async fn dispatch(app: &Arc<App>, device: Uuid, call: Call) -> Result<CallValue,
         Call::RevokeAllowRule { rule_id } => {
             settings::revoke_allow_rule(app, device, rule_id).await?;
             V::None
+        }
+        Call::SessionChanges { thread_id } => {
+            V::SessionChanges(threads::session_changes(app, thread_id).await?)
         }
     })
 }

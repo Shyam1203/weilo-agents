@@ -157,6 +157,14 @@ impl Host {
         format!("http://127.0.0.1:{}{path}", self.port)
     }
 
+    /// Adds an engine manifest to the home (`HOME/engines/<name>/weilo.json`). It is
+    /// read when the host starts.
+    pub fn add_engine(&self, name: &str, manifest: serde_json::Value) {
+        let dir = self.home.join("engines").join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("weilo.json"), manifest.to_string()).unwrap();
+    }
+
     /// A pairing code from `weilo pair`.
     pub fn pairing_code(&self) -> String {
         let out = Command::new(env!("CARGO_BIN_EXE_weilo"))

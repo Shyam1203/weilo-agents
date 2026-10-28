@@ -26,6 +26,21 @@ jobs:
       - name: Generated TypeScript is up to date
         run: git diff --exit-code -- apps/web/src/proto
 
+  # The same tests on a Mac: keep-awake, process groups, paths and Postgres differ there.
+  host-macos:
+    runs-on: macos-14
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Rust toolchain (from rust-toolchain.toml)
+        run: rustup toolchain install
+      - name: Postgres binaries
+        run: |
+          brew install postgresql@16
+          echo "WEILO_PG_BIN=$(brew --prefix postgresql@16)/bin" >> "$GITHUB_ENV"
+      - run: cargo test --workspace
+
   web:
     runs-on: ubuntu-latest
     defaults:

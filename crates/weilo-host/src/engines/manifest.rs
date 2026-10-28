@@ -48,6 +48,24 @@ pub struct Manifest {
     pub binds_approvals: bool,
     #[serde(default)]
     pub hidden: bool,
+    /// Settings Weilo keeps in a file the engine reads.
+    #[serde(default)]
+    pub settings: Option<SettingsFile>,
+}
+
+/// Values Weilo puts in an engine's own settings file before it starts. A value the
+/// person changed there since Weilo wrote it is theirs and is left alone.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsFile {
+    /// A JSON file (`{engine_home}` allowed).
+    pub file: String,
+    /// Always set.
+    #[serde(default)]
+    pub always: serde_json::Map<String, serde_json::Value>,
+    /// Set by the provider of the key the engine uses (the first of `keys` it has).
+    #[serde(default)]
+    pub by_key: BTreeMap<String, serde_json::Map<String, serde_json::Value>>,
 }
 
 fn one() -> u32 {
@@ -83,6 +101,12 @@ pub struct SignIn {
     pub keychain: Vec<String>,
     /// One plain line on how to sign in.
     pub how: String,
+    /// The program that signs in (`codex`), when the engine needs it on this computer.
+    #[serde(default)]
+    pub command: Option<String>,
+    /// One plain line on how to get that program.
+    #[serde(default)]
+    pub get: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

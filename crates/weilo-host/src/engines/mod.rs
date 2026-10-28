@@ -108,6 +108,8 @@ impl Registry {
                 has_key: saved.contains_key(&k.id) || std::env::var_os(&k.env).is_some(),
             })
             .collect();
+        // An engine that isn't on this computer can't use a key yet.
+        let keys = (r.needs != Some(EngineNeed::Install)).then_some(keys);
         EngineInfo {
             id: m.name.clone(),
             title: m.title.clone(),
@@ -119,7 +121,7 @@ impl Registry {
             needs: r.needs,
             status: Some(r.status),
             how: r.how,
-            key_providers: Some(keys),
+            key_providers: keys,
         }
     }
 
@@ -133,11 +135,43 @@ impl Registry {
                 installable,
                 npm_engine: is_npm(m),
                 has_credentials: !self.credentials(m).is_empty(),
+                sign_in_cli: m
+                    .sign_in
+                    .as_ref()
+                    .and_then(|s| s.command.as_deref())
+                    .is_none_or(|c| which(c).is_some()),
                 engine_home: self.home.engine_state(&m.name),
                 user_home: dirs::home_dir(),
                 keychain: &keychain_has,
             },
         )
+    }
+
+    /// The provider ("Anthropic") of the API key the engine is given, if any: the first
+    /// of its `keys` saved in Weilo or set where Weilo runs. That is the one the engine
+    /// uses (Weilo's built-in AI is told so, see `spec_for`).
+    pub fn key_in_use(&self, m: &Manifest) -> Option<String> {
+        self.keys_in_use(m).into_iter().next().map(|(k, _)| k.title)
+    }
+
+    /// Each key the engine is given, with its value, in the manifest's order.
+    pub fn keys_in_use(&self, m: &Manifest) -> Vec<(manifest::KeySpec, String)> {
+        let saved = self.saved_keys(&m.name);
+        m.keys
+            .iter()
+            .filter_map(|k| {
+                let v = saved
+                    .get(&k.id)
+                    .cloned()
+                    .or_else(|| {
+                        std::env::var(&k.env)
+                            .ok()
+                            .filter(|_| m.pass_env.contains(&k.env))
+                    })
+                    .filter(|v| !v.is_empty())?;
+                Some((k.clone(), v))
+            })
+            .collect()
     }
 
     /// API keys saved in Weilo for an engine, by provider.
@@ -313,7 +347,9 @@ fn npm_files(m: &Manifest, pkgs: &[String]) -> (Vec<u8>, Option<&'static [u8]>) 
         .collect();
     let shipped = manifest::built_in_file(&m.name, "package.json")
         .and_then(|b| serde_json::from_slice::<serde_json::Value>(b).ok())
-        .and_then(|v| serde_json::from_value::<BTreeMap<String, String>>(v["dependencies"].clone()).ok());
+        .and_then(|v| {
+            serde_json::from_value::<BTreeMap<String, String>>(v["dependencies"].clone()).ok()
+        });
     let lockfile = manifest::built_in_file(&m.name, "package-lock.json")
         .filter(|_| shipped.as_ref() == Some(&wanted));
     let package = serde_json::json!({
@@ -376,10 +412,69 @@ pub fn spec_for(
         text: e.to_string(),
         ..Default::default()
     })?;
+    if let Some(settings) = &m.settings {
+        let keys = app.engines.keys_in_use(m);
+        let provider = keys.first().map(|(k, _)| k.id.as_str());
+        if let Err(e) = keep_settings(settings, &vars.engine_home, provider) {
+            tracing::warn!("couldn't write {}'s settings: {e}", m.name);
+        }
+    }
     manifest::launch_spec(m, &vars).map_err(|e| acp::Failure {
         text: e,
         ..Default::default()
     })
+}
+
+/// Puts the manifest's `settings` in the engine's settings file. What Weilo wrote last
+/// is kept beside it (`<file>.weilo`), so a value the person has since changed stays theirs.
+fn keep_settings(
+    s: &manifest::SettingsFile,
+    engine_home: &Path,
+    provider: Option<&str>,
+) -> std::io::Result<()> {
+    use serde_json::{Map, Value};
+    let Some(path) = resolve_path(&s.file, engine_home, None) else {
+        return Ok(());
+    };
+    let ours = path.with_extension("weilo");
+    let read = |p: &Path| -> Option<Map<String, Value>> {
+        match std::fs::read(p) {
+            Ok(b) => serde_json::from_slice(&b).ok(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some(Map::new()),
+            Err(_) => None,
+        }
+    };
+    // A file that isn't a JSON object is the person's business.
+    let Some(mut current) = read(&path) else {
+        return Ok(());
+    };
+    let last = read(&ours).unwrap_or_default();
+    let mut want = s.always.clone();
+    if let Some(extra) = provider.and_then(|p| s.by_key.get(p)) {
+        want.extend(extra.clone());
+    }
+    let mut wrote = Map::new();
+    let mut changed = false;
+    for (k, v) in want {
+        match current.get(&k) {
+            Some(cur) if cur == &v => {}
+            Some(cur) if last.get(&k) != Some(cur) => continue,
+            _ => {
+                current.insert(k.clone(), v.clone());
+                changed = true;
+            }
+        }
+        wrote.insert(k, v);
+    }
+    if changed {
+        let bytes = serde_json::to_vec_pretty(&current).map_err(std::io::Error::other)?;
+        write_private(&path, &bytes)?;
+    }
+    if wrote != last {
+        let bytes = serde_json::to_vec(&wrote).map_err(std::io::Error::other)?;
+        write_private(&ours, &bytes)?;
+    }
+    Ok(())
 }
 
 fn is_npm(m: &Manifest) -> bool {
@@ -393,6 +488,8 @@ pub struct Probe<'a> {
     pub installable: bool,
     pub npm_engine: bool,
     pub has_credentials: bool,
+    /// The program the engine signs in with is here (or it needs none).
+    pub sign_in_cli: bool,
     pub engine_home: PathBuf,
     pub user_home: Option<PathBuf>,
     pub keychain: &'a dyn Fn(&str) -> bool,
@@ -449,20 +546,41 @@ pub fn readiness(m: &Manifest, p: Probe<'_>) -> Readiness {
             how: None,
         };
     }
-    match &m.sign_in {
-        Some(s) => Readiness {
-            needs: Some(EngineNeed::SignIn),
-            status: "Needs you to sign in.".into(),
-            how: Some(s.how.clone()),
-        },
-        None => {
-            let names: Vec<&str> = m.keys.iter().map(|k| k.title.as_str()).collect();
-            Readiness {
-                needs: Some(EngineNeed::Key),
-                status: "Needs an API key.".into(),
-                how: Some(format!("Add an API key from {}.", or_list(&names))),
-            }
-        }
+    let names: Vec<&str> = m.keys.iter().map(|k| k.title.as_str()).collect();
+    let Some(s) = &m.sign_in else {
+        return Readiness {
+            needs: Some(EngineNeed::Key),
+            status: "Needs an API key.".into(),
+            how: Some(format!("Add an API key from {}.", or_list(&names))),
+        };
+    };
+    // Signing in needs the engine's own program; without it, only a key works here.
+    let (status, sign_in) = if p.sign_in_cli {
+        ("Needs you to sign in.", s.how.clone())
+    } else {
+        let get = s.get.clone();
+        let get = get.unwrap_or_else(|| format!("Install {} first.", m.title));
+        ("Not on this computer.", get)
+    };
+    if names.is_empty() {
+        let needs = if p.sign_in_cli {
+            EngineNeed::SignIn
+        } else {
+            EngineNeed::Install
+        };
+        return Readiness {
+            needs: Some(needs),
+            status: status.into(),
+            how: Some(sign_in),
+        };
+    }
+    Readiness {
+        needs: Some(EngineNeed::Key),
+        status: status.into(),
+        how: Some(format!(
+            "{sign_in} Or add an API key from {}.",
+            or_list(&names)
+        )),
     }
 }
 
@@ -611,6 +729,7 @@ mod tests {
             installable: true,
             npm_engine: true,
             has_credentials: creds,
+            sign_in_cli: true,
             engine_home: home.join("state"),
             user_home: Some(home.to_path_buf()),
             keychain: &|_| false,
@@ -626,11 +745,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let m = manifest("claude-code");
         let r = readiness(&m, probe(dir.path(), false));
-        assert_eq!(r.needs, Some(EngineNeed::SignIn));
+        // Signing in or a key: both work, so the key can be added right here.
+        assert_eq!(r.needs, Some(EngineNeed::Key));
         assert_eq!(r.status, "Needs you to sign in.");
         assert_eq!(
             r.how.as_deref(),
-            Some("Open Terminal, run `claude` and sign in.")
+            Some("Open Terminal, run `claude` and sign in. Or add an API key from Anthropic.")
         );
         std::fs::create_dir_all(dir.path().join(".claude")).unwrap();
         std::fs::write(dir.path().join(".claude/.credentials.json"), "{}").unwrap();
@@ -665,6 +785,69 @@ mod tests {
         let r = readiness(&manifest("gemini"), p);
         assert_eq!(r.needs, Some(EngineNeed::Install));
         assert_eq!(r.status, "Not on this computer.");
+    }
+
+    #[test]
+    fn codex_without_its_program_offers_a_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut p = probe(dir.path(), false);
+        p.sign_in_cli = false;
+        let r = readiness(&manifest("codex"), p);
+        assert_eq!(r.needs, Some(EngineNeed::Key));
+        assert_eq!(r.status, "Not on this computer.");
+        assert_eq!(
+            r.how.as_deref(),
+            Some(
+                "Install it from Terminal: npm install -g @openai/codex. \
+                 Or add an API key from OpenAI."
+            )
+        );
+        // With a key it's ready, program or not.
+        let mut p = probe(dir.path(), true);
+        p.sign_in_cli = false;
+        assert!(readiness(&manifest("codex"), p).ready());
+    }
+
+    #[test]
+    fn an_engine_not_on_this_computer_offers_no_keys() {
+        if which("gemini").is_some() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let reg = Registry::load(&Home::new(dir.path()));
+        let info = reg.info(reg.get("gemini").unwrap());
+        assert_eq!(info.needs, Some(EngineNeed::Install));
+        assert_eq!(info.status.as_deref(), Some("Not on this computer."));
+        assert!(info.key_providers.is_none());
+        assert!(reg.info(reg.get("pi").unwrap()).key_providers.is_some());
+    }
+
+    #[test]
+    fn the_built_in_ai_starts_on_a_cheaper_model_unless_the_person_chose() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = manifest("pi").settings.unwrap();
+        let file = dir.path().join("settings.json");
+        let read = || -> serde_json::Value {
+            serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap()
+        };
+        keep_settings(&s, dir.path(), Some("anthropic")).unwrap();
+        assert_eq!(read()["defaultProvider"], "anthropic");
+        assert_eq!(read()["defaultModel"], "claude-sonnet-5-5");
+        assert_eq!(read()["quietStartup"], true);
+        // Another key: Weilo's own choice follows it.
+        keep_settings(&s, dir.path(), Some("google")).unwrap();
+        assert_eq!(read()["defaultModel"], "gemini-3.8-flash");
+        // The person picks a model in the engine: it stays, and so do their other settings.
+        let mut v = read();
+        v["defaultModel"] = "gemini-3.1-pro-preview".into();
+        v["theme"] = "dark".into();
+        std::fs::write(&file, serde_json::to_vec(&v).unwrap()).unwrap();
+        keep_settings(&s, dir.path(), Some("google")).unwrap();
+        assert_eq!(read()["defaultModel"], "gemini-3.1-pro-preview");
+        assert_eq!(read()["theme"], "dark");
+        keep_settings(&s, dir.path(), Some("openai")).unwrap();
+        assert_eq!(read()["defaultModel"], "gemini-3.1-pro-preview");
+        assert_eq!(read()["defaultProvider"], "openai");
     }
 
     #[test]
@@ -707,7 +890,10 @@ mod tests {
             let (package, lock) = npm_files(&m, &pkgs);
             assert!(lock.is_some(), "{name} has no lockfile for its packages");
             let package: serde_json::Value = serde_json::from_slice(&package).unwrap();
-            assert_eq!(package["dependencies"].as_object().unwrap().len(), pkgs.len());
+            assert_eq!(
+                package["dependencies"].as_object().unwrap().len(),
+                pkgs.len()
+            );
             let (_, lock) = npm_files(&m, &["other@1.0.0".to_string()]);
             assert!(lock.is_none());
         }

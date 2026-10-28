@@ -122,22 +122,23 @@ pub async fn revoke_allow_rule(app: &App, caller: Uuid, rule_id: Uuid) -> CallRe
     Ok(())
 }
 
-/// One plain line: "Ava may always run `npm test` in shop".
+/// One plain line: "Ava may always run `npm test` in shop" (a session's folder), or
+/// "Ava may always run `npm test`" (in its own chats).
 pub fn rule_line(agent: Option<&str>, tool: &str, scope: &str) -> String {
     let who = agent.unwrap_or("Your agents");
     let place = scope
         .strip_prefix("folder:")
         .and_then(|p| Path::new(p).file_name())
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "this folder".into());
+        .map(|n| format!(" in {}", n.to_string_lossy()))
+        .unwrap_or_default();
     let (kind, what) = tool.split_once(':').unwrap_or(("other", tool));
     let what = (!what.is_empty() && !what.starts_with('{')).then(|| short(what, 60));
     match (kind, what) {
-        ("execute", Some(cmd)) => format!("{who} may always run `{cmd}` in {place}"),
-        (_, Some(cmd)) => format!("{who} may always use `{cmd}` in {place}"),
-        ("edit", None) => format!("{who} may always make the same edit in {place}"),
-        ("fetch", None) => format!("{who} may always open the same web page in {place}"),
-        _ => format!("{who} may always repeat the same step in {place}"),
+        ("execute", Some(cmd)) => format!("{who} may always run `{cmd}`{place}"),
+        (_, Some(cmd)) => format!("{who} may always use `{cmd}`{place}"),
+        ("edit", None) => format!("{who} may always make the same edit{place}"),
+        ("fetch", None) => format!("{who} may always open the same web page{place}"),
+        _ => format!("{who} may always repeat the same step{place}"),
     }
 }
 
@@ -162,6 +163,10 @@ mod tests {
         assert_eq!(
             rule_line(None, "edit:{\"path\":\"a\"}", "folder:/w/site"),
             "Your agents may always make the same edit in site"
+        );
+        assert_eq!(
+            rule_line(Some("Ava"), "execute:npm test", "agent"),
+            "Ava may always run `npm test`"
         );
         let long = format!("execute:{}", "x".repeat(100));
         assert!(rule_line(Some("Ava"), &long, "folder:/w/a").contains("…`"));

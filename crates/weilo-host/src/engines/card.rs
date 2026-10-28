@@ -55,8 +55,22 @@ fn normalize(cmd: &str) -> String {
     cmd.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// `can_always` adds "Always allow in this folder"; the host keeps that rule itself.
-pub fn permission_card(agent: &str, approval_id: Uuid, tool: &ToolInfo, can_always: bool) -> Card {
+/// Where an "Always allow" rule applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlwaysScope {
+    /// A coding session's folder: "Always allow in this folder".
+    Folder,
+    /// An agent's own chats, which have no folder of the person's: "Always allow for Ava".
+    Agent,
+}
+
+/// `always` adds an "Always allow" action for that scope; the host keeps that rule itself.
+pub fn permission_card(
+    agent: &str,
+    approval_id: Uuid,
+    tool: &ToolInfo,
+    always: Option<AlwaysScope>,
+) -> Card {
     let title = if tool.title.is_empty() {
         "Use a tool".to_string()
     } else {
@@ -69,13 +83,17 @@ pub fn permission_card(agent: &str, approval_id: Uuid, tool: &ToolInfo, can_alwa
         primary: true,
         decision: Some(Decision::Allow),
     }];
-    if can_always {
+    if let Some(scope) = always {
+        let (label, scope) = match scope {
+            AlwaysScope::Folder => ("Always allow in this folder".to_string(), "folder"),
+            AlwaysScope::Agent => (format!("Always allow for {agent}"), "agent"),
+        };
         actions.push(CardAction {
             id: "always".into(),
-            label: "Always allow in this folder".into(),
+            label,
             primary: false,
             decision: Some(Decision::AllowAlways {
-                scope: "folder".into(),
+                scope: scope.into(),
             }),
         });
     }
@@ -181,7 +199,12 @@ mod tests {
     #[test]
     fn execute_card_runs_a_command() {
         let req = request(ToolKind::Execute, "Run the shop's checks");
-        let card = permission_card("Ava", Uuid::nil(), &tool_info(&req, None), true);
+        let card = permission_card(
+            "Ava",
+            Uuid::nil(),
+            &tool_info(&req, None),
+            Some(AlwaysScope::Folder),
+        );
         assert_eq!(card.risk, RiskClass::Reversible);
         assert_eq!(card.risk_line, "Runs a command");
         assert_eq!(card.details.as_deref(), Some("npm test -- checkout"));
@@ -194,12 +217,24 @@ mod tests {
     fn sends_are_flagged_and_reads_change_nothing() {
         let req = request(ToolKind::Execute, "Send the invoice email");
         assert_eq!(
-            permission_card("Ava", Uuid::nil(), &tool_info(&req, None), true).risk,
+            permission_card(
+                "Ava",
+                Uuid::nil(),
+                &tool_info(&req, None),
+                Some(AlwaysScope::Folder)
+            )
+            .risk,
             RiskClass::Send
         );
         let req = request(ToolKind::Read, "Read the checkout code");
         assert_eq!(
-            permission_card("Ava", Uuid::nil(), &tool_info(&req, None), true).risk,
+            permission_card(
+                "Ava",
+                Uuid::nil(),
+                &tool_info(&req, None),
+                Some(AlwaysScope::Folder)
+            )
+            .risk,
             RiskClass::Read
         );
     }
@@ -240,7 +275,7 @@ mod tests {
         assert_ne!(rule_key(&a), rule_key(&d));
         d.raw_input = None;
         assert_eq!(rule_key(&d), None);
-        let card = permission_card("Ava", Uuid::nil(), &d, false);
+        let card = permission_card("Ava", Uuid::nil(), &d, None);
         assert!(!card.actions.iter().any(|a| a.id == "always"));
     }
 }
