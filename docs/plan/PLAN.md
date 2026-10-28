@@ -1,6 +1,6 @@
 # Weilo 1.0: design and architecture plan
 
-**Status:** draft v8 (local first, bring your own engine). v7 was approved by every judge at 9.5 or above; v8 is being re-checked. Nothing here is built yet.
+**Status:** draft v9 (local first, bring your own engine), being re-checked by the judges. Nothing here is built yet.
 
 **Reviews behind it:** eight rounds of independent review.
 
@@ -124,7 +124,7 @@ Goals, in order of weight:
 | Tier | Words | Where they appear |
 |---|---|---|
 | **Everyone** | **Agents**, **Channels**, **Sessions**, and the inbox **Needs you**. Sessions appear after the first one is started, or with developer mode on. | Sidebar, home, phone tabs |
-| **Settings** | **Computers** (where work runs: "Ava's cloud computer", "Your MacBook"), **Connections**, **Routines** | An agent's page, Settings |
+| **Settings** | **Computers** (where work runs: "This computer", "Your MacBook"; "Ava's cloud computer" from *Cloud*), **Connections**, **Routines** | An agent's page, Settings |
 | **Developers** | engine, worktree, MCP, ACP, home host | A session's header chip, advanced settings, docs |
 
 - **Agent:** a teammate who stays. The word is always "agent", never "assistant".
@@ -176,7 +176,11 @@ Goals, in order of weight:
   - Link-only confirmation pages (§10.3) are served the same way.
   - Desktop and native apps carry a signed, pinned bundle.
 - **Where it runs.** In release 1, home is **your own computer**. People who want it always on can run the same install on their own server (advanced, documented, not one-click). A hosted, always-on computer comes in *Cloud*.
-- **On the same Wi-Fi**, devices talk to home directly. The relay is used only when you are away.
+- **On the same Wi-Fi**, devices talk to home directly.
+  - The app uses `<id>.lan.home.weilo.app`. Home publishes that name with its LAN IP through the scoped DNS API, under the same certificate.
+  - If the direct connection fails within 1 s, the app uses the relay.
+  - First run handles the browser's local-network prompt.
+  - Routers that block private-IP DNS answers simply fall back to the relay.
 
 ### The relay, honestly
 
@@ -199,7 +203,7 @@ Goals, in order of weight:
 - Clients keep a read-only copy of what they have seen (IndexedDB) and show history.
 - Routines due during sleep follow a per-routine setting: **Run once when awake** (default) or **Skip**. Each scheduled slot fires once, at most (§7.3).
 - Approvals expire after **24 h** by default. The agent is told "not approved (expired)", and Needs you shows it under **Expired** with **Ask again**.
-- **Move to another computer** (laptop to VM or back) is one button, or `weilo move`. It exports, imports, re-pairs, and **fences the old home** (§7.4), so two homes never write.
+- **Move to another computer** (between your computers; to a hosted one from *Cloud*) is one button, or `weilo move`. It exports, imports, re-pairs, and **fences the old home** (§7.4), so two homes never write.
 
 ### 24/7 on your laptop
 
@@ -224,7 +228,7 @@ An agent has:
 - a **daily limit** (default $5, changed in one tap) and a cost forecast;
 - approvals with Always allow;
 - an isolated mode;
-- **Where it works**: its cloud computer, and optionally your computer, per app (§9).
+- **Where it works**: this computer (its own browser there) and, if you allow it, your desktop apps, per app (§9). Its own cloud computer comes in *Cloud*.
 
 Its conversations:
 
@@ -339,8 +343,8 @@ You bring the engine and its sign-in. Weilo never resells model access and never
 
 | How you connect | How it works |
 |---|---|
-| **pi (built in)** with a plan sign-in (Claude, ChatGPT, Copilot) or an API key | The gateway keeps the real token and swaps it into each request, as the app does today. pi only ever holds a stand-in. |
-| **Claude Code or Codex** with your own sign-in | The engine keeps its sign-in in its own store (for example `~/.claude` or the Keychain). The sandbox lets **that engine alone** read **its own** store. No plugin or other engine can. The session is labelled "Uses your Claude sign-in". |
+| **Weilo's built-in AI (pi)** with an API key, or a plan sign-in **only for providers whose terms allow third-party apps** (cleared by legal review per provider in weeks 1–2) | The gateway keeps the real token and swaps it into each request, as the app does today. pi only ever holds a stand-in. A Claude plan runs through Claude Code, Anthropic's own client; pi with Claude uses an API key unless review clears more. |
+| **Claude Code or Codex** with your own sign-in | **A Weilo-managed config folder** (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`). Only the sign-in is copied into it; Weilo keeps it fresh and writes refreshes back. Your own settings, hooks and MCP servers are **never loaded** (`--strict-mcp-config`; Weilo's MCP only). Commands the engine runs (shell, scripts, tests) run in a **child sandbox that can't read the sign-in**. The proxy blocks any request carrying the token to a host other than the provider's. The session is labelled "Uses your Claude sign-in". |
 | Any engine with an API key | Stand-in plus gateway swap, as for pi |
 | Local models (Ollama, LM Studio) | Through the gateway; no secret |
 
@@ -354,7 +358,7 @@ You bring the engine and its sign-in. Weilo never resells model access and never
 - **Task work** always runs on the agent's model: by default the best one your engine and sign-in offer (Opus 5.5 on a Claude plan).
 - **Sub-agents and helper calls inside engines are pinned to the same model** through the manifest's `model.env`. For third-party engines this is best effort; a warning shows when an engine uses another model.
 - **Housekeeping may use a small model,** only where no judgment about the task is made: titles, speech-to-text, text-to-speech, the voice "mouth" (§8) and, from *Make*, channel suggestions.
-- **Fallback asks first,** and says when data would go to another company.
+- **Fallback asks first,** only to another sign-in you already have, and says when data would go to another company. With none, the agent waits.
 - **Model providers are manifests** too: `kind: "model"` with `baseUrl`, `api` (`anthropic` or `openai`) and `prices`.
 
 ## 7. Inside `weilo-host`
@@ -485,11 +489,19 @@ Retries:
   - Then every file the snapshot references is copied. Files are immutable and content-addressed.
   - The nightly file sweep deletes nothing while a backup runs, and keeps expired files 48 h past `expires_at`.
   - WAL is compressed (zstd) before it is encrypted.
-  - **On a VM, each new file is uploaded before the WAL segment that first references it is archived** (a file-then-WAL barrier in the archiver). A point-in-time restore checks every referenced file and marks any missing one as a gap in the thread.
+  - **When a backup target is set (on any home), each new file is copied before the WAL segment that first references it is archived** (a file-then-WAL barrier in the archiver). A point-in-time restore checks every referenced file and marks any missing one as a gap in the thread.
 - **Retention:** 7 daily and 4 weekly backups.
-- **How much you can lose:** up to 24 h on a laptop; on a VM, WAL is archived every 5 min, so up to 5 min.
+- **How much you can lose:** up to 5 min while the computer is awake and the target is reachable (WAL is archived every 5 min); otherwise, back to the last archived WAL.
 - A backup runs whenever the newest one is over 24 h old, at the next idle moment.
 - Backups are **encrypted** (age) to a key in the OS keychain plus your recovery code.
+- **Signed and ordered.**
+  - Each backup is signed by home's key, carries an increasing number, and records the previous backup's hash.
+  - A restore checks the signature against a paired device or the recovery code, and warns if the backup isn't the newest one known.
+- **The recovery code** is 128-bit random (never chosen by you). The key wrapped to it uses a memory-hard KDF (Argon2id).
+- **Safe on synced folders and USB drives.**
+  - Each backup is written under a temporary name, then renamed; its manifest of hashes is written last.
+  - The weekly drill reads **from the target**, not a local cache. It downloads iCloud or Drive placeholders.
+  - If the target is missing (USB unplugged, sync paused) or the newest backup is over 3 days old, Needs you says "**Your backups have stopped.** [Fix]".
 - They are **copied off the machine**, to a place the user picks at setup:
   - a synced folder (iCloud Drive, Google Drive, Dropbox), which is the default suggestion;
   - a USB drive;
@@ -499,7 +511,7 @@ Retries:
   Backups are encrypted before they leave, so the folder's provider can't read them. The 24 h mailbox is never a backup target.
 - Every week the host restores into a scratch cluster, checks it, and **decrypts one secret** to prove keys restore too.
 - **Repair from backup** says what will be lost ("changes after Tue 02:14"). It first saves the readable tables, so newer events can be recovered.
-- Settings shows "**Last good backup: Tue 02:14**".
+- Settings shows "**Last good backup: Tue 02:14**": the last one that passed the drill.
 - **Export everything** is encrypted and leaves out secrets by default (connections sign in again on import).
 
 **Phase 0 gate:** embedded Postgres on macOS and Linux laptops; Windows waits for *Grow*.
@@ -567,7 +579,7 @@ One WebSocket per device:
 | Plugin dies | Process exit or an MCP error | Restart with backoff; then disable | "Gmail stopped working. [Reconnect]" |
 | Postgres down | Pool error | Supervised restart. Running turns pause at the next ACP boundary. Durable events wait in a bounded memory queue (≤ 1,000 or 30 s), then the turn fails as "interrupted". Reads come from the core's in-memory cache of open threads; anything else comes from the client's IndexedDB copy (§4). | "Your Weilo computer is restarting its data. (a few seconds)" |
 | Disk full | Free-space watch | See §7.3 | "Disk almost full. [Free space]" |
-| Model provider error | 5xx or 429 | Back off; fallback asks first (§6.5) | "Opus is busy. Use GPT-6 for this reply?" |
+| Model provider error | 5xx or 429 | Back off; offer fallback only to another sign-in you already have, else wait (§6.5) | "Claude is busy. [Wait] [Use your ChatGPT sign-in]" |
 | Effect outcome unknown | Timeout after the call | Never retried | Needs you: "Did this send? [Yes, it sent] [No, try again]" |
 | Voice provider (mouth) down | Connect error, or no audio within 2 s | Switch the call to strict mode | "Voice is slower right now." |
 | TURN unreachable | ICE failure | Retry over TCP/443 | "Can't start the call. [Try again] [Send a voice message]" |
@@ -587,6 +599,7 @@ One WebSocket per device:
 | Voice: first meaningful word after you stop speaking | **≤ 2.0 s** (stretch 1.5 s) |
 | 1,000 threads in the sidebar | 60 fps |
 | Idle host total (core + Postgres), no client connected | ≤ 200 MB; Chrome and engines are stopped |
+| On-device speech | Models load only during a call (≤ 1.5 GB). The latency gate is measured on an M1 with 8 GB and an 8-core x86 with 16 GB. Below that, first run suggests a key for the realtime mouth. |
 
 ## 8. Real-time voice (Talk v1 in release 1)
 
@@ -594,7 +607,7 @@ Voice has two jobs: a fast **mouth** for speaking and a frontier **brain** for t
 
 ```
 mic ─► WebRTC (TURN via the relay) ─► voice orchestrator in the Rust core (webrtc-rs; voice activity and turn detection in-process)
-   ├─ end-of-speech detector (the service's own; decides when your turn ends)
+   ├─ end-of-speech detector (in-process VAD in strict mode; the provider's own with a mouth); decides when your turn ends
    ├─ MOUTH (a voice endpoint): fillers and the brain's text read word for word; one tool: brain(utterance)
    ├─ BRAIN: the agent's own model (Opus 5.5), voice profile, cache kept warm, tools as usual
    └─ STRICT MODE (the default): no mouth model; on-device STT → brain → on-device TTS
@@ -627,7 +640,7 @@ mic ─► WebRTC (TURN via the relay) ─► voice orchestrator in the Rust cor
 
 | Where | How |
 |---|---|
-| **Agent's cloud computer** | A full Linux desktop beyond the browser, driven by Claude's computer-use loop plus AT-SPI. Live in **Screen**. |
+| **Agent's cloud computer** (*Cloud*) | A full Linux desktop beyond the browser, driven by Claude's computer-use loop plus AT-SPI. Live in **Screen**. |
 | **Your computer** | A Rust module: accessibility tree first, screenshots second, an app's API when there is one. macOS first, then Windows. |
 
 - **Access per agent:** **Off** (default) · **Ask for each app** · **Allowed apps**. There is never full access.
@@ -709,18 +722,19 @@ The rules:
 
 **On the computer** (the install):
 
-1. **"Connect your AI."** Weilo looks for engines already on the computer.
+1. **"Connect your AI."** Weilo looks for AI apps you already use.
    - Found: "**We found Claude Code, signed in. Use it?**" One tap.
-   - None found: "**Use pi (built in)**". Sign in with Claude, ChatGPT or Copilot, or paste an API key.
-   - *Other engines* opens the list (Codex, Gemini CLI, OpenCode…).
-2. **"Keep Ava working while this computer is plugged in?"** [Yes] [Not now]
+   - None found: "**Use Weilo's built-in AI**" (pi, named only in Details). Paste an API key with a guided "Get a key" link, or sign in with a plan where §6.4 allows it.
+   - *Other AI apps* opens the list (Codex, Gemini CLI, OpenCode…).
+2. **"Keep your agent working while this computer is plugged in?"** *It stays awake while charging.* [Yes] [Not now]
+3. **"Get Ava on your phone."** Shows a QR code and a short typed code. [Skip]. Later: Settings → Devices → Add a phone.
 
-That is two taps when an engine is found.
+That is two taps when an AI app is found, plus the optional phone step.
 
 **On a phone:**
 
 1. "**Scan the code on your computer.**" A camera frame, with "Type the code instead" below.
-2. Pairing shows a safety number on both screens. Then the phone opens Ava's chat.
+2. Both screens show the same **4 words**: [They match] [They don't]. *They don't* cancels pairing. Then the phone opens Ava's chat.
 3. A link, "*No Weilo on your computer yet? Send me the link*", is for people who start on the phone.
 
 **Then:**
@@ -947,14 +961,14 @@ Weight 500 means interactive; 600 means a heading. Avatar letters are 12/16 at 6
 | 6 | **Your own proxy**, sticky per site. Bring your own only. | *Grow* | Off; opt-in |
 | 7 | **Hand-off to you** for a CAPTCHA, 2FA or press-and-hold. No solver services. | 1 | On |
 | 8 | **Human-like input.** | *Grow* | Off; opt-in per site |
-| 9 | **Web Bot Auth** (RFC 9421) and Cloudflare signed agents. | *Grow* | On where accepted |
+| 9 | **Web Bot Auth** (RFC 9421) and Cloudflare signed agents, and **legal review of plan sign-ins per provider** (§6.4). | *Grow* | On where accepted |
 
 **Signed-in profiles.**
 
 - On a signed-in profile, form submits and any request other than GET count as sends.
 - A tainted job browses only in a fresh, signed-out profile unless a card allows otherwise.
 
-**Routing:** your own Chrome for signed-in sites; otherwise the VM's Chrome; on a block, your proxy (if set), then hand-off.
+**Routing:** your own Chrome for signed-in sites; otherwise the agent's own Chrome on home; on a block, your proxy (if set), then hand-off.
 
 **Honesty line.** Layers 6 and 8 exist to look less like automation. They are off by default, opt-in per site, carry a terms-of-service notice, and need legal review.
 
@@ -998,7 +1012,7 @@ What changes:
 
 **Engines and plugins**
 
-- Bound (§6.3) and holding no tokens or database access (§6.4).
+- Bound (§6.3) and holding no tokens or database access, except an engine's own sign-in, handled as §6.4 says.
 - Hand-off to an engine's own terminal app on a computer that holds home's database needs a confirm card.
 
 **The laptop trusts no host:**
@@ -1010,7 +1024,7 @@ What changes:
 **Devices**
 
 - Passkeys in the PWA; the Secure Enclave or Keystore in native apps.
-- A safety number at pairing.
+- At pairing, both screens show the same 4 words, and the person confirms they match.
 - Revoking, adding a device, Lost this computer and changing recovery all need a passkey or Face ID, and every device is told. A new device, including one added with only the recovery code, can't approve sends for 24 h unless an existing device confirms it, and every device is alerted.
 - Pairing endpoints on the relay are rate-limited.
 - A recovery code.
@@ -1067,29 +1081,32 @@ What changes:
 **Week 6 checkpoint.**
 
 Pass criteria:
-- an echo session and a Claude Code session each run end to end through the relay on a phone, **in its browser (no install)**;
+- an echo session, a Claude Code session and a **pi session with an API key** each run end to end through the relay on a phone, **in its browser (no install)**;
 - the event-to-screen and session-start budgets (§7.8) are met;
 - the Postgres gate passes.
 
 Cut order, fixed in advance, if a criterion fails or the schedule slips:
 1. Codex engine → *Reach*;
 2. Gmail → **published but unverified** (100-user cap, with Google's warning screen); **never testing mode**, whose sign-ins expire every 7 days;
-3. Talk v1 → strict mode only (no realtime mouth).
+3. Talk v1 → strict mode only (no realtime mouth). Strict mode is the default already, so this only drops the optional mouth.
+4. A plan sign-in for a provider that review hasn't cleared → API key only for that provider.
 
 Release 1 ships when the remaining scope passes its gates.
 
 **After release 1**, two tracks run in parallel (one developer each), because both of the founder's headline gaps matter: your computer, and calls with the screen locked.
 
-Then the phases follow in order:
+*Cloud* then starts as track C, once tracks A and B ship (about 8 weeks after release 1). It is the only feature that keeps an agent on around the clock and Weilo's first paid product, so it comes before the rest.
+
+The phases, in order:
 
 | Phase | Weeks | Ships |
 |---|---|---|
 | *Your computer* (track A, starts right after release 1) | 6 | Workers (§7.4); macOS computer use; Chrome extension (layer 3); OSWorld-style gate |
 | *Native* (track B, in parallel with track A) | 6–8 | Expo apps: push actions, Live Activities, CallKit, widgets |
+| *Cloud* (track C, after tracks A and B) | 6 | A hosted, always-on computer per user: the same `weilo-host` on a VM we run, the full Linux desktop for the agent, takeover while your computer sleeps, `weilo move` both ways, KMS-held keys, and a first-run notice: "*On a computer we host, we could technically reach your data. Keys are held in a cloud key service and every access is logged.*" |
 | *Talk+* | 3 | Voice codes, phone number (SIP), a voice per agent |
 | *Make* | 6 | Docs and decks (eval gate), embeddings, the channel classifier, Preview panel |
 | *Reach* | 6 | Slack, email address and Telegram bridges; social; browser layers 4 and 5 |
-| *Cloud* | 6 | A hosted, always-on computer per user: the same `weilo-host` on a VM we run, the full Linux desktop for the agent, takeover while your computer sleeps, `weilo move` both ways, KMS-held keys, and a first-run notice: "*On a computer we host, we could technically reach your data. Keys are held in a cloud key service and every access is logged.*" |
 | *Grow* | 6 | Windows (desktop, embedded Postgres, computer use); marketplace and SDK; browser layers 6, 8, 9; shared workspaces (RLS on) |
 
 **Cost controls in release 1:** for API keys, a forecast per agent and a hard daily cap; for plan sign-ins, the plan's own limit window. Voice minutes on your own key are shown in Usage.
@@ -1133,6 +1150,22 @@ Then the phases follow in order:
 7. **Relay operator.** Weilo runs the hosted relay (TURN, push keys for APNs and FCM, a 99.9% uptime target); self-hosting stays possible. *Recommendation: we run it.*
 
 ## 20. What the reviews changed
+
+### Round 9: owner decisions (local first, bring your own engine)
+
+The same six judges re-checked v8. Changes made:
+
+- LAN-direct naming.
+- Plan sign-ins only where provider terms allow, with legal review in weeks 1–2.
+- A Weilo-managed config folder for engines using your own sign-in.
+- Signed, ordered backups that are safe on synced folders.
+- 5-minute recovery on any home.
+- A hardware floor for on-device voice.
+- Fallback only to sign-ins you already have.
+- An "Add a phone" step and checking that the 4 words match.
+- Plain first-run words ("AI apps", "Weilo's built-in AI").
+- *Cloud* as track C.
+- Leftover cloud wording removed.
 
 ### Rounds 4 to 8: the same judges, re-scored until every score reached 9.5
 
