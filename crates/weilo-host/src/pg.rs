@@ -202,7 +202,7 @@ fn quote_literal(s: &str) -> String {
     format!("'{}'", s.replace('\'', "''"))
 }
 
-/// `WEILO_PG_BIN`, then `pg_config --bindir`, then the highest `/usr/lib/postgresql/*/bin`.
+/// `WEILO_PG_BIN`, then `pg_config --bindir`, then the newest Debian or Homebrew install.
 pub fn find_bin_dir() -> Result<PathBuf> {
     if let Some(dir) = std::env::var_os("WEILO_PG_BIN") {
         return Ok(PathBuf::from(dir));
@@ -217,15 +217,32 @@ pub fn find_bin_dir() -> Result<PathBuf> {
             return Ok(dir);
         }
     }
-    let mut found: Vec<(u32, PathBuf)> = fs::read_dir("/usr/lib/postgresql")
+    // Debian and Ubuntu: /usr/lib/postgresql/16/bin. Homebrew: /opt/homebrew/opt/postgresql@16/bin.
+    let debian = fs::read_dir("/usr/lib/postgresql")
         .into_iter()
         .flatten()
         .flatten()
         .filter_map(|e| {
-            let major = e.file_name().to_str()?.parse::<u32>().ok()?;
-            let bin = e.path().join("bin");
-            bin.join("initdb").exists().then_some((major, bin))
-        })
+            Some((
+                e.file_name().to_str()?.parse::<u32>().ok()?,
+                e.path().join("bin"),
+            ))
+        });
+    let brew = ["/opt/homebrew/opt", "/usr/local/opt"]
+        .into_iter()
+        .flat_map(|root| fs::read_dir(root).into_iter().flatten().flatten())
+        .filter_map(|e| {
+            let name = e.file_name();
+            let major = name
+                .to_str()?
+                .strip_prefix("postgresql@")?
+                .parse::<u32>()
+                .ok()?;
+            Some((major, e.path().join("bin")))
+        });
+    let mut found: Vec<(u32, PathBuf)> = debian
+        .chain(brew)
+        .filter(|(_, bin)| bin.join("initdb").exists())
         .collect();
     found.sort();
     found

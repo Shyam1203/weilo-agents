@@ -24,7 +24,7 @@ user only), so only you can mint codes.
 |---|---|
 | `WEILO_HOME` | Data folder (default `~/.weilo-agents`) |
 | `WEILO_WEB` | The built web app (default `apps/web/dist` in the repo, or `web/` beside the binary) |
-| `WEILO_PG_BIN` | Postgres `bin` folder (default `pg_config --bindir`, then the newest `/usr/lib/postgresql/*/bin`) |
+| `WEILO_PG_BIN` | Postgres `bin` folder (default `pg_config --bindir`, then the newest `/usr/lib/postgresql/*/bin` or Homebrew `postgresql@*`) |
 | `WEILO_PG_USER` | When run as root: the user Postgres runs as (default `weilo`, created with `useradd` if missing) |
 | `WEILO_APPROVAL_TTL_SECS` | How long an approval waits (default 24 h) |
 | `WEILO_ENGINE_IDLE_SECS` | Idle engines stop after this (default 600) |

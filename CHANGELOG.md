@@ -2,6 +2,27 @@
 
 Versions follow [SemVer](https://semver.org). While the version starts with 0, a minor version may change how things work.
 
+## 0.2.0
+
+Weilo is rebuilt from the ground up. Nothing carries over from 0.1: install it fresh.
+
+- **No Docker.** Weilo is one program for macOS and Linux, installed with one command. It keeps its
+  data in a Postgres it starts and stops by itself.
+- **Bring your own agent.** Agents run on Claude Code, Codex, Gemini or pi (the default), whichever
+  you already use and pay for.
+- **#channels.** Give work to an agent in a channel; its threads and coding sessions stay there.
+  Sidebar sections fold, and you choose which ones show.
+- **Coding sessions.** Each session gets its own copy of the project (a git worktree), with a
+  side panel for what the agent is doing.
+- **Needs you.** Every question from every agent in one list, with keys to move through it. Answer
+  once from any device; the others see it's done.
+- **Tell now or after this job.** Say something to a working agent right away, or line it up for
+  when it finishes.
+- **Phone.** The same app works on a phone, with a tab bar and Needs you on top.
+- **Paired devices only.** Connect a browser or phone with a one-time code from `weilo pair`.
+
+Not yet: voice, the cloud version, a sandbox around agents, routines and connections.
+
 ## 0.1.2
 
 - Settings > Memory has one switch beside its title that turns memory on or off, in place of the "Notes about you" row. Settings > About no longer has a line under its title.
