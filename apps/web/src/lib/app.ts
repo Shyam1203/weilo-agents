@@ -4,6 +4,7 @@ import type { Changed } from "../proto/Changed";
 import type { Decision } from "../proto/Decision";
 import type { EngineCheck } from "../proto/EngineCheck";
 import type { SendWhen } from "../proto/SendWhen";
+import type { SessionChanges } from "../proto/SessionChanges";
 import type { UiPrefs } from "../proto/UiPrefs";
 import { HostError, type HostApi, type HostListener } from "./host";
 import {
@@ -13,6 +14,7 @@ import {
   applySnapshot,
   decideLocally,
   findThread,
+  lastSeqOf,
   lastUserMessage,
   removeQueued,
   removeSending,
@@ -105,7 +107,14 @@ export function clearError(): void {
 
 function markDirty(what: Changed | "all"): void {
   dirty.add(what);
-  if (refreshTimer) return;
+  scheduleRefresh();
+}
+
+// One refresh at a time: changes that come in meanwhile wait for the next one.
+let refreshing = false;
+
+function scheduleRefresh(): void {
+  if (refreshTimer || refreshing || dirty.size === 0) return;
   refreshTimer = setTimeout(() => {
     refreshTimer = null;
     void refresh();
@@ -113,6 +122,8 @@ function markDirty(what: Changed | "all"): void {
 }
 
 async function refresh(): Promise<void> {
+  if (refreshing) return;
+  refreshing = true;
   const what = new Set(dirty);
   dirty.clear();
   try {
@@ -120,21 +131,46 @@ async function refresh(): Promise<void> {
     if (needsSnapshot) {
       await loadSnapshot();
     } else if (what.has("needs_you")) {
-      const v = await call({ method: "needs_you" });
-      if (v.type === "needs_you") store.set((s) => setNeedsYou(s, v.data));
+      await inOrder(
+        () => call({ method: "needs_you" }),
+        (v) => {
+          if (v.type === "needs_you") store.set((s) => setNeedsYou(s, v.data));
+        },
+      );
     }
     if (what.has("engines") && store.get().engines) await loadEngines();
   } catch (e) {
     if (!(e instanceof HostError && e.code === "offline")) showError(e);
+  } finally {
+    refreshing = false;
+    scheduleRefresh();
   }
 }
 
+// Answers about the sidebar and Needs you are applied in the order they were asked for:
+// one that arrives after a newer one has been applied is dropped.
+let asked = 0;
+let applied = 0;
+
+/** Runs `apply` only if no newer answer was applied first. */
+async function inOrder<T>(ask: () => Promise<T>, apply: (v: T) => void): Promise<void> {
+  const mine = ++asked;
+  const v = await ask();
+  if (mine < applied) return;
+  applied = mine;
+  apply(v);
+}
+
 export async function loadSnapshot(): Promise<void> {
-  const v = await call({ method: "snapshot" });
-  if (v.type === "snapshot") {
-    store.set((s) => applySnapshot(s, v.data));
-    for (const t of v.data.threads) flushQueued(t.id);
-  }
+  await inOrder(
+    () => call({ method: "snapshot" }),
+    (v) => {
+      if (v.type !== "snapshot") return;
+      store.set((s) => applySnapshot(s, v.data));
+      watchThreads(v.data);
+      for (const t of v.data.threads) flushQueued(t.id);
+    },
+  );
 }
 
 export async function loadEngines(): Promise<void> {
@@ -144,13 +180,33 @@ export async function loadEngines(): Promise<void> {
 
 // -- Threads -----------------------------------------------------------------
 
+// Agents' own chats and sessions are followed in the background, so a problem that ends a
+// reply reaches Needs you and the sidebar without opening that chat first.
+const MAX_WATCHED = 30;
+const watched = new Set<string>();
+
+function watchThreads(snap: { agents: Array<{ main_thread_id: string }>; threads: Array<{ id: string; kind: string; updated_at: string }> }): void {
+  const h = host;
+  if (!h) return;
+  const mains = new Set(snap.agents.map((a) => a.main_thread_id));
+  const want = snap.threads
+    .filter((t) => mains.has(t.id) || t.kind === "session")
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+    .slice(0, MAX_WATCHED);
+  for (const t of want) {
+    if (watched.has(t.id)) continue;
+    watched.add(t.id);
+    h.subscribe(t.id);
+  }
+}
+
 export function follow(threadId: string): () => void {
   const h = host;
   if (!h) return () => {};
   h.subscribe(threadId);
   h.presence(threadId);
   return () => {
-    h.unsubscribe(threadId);
+    if (!watched.has(threadId)) h.unsubscribe(threadId);
     h.presence(null);
   };
 }
@@ -166,7 +222,7 @@ export async function send(threadId: string, text: string, when: SendWhen = "now
     return false;
   }
   const id = localId();
-  store.set((s) => addSending(s, threadId, { id, text: trimmed }));
+  store.set((s) => addSending(s, threadId, { id, text: trimmed, afterSeq: lastSeqOf(s, threadId) }));
   try {
     // The placeholder stays until the host echoes the message (appendEvent drops it then).
     await call({ method: "send", params: { thread_id: threadId, text: trimmed, when } });
@@ -306,6 +362,12 @@ export async function mergeSession(threadId: string): Promise<string> {
   const v = await call({ method: "merge_session", params: { thread_id: threadId } });
   markDirty("threads");
   return v.type === "message" ? v.data : "Done.";
+}
+
+/** What a session changed so far: its files and the diff. */
+export async function sessionChanges(threadId: string): Promise<SessionChanges> {
+  const v = await call({ method: "session_changes", params: { thread_id: threadId } });
+  return v.type === "session_changes" ? v.data : { files: [], diff: null, truncated: false };
 }
 
 export async function finishSetup(engine: string, keepAwake: boolean): Promise<void> {

@@ -276,7 +276,22 @@ function CheckCard({
   const size = desktop ? "lg" : "phone";
   const form = useKeyForm(engine);
   const need = result && !result.ready ? needKind(result.needs) ?? problemKind(result.action) : null;
-  const wantsKey = need === "key" && !!engine?.key_providers?.length;
+  const takesKey = !!engine?.key_providers?.length;
+  const keyForm = (primary: boolean) => (
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (await form.save()) onRetry();
+      }}
+    >
+      <KeyFields form={form} autoFocus={primary} />
+      {form.error && <ErrorLine>{form.error}</ErrorLine>}
+      <Button type="submit" variant={primary ? "primary" : "secondary"} size={size} disabled={form.busy || !form.key.trim()}>
+        Save key
+      </Button>
+    </form>
+  );
   const help = need === "sign_in" || need === "install" ? helpText(need, title, engine?.how, result ?? undefined) : null;
 
   return (
@@ -312,20 +327,8 @@ function CheckCard({
           <ErrorLine>
             <TextWithCode text={result.message} />
           </ErrorLine>
-          {wantsKey ? (
-            <form
-              className="flex flex-col gap-4"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                if (await form.save()) onRetry();
-              }}
-            >
-              <KeyFields form={form} autoFocus />
-              {form.error && <ErrorLine>{form.error}</ErrorLine>}
-              <Button type="submit" variant="primary" size={size} disabled={form.busy || !form.key.trim()}>
-                Save key
-              </Button>
-            </form>
+          {need === "key" && takesKey ? (
+            keyForm(true)
           ) : (
             <>
               {help && !alreadySays(result.message, help.line) && (
@@ -337,6 +340,13 @@ function CheckCard({
               <Button variant="primary" size={size} onClick={onRetry} autoFocus>
                 {need === "retry" || !need ? "Try again" : "Check again"}
               </Button>
+              {/* No sign-in here, but an API key works too: paste it instead. */}
+              {need === "sign_in" && takesKey && (
+                <div className="flex flex-col gap-3 border-t border-border pt-4">
+                  <span className="text-body-sm text-text-secondary">Or use an API key instead.</span>
+                  {keyForm(false)}
+                </div>
+              )}
             </>
           )}
         </>

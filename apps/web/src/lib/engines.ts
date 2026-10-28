@@ -55,6 +55,8 @@ export function problemKind(action: string | null | undefined): ProblemKind | nu
     case "sign in":
       return "sign_in";
     case "add a key":
+    case "change key":
+    case "change the key":
       return "key";
     case "install":
       return "install";

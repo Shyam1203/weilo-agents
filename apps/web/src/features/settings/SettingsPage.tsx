@@ -110,6 +110,8 @@ function EngineRow({ engine: e, phone }: { engine: EngineInfo; phone?: boolean }
   const saved = keys.filter((k) => k.has_key).length;
   const need = e.ready ? null : needKind(e.needs);
   const help = need === "sign_in" || need === "install" ? need : null;
+  // Keys only for an AI that is on this computer; one that isn't gets Install help first.
+  const keyed = keys.length > 0 && need !== "install";
   const size = phone ? "phone" : "md";
   return (
     <div className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 py-2 shadow-line">
@@ -117,10 +119,10 @@ function EngineRow({ engine: e, phone }: { engine: EngineInfo; phone?: boolean }
         <span className={canPick(e) ? "font-medium" : "font-medium text-text-secondary"}>{engineTitle(e.id, [e])}</span>
         <span className="text-caption text-text-secondary">
           <TextWithCode text={statusLine(e)} />
-          {keys.length > 0 && saved > 0 ? ` Key saved for ${keys.filter((k) => k.has_key).map((k) => k.title).join(" and ")}.` : ""}
+          {keyed && saved > 0 ? ` Key saved for ${keys.filter((k) => k.has_key).map((k) => k.title).join(" and ")}.` : ""}
         </span>
       </span>
-      {keys.length > 0 ? (
+      {keyed ? (
         <Button size={size} onClick={() => setOpen(true)}>
           {saved > 0 ? "Keys" : "Add a key"}
         </Button>
@@ -129,8 +131,8 @@ function EngineRow({ engine: e, phone }: { engine: EngineInfo; phone?: boolean }
           {help === "sign_in" ? "Sign in" : "Install"}
         </Button>
       ) : null}
-      {keys.length > 0 && <KeyDialog open={open} onClose={() => setOpen(false)} engineId={e.id} />}
-      {keys.length === 0 && help && <EngineHelpDialog open={open} onClose={() => setOpen(false)} engineId={e.id} kind={help} />}
+      {keyed && <KeyDialog open={open} onClose={() => setOpen(false)} engineId={e.id} />}
+      {!keyed && help && <EngineHelpDialog open={open} onClose={() => setOpen(false)} engineId={e.id} kind={help} />}
     </div>
   );
 }

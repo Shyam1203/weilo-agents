@@ -49,8 +49,9 @@ export function ThreadScreen({ header, threadId, list, composer, panelOpen, onPa
     return () => window.removeEventListener("keydown", onKey);
   }, [panelOpen, floating, onPanelClose]);
 
-  // The message column sits on the left with a 24px gutter, like the mock; it stops growing at 768.
-  const column = cx("w-full max-w-[768px]", phone ? "px-4" : "px-6");
+  // The message column sits on the left with a 24px gutter, like the mock. It takes the width
+  // there is (so a 1024 window has no empty band) and stops growing at 880, about 100 characters.
+  const column = cx("w-full max-w-[880px]", phone ? "px-4" : "px-6");
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1">
@@ -66,6 +67,8 @@ export function ThreadScreen({ header, threadId, list, composer, panelOpen, onPa
           <ConnectionBanner />
           {top}
           <div ref={scroll} className="min-h-0 flex-1 overflow-y-auto">
+            {/* Under the Needs you cards, the chat fades in instead of being cut by a hard edge. */}
+            {top && <div aria-hidden="true" className="pointer-events-none sticky top-0 z-[1] -mb-4 h-4 bg-linear-to-b from-bg to-transparent" />}
             <div className={cx(column, phone ? "py-3" : "py-6")}>
               <MessageList threadId={threadId} {...list} />
             </div>

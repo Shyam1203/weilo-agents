@@ -9,19 +9,33 @@ import { SessionMark } from "../../ui/Avatar";
 import { EmptyState, StatusPill, TopBar } from "../../ui/bits";
 import { Button } from "../../ui/Button";
 import { Link } from "../../ui/Link";
-import { PanelToggle, ThreadScreen } from "./ThreadScreen";
+import { PANEL_INLINE_MIN_WIDTH, PanelToggle, ThreadScreen } from "./ThreadScreen";
+import { useMedia } from "../../lib/useMedia";
 import { BackButton } from "../mobile/TabBar";
 import { useEvents, useThreadState, useVariant } from "./useThread";
 import { shortcut, useTouchOnly } from "../../lib/platform";
+
+/** Sessions whose panel already opened by itself (this page load). */
+const autoOpened = new Set<string>();
 
 /** A coding session: its name, who started it and where, status, Ask Ava and Stop. */
 export function SessionView({ thread }: { thread: ThreadSummary }) {
   const [panel, setPanel] = useState(false);
   const phone = useVariant() === "phone";
+  const inline = useMedia(`(min-width: ${PANEL_INLINE_MIN_WIDTH}px)`);
   const state = useThreadState(thread.id);
   const snap = useApp((s) => s.snapshot)!;
   const events = useEvents(thread.id);
   const cost = useMemo(() => totalCost(events), [events]);
+  const hasChanges = useMemo(() => events.some((e) => e.body.kind === "step"), [events]);
+
+  // The panel opens by itself once a session has changes to show (§11.0 rule 4): once per
+  // session, and only where it doesn't cover the conversation. Closing it is respected.
+  useEffect(() => {
+    if (!hasChanges || phone || !inline || autoOpened.has(thread.id)) return;
+    autoOpened.add(thread.id);
+    setPanel(true);
+  }, [hasChanges, phone, inline, thread.id]);
   const channel = snap.channels.find((c) => c.id === thread.channel_id);
   const watcher = snap.agents.find((a) => a.id === thread.agent_id) ?? snap.agents[0];
   const by = startedByName(thread.started_by, snap.agents);

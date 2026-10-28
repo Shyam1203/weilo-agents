@@ -57,6 +57,8 @@ export interface Queued {
 export interface Sending {
   id: string;
   text: string;
+  /** The newest seq known in the thread when it was sent: its echo comes after this. */
+  afterSeq?: bigint;
 }
 
 export interface AppState {
@@ -84,6 +86,8 @@ export interface AppState {
   stopped: Record<string, bigint>;
   /** Approvals closed here by Stop, before the host says so. */
   stoppedCards: Record<string, true>;
+  /** Every agent name seen, kept after an agent is removed, so its old replies keep its name. */
+  agentNames: Record<string, string>;
 }
 
 // "Next up" lives in this browser until the host can hold and cancel queued messages.
@@ -140,6 +144,7 @@ export const initialState: AppState = {
   notice: null,
   stopped: {},
   stoppedCards: {},
+  agentNames: {},
 };
 
 export const EMPTY_FEED: Feed = { events: [], streaming: null };
@@ -149,9 +154,11 @@ export const EMPTY_FEED: Feed = { events: [], streaming: null };
 // ---------------------------------------------------------------------------
 
 export function applySnapshot(s: AppState, snapshot: Snapshot): AppState {
+  const fresh = snapshot.agents.filter((a) => s.agentNames[a.id] !== a.name);
   return {
     ...s,
     snapshot,
+    agentNames: fresh.length ? { ...s.agentNames, ...Object.fromEntries(fresh.map((a) => [a.id, a.name])) } : s.agentNames,
     firstRunOpen: s.firstRunOpen || !snapshot.setup.done,
   };
 }
@@ -182,19 +189,14 @@ export function appendEvent(s: AppState, threadId: string, event: Event): AppSta
   }
   let sending = s.sending;
   if (event.body.kind === "user_message") {
-    const text = event.body.text;
+    // The host's echo of a message on its way. Send carries no id of ours, so match by
+    // order: the oldest one sent before this event (the same text if there is one, since
+    // the host may trim or reword it).
     const list = s.sending[threadId];
-    if (list?.some((m) => m.text === text)) {
-      let removed = false;
-      const rest = list.filter((m) => {
-        if (!removed && m.text === text) {
-          removed = true;
-          return false;
-        }
-        return true;
-      });
-      sending = { ...s.sending, [threadId]: rest };
-    }
+    const waiting = list?.filter((m) => m.afterSeq === undefined || event.seq > m.afterSeq) ?? [];
+    const text = event.body.text.trim();
+    const echo = waiting.find((m) => m.text.trim() === text) ?? waiting[0];
+    if (list && echo) sending = { ...s.sending, [threadId]: list.filter((m) => m !== echo) };
   }
   return { ...s, sending, feeds: { ...s.feeds, [threadId]: { ...feed, events } } };
 }
@@ -258,6 +260,14 @@ export function removeQueued(s: AppState, threadId: string, id: string): AppStat
   return { ...s, queued: { ...s.queued, [threadId]: list.filter((q) => q.id !== id) } };
 }
 
+/** The newest seq known for a thread: its loaded events, else its summary. */
+export function lastSeqOf(s: AppState, threadId: string): bigint {
+  const events = s.feeds[threadId]?.events ?? [];
+  const fromFeed = events[events.length - 1]?.seq ?? 0n;
+  const fromSummary = findThread(s, threadId)?.last_seq ?? 0n;
+  return fromFeed > fromSummary ? fromFeed : fromSummary;
+}
+
 export function addSending(s: AppState, threadId: string, item: Sending): AppState {
   return { ...s, sending: { ...s.sending, [threadId]: [...(s.sending[threadId] ?? []), item] } };
 }
@@ -309,9 +319,7 @@ export function revertPrefs(current: UiPrefs, before: UiPrefs, attempted: UiPref
  * approvals close (the host closes them too, as "stopped").
  */
 export function stopLocally(s: AppState, threadId: string): AppState {
-  const events = s.feeds[threadId]?.events ?? [];
-  const last = events[events.length - 1]?.seq ?? findThread(s, threadId)?.last_seq ?? 0n;
-  let next: AppState = { ...s, stopped: { ...s.stopped, [threadId]: last } };
+  let next: AppState = { ...s, stopped: { ...s.stopped, [threadId]: lastSeqOf(s, threadId) } };
   if (!s.snapshot) return next;
   const closed = s.snapshot.needs_you.filter((n) => n.thread_id === threadId && n.state === "pending" && n.card.kind !== "heads_up");
   if (closed.length === 0) return next;
@@ -354,6 +362,15 @@ export function threadState(summary: ThreadSummary | undefined, feed: Feed | und
 export function findAgent(s: AppState, id: string | null | undefined): AgentSummary | undefined {
   if (!id || !s.snapshot) return undefined;
   return s.snapshot.agents.find((a) => a.id === id);
+}
+
+/**
+ * Who wrote a reply, for its "Name · 9:41" line: the agent, else the name it had before it
+ * was removed, else "Removed agent". A session's own work, with no agent, is "This session".
+ */
+export function authorName(s: AppState, agentId: string | null | undefined): string {
+  if (!agentId) return "This session";
+  return findAgent(s, agentId)?.name ?? s.agentNames[agentId] ?? "Removed agent";
 }
 
 export function findThread(s: AppState, id: string | null | undefined): ThreadSummary | undefined {
@@ -423,13 +440,14 @@ export interface OpenProblem {
 
 /**
  * The newest problem in a chat that nothing has fixed yet: a later reply from the agent
- * clears it. (The host sends problems only as chat events, so Needs you derives these.)
+ * or a message sent again clears it. (The host sends problems only as chat events, so Needs you derives these.)
  */
 export function openProblem(events: Event[]): OpenProblem | null {
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i]!;
     const b = e.body;
-    if (b.kind === "agent_message") return null;
+    // A reply since, or a message sent again (Try again), means it was dealt with.
+    if (b.kind === "agent_message" || b.kind === "user_message") return null;
     if (b.kind === "problem") return { seq: e.seq, at: e.at, message: b.message, action: b.action };
   }
   return null;

@@ -1,14 +1,16 @@
-import { useMemo, useState } from "react";
-import { mergeSession } from "../../lib/app";
+import { useEffect, useMemo, useState } from "react";
+import { mergeSession, sessionChanges } from "../../lib/app";
+import { diffTone, fileChangeWord, filesChangedLine, lineCounts, type DiffTone } from "../../lib/changes";
 import { engineTitle, projectName, shortName, timeOf } from "../../lib/format";
 import { plainStep } from "../../lib/steps";
 import { useApp } from "../../lib/store";
 import { allSteps } from "../../lib/timeline";
+import type { SessionChanges } from "../../proto/SessionChanges";
 import type { ThreadSummary } from "../../proto/ThreadSummary";
-import { EmptyState, ErrorLine } from "../../ui/bits";
+import { EmptyState, ErrorLine, TextWithCode } from "../../ui/bits";
 import { Button } from "../../ui/Button";
 import { cx } from "../../lib/format";
-import { CloseIcon } from "../../ui/glyphs";
+import { ChevronDownIcon, CloseIcon } from "../../ui/glyphs";
 import { IconButton } from "../../ui/IconButton";
 import { Tabs } from "../../ui/Tabs";
 import { StepIcon } from "./MessageList";
@@ -97,6 +99,8 @@ function SessionPanel({ thread, onClose }: { thread: ThreadSummary; onClose?: ()
   const events = useEvents(thread.id);
   const steps = useMemo(() => allSteps(events), [events]);
   const engines = useApp((s) => s.engines);
+  const changes = useSessionChanges(thread.id, events.length);
+  const files = changes?.files ?? [];
   const items: Array<{ id: SessionTab; label: string }> = [
     { id: "changes", label: "Changes" },
     { id: "terminal", label: "Terminal" },
@@ -108,20 +112,9 @@ function SessionPanel({ thread, onClose }: { thread: ThreadSummary; onClose?: ()
       <div id="side-panel" role="tabpanel" aria-labelledby={`side-tab-${tab}`} className="flex flex-col gap-3 overflow-y-auto p-4">
         {tab === "changes" && (
           <>
-            {(thread.engine || thread.folder) && (
-              <div className="flex min-w-0 items-center gap-2 text-caption text-text-secondary">
-                {thread.engine && (
-                  <span className="shrink-0 rounded-sm bg-surface-muted px-1.5 font-medium text-text-secondary">
-                    {engineTitle(thread.engine, engines ?? undefined)}
-                  </span>
-                )}
-                {thread.folder && <span className="ellipsis font-mono">{thread.folder}</span>}
-                {thread.branch && <span className="ellipsis shrink-0 font-mono">{thread.branch}</span>}
-              </div>
-            )}
-            {steps.length === 0 ? (
+            {steps.length === 0 && files.length === 0 ? (
               <EmptyState title="No changes yet." line="They show here as the session works." />
-            ) : (
+            ) : steps.length === 0 ? null : (
               <>
                 <div className="pt-2 text-caption font-medium text-text-tertiary">What happened</div>
                 <ol className="m-0 flex list-none flex-col gap-2 p-0 text-body-sm">
@@ -135,13 +128,120 @@ function SessionPanel({ thread, onClose }: { thread: ThreadSummary; onClose?: ()
                 </ol>
               </>
             )}
+            {changes && files.length > 0 && <ChangedFiles changes={changes} />}
             {thread.worktree && <BringBack thread={thread} />}
+            <SessionDetails thread={thread} engineName={thread.engine ? engineTitle(thread.engine, engines ?? undefined) : null} />
           </>
         )}
         {tab === "terminal" && <EmptyState title="Nothing ran yet." line="Commands the session runs show here." />}
-        {tab === "files" && <EmptyState title="No files changed yet." line="Changed files show here." />}
+        {tab === "files" &&
+          (files.length > 0 ? <FileList files={files} /> : <EmptyState title="No files changed yet." line="Changed files show here." />)}
       </div>
     </>
+  );
+}
+
+/**
+ * What the session changed so far, asked again whenever its chat moves on. Out-of-date
+ * answers are dropped; if the host can't say, nothing is shown.
+ */
+function useSessionChanges(threadId: string, version: number): SessionChanges | null {
+  const [changes, setChanges] = useState<{ id: string; data: SessionChanges } | null>(null);
+  useEffect(() => {
+    let live = true;
+    const timer = setTimeout(() => {
+      sessionChanges(threadId)
+        .then((data) => live && setChanges({ id: threadId, data }))
+        .catch(() => live && setChanges(null));
+    }, 250);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [threadId, version]);
+  return changes?.id === threadId ? changes.data : null;
+}
+
+/** The changed files, then the changes themselves behind "Show the changes". */
+function ChangedFiles({ changes }: { changes: SessionChanges }) {
+  return (
+    <section aria-label="Changed files" className="flex flex-col gap-2 border-t border-border pt-3">
+      <div className="text-caption font-medium text-text-tertiary">{filesChangedLine(changes.files)}</div>
+      <FileList files={changes.files} />
+      {changes.diff && (
+        <details className="group text-caption">
+          <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-sm font-medium text-text-secondary hover:text-text [&::-webkit-details-marker]:hidden">
+            <ChevronDownIcon size={12} className="shrink-0 -rotate-90 transition-transform duration-[120ms] group-open:rotate-0" />
+            Show the changes
+          </summary>
+          <pre
+            tabIndex={0}
+            aria-label="The changes"
+            className="m-0 mt-2 max-h-[360px] overflow-auto rounded-md border border-border bg-surface py-2 font-mono text-caption leading-5"
+          >
+            {changes.diff.split("\n").map((line, i) => (
+              <span key={i} className={cx("block px-3 whitespace-pre", DIFF_TONE[diffTone(line)])}>
+                {line || " "}
+              </span>
+            ))}
+          </pre>
+          {changes.truncated && <p className="m-0 mt-1 text-text-tertiary">Only the first part is shown.</p>}
+        </details>
+      )}
+    </section>
+  );
+}
+
+const DIFF_TONE: Record<DiffTone, string> = {
+  add: "bg-success-bg text-text",
+  remove: "bg-danger-bg text-text",
+  file: "text-text-tertiary",
+  hunk: "text-accent-text",
+  plain: "text-text-secondary",
+};
+
+function FileList({ files }: { files: SessionChanges["files"] }) {
+  return (
+    <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-body-sm">
+      {files.map((f) => (
+        <li key={f.path} className="flex min-w-0 items-baseline gap-2">
+          <span className="ellipsis min-w-0 flex-1 font-mono text-caption" title={f.path}>
+            {f.path}
+          </span>
+          <span className="shrink-0 text-caption text-text-tertiary">
+            {fileChangeWord(f.status)}
+            {lineCounts(f) && <span className="ml-1.5 font-mono">{lineCounts(f)}</span>}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Which AI, folder and branch: one click away, never on the surface (§11.0 rule 3). */
+function SessionDetails({ thread, engineName }: { thread: ThreadSummary; engineName: string | null }) {
+  const rows: Array<[string, string, boolean]> = [];
+  if (engineName) rows.push(["AI", engineName, false]);
+  if (thread.folder) rows.push(["Folder", thread.folder, true]);
+  if (thread.branch) rows.push(["Branch", thread.branch, true]);
+  if (rows.length === 0) return null;
+  return (
+    <details className="group text-caption text-text-tertiary">
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-sm font-medium hover:text-text-secondary [&::-webkit-details-marker]:hidden">
+        <ChevronDownIcon size={12} className="shrink-0 -rotate-90 transition-transform duration-[120ms] group-open:rotate-0" />
+        Details
+      </summary>
+      <dl className="m-0 mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+        {rows.map(([k, v, mono]) => (
+          <div key={k} className="contents">
+            <dt className="text-text-tertiary">{k}</dt>
+            <dd className={cx("ellipsis m-0 text-text-secondary", mono && "font-mono")} title={v}>
+              {v}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </details>
   );
 }
 
@@ -203,10 +303,12 @@ function BringBack({ thread }: { thread: ThreadSummary }) {
       {result &&
         (result.ok ? (
           <p role="status" className="m-0 text-body-sm text-text-secondary">
-            {result.text}
+            <TextWithCode text={result.text} />
           </p>
         ) : (
-          <ErrorLine>{result.text}</ErrorLine>
+          <ErrorLine>
+            <TextWithCode text={result.text} />
+          </ErrorLine>
         ))}
     </div>
   );

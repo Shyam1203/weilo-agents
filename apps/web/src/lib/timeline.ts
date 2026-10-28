@@ -54,12 +54,15 @@ export function buildBlocks(events: Event[], defaultAgentId: string | null = nul
   // Set by Stop (here or a stop that closed an approval); cleared once "Stopped." is drawn.
   let stopPending = false;
   let stopSeq: bigint | null = null;
+  // One "Stopped." per reply: a later sign of the same stop doesn't draw a second line.
+  let saidStopped = false;
+  let notes = 0;
 
   const settle = () => {
     for (const st of stepIndex.values()) if (st.status === "running") st.status = "stopped";
   };
   const say = (e: Event, text: string) => {
-    agentBlock(e, null).items.push({ type: "note", key: `n${e.seq}`, text });
+    agentBlock(e, null).items.push({ type: "note", key: `n${e.seq}.${notes++}`, text });
   };
 
   const agentBlock = (e: Event, agentId: string | null): Extract<Block, { type: "agent" }> => {
@@ -84,10 +87,11 @@ export function buildBlocks(events: Event[], defaultAgentId: string | null = nul
     const body = e.body;
     if (stoppedAt !== null && stopSeq === null && e.seq > stoppedAt) {
       stopSeq = stoppedAt;
-      stopPending = true;
+      stopPending = !saidStopped;
     }
     switch (body.kind) {
       case "user_message":
+        saidStopped = false;
         blocks.push({ type: "user", key: `u${e.seq}`, text: body.text, at: e.at, when: body.when });
         break;
       case "agent_message": {
@@ -143,7 +147,7 @@ export function buildBlocks(events: Event[], defaultAgentId: string | null = nul
         agentBlock(e, null).items.push({ type: "problem", key: `p${e.seq}`, message: body.message, action: body.action });
         break;
       case "approval_decided":
-        if (body.via === "stopped") stopPending = true;
+        if (body.via === "stopped" && !saidStopped) stopPending = true;
         break;
       case "state":
         if (body.state === "idle") {
@@ -151,6 +155,7 @@ export function buildBlocks(events: Event[], defaultAgentId: string | null = nul
           if (stopPending) {
             say(e, "Stopped.");
             stopPending = false;
+            saidStopped = true;
           }
         }
         break;
@@ -159,7 +164,7 @@ export function buildBlocks(events: Event[], defaultAgentId: string | null = nul
     }
   }
   // Stopped, and the host hasn't said the reply ended yet.
-  if (stoppedAt !== null && stopSeq === null) stopPending = true;
+  if (stoppedAt !== null && stopSeq === null && !saidStopped) stopPending = true;
   if (stopPending && events.length > 0) {
     settle();
     say(events[events.length - 1]!, "Stopped.");

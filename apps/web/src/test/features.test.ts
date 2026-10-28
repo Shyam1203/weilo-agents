@@ -69,8 +69,9 @@ afterEach(() => {
 
 describe("status banner", () => {
   it("pauses with the host's line while it isn't ok, and clears when it is", () => {
-    let s = setHealth(initialState, false, "Your Weilo computer is restarting its data.");
-    expect(s.paused).toBe("Your Weilo computer is restarting its data.");
+    let s = setHealth(initialState, false, "Your Weilo computer is restarting its data. (a few seconds)");
+    expect(s.paused).toBe("Your Weilo computer is restarting. Back in a few seconds.");
+    expect(setHealth(s, false, "Your Weilo computer is updating (one minute)").paused).toBe("Your Weilo computer is updating.");
     expect(setHealth(s, false, null).paused).toBe(PAUSED_FALLBACK);
     s = setHealth(s, true, "ignored");
     expect(s.paused).toBeNull();

@@ -129,3 +129,34 @@ test("a problem's Try again sends the last message again", async ({ page }) => {
   await expect(problems).toHaveCount(2, { timeout: 20_000 });
   await expect(page.getByText("Ava is working")).toBeHidden();
 });
+
+test("a row's menu floats over the rows below it: Stop Ava doesn't open the next row", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1, name: "Ava" })).toBeVisible();
+  const box = page.getByRole("textbox", { name: "Message Ava" });
+  await box.fill("slow keep going for a while");
+  await box.press("Enter");
+  await expect(page.getByText("Ava is working")).toBeVisible();
+
+  // From another page, so a click that fell through to a row would change the heading.
+  const sidebar = page.getByRole("complementary", { name: "Sidebar" });
+  await sidebar.getByRole("link", { name: /Needs you/ }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Needs you" })).toBeVisible();
+
+  const avaRow = sidebar.getByRole("link", { name: /^Ava/ });
+  await avaRow.hover();
+  await sidebar.getByRole("button", { name: "More for Ava" }).click();
+  const stopItem = page.getByRole("menuitem", { name: "Stop Ava" });
+  await expect(stopItem).toBeVisible();
+  // The menu sits in its own layer, so the click lands on the item, not a row under it.
+  const hit = await stopItem.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+  });
+  expect(hit).toBe(true);
+  await stopItem.click();
+
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 1, name: "Needs you" })).toBeVisible();
+  await expect(page).toHaveURL(/needs/);
+});

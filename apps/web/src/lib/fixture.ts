@@ -174,8 +174,12 @@ function seedThreads(): ThreadSeed[] {
         [at(9, 21), "engine", { kind: "step", step_id: "d0b", title: "Read ~/.claude/memory/MEMORY.md", status: "failed" }],
         [at(9, 22), "engine", { kind: "step", step_id: "d1", title: "Read src/theme.css", status: "done" }],
         [at(9, 24), "engine", { kind: "step", step_id: "d1b", title: "`npm run build`", status: "done" }],
-        [at(9, 26), "engine", { kind: "step", step_id: "d1c", title: "Edit src/theme.css", status: "done" }],
-        [at(9, 28), "host", { kind: "problem", message: "Codex stopped responding, so this reply stopped.", action: "Try again" }],
+        [at(9, 26), "engine", { kind: "step", step_id: "d1c", title: "Edit src/theme.css", status: "running" }],
+        // Codex went quiet; the reply ended there. Try again sent the message again, and work goes on.
+        [at(9, 27), "host", { kind: "problem", message: "Codex stopped responding, so this reply stopped.", action: "Try again" }],
+        [at(9, 27), "host", { kind: "state", state: "idle", live_line: "" }],
+        [at(9, 28), "user", { kind: "user_message", when: "now", text: "Add a dark mode to the store." }],
+        [at(9, 28), "host", { kind: "state", state: "working", live_line: "Changing the colours" }],
         [at(9, 30), "engine", { kind: "step", step_id: "d2", title: "Changing the colours", status: "running" }],
       ],
     },
@@ -393,6 +397,10 @@ export class FixtureHost implements HostApi {
         if (!t?.worktree) throw new HostError("conflict", "This session works in the folder itself, so there's nothing to bring back.");
         return { type: "message", data: `Brought 2 changed files back into ${t.folder ?? "your project"}.` };
       }
+      case "session_changes": {
+        if (c.params.thread_id !== ID.fix) return { type: "session_changes", data: { files: [], diff: null, truncated: false } };
+        return { type: "session_changes", data: FIX_CHANGES };
+      }
       case "needs_you":
         return { type: "needs_you", data: structuredClone(this.snap.needs_you) };
       case "setup_status":
@@ -409,11 +417,11 @@ export class FixtureHost implements HostApi {
         this.onSend(c.params.thread_id, c.params.text);
         return none;
       case "stop":
-        this.setState(c.params.thread_id, "idle", "");
+        this.onStop(c.params.thread_id);
         return none;
       case "stop_agent": {
         const a = this.snap.agents.find((x) => x.id === c.params.agent_id);
-        if (a) this.setState(a.main_thread_id, "idle", "");
+        if (a) this.onStop(a.main_thread_id);
         return none;
       }
       case "decide":
@@ -537,6 +545,17 @@ export class FixtureHost implements HostApi {
     }, 600 + words.length * 90);
   }
 
+  /** Like the host: open approvals close as "stopped", then the thread goes idle. */
+  private onStop(threadId: string): void {
+    for (const item of this.snap.needs_you) {
+      if (item.thread_id !== threadId || item.state !== "pending" || item.card.kind === "heads_up") continue;
+      item.state = "denied";
+      this.push(threadId, "host", { kind: "approval_decided", approval_id: item.approval_id, decision: { kind: "deny" }, via: "stopped" });
+    }
+    this.setState(threadId, "idle", "");
+    this.changed("needs_you");
+  }
+
   private onDecide(approvalId: string, allowed: boolean, decision: Extract<Call, { method: "decide" }>["params"]["decision"]): void {
     const item = this.snap.needs_you.find((n) => n.approval_id === approvalId);
     if (item) {
@@ -555,3 +574,34 @@ export class FixtureHost implements HostApi {
     this.timers.push(setTimeout(fn, ms));
   }
 }
+
+/** What the Fix checkout session changed, as the host's session_changes answers. */
+const FIX_CHANGES = {
+  files: [
+    { path: "src/checkout/saved-card.ts", status: "modified" as const, added: 3, removed: 1 },
+    { path: "src/checkout/saved-card.test.ts", status: "added" as const, added: 12, removed: 0 },
+  ],
+  diff: [
+    "diff --git a/src/checkout/saved-card.ts b/src/checkout/saved-card.ts",
+    "--- a/src/checkout/saved-card.ts",
+    "+++ b/src/checkout/saved-card.ts",
+    "@@ -14,7 +14,9 @@ export async function payWithSavedCard(card: SavedCard) {",
+    "   const order = await currentOrder();",
+    "-  return charge({ card: card.id, amount: order.total });",
+    "+  // The payment service wants the card's ID as text, not a number.",
+    "+  const cardId = String(card.id);",
+    "+  return charge({ card: cardId, amount: order.total });",
+    " }",
+    "diff --git a/src/checkout/saved-card.test.ts b/src/checkout/saved-card.test.ts",
+    "--- /dev/null",
+    "+++ b/src/checkout/saved-card.test.ts",
+    "@@ -0,0 +1,12 @@",
+    '+import { payWithSavedCard } from "./saved-card";',
+    "+",
+    '+test("a saved card pays", async () => {',
+    "+  const result = await payWithSavedCard({ id: 4242 });",
+    '+  expect(result.ok).toBe(true);',
+    "+});",
+  ].join("\n"),
+  truncated: false,
+};

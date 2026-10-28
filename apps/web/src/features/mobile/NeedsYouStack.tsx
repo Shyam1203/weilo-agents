@@ -17,7 +17,7 @@ export function NeedsYouStack() {
   const shown = Math.min(index, items.length - 1);
 
   return (
-    <section aria-label="Needs you" aria-roledescription="carousel" className="flex shrink-0 flex-col gap-2 px-4 pt-2 pb-4">
+    <section aria-label="Needs you" aria-roledescription="carousel" className="relative z-10 flex shrink-0 flex-col gap-2 bg-bg px-4 pt-2 pb-3 shadow-line">
       <div className="flex items-center text-caption font-medium">
         <span className="flex-1 text-warning" aria-live="polite">
           Needs you · {shown + 1} of {items.length}

@@ -6,16 +6,19 @@ import { IconButton } from "../../ui/IconButton";
 
 /**
  * A calm one-line note at the bottom: that something didn't work (an alert, read out at
- * once) or that it did (a polite status). Two live regions, so each is announced the right way.
+ * once) or that it did (a polite status, whose region stays so changes in it are read out).
  */
 export function Toast() {
   const error = useApp((s) => s.error);
   const notice = useApp((s) => s.notice);
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex flex-col items-center gap-2 px-4 max-md:bottom-24">
-      <div role="alert">
-        {error && <ToastLine text={error} />}
-      </div>
+      {/* An alert is read out when it appears, so it only exists while there's one. */}
+      {error && (
+        <div role="alert">
+          <ToastLine text={error} />
+        </div>
+      )}
       <div role="status" aria-live="polite">
         {notice && <ToastLine text={notice} />}
       </div>

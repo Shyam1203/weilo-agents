@@ -136,6 +136,13 @@ export function KeyFields({ form, autoFocus }: { form: KeyForm; autoFocus?: bool
   );
 }
 
+/** What the key dialog says when the saved key doesn't work: plainly, then the check's own line. */
+export function keyFailedLine(message: string | null | undefined): string {
+  const m = message?.trim();
+  if (!m) return "That key didn't work.";
+  return /didn't work|did not work|isn't valid|invalid/i.test(m) ? m : `That key didn't work. ${m}`;
+}
+
 /** Add, replace or remove an engine's key. A saved key is never shown, only "Saved". */
 export function KeyDialog({
   open,
@@ -153,8 +160,15 @@ export function KeyDialog({
   const engine = engines?.find((e) => e.id === engineId);
   const form = useKeyForm(engine);
   const title = engineTitle(engineId, engines ?? undefined);
+  // What the check after saving found, when the key didn't work.
+  const [failed, setFailed] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  useEffect(() => {
+    if (open) setFailed(null);
+  }, [open]);
   const close = () => {
     form.reset();
+    setFailed(null);
     onClose();
   };
   return (
@@ -163,19 +177,29 @@ export function KeyDialog({
       onClose={close}
       title="Add a key"
       description={`For ${title}. Weilo keeps it on this computer.`}
-      submitLabel="Save key"
-      busy={form.busy}
-      error={form.error}
+      submitLabel={checking ? "Checking…" : "Save key"}
+      busy={form.busy || checking}
+      error={form.error ?? failed}
       canSubmit={!!form.key.trim() && !!form.chosen}
       onSubmit={async () => {
+        setFailed(null);
         if (!(await form.save())) return;
-        close();
         onSaved?.();
+        // Say honestly whether the key works: only a working key closes with "Saved".
+        setChecking(true);
         try {
           const c = await checkEngine(engineId);
-          showNotice(`Saved. ${c.message}`);
+          if (c.ready) {
+            close();
+            showNotice(`Saved. ${c.message}`);
+          } else {
+            setFailed(keyFailedLine(c.message));
+          }
         } catch {
-          showNotice("Saved.");
+          close();
+          showNotice("Saved. Weilo couldn't check it just now.");
+        } finally {
+          setChecking(false);
         }
       }}
     >

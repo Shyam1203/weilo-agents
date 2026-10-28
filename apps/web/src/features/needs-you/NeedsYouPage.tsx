@@ -56,8 +56,15 @@ export function NeedsYouPage({ phone }: { phone?: boolean }) {
       if (key === "a") {
         e.preventDefault();
         const r = approveKey(item);
-        if (r.kind === "decide" && r.action.decision) void decide(item.approval_id, r.action.decision);
-        else navigate(pathFor(snap, item));
+        if (r.kind === "decide" && r.action.decision) {
+          // The cursor moves on to the next item, like reading down a list.
+          const next = nextAfterApprove(order, i);
+          void decide(item.approval_id, r.action.decision);
+          if (next) {
+            setCursor(next);
+            requestAnimationFrame(() => rows.current.get(next)?.focus());
+          }
+        } else navigate(pathFor(snap, item));
       }
     };
     window.addEventListener("keydown", onKey);
@@ -156,6 +163,11 @@ interface RowProps {
   ref: (el: HTMLElement | null) => void;
 }
 
+/** Where the cursor goes after A approves the item at `i`: the next item, else the one before. */
+export function nextAfterApprove(order: NeedsYouItem[], i: number): string | null {
+  return order[i + 1]?.approval_id ?? order[i - 1]?.approval_id ?? null;
+}
+
 /** "Ava will ping you…", or "Your agents will…" when there are several. */
 export function pingLine(snap: Pick<Snapshot, "agents">): string {
   if (snap.agents.length > 1) return "Your agents will ping you if that changes.";
@@ -220,6 +232,7 @@ function AskRow({ item, snap, selected, onFocus, ref, phone }: RowProps & { phon
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <Source item={item} snap={snap} />
           <div className={cx("text-title-sm font-semibold", selected && "text-accent-text")}>{item.card.title}</div>
+          {item.card.details && <DetailLine text={item.card.details} />}
           <RiskLine risk={item.card.risk} text={item.card.risk_line} />
         </div>
       </div>
@@ -250,6 +263,39 @@ function AskRow({ item, snap, selected, onFocus, ref, phone }: RowProps & { phon
         )}
       </div>
     </article>
+  );
+}
+
+/** The command or detail behind a yes, on one line, so nothing is approved blind. "Show all" opens the rest. */
+function DetailLine({ text }: { text: string }) {
+  const [all, setAll] = useState(false);
+  const first = text.split("\n")[0]!;
+  const more = text.length > first.length || first.length > 60;
+  if (all) {
+    return (
+      <div className="flex flex-col items-start gap-1">
+        <pre className="m-0 max-w-full overflow-x-auto rounded-sm bg-surface-muted px-1.5 py-1 font-mono text-caption whitespace-pre-wrap text-text-secondary">
+          {text}
+        </pre>
+        <button type="button" onClick={() => setAll(false)} className="border-0 bg-transparent p-0 text-caption font-medium text-accent-text hover:underline">
+          Show less
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <code className="ellipsis min-w-0 rounded-sm bg-surface-muted px-1.5 font-mono text-caption text-text-secondary">{first}</code>
+      {more && (
+        <button
+          type="button"
+          onClick={() => setAll(true)}
+          className="shrink-0 border-0 bg-transparent p-0 text-caption font-medium text-accent-text hover:underline"
+        >
+          Show all
+        </button>
+      )}
+    </div>
   );
 }
 

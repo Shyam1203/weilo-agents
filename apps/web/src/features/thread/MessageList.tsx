@@ -1,10 +1,9 @@
 import { memo, useMemo, useState, type ReactNode } from "react";
 import { cx, timeOf } from "../../lib/format";
 import { paths } from "../../lib/router";
-import { findAgent, useApp, type Sending } from "../../lib/store";
+import { authorName, findAgent, useApp, type Sending } from "../../lib/store";
 import { showSteps } from "../../lib/steps";
 import { buildBlocks, type AgentItem, type Block, type StepItem } from "../../lib/timeline";
-import type { AgentSummary } from "../../proto/AgentSummary";
 import { Avatar } from "../../ui/Avatar";
 import { CheckIcon, ChevronDownIcon, SpinnerIcon, StopIcon, XCircleIcon } from "../../ui/glyphs";
 import { Link } from "../../ui/Link";
@@ -71,10 +70,11 @@ const UserRow = memo(function UserRow({ text, at, afterJob }: { text: string; at
   );
 });
 
-function AgentMeta({ agent, at }: { agent: AgentSummary | undefined; at: string | null }) {
+function AgentMeta({ agentId, at }: { agentId: string | null; at: string | null }) {
+  const name = useApp((s) => authorName(s, agentId));
   return (
     <div className="text-caption text-text-tertiary">
-      <span className="font-medium text-text">{agent?.name ?? "Session"}</span>
+      <span className="font-medium text-text">{name}</span>
       {at ? ` · ${timeOf(at)}` : null}
     </div>
   );
@@ -105,7 +105,7 @@ const AgentBlockRow = memo(function AgentBlockRow({
       <div className={cx("flex min-w-0 flex-1 flex-col", phone ? "gap-2" : "gap-3")}>
         {lead && (
           <div className="flex flex-col gap-1">
-            {(!phone || faces) && <AgentMeta agent={agent} at={block.at} />}
+            {(!phone || faces) && <AgentMeta agentId={block.agentId} at={block.at} />}
             <TextBody text={lead.text} />
           </div>
         )}
@@ -247,7 +247,7 @@ function StreamingRow({ threadId, agentId, faces }: { threadId: string; agentId:
         <div className={cx("flex", phone ? "flex-col gap-2" : "gap-3")}>
           {faces && !phone && <Avatar name={agent?.name ?? "?"} color={agent?.color} size={32} />}
           <div className="flex min-w-0 flex-1 flex-col gap-1">
-            {(!phone || faces) && <AgentMeta agent={agent} at={null} />}
+            {(!phone || faces) && <AgentMeta agentId={agentId} at={null} />}
             <TextBody text={text} />
           </div>
         </div>

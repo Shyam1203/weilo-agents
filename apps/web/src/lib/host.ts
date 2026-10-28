@@ -253,6 +253,7 @@ export class HostConnection implements HostApi {
       this.socket = null;
       const wasWelcomed = this.welcomed;
       this.welcomed = false;
+      this.dropStreaming();
       if (!this.running) return;
       if (UNPAIRED_CODES.has(ev.code)) {
         saveToken(null);
@@ -362,6 +363,15 @@ export class HostConnection implements HostApi {
     if (parts.has(subSeq)) return;
     parts.set(subSeq, text);
     this.opts.listener.streaming?.(threadId, streamingText(sub));
+  }
+
+  /** A dropped connection loses the replies being written: clear them (the durable events follow on resubscribe). */
+  private dropStreaming(): void {
+    for (const [threadId, sub] of this.subs) {
+      if (sub.deltas.size === 0) continue;
+      sub.deltas.clear();
+      this.opts.listener.streaming?.(threadId, null);
+    }
   }
 
   private sendIfOnline(frame: ClientFrame): void {
