@@ -1,9 +1,10 @@
-import { diffTone, fileChangeWord, filesChangedLine, lineCounts } from "../lib/changes";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { connect, loadSnapshot, showError, showNotice } from "../lib/app";
+import { diffTone, fileChangeWord, filesChangedLine, lineCounts } from "../lib/changes";
+import { connect, listener, loadDevices, loadSnapshot, revokeDevice, showError, showNotice } from "../lib/app";
+import { deviceLine, removeDeviceLine } from "../lib/settings";
 import { alreadySays, engineLine, problemKind, signInWays } from "../lib/engines";
 import { lowerYour } from "../lib/format";
-import { HostConnection, type HostApi, type SocketLike } from "../lib/host";
+import { HostConnection, HostError, type HostApi, type SocketLike } from "../lib/host";
 import { buildRows } from "../lib/sidebar";
 import {
   addSending,
@@ -20,7 +21,7 @@ import {
   store,
   type AppState,
 } from "../lib/store";
-import { allSteps, buildBlocks } from "../lib/timeline";
+import { allSteps, buildBlocks, outcomeWords } from "../lib/timeline";
 import { placeMenu } from "../ui/Menu";
 import { stepChoice } from "../ui/ChoiceChips";
 import { stopKeyApplies } from "../features/thread/SessionView";
@@ -322,5 +323,68 @@ describe("session changes", () => {
 
   it("colours a diff's lines", () => {
     expect(["+++ b/a", "--- a/a", "@@ -1 +1 @@", "+new", "-old", " same"].map(diffTone)).toEqual(["file", "file", "hunk", "add", "remove", "plain"]);
+  });
+});
+
+describe("settings lists", () => {
+  const dev = (o: Partial<import("../proto/DeviceInfo").DeviceInfo> = {}) => ({
+    id: "d1",
+    name: "Chrome on this Mac",
+    paired_at: "2026-10-20T10:00:00Z",
+    last_seen_at: null,
+    this_device: false,
+    ...o,
+  });
+
+  it("says which device this is, or when one was last used", () => {
+    const now = new Date("2026-10-28T12:00:00");
+    expect(deviceLine(dev({ this_device: true }), now)).toBe("This device");
+    expect(deviceLine(dev({ last_seen_at: "2026-10-27T15:00:00" }), now)).toBe("Last used Yesterday");
+    expect(deviceLine(dev(), now)).toMatch(/^Paired /);
+    expect(removeDeviceLine(dev({ this_device: true }))).toBe("This device will need a new pairing code to use Weilo again.");
+  });
+
+  it("shows the host's own words when it won't remove the last device", async () => {
+    const host: HostApi = {
+      start() {},
+      stop() {},
+      subscribe() {},
+      unsubscribe() {},
+      presence() {},
+      call: async (c: Call): Promise<CallValue> => {
+        if (c.method === "revoke_device") throw new HostError("conflict", "That's the only device paired, so it stays.");
+        if (c.method === "list_devices") return { type: "devices", data: [dev()] };
+        return { type: "none" };
+      },
+    };
+    connect(host);
+    await expect(revokeDevice("d1")).rejects.toThrow("That's the only device paired, so it stays.");
+  });
+
+  it("refreshes the device list when the host says it changed, once Settings has it", async () => {
+    let names = ["Chrome"];
+    const host: HostApi = {
+      start() {},
+      stop() {},
+      subscribe() {},
+      unsubscribe() {},
+      presence() {},
+      call: async (c: Call): Promise<CallValue> =>
+        c.method === "list_devices" ? { type: "devices", data: names.map((name) => dev({ id: name, name })) } : { type: "none" },
+    };
+    connect(host);
+    await loadDevices();
+    names = ["Chrome", "Safari"];
+    vi.useFakeTimers();
+    listener.changed!("devices");
+    await vi.runAllTimersAsync();
+    vi.useRealTimers();
+    expect(store.get().devices!.map((d) => d.name)).toEqual(["Chrome", "Safari"]);
+  });
+
+  it("says Always allowed the way the card's button did", () => {
+    const actions = [{ id: "a", label: "Always allow for Ava", primary: false, decision: { kind: "allow_always" as const, scope: "agent" } }];
+    expect(outcomeWords({ kind: "allow_always", scope: "agent" }, "approval", actions)).toBe("Always allowed for Ava");
+    expect(outcomeWords({ kind: "allow_always", scope: "folder" }, "approval")).toBe("Always allowed in this folder");
   });
 });

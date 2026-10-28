@@ -1,5 +1,8 @@
-import { useState, type ReactNode } from "react";
-import { savePrefs } from "../../lib/app";
+import { useEffect, useState, type ReactNode } from "react";
+import { loadAllowRules, loadDevices, revokeAllowRule, revokeDevice, savePrefs } from "../../lib/app";
+import { deviceLine, removeDeviceLine } from "../../lib/settings";
+import type { AllowRuleInfo } from "../../proto/AllowRuleInfo";
+import type { DeviceInfo } from "../../proto/DeviceInfo";
 import { SECTION_KEYS, SECTION_TITLES, withSection } from "../../lib/sidebar";
 import { useApp } from "../../lib/store";
 import { setTheme, useTheme, type Theme } from "../../lib/theme";
@@ -7,9 +10,9 @@ import { Button } from "../../ui/Button";
 import { Switch } from "../../ui/Switch";
 import { Tabs } from "../../ui/Tabs";
 import { canPick, needKind, statusLine } from "../../lib/engines";
-import { engineTitle } from "../../lib/format";
+import { engineTitle, whenLabel } from "../../lib/format";
 import type { EngineInfo } from "../../proto/EngineInfo";
-import { TextWithCode } from "../../ui/bits";
+import { ErrorLine, TextWithCode } from "../../ui/bits";
 import { EngineHelpDialog } from "../engines/EngineHelpDialog";
 import { useEngineList } from "../engines/EnginePicker";
 import { KeyDialog } from "../engines/KeyDialog";
@@ -65,8 +68,13 @@ export function SettingsPage({ phone }: { phone?: boolean }) {
         <EngineRows phone={phone} />
       </Group>
 
+      <Group title="Always allowed">
+        <AllowRules phone={phone} />
+      </Group>
+
       <Group title="Devices">
-        <p className="m-0 text-body-sm text-text-secondary">Using Weilo on your phone is coming in the next version.</p>
+        <Devices phone={phone} />
+        <p className="m-0 text-caption text-text-secondary">Using Weilo on your phone is coming in the next version.</p>
       </Group>
 
       <Group title="Your Weilo computer">
@@ -133,6 +141,131 @@ function EngineRow({ engine: e, phone }: { engine: EngineInfo; phone?: boolean }
       ) : null}
       {keyed && <KeyDialog open={open} onClose={() => setOpen(false)} engineId={e.id} />}
       {!keyed && help && <EngineHelpDialog open={open} onClose={() => setOpen(false)} engineId={e.id} kind={help} />}
+    </div>
+  );
+}
+
+/** Things you said yes to for good. Remove one and the agent asks again next time. */
+function AllowRules({ phone }: { phone?: boolean }) {
+  const rules = useApp((s) => s.allowRules);
+  useEffect(() => {
+    loadAllowRules().catch(() => {});
+  }, []);
+  if (!rules) return <p className="m-0 text-body-sm text-text-secondary">Looking…</p>;
+  if (rules.length === 0)
+    return <p className="m-0 text-body-sm text-text-secondary">Nothing yet. When you choose Always allow, it shows here.</p>;
+  return (
+    <div className="flex flex-col">
+      {rules.map((r) => (
+        <AllowRuleRow key={r.id} rule={r} phone={phone} />
+      ))}
+    </div>
+  );
+}
+
+function AllowRuleRow({ rule, phone }: { rule: AllowRuleInfo; phone?: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await revokeAllowRule(rule.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "That didn't work. Try again.");
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex min-h-14 flex-col justify-center gap-1 py-2 shadow-line">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span>
+            <TextWithCode text={rule.description} />
+          </span>
+          <span className="text-caption text-text-secondary">Since {whenLabel(rule.created_at)}</span>
+        </span>
+        <Button size={phone ? "phone" : "md"} onClick={() => void remove()} disabled={busy}>
+          {busy ? "Removing…" : "Remove"}
+        </Button>
+      </div>
+      {error && (
+        <ErrorLine>
+          <TextWithCode text={error} />
+        </ErrorLine>
+      )}
+    </div>
+  );
+}
+
+/** The browsers and phones paired with this Weilo computer. Removing one asks first. */
+function Devices({ phone }: { phone?: boolean }) {
+  const devices = useApp((s) => s.devices);
+  useEffect(() => {
+    loadDevices().catch(() => {});
+  }, []);
+  if (!devices) return <p className="m-0 text-body-sm text-text-secondary">Looking…</p>;
+  return (
+    <div className="flex flex-col">
+      {devices.map((d) => (
+        <DeviceRow key={d.id} device={d} phone={phone} />
+      ))}
+    </div>
+  );
+}
+
+function DeviceRow({ device: d, phone }: { device: DeviceInfo; phone?: boolean }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const size = phone ? "phone" : "md";
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await revokeDevice(d.id);
+    } catch (e) {
+      // The host refuses to remove the last device, and says why.
+      setError(e instanceof Error ? e.message : "That didn't work. Try again.");
+      setConfirming(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex min-h-14 flex-col justify-center gap-2 py-2 shadow-line">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="ellipsis font-medium">{d.name}</span>
+          <span className="text-caption text-text-secondary">{deviceLine(d)}</span>
+        </span>
+        {!confirming && (
+          <Button size={size} onClick={() => setConfirming(true)}>
+            Remove
+          </Button>
+        )}
+      </div>
+      {confirming && (
+        <div role="group" aria-label={`Remove ${d.name}?`} className="flex flex-col gap-2">
+          <p className="m-0 text-body-sm">
+            <b className="font-semibold">Remove {d.this_device ? "this device" : d.name}?</b>{" "}
+            <span className="text-text-secondary">{removeDeviceLine(d)}</span>
+          </p>
+          <div className="flex gap-2">
+            <Button size={size} variant="tertiary" onClick={() => setConfirming(false)} disabled={busy}>
+              Back
+            </Button>
+            <Button size={size} variant="primary" onClick={() => void remove()} disabled={busy} autoFocus>
+              {busy ? "Removing…" : "Remove"}
+            </Button>
+          </div>
+        </div>
+      )}
+      {error && (
+        <ErrorLine>
+          <TextWithCode text={error} />
+        </ErrorLine>
+      )}
     </div>
   );
 }

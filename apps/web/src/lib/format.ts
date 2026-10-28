@@ -52,7 +52,10 @@ export function whenLabel(iso: string, now = new Date()): string {
   const y = new Date(now);
   y.setDate(now.getDate() - 1);
   if (isSameDay(d, y)) return "Yesterday";
-  return new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric" }).format(d);
+  const days = (now.getTime() - d.getTime()) / 86_400_000;
+  if (days > 0 && days < 7) return new Intl.DateTimeFormat(undefined, { weekday: "long" }).format(d);
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: sameYear ? undefined : "numeric" }).format(d);
 }
 
 /** Who started a session, in plain words. */

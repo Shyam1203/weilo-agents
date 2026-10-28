@@ -32,6 +32,12 @@ describe("words", () => {
   it("shows times without AM/PM and costs in dollars", () => {
     expect(timeOf(new Date("2026-10-28T09:41:00").toISOString())).toMatch(/^9:41$|^09:41$/);
     expect(whenLabel(new Date("2026-10-27T16:00:00").toISOString(), NOW)).toBe("Yesterday");
+    const older = whenLabel(new Date("2026-10-20T16:00:00").toISOString(), NOW);
+    expect(older).toMatch(/20/);
+    expect(older).toMatch(/Oct/);
+    expect(whenLabel(new Date("2026-10-25T16:00:00").toISOString(), NOW)).toBe(
+      new Intl.DateTimeFormat(undefined, { weekday: "long" }).format(new Date("2026-10-25T16:00:00")),
+    );
     expect(dollars(380000n)).toBe("about $0.38");
   });
 });

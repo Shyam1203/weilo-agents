@@ -160,3 +160,16 @@ test("a row's menu floats over the rows below it: Stop Ava doesn't open the next
   await expect(page.getByRole("heading", { level: 1, name: "Needs you" })).toBeVisible();
   await expect(page).toHaveURL(/needs/);
 });
+
+test("Settings lists this device, and won't remove the only one", async ({ page }) => {
+  await page.goto("/settings");
+  const devices = page.getByRole("region", { name: "Devices" });
+  await expect(devices.getByText("This device")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Always allowed" })).toBeVisible();
+
+  // Removing asks first; the host refuses the only device and says why.
+  await devices.getByRole("button", { name: "Remove" }).click();
+  await devices.getByRole("group").getByRole("button", { name: "Remove" }).click();
+  await expect(devices.getByRole("alert")).toContainText("only paired device");
+  await expect(devices.getByText("This device")).toBeVisible();
+});

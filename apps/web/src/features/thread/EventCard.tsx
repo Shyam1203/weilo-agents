@@ -63,7 +63,7 @@ export function EventCard({ card, decided, threadId, detailsLabel = "Show detail
   const outcome = decided
     ? decided.via === "stopped" || decided.via === "interrupted"
       ? { text: "Stopped", at: decided.at, yes: false }
-      : { text: outcomeWords(decided.decision, card.kind), at: decided.at, yes: decided.decision.kind !== "deny" }
+      : { text: outcomeWords(decided.decision, card.kind, card.actions), at: decided.at, yes: decided.decision.kind !== "deny" }
     : stoppedHere
       ? { text: "Stopped", at: null, yes: false }
     : itemState === "allowed"

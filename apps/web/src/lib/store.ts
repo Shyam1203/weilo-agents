@@ -1,5 +1,7 @@
 import { useRef, useSyncExternalStore } from "react";
 import type { AgentSummary } from "../proto/AgentSummary";
+import type { AllowRuleInfo } from "../proto/AllowRuleInfo";
+import type { DeviceInfo } from "../proto/DeviceInfo";
 import type { EngineCheck } from "../proto/EngineCheck";
 import type { EngineInfo } from "../proto/EngineInfo";
 import type { Event } from "../proto/Event";
@@ -82,6 +84,9 @@ export interface AppState {
   error: string | null;
   /** A calm line that something worked (said politely, not as an alert). */
   notice: string | null;
+  /** Paired devices and "Always allow" rules, for Settings: null until Settings asks. */
+  devices: DeviceInfo[] | null;
+  allowRules: AllowRuleInfo[] | null;
   /** Threads stopped from this device, with the newest seq at the time (for the "Stopped." line). */
   stopped: Record<string, bigint>;
   /** Approvals closed here by Stop, before the host says so. */
@@ -142,6 +147,8 @@ export const initialState: AppState = {
   firstRunOpen: false,
   error: null,
   notice: null,
+  devices: null,
+  allowRules: null,
   stopped: {},
   stoppedCards: {},
   agentNames: {},

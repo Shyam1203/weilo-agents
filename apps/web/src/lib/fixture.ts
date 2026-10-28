@@ -4,10 +4,12 @@
  * Add `&setup=0` to see first run, and `&down=1` to see the host say it isn't ready.
  */
 import type { AgentSummary } from "../proto/AgentSummary";
+import type { AllowRuleInfo } from "../proto/AllowRuleInfo";
 import type { Call } from "../proto/Call";
 import type { CallValue } from "../proto/CallValue";
 import type { Card } from "../proto/Card";
 import type { ChannelSummary } from "../proto/ChannelSummary";
+import type { DeviceInfo } from "../proto/DeviceInfo";
 import type { EngineCheck } from "../proto/EngineCheck";
 import type { EngineInfo } from "../proto/EngineInfo";
 import type { Event } from "../proto/Event";
@@ -294,6 +296,14 @@ export class FixtureHost implements HostApi {
   private subs = new Set<string>();
   private timers: Array<ReturnType<typeof setTimeout>> = [];
   private n = 0;
+  private devices: DeviceInfo[] = [
+    { id: "dev-browser", name: "Chrome on this Mac", paired_at: at(8, 0), last_seen_at: at(9, 51), this_device: true },
+    { id: "dev-laptop", name: "Safari on the shop laptop", paired_at: "2026-10-20T10:00:00Z", last_seen_at: "2026-10-27T17:12:00Z", this_device: false },
+  ];
+  private rules: AllowRuleInfo[] = [
+    { id: "rule-test", agent_id: ID.ava, description: "Ava may always run `npm test` in shop", created_at: "2026-10-26T15:30:00Z" },
+    { id: "rule-search", agent_id: ID.mia, description: "Mia may always search the web", created_at: at(7, 20) },
+  ];
 
   private engines = seedEngines();
   private readonly down: boolean;
@@ -401,6 +411,19 @@ export class FixtureHost implements HostApi {
         if (c.params.thread_id !== ID.fix) return { type: "session_changes", data: { files: [], diff: null, truncated: false } };
         return { type: "session_changes", data: FIX_CHANGES };
       }
+      case "list_devices":
+        return { type: "devices", data: this.devices };
+      case "revoke_device":
+        if (this.devices.length <= 1) throw new HostError("conflict", "This is your only paired device. Pair another one before removing it.");
+        this.devices = this.devices.filter((d) => d.id !== c.params.device_id);
+        this.changed("devices");
+        return none;
+      case "list_allow_rules":
+        return { type: "allow_rules", data: this.rules };
+      case "revoke_allow_rule":
+        this.rules = this.rules.filter((r) => r.id !== c.params.rule_id);
+        this.changed("allow_rules");
+        return none;
       case "needs_you":
         return { type: "needs_you", data: structuredClone(this.snap.needs_you) };
       case "setup_status":
@@ -456,13 +479,15 @@ export class FixtureHost implements HostApi {
       case "start_session": {
         const t = this.newThread({
           kind: "session",
-          title: c.params.title ?? c.params.folder.split("/").filter(Boolean).pop() ?? "New session",
+          // Like the host: named from the first line of what it should do.
+          title: c.params.title ?? c.params.task?.split("\n")[0]?.trim() ?? c.params.folder.split("/").filter(Boolean).pop() ?? "New session",
           folder: c.params.folder,
           engine: c.params.engine,
           channel_id: c.params.channel_id,
           agent_id: c.params.agent_id,
         });
         this.changed("threads");
+        if (c.params.task?.trim()) this.push(t.id, "user", { kind: "user_message", text: c.params.task.trim(), when: "now" });
         return { type: "thread", data: t };
       }
       case "move_thread": {

@@ -150,7 +150,11 @@ export function NewSessionDialog({ open, onClose }: Props) {
       onSubmit={() =>
         run(async () => {
           const v = await create(
-            { method: "start_session", params: { folder: path, engine, title: task.trim(), channel_id: null, agent_id: null } },
+            {
+              method: "start_session",
+              // The host names the session from the first line of its task, and sends the task as the first message.
+              params: { folder: path, engine, title: null, channel_id: null, agent_id: null, task: task.trim() || undefined },
+            },
             "thread",
           );
           setTask("");

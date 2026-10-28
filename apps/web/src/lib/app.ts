@@ -139,6 +139,9 @@ async function refresh(): Promise<void> {
       );
     }
     if (what.has("engines") && store.get().engines) await loadEngines();
+    // Settings' lists, once Settings has asked for them.
+    if ((what.has("all") || what.has("devices")) && store.get().devices) await loadDevices();
+    if ((what.has("all") || what.has("allow_rules")) && store.get().allowRules) await loadAllowRules();
   } catch (e) {
     if (!(e instanceof HostError && e.code === "offline")) showError(e);
   } finally {
@@ -176,6 +179,30 @@ export async function loadSnapshot(): Promise<void> {
 export async function loadEngines(): Promise<void> {
   const v = await call({ method: "list_engines" });
   if (v.type === "engines") store.set((s) => ({ ...s, engines: v.data }));
+}
+
+// -- Settings: devices and "Always allow" rules --------------------------------
+
+export async function loadDevices(): Promise<void> {
+  const v = await call({ method: "list_devices" });
+  if (v.type === "devices") store.set((s) => ({ ...s, devices: v.data }));
+}
+
+/** Unpairs a device. The host refuses the last one, with a plain line saying why. */
+export async function revokeDevice(deviceId: string): Promise<void> {
+  await call({ method: "revoke_device", params: { device_id: deviceId } });
+  await loadDevices();
+}
+
+export async function loadAllowRules(): Promise<void> {
+  const v = await call({ method: "list_allow_rules" });
+  if (v.type === "allow_rules") store.set((s) => ({ ...s, allowRules: v.data }));
+}
+
+/** Ends an "Always allow": the agent asks again next time. */
+export async function revokeAllowRule(ruleId: string): Promise<void> {
+  await call({ method: "revoke_allow_rule", params: { rule_id: ruleId } });
+  await loadAllowRules();
 }
 
 // -- Threads -----------------------------------------------------------------

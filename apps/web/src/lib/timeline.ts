@@ -1,4 +1,5 @@
 import type { Card } from "../proto/Card";
+import type { CardAction } from "../proto/CardAction";
 import type { Decision } from "../proto/Decision";
 import type { Event } from "../proto/Event";
 import type { SendWhen } from "../proto/SendWhen";
@@ -196,13 +197,19 @@ export function totalCost(events: Event[]): bigint {
   return sum;
 }
 
-/** Plain words for a decision, shown under a decided card. */
-export function outcomeWords(decision: Decision, cardKind: string): string {
+/**
+ * Plain words for a decision, shown under a decided card. "Always allow" follows the
+ * card's own button ("Always allow for Ava" becomes "Always allowed for Ava").
+ */
+export function outcomeWords(decision: Decision, cardKind: string, actions: CardAction[] = []): string {
   switch (decision.kind) {
     case "allow":
       return cardKind === "draft" ? "Approved" : "Allowed";
-    case "allow_always":
-      return `Always allowed ${scopeWords(decision.scope)}`;
+    case "allow_always": {
+      const label = actions.find((a) => a.decision?.kind === "allow_always")?.label.trim() ?? "";
+      const m = /^always allow\s+(.+)$/i.exec(label);
+      return `Always allowed ${m ? m[1] : scopeWords(decision.scope)}`;
+    }
     case "deny":
       return cardKind === "draft" ? "Discarded" : "Not allowed";
   }
