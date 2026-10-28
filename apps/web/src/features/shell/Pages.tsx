@@ -3,6 +3,7 @@ import { paths, type Route } from "../../lib/router";
 import { findThread, mainAgent, useApp } from "../../lib/store";
 import { Avatar } from "../../ui/Avatar";
 import { Dot, EmptyState } from "../../ui/bits";
+import { Button } from "../../ui/Button";
 import { Link } from "../../ui/Link";
 import { IconButton } from "../../ui/IconButton";
 import { PlusIcon } from "../../ui/glyphs";
@@ -21,7 +22,7 @@ export function RoutePage({ route, phone }: { route: Route; phone?: boolean }) {
   const main = useApp(mainAgent);
   switch (route.name) {
     case "home":
-      return main ? <AgentChat key={main.id} agent={main} home /> : <Missing title="No agents yet." line="Make one with the + next to Agents." />;
+      return main ? <AgentChat key={main.id} agent={main} home /> : <NoAgents />;
     case "agent": {
       const agent = snap.agents.find((a) => a.id === route.agentId);
       return agent ? <AgentChat key={agent.id} agent={agent} /> : <Missing title="This agent isn't here anymore." />;
@@ -47,6 +48,25 @@ export function RoutePage({ route, phone }: { route: Route; phone?: boolean }) {
     default:
       return <Missing title="This page doesn't exist." />;
   }
+}
+
+/** With no agent at all: say so, with a real button (the sidebar's "+" shows only on hover). */
+function NoAgents() {
+  const [adding, setAdding] = useState(false);
+  return (
+    <PageFrame title="Weilo">
+      <EmptyState
+        title="No agents yet."
+        line="Make one to get started."
+        action={
+          <Button size="md" variant="primary" onClick={() => setAdding(true)}>
+            New agent
+          </Button>
+        }
+      />
+      <NewAgentDialog open={adding} onClose={() => setAdding(false)} />
+    </PageFrame>
+  );
 }
 
 function SessionPage({ threadId }: { threadId: string }) {

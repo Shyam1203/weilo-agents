@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { decide, savePrefs, send, showError, stop } from "../../lib/app";
+import { decide, savePrefs, send, showNotice, stop } from "../../lib/app";
 import { cx, listWords, shortName, timeOf, whenLabel } from "../../lib/format";
 import { actionable, approveKey, groupNeedsYou, isHeadsUp, isSmall, yesAction, type NeedsYouGroup } from "../../lib/needsYou";
 import { navigate, threadPath } from "../../lib/router";
@@ -28,7 +28,6 @@ export function NeedsYouPage({ phone }: { phone?: boolean }) {
   const order = useMemo(() => actionable(groups), [groups]);
   const [cursor, setCursor] = useState<string | null>(null);
   const rows = useRef(new Map<string, HTMLElement>());
-  const main = snap.agents[0];
   const touch = useTouchOnly();
   const hidden = (["agents", "channels", "sessions"] as SectionKey[]).filter((k) => !snap.prefs[k].shown);
 
@@ -95,9 +94,7 @@ export function NeedsYouPage({ phone }: { phone?: boolean }) {
               </Button>
             </div>
           )}
-          {groups.length === 0 && (
-            <EmptyState title="Nothing needs you." line={`${main ? shortName(main.name) : "Ava"} will ping you if that changes.`} />
-          )}
+          {groups.length === 0 && <EmptyState title="Nothing needs you." line={pingLine(snap)} />}
           {groups.map((g) => (
             <Group key={g.key} group={g} snap={snap} cursor={cursor} setCursor={setCursor} register={register} phone={phone} />
           ))}
@@ -157,10 +154,32 @@ interface RowProps {
   ref: (el: HTMLElement | null) => void;
 }
 
+/** "Ava will ping you…", or "Your agents will…" when there are several. */
+export function pingLine(snap: Pick<Snapshot, "agents">): string {
+  if (snap.agents.length > 1) return "Your agents will ping you if that changes.";
+  const only = snap.agents[0];
+  return `${only ? shortName(only.name) : "Your agent"} will ping you if that changes.`;
+}
+
+/** The agent an item belongs to: its thread's agent, else the agent that started its session. */
+export function agentOf(snap: Snapshot, item: NeedsYouItem) {
+  const thread = snap.threads.find((t) => t.id === item.thread_id);
+  return (
+    snap.agents.find((a) => a.id === thread?.agent_id) ??
+    snap.agents.find((a) => a.main_thread_id === item.thread_id) ??
+    snap.agents.find((a) => a.id === thread?.started_by || a.name === thread?.started_by)
+  );
+}
+
+/** What "Ask again" sends, in the person's own words. */
+export function askAgainText(title: string): string {
+  return `Can you ask me again about ${title.trim().replace(/[.?!]+$/, "")}?`;
+}
+
 function Lead({ item, snap, selected }: { item: NeedsYouItem; snap: Snapshot; selected: boolean }) {
   const thread = snap.threads.find((t) => t.id === item.thread_id);
   if (thread?.kind === "session") return <SessionMark size={32} selected={selected} />;
-  const agent = snap.agents.find((a) => a.id === thread?.agent_id) ?? snap.agents[0];
+  const agent = agentOf(snap, item) ?? snap.agents[0];
   return agent ? <Avatar name={agent.name} color={agent.color} size={32} selected={selected} /> : null;
 }
 
@@ -233,8 +252,12 @@ function AskRow({ item, snap, selected, onFocus, ref, phone }: RowProps & { phon
 }
 
 function PastRow({ item, snap, selected, onFocus, ref, expired, phone }: RowProps & { expired: boolean; phone?: boolean }) {
-  const ask = () =>
-    send(item.thread_id, `Please ask me again: ${item.card.title}`).catch(showError);
+  const agent = agentOf(snap, item);
+  const name = agent ? shortName(agent.name) : null;
+  const ask = async () => {
+    if (!(await send(item.thread_id, askAgainText(item.card.title)))) return;
+    showNotice(name ? `Asked ${name} to ask you again.` : "Asked again.");
+  };
   return (
     <div
       ref={ref}
@@ -250,7 +273,9 @@ function PastRow({ item, snap, selected, onFocus, ref, expired, phone }: RowProp
         <span className="shrink-0 text-caption text-text-tertiary">{whenLabel(item.created_at)}</span>
       </span>
       {expired ? (
-        <Button size={phone ? "phone" : "md"} onClick={() => void ask()}>Ask again</Button>
+        <Button size={phone ? "phone" : "md"} onClick={() => void ask()}>
+          {name ? `Ask ${name} again` : "Ask again"}
+        </Button>
       ) : (
         <Button size={phone ? "phone" : "md"} onClick={() => navigate(pathFor(snap, item))}>Open</Button>
       )}

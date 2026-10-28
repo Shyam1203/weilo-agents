@@ -20,13 +20,21 @@ export function Toast() {
   );
 }
 
-/** The only banner we show: when the Weilo computer can't be reached. */
+/**
+ * The only banners we show: when the Weilo computer can't be reached, and while it says
+ * it isn't ready (its own one line; sending waits until it clears).
+ */
 export function ConnectionBanner() {
   const conn = useApp((s) => s.conn);
-  if (conn !== "reconnecting") return null;
+  const paused = useApp((s) => s.paused);
+  const text = conn === "reconnecting" ? "Can't reach your Weilo computer. Trying again…" : paused;
+  if (!text) return null;
   return (
-    <div role="status" className="flex h-8 shrink-0 items-center justify-center bg-surface-muted px-4 text-caption font-medium text-text-secondary shadow-line">
-      Can't reach your Weilo computer. Trying again…
+    <div
+      role="status"
+      className="flex min-h-8 shrink-0 items-center justify-center bg-surface-muted px-4 py-1.5 text-center text-caption font-medium text-text-secondary shadow-line"
+    >
+      {text}
     </div>
   );
 }

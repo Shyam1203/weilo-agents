@@ -36,6 +36,8 @@ export interface HostListener {
   /** The reply being written right now, or null when it is done. */
   streaming?(threadId: string, text: string | null): void;
   changed?(what: Changed): void;
+  /** The host's own health: `ok` false while it can't take new work (the message says why). */
+  health?(ok: boolean, message: string | null): void;
 }
 
 /** What the app needs from a host. The real connection and the fixture both implement it. */
@@ -55,6 +57,13 @@ export class HostError extends Error {
     this.code = code;
     this.name = "HostError";
   }
+}
+
+/** Plain words for error codes whose host message is too technical or missing. */
+export function plainError(code: string, message: string): string {
+  if (code === "busy") return "Weilo is busy. Try again in a moment.";
+  if (code === "unknown") return "Not sure that went through. Check before trying again.";
+  return message || "Something went wrong. Try again.";
 }
 
 export interface HostOptions {
@@ -293,11 +302,17 @@ export class HostConnection implements HostApi {
         this.pending.delete(frame.call_id);
         clearTimeout(p.timer);
         if (frame.result.ok === "done") p.resolve(frame.result.value);
-        else p.reject(new HostError(frame.result.error.code, frame.result.error.message));
+        else {
+          const { code, message } = frame.result.error;
+          p.reject(new HostError(code, plainError(code, message)));
+        }
         return;
       }
       case "changed":
         this.opts.listener.changed?.(frame.what);
+        return;
+      case "status":
+        this.opts.listener.health?.(frame.ok, frame.ok ? null : (frame.message ?? null));
         return;
     }
   }
@@ -308,6 +323,8 @@ export class HostConnection implements HostApi {
     this.welcomed = true;
     this.attempt = 0;
     this.setStatus("online");
+    // A new connection starts healthy; the host sends `status` right after when it isn't.
+    this.opts.listener.health?.(true, null);
     this.opts.listener.welcome?.({ hostName, deviceId });
     for (const [threadId, sub] of this.subs) {
       if (sub.active) this.write(socket, { t: "sub", thread_id: threadId, after_seq: sub.lastSeq });

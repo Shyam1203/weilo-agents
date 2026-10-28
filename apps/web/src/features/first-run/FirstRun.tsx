@@ -1,12 +1,18 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { closeFirstRun, finishSetup, loadEngines } from "../../lib/app";
+import { useState, type ReactNode } from "react";
+import { checkEngine, closeFirstRun, finishSetup } from "../../lib/app";
+import { canPick, needKind, problemKind, statusLine } from "../../lib/engines";
 import { cx, engineTitle } from "../../lib/format";
 import { useApp } from "../../lib/store";
 import { useDesktop } from "../../lib/useMedia";
+import type { EngineCheck } from "../../proto/EngineCheck";
+import type { EngineInfo } from "../../proto/EngineInfo";
 import { Button } from "../../ui/Button";
 import { Card } from "../../ui/Card";
-import { ErrorLine } from "../../ui/bits";
-import { ChevronDownIcon } from "../../ui/glyphs";
+import { ErrorLine, TextWithCode } from "../../ui/bits";
+import { CheckIcon, ChevronDownIcon, SpinnerIcon } from "../../ui/glyphs";
+import { helpText } from "../engines/EngineHelpDialog";
+import { useEngineList } from "../engines/EnginePicker";
+import { KeyFields, useKeyForm } from "../engines/KeyDialog";
 
 type Step = "engine" | "awake" | "phone";
 
@@ -48,31 +54,80 @@ function Heading({ title, line }: { title: string; line?: ReactNode }) {
 }
 
 function EngineStep({ found, onPick }: { found: string[]; onPick(id: string): void }) {
-  const engines = useApp((s) => s.engines);
+  const engines = useEngineList();
   const [others, setOthers] = useState(false);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [result, setResult] = useState<EngineCheck | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
   const desktop = useDesktop();
-  useEffect(() => {
-    if (!engines) loadEngines().catch(() => {});
-  }, [engines]);
   const best = found[0] ?? null;
+  const bestInfo = engines?.find((e) => e.id === (best ?? "pi"));
   const rest = (engines ?? []).filter((e) => e.id !== (best ?? "pi"));
   const size = desktop ? "lg" : "phone";
+
+  // Step 1 checks the chosen AI once and shows what it found before moving on.
+  const run = async (id: string) => {
+    setPicked(id);
+    setResult(null);
+    setFailed(null);
+    setChecking(true);
+    try {
+      setResult(await checkEngine(id));
+    } catch (e) {
+      setFailed(e instanceof Error ? e.message : "That check didn't work. Try again.");
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  if (picked) {
+    return (
+      <>
+        <Heading title="Connect your AI" />
+        <CheckCard
+          engineId={picked}
+          checking={checking}
+          result={result}
+          failed={failed}
+          onContinue={() => onPick(picked)}
+          onRetry={() => void run(picked)}
+          onBack={() => {
+            setPicked(null);
+            setResult(null);
+            setFailed(null);
+          }}
+        />
+      </>
+    );
+  }
 
   return (
     <>
       <Heading title="Connect your AI" line="Weilo works with the AI app you already use." />
       <Card phone={!desktop} className="flex flex-col gap-4 p-4">
-        <div className="flex flex-col gap-1">
-          <div className="text-title-sm font-semibold">
-            {best ? `We found ${engineTitle(best, engines ?? undefined)}. Use it?` : "Use Weilo's built-in AI"}
-          </div>
-          <div className="text-body-sm text-text-secondary">
-            {best ? "Your agent works through it, with your own sign-in." : "It works with your own API key."}
-          </div>
-        </div>
-        <Button variant="primary" size={size} onClick={() => onPick(best ?? "pi")} autoFocus>
-          Use it
-        </Button>
+        {best ? (
+          <>
+            <div className="flex flex-col gap-1">
+              <div className="text-title-sm font-semibold">
+                We found {engineTitle(best, engines ?? undefined)}
+                {bestInfo?.ready && bestInfo.needs == null ? ", signed in" : ""}. Use it?
+              </div>
+              <div className="text-body-sm text-text-secondary">
+                {bestInfo && !bestInfo.ready ? (
+                  <TextWithCode text={statusLine(bestInfo)} />
+                ) : (
+                  "Your agent works through it, with your own sign-in."
+                )}
+              </div>
+            </div>
+            <Button variant="primary" size={size} onClick={() => void run(best)} autoFocus>
+              Use it
+            </Button>
+          </>
+        ) : (
+          <BuiltIn engines={engines} size={size} onUse={() => void run("pi")} />
+        )}
       </Card>
       <div className="flex flex-col gap-2">
         <button
@@ -88,21 +143,191 @@ function EngineStep({ found, onPick }: { found: string[]; onPick(id: string): vo
         {others && (
           <ul id="other-ai" className="m-0 flex list-none flex-col rounded-lg border border-border bg-surface p-0">
             {!engines && <li className="p-4 text-body-sm text-text-secondary">Looking for AI apps…</li>}
-            {rest.map((e, i) => (
-              <li key={e.id} className={cx("flex min-h-14 items-center gap-3 px-4 py-2", i < rest.length - 1 && "shadow-line")}>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="font-medium">{engineTitle(e.id, [e])}</span>
-                  <span className="text-caption text-text-secondary">{e.description}</span>
-                </span>
-                <Button size={desktop ? "md" : "phone"} disabled={!e.installed} onClick={() => onPick(e.id)}>
-                  Use
-                </Button>
-              </li>
-            ))}
+            {rest.map((e, i) => {
+              const ok = canPick(e);
+              return (
+                <li key={e.id} className={cx("flex min-h-14 items-center gap-3 px-4 py-2", i < rest.length - 1 && "shadow-line")}>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className={cx("font-medium", !ok && "text-text-secondary")}>{engineTitle(e.id, [e])}</span>
+                    <span className="text-caption text-text-secondary">
+                      <TextWithCode text={statusLine(e)} />
+                      {!ok && e.how ? (
+                        <>
+                          {" "}
+                          <TextWithCode text={e.how} />
+                        </>
+                      ) : null}
+                    </span>
+                  </span>
+                  <Button size={desktop ? "md" : "phone"} disabled={!ok} onClick={() => void run(e.id)}>
+                    Use
+                  </Button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
     </>
+  );
+}
+
+/** No AI app found: Weilo's built-in AI, with a pasted API key (pi is named only in Details). */
+function BuiltIn({ engines, size, onUse }: { engines: EngineInfo[] | null; size: "lg" | "phone"; onUse(): void }) {
+  const pi = engines?.find((e) => e.id === "pi");
+  const form = useKeyForm(pi);
+  const saved = !!pi?.key_providers?.some((p) => p.has_key);
+  const [changing, setChanging] = useState(false);
+  const takesKey = !!pi?.key_providers?.length;
+  const showForm = takesKey && (!saved || changing);
+  return (
+    <>
+      <div className="flex flex-col gap-1">
+        <div className="text-title-sm font-semibold">Use Weilo's built-in AI</div>
+        <div className="text-body-sm text-text-secondary">
+          {saved && !changing ? "A key is saved. You're set." : "It works with your own API key."}
+        </div>
+      </div>
+      {showForm ? (
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (await form.save()) onUse();
+          }}
+        >
+          <KeyFields form={form} autoFocus />
+          {form.error && <ErrorLine>{form.error}</ErrorLine>}
+          <Button type="submit" variant="primary" size={size} disabled={form.busy || !form.key.trim()}>
+            Save key
+          </Button>
+        </form>
+      ) : (
+        <div className="flex flex-col items-start gap-2">
+          <Button variant="primary" size={size} className="w-full" onClick={onUse} autoFocus disabled={!engines}>
+            Use it
+          </Button>
+          {takesKey && (
+            <Button variant="tertiary" size="sm" onClick={() => setChanging(true)}>
+              Use a different key
+            </Button>
+          )}
+        </div>
+      )}
+      <details className="group text-caption text-text-secondary">
+        <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-sm font-medium hover:text-text [&::-webkit-details-marker]:hidden">
+          <ChevronDownIcon size={12} className="shrink-0 -rotate-90 transition-transform duration-[120ms] group-open:rotate-0" />
+          Details
+        </summary>
+        <p className="m-0 mt-1">It runs pi, an open-source AI app, on this computer. Your key goes only to the company that made it.</p>
+      </details>
+    </>
+  );
+}
+
+/** What checking the chosen AI found: ready (Continue), or the plain problem and what to do. */
+function CheckCard({
+  engineId,
+  checking,
+  result,
+  failed,
+  onContinue,
+  onRetry,
+  onBack,
+}: {
+  engineId: string;
+  checking: boolean;
+  result: EngineCheck | null;
+  failed: string | null;
+  onContinue(): void;
+  onRetry(): void;
+  onBack(): void;
+}) {
+  const engines = useApp((s) => s.engines);
+  const engine = engines?.find((e) => e.id === engineId);
+  const title = engineTitle(engineId, engines ?? undefined);
+  const desktop = useDesktop();
+  const size = desktop ? "lg" : "phone";
+  const form = useKeyForm(engine);
+  const need = result && !result.ready ? needKind(result.needs) ?? problemKind(result.action) : null;
+  const wantsKey = need === "key" && !!engine?.key_providers?.length;
+  const help = need === "sign_in" || need === "install" ? helpText(need, title, engine?.how, result ?? undefined) : null;
+
+  return (
+    <Card phone={!desktop} className="flex flex-col gap-4 p-4" aria-label={title}>
+      <div className="text-title-sm font-semibold">{title}</div>
+      {checking && (
+        <p role="status" className="m-0 flex items-center gap-2 text-body-sm text-text-secondary">
+          <SpinnerIcon className="spin shrink-0 text-accent" />
+          Checking {title}… The first time can take a minute.
+        </p>
+      )}
+      {failed && !checking && (
+        <>
+          <ErrorLine>{failed}</ErrorLine>
+          <Button variant="primary" size={size} onClick={onRetry}>
+            Try again
+          </Button>
+        </>
+      )}
+      {result && !checking && result.ready && (
+        <>
+          <p role="status" className="m-0 flex items-center gap-2 text-body-sm text-text">
+            <CheckIcon className="shrink-0 text-success" />
+            {result.message}
+          </p>
+          <Button variant="primary" size={size} onClick={onContinue} autoFocus>
+            Continue
+          </Button>
+        </>
+      )}
+      {result && !checking && !result.ready && (
+        <>
+          <ErrorLine>{result.message}</ErrorLine>
+          {wantsKey ? (
+            <form
+              className="flex flex-col gap-4"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (await form.save()) onRetry();
+              }}
+            >
+              <KeyFields form={form} autoFocus />
+              {form.error && <ErrorLine>{form.error}</ErrorLine>}
+              <Button type="submit" variant="primary" size={size} disabled={form.busy || !form.key.trim()}>
+                Save key
+              </Button>
+            </form>
+          ) : (
+            <>
+              {help && help.line !== result.message && (
+                <p className="m-0 text-body-sm text-text">
+                  <TextWithCode text={help.line} />
+                </p>
+              )}
+              {help && help.methods.length > 0 && (
+                <ul className="m-0 flex list-none flex-col gap-1 p-0 text-body-sm">
+                  {help.methods.map((m) => (
+                    <li key={m.id} className="flex flex-col">
+                      <span className="font-medium">{m.name}</span>
+                      {m.description && <span className="text-caption text-text-secondary">{m.description}</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <Button variant="primary" size={size} onClick={onRetry} autoFocus>
+                {need === "retry" || !need ? "Try again" : "Check again"}
+              </Button>
+            </>
+          )}
+        </>
+      )}
+      {!checking && (
+        <Button variant="tertiary" size="sm" className="w-fit" onClick={onBack}>
+          Choose another AI
+        </Button>
+      )}
+    </Card>
   );
 }
 

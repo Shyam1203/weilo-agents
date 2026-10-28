@@ -93,3 +93,21 @@ export function ErrorLine({ children, id, className }: { children: ReactNode; id
     </p>
   );
 }
+
+/** A plain line that may name a command in backticks ("run `claude`"): the command is drawn as code. */
+export function TextWithCode({ text }: { text: string }) {
+  const parts = text.split(/`([^`]+)`/);
+  return (
+    <>
+      {parts.map((p, i) =>
+        i % 2 === 1 ? (
+          <code key={i} className="rounded-sm bg-surface-muted px-1 text-[0.92em] text-text">
+            {p}
+          </code>
+        ) : (
+          p
+        ),
+      )}
+    </>
+  );
+}

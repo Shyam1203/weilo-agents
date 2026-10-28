@@ -99,7 +99,10 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   const log = join(dir, "host.log");
   const child: ChildProcess = spawn(BIN, ["up", "--port", "0", "--home", home, "--web", join(WEB, "dist")], {
     cwd: dir,
-    env: { ...process.env, WEILO_PG_BIN: pg, WEILO_JOB_POLL_MS: "200", RUST_LOG: "weilo_host=debug,warn" },
+    env: { ...process.env, WEILO_PG_BIN: pg, WEILO_JOB_POLL_MS: "200",
+      // Echo's "hang" then ends with a "Try again" problem after 3 s instead of 3 minutes.
+      WEILO_ENGINE_HANG_SECS: "3",
+      RUST_LOG: "weilo_host=debug,warn" },
     stdio: ["ignore", "ignore", openSync(log, "w")],
   });
   let exited = false;

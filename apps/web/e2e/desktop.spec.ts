@@ -10,7 +10,10 @@ test("make an agent on Echo, message it and watch the reply come in", async ({ p
   const dialog = page.getByRole("dialog", { name: "New agent" });
   await expect(dialog).toBeVisible();
   await dialog.getByLabel("Name").fill("Researcher");
-  await dialog.getByLabel("AI it uses").selectOption({ label: "Echo" });
+  // Each AI shows its status line; Echo is ready.
+  const echo = dialog.getByRole("radio", { name: /Echo/ });
+  await echo.click();
+  await expect(echo).toHaveAttribute("aria-checked", "true");
   await dialog.getByRole("button", { name: "Make agent" }).click();
   await expect(dialog).toBeHidden();
 
@@ -103,4 +106,26 @@ test("an approval shows up in Needs you and can be allowed", async ({ page }) =>
   await done.click();
   await expect(page.getByRole("heading", { level: 1, name: "Ava" })).toBeVisible();
   await expect(page.getByText("Allowed.", { exact: true })).toBeVisible();
+});
+
+test("a problem's Try again sends the last message again", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1, name: "Ava" })).toBeVisible();
+  // "hang" makes Echo go quiet; the host gives up after 3 s (WEILO_ENGINE_HANG_SECS) and
+  // posts a problem with Try again.
+  const message = "hang on this one";
+  const box = page.getByRole("textbox", { name: "Message Ava" });
+  await box.fill(message);
+  await box.press("Enter");
+  const problems = page.getByRole("note").filter({ hasText: "stopped responding" });
+  await expect(problems).toHaveCount(1, { timeout: 20_000 });
+  const sent = page.getByText(message, { exact: true });
+  await expect(sent).toHaveCount(1);
+
+  await problems.first().getByRole("button", { name: "Try again" }).click();
+
+  // The same message goes again, and (Echo hangs again) ends the same way.
+  await expect(sent).toHaveCount(2);
+  await expect(problems).toHaveCount(2, { timeout: 20_000 });
+  await expect(page.getByText("Ava is working")).toBeHidden();
 });

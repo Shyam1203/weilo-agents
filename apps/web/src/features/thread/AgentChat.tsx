@@ -8,6 +8,7 @@ import { EmptyState, TopBar } from "../../ui/bits";
 import { PanelToggle, ThreadScreen } from "./ThreadScreen";
 import { BackButton } from "../mobile/TabBar";
 import { NeedsYouStack } from "../mobile/NeedsYouStack";
+import { AgentMenuButton } from "../shell/AgentMenu";
 import { useThreadState, useVariant } from "./useThread";
 
 /** An agent's own chat: its name, no `#`. */
@@ -34,6 +35,7 @@ export function AgentChat({ agent, home }: { agent: AgentSummary; home?: boolean
             <h1 className="m-0 text-title-sm font-semibold whitespace-nowrap">{agent.name}</h1>
             {live && <span className="ellipsis text-caption text-text-tertiary">{live}</span>}
           </div>
+          <AgentMenuButton agent={agent} phone={phone} />
           {!phone && <PanelToggle open={panel} onToggle={() => setPanel((v) => !v)} />}
         </TopBar>
       }

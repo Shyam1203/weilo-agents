@@ -1,13 +1,14 @@
 /**
  * Fixture mode (`?fixture=1`, dev only, or VITE_FIXTURE=1 at build time): the app runs on
  * static data that matches the approved mock, so screens can be reviewed without a host.
- * Add `&setup=0` to see first run.
+ * Add `&setup=0` to see first run, and `&down=1` to see the host say it isn't ready.
  */
 import type { AgentSummary } from "../proto/AgentSummary";
 import type { Call } from "../proto/Call";
 import type { CallValue } from "../proto/CallValue";
 import type { Card } from "../proto/Card";
 import type { ChannelSummary } from "../proto/ChannelSummary";
+import type { EngineCheck } from "../proto/EngineCheck";
 import type { EngineInfo } from "../proto/EngineInfo";
 import type { Event } from "../proto/Event";
 import type { EventBody } from "../proto/EventBody";
@@ -108,7 +109,7 @@ function seedThreads(): ThreadSeed[] {
       events: [
         [at(8, 0), "agent", { kind: "agent_message", agent_id: ID.ava, text: "Good morning. Your rival dropped the jacket to $45, Mark moved lunch to 1 pm, and two customers say saved cards fail at checkout." }],
         [at(8, 4), "user", { kind: "user_message", when: "now", text: "Match the price on the jacket" }],
-        [at(8, 4), "agent", { kind: "agent_message", agent_id: ID.ava, text: "On it. I'll tell you when it's live." }],
+        [at(8, 4), "agent", { kind: "agent_message", agent_id: ID.ava, text: "On it. Here's the plan:\n\n1. Check **our price** and the rival's on the [shop page](https://shop.example/jacket).\n2. Set the jacket to `$45` until Sunday.\n\nI'll tell you when it's live." }],
         [at(8, 5), "agent", { kind: "state", state: "working", live_line: "Checking the shop page" }],
       ],
     },
@@ -116,6 +117,8 @@ function seedThreads(): ThreadSeed[] {
       summary: thread(ID.miaMain, "agent", "Mia", { agent_id: ID.mia, live_line: "Next post at 6 pm" }),
       events: [
         [at(7, 30), "agent", { kind: "agent_message", agent_id: ID.mia, text: "Today's post is ready. It goes out at 6 pm." }],
+        [at(7, 40), "user", { kind: "user_message", when: "now", text: "Make a version for Instagram too." }],
+        [at(7, 40), "host", { kind: "problem", message: "Weilo's built-in AI needs an API key to work.", action: "Add a key" }],
       ],
     },
     {
@@ -143,6 +146,8 @@ function seedThreads(): ThreadSeed[] {
         folder: "~/code/shop",
         started_by: ID.ava,
         updated_at: at(9, 51),
+        worktree: "~/code/.weilo-worktrees/shop-fix-checkout",
+        branch: "weilo/fix-checkout",
       }),
       events: [
         [at(9, 43), "agent", { kind: "agent_message", agent_id: ID.ava, text: "Customers can't pay with a saved card. Find out why and fix it." }],
@@ -165,7 +170,12 @@ function seedThreads(): ThreadSeed[] {
       }),
       events: [
         [at(9, 20), "user", { kind: "user_message", when: "now", text: "Add a dark mode to the store." }],
-        [at(9, 22), "engine", { kind: "step", step_id: "d1", title: "Found the colour settings", status: "done" }],
+        [at(9, 21), "engine", { kind: "step", step_id: "d0", title: "ToolSearch", status: "done" }],
+        [at(9, 21), "engine", { kind: "step", step_id: "d0b", title: "Read ~/.claude/memory/MEMORY.md", status: "failed" }],
+        [at(9, 22), "engine", { kind: "step", step_id: "d1", title: "Read src/theme.css", status: "done" }],
+        [at(9, 24), "engine", { kind: "step", step_id: "d1b", title: "`npm run build`", status: "done" }],
+        [at(9, 26), "engine", { kind: "step", step_id: "d1c", title: "Edit src/theme.css", status: "done" }],
+        [at(9, 28), "host", { kind: "problem", message: "Codex stopped responding, so this reply stopped.", action: "Try again" }],
         [at(9, 30), "engine", { kind: "step", step_id: "d2", title: "Changing the colours", status: "running" }],
       ],
     },
@@ -224,7 +234,7 @@ function seedNeedsYou(): NeedsYouItem[] {
 
 const AGENTS: AgentSummary[] = [
   { id: ID.ava, name: "Ava", color: "violet", engine: "claude-code", model: null, state: "working", live_line: "Checking the shop page", main_thread_id: ID.avaMain },
-  { id: ID.mia, name: "Mia · Social", color: "rose", engine: "claude-code", model: null, state: "idle", live_line: "Next post at 6 pm", main_thread_id: ID.miaMain },
+  { id: ID.mia, name: "Mia · Social", color: "rose", engine: "pi", model: null, state: "idle", live_line: "Next post at 6 pm", main_thread_id: ID.miaMain },
 ];
 
 const CHANNELS: ChannelSummary[] = [
@@ -235,12 +245,44 @@ const CHANNELS: ChannelSummary[] = [
   { id: ID.holiday, slug: "holiday-sale", title: "Holiday sale", archived: true, unread: false },
 ];
 
-const ENGINES: EngineInfo[] = [
-  { id: "claude-code", title: "Claude Code", description: "Signed in on this computer.", installed: true, default: true, binds_approvals: true },
-  { id: "codex", title: "Codex", description: "Installed. Needs you to sign in.", installed: true, default: false, binds_approvals: true },
-  { id: "gemini-cli", title: "Gemini CLI", description: "Not installed yet.", installed: false, default: false, binds_approvals: false },
-  { id: "pi", title: "pi", description: "Works with your own API key.", installed: true, default: false, binds_approvals: true },
-];
+function seedEngines(): EngineInfo[] {
+  return [
+    {
+      id: "claude-code", title: "Claude Code", description: "Anthropic's coding agent, with your own sign-in.", installed: true, default: false, binds_approvals: true,
+      ready: true, status: "Signed in on this computer.",
+    },
+    {
+      id: "codex", title: "Codex", description: "OpenAI's coding agent, with your own sign-in.", installed: true, default: false, binds_approvals: true,
+      ready: false, needs: "sign_in", status: "Needs you to sign in.", how: "Open Terminal, run `codex` and sign in.",
+    },
+    {
+      id: "gemini", title: "Gemini CLI", description: "Google's coding agent.", installed: false, default: false, binds_approvals: false,
+      ready: false, needs: "node", status: "Not on this computer.", how: "Get Node.js from nodejs.org, then check again.",
+    },
+    {
+      id: "pi", title: "Weilo's built-in AI", description: "Works with an API key from Anthropic, OpenAI or Google.", installed: true, default: true, binds_approvals: true,
+      ready: false, needs: "key", status: "Needs an API key.",
+      key_providers: [
+        { id: "anthropic", title: "Anthropic", has_key: false },
+        { id: "openai", title: "OpenAI", has_key: false },
+        { id: "google", title: "Google", has_key: false },
+      ],
+    },
+  ];
+}
+
+function checkOf(e: EngineInfo): EngineCheck {
+  if (e.ready) return { engine: e.id, ready: true, needs: null, message: `${e.title} is ready.`, action: null, auth_methods: [] };
+  const needs = e.needs ?? "error";
+  const action = needs === "sign_in" ? "Sign in" : needs === "key" ? "Add a key" : needs === "error" ? "Try again" : "Install";
+  const message =
+    needs === "sign_in" ? `${e.title} isn't signed in. ${e.how ?? ""}`.trim()
+    : needs === "key" ? `${e.title} needs an API key to work.`
+    : needs === "node" ? `Weilo needs Node.js to download ${e.title}. Get it from nodejs.org.`
+    : `${e.title} isn't on this computer.`;
+  const auth_methods = needs === "sign_in" ? [{ id: "chatgpt", name: "Sign in with ChatGPT", description: "Use your ChatGPT plan." }, { id: "apikey", name: "Use an API key", description: null }] : [];
+  return { engine: e.id, ready: false, needs, message, action, auth_methods };
+}
 
 export class FixtureHost implements HostApi {
   private snap: Snapshot;
@@ -249,10 +291,14 @@ export class FixtureHost implements HostApi {
   private timers: Array<ReturnType<typeof setTimeout>> = [];
   private n = 0;
 
+  private engines = seedEngines();
+  private readonly down: boolean;
+
   constructor(
     private readonly listener: HostListener,
-    opts: { setupDone?: boolean } = {},
+    opts: { setupDone?: boolean; down?: boolean; noEngines?: boolean } = {},
   ) {
+    this.down = !!opts.down;
     const seeds = seedThreads();
     for (const s of seeds) {
       const events = s.events.map(([when, source, body], i) => ({ seq: BigInt(i + 1), at: when, source, tainted: false, body }));
@@ -271,7 +317,7 @@ export class FixtureHost implements HostApi {
         sessions: { shown: true, open: true },
         archived: { shown: true, open: false },
       },
-      setup: { done, found_engines: ["claude-code"], keep_awake: false },
+      setup: { done, found_engines: opts.noEngines ? [] : ["claude-code"], keep_awake: false },
     };
   }
 
@@ -279,6 +325,7 @@ export class FixtureHost implements HostApi {
     this.later(() => {
       this.listener.status?.("online");
       this.listener.welcome?.({ hostName: "Your MacBook", deviceId: "fixture" });
+      if (this.down) this.listener.health?.(false, "Your Weilo computer is restarting its data.");
     }, 0);
   }
 
@@ -312,7 +359,40 @@ export class FixtureHost implements HostApi {
       case "snapshot":
         return { type: "snapshot", data: structuredClone(this.snap) };
       case "list_engines":
-        return { type: "engines", data: ENGINES };
+        return { type: "engines", data: structuredClone(this.engines) };
+      case "check_engine": {
+        const e = this.engines.find((x) => x.id === c.params.engine);
+        if (!e) throw new HostError("invalid", "That engine isn't available.");
+        return { type: "engine_check", data: checkOf(e) };
+      }
+      case "set_engine_key": {
+        const e = this.engines.find((x) => x.id === c.params.engine);
+        const p = e?.key_providers?.find((x) => x.id === c.params.provider);
+        if (!e || !p) throw new HostError("invalid", "That engine doesn't take that key.");
+        p.has_key = c.params.key.trim().length > 0;
+        const any = e.key_providers!.some((x) => x.has_key);
+        e.ready = any;
+        e.needs = any ? undefined : "key";
+        e.status = any ? "Ready with your API key." : "Needs an API key.";
+        this.changed("engines");
+        return { type: "engines", data: structuredClone(this.engines) };
+      }
+      case "update_agent": {
+        const a = this.snap.agents.find((x) => x.id === c.params.agent_id);
+        if (!a) throw new HostError("not_found", "That agent isn't here anymore.");
+        if (c.params.engine) a.engine = c.params.engine;
+        this.changed("agents");
+        return { type: "agent", data: { ...a } };
+      }
+      case "archive_agent":
+        this.snap.agents = this.snap.agents.filter((x) => x.id !== c.params.agent_id);
+        this.changed("agents");
+        return none;
+      case "merge_session": {
+        const t = this.snap.threads.find((x) => x.id === c.params.thread_id);
+        if (!t?.worktree) throw new HostError("conflict", "This session works in the folder itself, so there's nothing to bring back.");
+        return { type: "message", data: `Brought 2 changed files back into ${t.folder ?? "your project"}.` };
+      }
       case "needs_you":
         return { type: "needs_you", data: structuredClone(this.snap.needs_you) };
       case "setup_status":
@@ -387,7 +467,6 @@ export class FixtureHost implements HostApi {
         return none;
       }
       case "rename_channel":
-      case "update_agent":
         return none;
     }
     throw new HostError("invalid", "That isn't something this preview can do.");

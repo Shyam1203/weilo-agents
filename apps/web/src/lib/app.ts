@@ -2,6 +2,7 @@ import type { Call } from "../proto/Call";
 import type { CallValue } from "../proto/CallValue";
 import type { Changed } from "../proto/Changed";
 import type { Decision } from "../proto/Decision";
+import type { EngineCheck } from "../proto/EngineCheck";
 import type { SendWhen } from "../proto/SendWhen";
 import type { UiPrefs } from "../proto/UiPrefs";
 import { HostError, type HostApi, type HostListener } from "./host";
@@ -12,11 +13,14 @@ import {
   applySnapshot,
   decideLocally,
   findThread,
+  lastUserMessage,
   removeQueued,
   removeSending,
   revertPrefs,
   saveQueued,
+  setCheck,
   setDraft,
+  setHealth,
   setNeedsYou,
   setPrefs,
   setStreaming,
@@ -51,6 +55,9 @@ export const listener: HostListener = {
   changed(what) {
     markDirty(what);
   },
+  health(ok, message) {
+    store.set((s) => setHealth(s, ok, message));
+  },
 };
 
 export function connect(h: HostApi): void {
@@ -79,6 +86,11 @@ export function showError(e: unknown): void {
   store.set((s) => ({ ...s, error: message }));
   if (errorTimer) clearTimeout(errorTimer);
   errorTimer = setTimeout(() => store.set((s) => ({ ...s, error: null })), 6000);
+}
+
+/** A calm one-line note that something worked (same place as errors). */
+export function showNotice(message: string): void {
+  showError(new Error(message));
 }
 
 export function clearError(): void {
@@ -139,17 +151,26 @@ export function follow(threadId: string): () => void {
   };
 }
 
-export async function send(threadId: string, text: string, when: SendWhen = "now"): Promise<void> {
+/** Sends a message. False when it didn't go (the text goes back into the message box). */
+export async function send(threadId: string, text: string, when: SendWhen = "now"): Promise<boolean> {
   const trimmed = text.trim();
-  if (!trimmed) return;
+  if (!trimmed) return false;
+  const paused = store.get().paused;
+  if (paused) {
+    store.set((s) => setDraft(s, threadId, trimmed));
+    showError(new Error(paused));
+    return false;
+  }
   const id = localId();
   store.set((s) => addSending(s, threadId, { id, text: trimmed }));
   try {
     // The placeholder stays until the host echoes the message (appendEvent drops it then).
     await call({ method: "send", params: { thread_id: threadId, text: trimmed, when } });
+    return true;
   } catch (e) {
     store.set((s) => setDraft(removeSending(s, threadId, id), threadId, trimmed));
     showError(e instanceof HostError ? e : new Error("Couldn't send that. Try again."));
+    return false;
   }
 }
 
@@ -176,6 +197,16 @@ function flushQueued(threadId: string): void {
   store.set((st) => removeQueued(st, threadId, next.id));
   saveQueued(store.get().queued);
   void send(threadId, next.text, "after_job");
+}
+
+/** A problem's "Try again": sends the person's last message in that chat again. */
+export async function retryLast(threadId: string): Promise<void> {
+  const text = lastUserMessage(store.get().feeds[threadId]?.events ?? []);
+  if (!text) {
+    showError(new Error("There's no message to send again. Write a new one below."));
+    return;
+  }
+  await send(threadId, text, "now");
 }
 
 export function setComposerDraft(threadId: string, text: string): void {
@@ -227,6 +258,39 @@ export async function create<T extends CallValue["type"]>(
   if (v.type !== type) throw new Error("Unexpected answer from your Weilo computer.");
   markDirty("all");
   return v as Extract<CallValue, { type: T }>;
+}
+
+// -- Engines --------------------------------------------------------------------
+
+/** Starts the engine once to see whether it works here. Kept in the store for dialogs. */
+export async function checkEngine(engine: string): Promise<EngineCheck> {
+  const v = await call({ method: "check_engine", params: { engine } });
+  if (v.type !== "engine_check") throw new Error("Unexpected answer from your Weilo computer.");
+  store.set((s) => setCheck(s, v.data));
+  return v.data;
+}
+
+/** Saves an API key (an empty key removes it). The key is never kept in the app. */
+export async function setEngineKey(engine: string, provider: string, key: string): Promise<void> {
+  const v = await call({ method: "set_engine_key", params: { engine, provider, key } });
+  if (v.type === "engines") store.set((s) => ({ ...s, engines: v.data }));
+}
+
+/** Moves an agent to another engine. Its next reply starts a new conversation. */
+export async function changeAgentEngine(agentId: string, engine: string): Promise<void> {
+  await create({ method: "update_agent", params: { agent_id: agentId, name: null, model: null, instructions: null, engine } }, "agent");
+}
+
+export async function archiveAgent(agentId: string): Promise<void> {
+  await call({ method: "archive_agent", params: { agent_id: agentId } });
+  markDirty("all");
+}
+
+/** Brings a session's changes back into its folder. Returns the host's one plain line. */
+export async function mergeSession(threadId: string): Promise<string> {
+  const v = await call({ method: "merge_session", params: { thread_id: threadId } });
+  markDirty("threads");
+  return v.type === "message" ? v.data : "Done.";
 }
 
 export async function finishSetup(engine: string, keepAwake: boolean): Promise<void> {

@@ -14,7 +14,7 @@ async function boot(): Promise<void> {
   const fixture = fixtureRequested();
   if (fixture.on) {
     const { FixtureHost } = await import("./lib/fixture");
-    connect(new FixtureHost(listener, { setupDone: fixture.setupDone }));
+    connect(new FixtureHost(listener, { setupDone: fixture.setupDone, down: fixture.down, noEngines: fixture.noEngines }));
   } else if (!onPairPage) {
     connect(new HostConnection({ url: socketUrl(), listener, checkAuth: checkPaired }));
   }

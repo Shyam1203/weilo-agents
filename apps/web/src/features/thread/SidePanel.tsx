@@ -1,9 +1,12 @@
 import { useMemo, useState } from "react";
-import { engineTitle, shortName, timeOf } from "../../lib/format";
+import { mergeSession } from "../../lib/app";
+import { engineTitle, projectName, shortName, timeOf } from "../../lib/format";
+import { plainStep } from "../../lib/steps";
 import { useApp } from "../../lib/store";
 import { allSteps } from "../../lib/timeline";
 import type { ThreadSummary } from "../../proto/ThreadSummary";
-import { EmptyState } from "../../ui/bits";
+import { EmptyState, ErrorLine } from "../../ui/bits";
+import { Button } from "../../ui/Button";
 import { cx } from "../../lib/format";
 import { CloseIcon } from "../../ui/glyphs";
 import { IconButton } from "../../ui/IconButton";
@@ -113,6 +116,7 @@ function SessionPanel({ thread, onClose }: { thread: ThreadSummary; onClose?: ()
                   </span>
                 )}
                 {thread.folder && <span className="ellipsis font-mono">{thread.folder}</span>}
+                {thread.branch && <span className="ellipsis shrink-0 font-mono">{thread.branch}</span>}
               </div>
             )}
             {steps.length === 0 ? (
@@ -125,17 +129,85 @@ function SessionPanel({ thread, onClose }: { thread: ThreadSummary; onClose?: ()
                     <li key={s.id} className="flex gap-2">
                       <span className="w-10 shrink-0 pt-0.5 text-caption text-text-tertiary">{timeOf(s.at)}</span>
                       <StepIcon status={s.status} />
-                      <span className="min-w-0">{s.title}</span>
+                      <StepLine title={s.title} />
                     </li>
                   ))}
                 </ol>
               </>
             )}
+            {thread.worktree && <BringBack thread={thread} />}
           </>
         )}
         {tab === "terminal" && <EmptyState title="Nothing ran yet." line="Commands the session runs show here." />}
         {tab === "files" && <EmptyState title="No files changed yet." line="Changed files show here." />}
       </div>
     </>
+  );
+}
+
+/** A step in plain words, with the file or command it touched beneath. */
+function StepLine({ title }: { title: string }) {
+  const p = plainStep(title);
+  return (
+    <span className="flex min-w-0 flex-col">
+      <span>{p.label}</span>
+      {p.detail && <span className="ellipsis font-mono text-caption text-text-tertiary">{p.detail}</span>}
+    </span>
+  );
+}
+
+/**
+ * The session works in its own copy of the project. "Bring changes back" copies its changes
+ * into the project folder, after a confirm line, and shows what happened.
+ */
+function BringBack({ thread }: { thread: ThreadSummary }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const project = projectName(thread.folder) ?? "your project";
+  const run = async () => {
+    setBusy(true);
+    setResult(null);
+    try {
+      setResult({ ok: true, text: await mergeSession(thread.id) });
+      setConfirming(false);
+    } catch (e) {
+      setResult({ ok: false, text: e instanceof Error ? e.message : "That didn't work. Nothing was changed." });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-2 border-t border-border pt-3">
+      {confirming ? (
+        <div className="flex flex-col gap-2" role="group" aria-label="Confirm">
+          <p className="m-0 text-body-sm">
+            <b className="font-semibold">Bring changes back?</b>{" "}
+            <span className="text-text-secondary">This copies the session's changes into {project}.</span>
+          </p>
+          <div className="flex gap-2">
+            <Button variant="tertiary" onClick={() => setConfirming(false)} disabled={busy}>
+              Back
+            </Button>
+            <Button variant="primary" onClick={() => void run()} disabled={busy} autoFocus>
+              {busy ? "Bringing back…" : "Bring back"}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={() => setConfirming(true)}>Bring changes back</Button>
+          <span className="text-caption text-text-tertiary">Into {project}</span>
+        </div>
+      )}
+      {result &&
+        (result.ok ? (
+          <p role="status" className="m-0 text-body-sm text-text-secondary">
+            {result.text}
+          </p>
+        ) : (
+          <ErrorLine>{result.text}</ErrorLine>
+        ))}
+    </div>
   );
 }

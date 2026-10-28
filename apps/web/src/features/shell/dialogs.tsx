@@ -1,21 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { create, loadEngines } from "../../lib/app";
-import { cx, engineTitle, projectName, slugPreview } from "../../lib/format";
-import { navigate, paths } from "../../lib/router";
+import { archiveAgent, changeAgentEngine, create } from "../../lib/app";
+import { canPick, preferredEngine, statusLine } from "../../lib/engines";
+import { engineTitle, projectName, shortName, slugPreview } from "../../lib/format";
+import { navigate, paths, useRoute } from "../../lib/router";
 import { useApp } from "../../lib/store";
+import type { AgentSummary } from "../../proto/AgentSummary";
+import { ChoiceChips } from "../../ui/ChoiceChips";
 import { Dialog, Field, inputClass } from "../../ui/Dialog";
+import { EnginePicker, useEngineList } from "../engines/EnginePicker";
 
 interface Props {
   open: boolean;
   onClose(): void;
-}
-
-function useEngines(open: boolean) {
-  const engines = useApp((s) => s.engines);
-  useEffect(() => {
-    if (open && !engines) loadEngines().catch(() => {});
-  }, [open, engines]);
-  return engines?.filter((e) => e.installed) ?? null;
 }
 
 function useSubmit(onClose: () => void) {
@@ -36,30 +32,19 @@ function useSubmit(onClose: () => void) {
   return { busy, error, run, reset: () => setError(null) };
 }
 
-function EngineSelect({ value, onChange, engines }: { value: string; onChange(v: string): void; engines: ReturnType<typeof useEngines> }) {
-  return (
-    <select className={inputClass} value={value} onChange={(e) => onChange(e.target.value)} disabled={!engines}>
-      {!engines && <option>Loading…</option>}
-      {engines?.map((e) => (
-        <option key={e.id} value={e.id}>
-          {engineTitle(e.id, [e])}
-        </option>
-      ))}
-    </select>
-  );
-}
-
-function useDefaultEngine(engines: ReturnType<typeof useEngines>, value: string, set: (v: string) => void) {
+/** Preselects an engine once the list arrives: the current one, else the best ready one. */
+function useDefaultEngine(open: boolean, value: string, set: (v: string) => void, current?: string | null) {
+  const engines = useEngineList(open);
   useEffect(() => {
-    if (!value && engines?.length) set((engines.find((e) => e.default) ?? engines[0]!).id);
-  }, [engines, value, set]);
+    if (open && !value && engines?.length) set(preferredEngine(engines, current));
+  }, [open, engines, value, set, current]);
+  return engines;
 }
 
 export function NewAgentDialog({ open, onClose }: Props) {
   const [name, setName] = useState("");
   const [engine, setEngine] = useState("");
-  const engines = useEngines(open);
-  useDefaultEngine(engines, engine, setEngine);
+  const engines = useDefaultEngine(open, engine, setEngine);
   const { busy, error, run } = useSubmit(onClose);
   return (
     <Dialog
@@ -82,9 +67,10 @@ export function NewAgentDialog({ open, onClose }: Props) {
       <Field label="Name">
         <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder="Researcher" autoFocus />
       </Field>
-      <Field label="AI it uses">
-        <EngineSelect value={engine} onChange={setEngine} engines={engines} />
-      </Field>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-caption font-medium text-text-secondary">AI it uses</span>
+        <EnginePicker label="AI it uses" engines={engines} value={engine} onChange={setEngine} />
+      </div>
     </Dialog>
   );
 }
@@ -132,43 +118,6 @@ export function knownProjects(threads: Array<{ kind: string; folder: string | nu
 
 const OTHER = "\u0000other";
 
-/** Choices drawn as a row of chips (a radio group), not a native select. */
-function ChoiceChips({
-  label,
-  value,
-  onChange,
-  items,
-}: {
-  label: string;
-  value: string;
-  onChange(v: string): void;
-  items: Array<{ id: string; label: string; title?: string }>;
-}) {
-  return (
-    <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1.5">
-      {items.map((it) => {
-        const on = it.id === value;
-        return (
-          <button
-            key={it.id}
-            type="button"
-            role="radio"
-            aria-checked={on}
-            title={it.title}
-            onClick={() => onChange(it.id)}
-            className={cx(
-              "h-8 max-w-full rounded-md border px-3 text-body-sm font-medium max-md:h-11",
-              on ? "border-accent bg-accent-subtle text-accent-text" : "ghost border-border bg-surface text-text",
-            )}
-          >
-            <span className="ellipsis block">{it.label}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 /**
  * New → Session (§5.2): what it should do and which project. The computer and the AI are
  * prefilled; the AI can be changed.
@@ -182,8 +131,7 @@ export function NewSessionDialog({ open, onClose }: Props) {
   const [folder, setFolder] = useState("");
   const [engine, setEngine] = useState("");
   const [changeAi, setChangeAi] = useState(false);
-  const engines = useEngines(open);
-  useDefaultEngine(engines, engine, setEngine);
+  const engines = useDefaultEngine(open, engine, setEngine);
   const { busy, error, run } = useSubmit(onClose);
   const chosen = project || projects[0] || OTHER;
   const path = chosen === OTHER ? folder.trim() : chosen;
@@ -239,7 +187,8 @@ export function NewSessionDialog({ open, onClose }: Props) {
         <span>
           Runs on {hostName ?? "this computer"}
           {ai ? ` with ${engineTitle(ai.id, [ai])}` : ""}
-          {engines && engines.length > 1 && !changeAi && (
+          {ai && !ai.ready && !changeAi ? `. ${statusLine(ai)}` : ""}
+          {engines && engines.filter(canPick).length > 1 && !changeAi && (
             <>
               {" · "}
               <button type="button" onClick={() => setChangeAi(true)} className="border-0 bg-transparent p-0 font-medium text-accent-text hover:underline">
@@ -248,9 +197,7 @@ export function NewSessionDialog({ open, onClose }: Props) {
             </>
           )}
         </span>
-        {changeAi && engines && (
-          <ChoiceChips label="AI it uses" value={engine} onChange={setEngine} items={engines.map((e) => ({ id: e.id, label: engineTitle(e.id, [e]) }))} />
-        )}
+        {changeAi && <EnginePicker label="AI it uses" engines={engines} value={engine} onChange={setEngine} />}
       </div>
     </Dialog>
   );
@@ -291,5 +238,59 @@ export function MoveDialog({ open, onClose, threadId, currentChannelId }: Props 
         </select>
       </Field>
     </Dialog>
+  );
+}
+
+/** "Change AI": moves an agent to another engine. Its next reply starts a new conversation. */
+export function ChangeAiDialog({ open, onClose, agent }: Props & { agent: AgentSummary }) {
+  const [engine, setEngine] = useState("");
+  const engines = useDefaultEngine(open, engine, setEngine, agent.engine);
+  const { busy, error, run } = useSubmit(() => {
+    setEngine("");
+    onClose();
+  });
+  const name = shortName(agent.name);
+  return (
+    <Dialog
+      open={open}
+      onClose={() => {
+        setEngine("");
+        onClose();
+      }}
+      title={`Change ${name}'s AI`}
+      description={`${name}'s next reply starts a new conversation.`}
+      submitLabel="Change AI"
+      busy={busy}
+      error={error}
+      canSubmit={!!engine && engine !== agent.engine}
+      onSubmit={() => run(() => changeAgentEngine(agent.id, engine))}
+    >
+      <EnginePicker label="AI it uses" engines={engines} value={engine} onChange={setEngine} />
+    </Dialog>
+  );
+}
+
+/** "Remove agent": a confirm step, red only on its button. The agent's chats are kept. */
+export function RemoveAgentDialog({ open, onClose, agent }: Props & { agent: AgentSummary }) {
+  const route = useRoute();
+  const { busy, error, run } = useSubmit(onClose);
+  const name = shortName(agent.name);
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={`Remove ${name}?`}
+      description={`${name} stops and leaves your sidebar. Its chats are kept.`}
+      submitLabel={`Remove ${name}`}
+      submitVariant="danger-solid"
+      busy={busy}
+      error={error}
+      onSubmit={() =>
+        run(async () => {
+          await archiveAgent(agent.id);
+          if (route.name === "agent" && route.agentId === agent.id) navigate(paths.home(), { replace: true });
+        })
+      }
+    />
   );
 }

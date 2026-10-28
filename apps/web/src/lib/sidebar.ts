@@ -116,12 +116,14 @@ export function matches(row: SidebarRow, query: string): boolean {
 }
 
 /**
- * The sections to draw, in order. Sessions show once one exists; Archived once a channel is archived.
+ * The sections to draw, in order. Archived shows once a channel is archived. Sessions always
+ * shows (with an empty line and a Start button until there is one), so the first session
+ * can be started from the sidebar.
  */
 export function buildSections(snap: Snapshot, query = ""): SidebarSection[] {
   const rows = buildRows(snap);
   return SECTION_KEYS.filter((k) => snap.prefs[k].shown)
-    .filter((k) => (k === "sessions" || k === "archived" ? rows[k].length > 0 : true))
+    .filter((k) => (k === "archived" ? rows[k].length > 0 : true))
     .map((key) => ({
       key,
       title: SECTION_TITLES[key],

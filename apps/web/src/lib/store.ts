@@ -1,5 +1,6 @@
 import { useRef, useSyncExternalStore } from "react";
 import type { AgentSummary } from "../proto/AgentSummary";
+import type { EngineCheck } from "../proto/EngineCheck";
 import type { EngineInfo } from "../proto/EngineInfo";
 import type { Event } from "../proto/Event";
 import type { NeedsYouItem } from "../proto/NeedsYouItem";
@@ -63,6 +64,10 @@ export interface AppState {
   hostName: string | null;
   snapshot: Snapshot | null;
   engines: EngineInfo[] | null;
+  /** The newest check of each engine (first run, Check again). */
+  checks: Record<string, EngineCheck>;
+  /** While the host says it isn't ok: its one plain line. Sending waits until it clears. */
+  paused: string | null;
   feeds: Record<string, Feed>;
   /** "Next up" messages, kept here until the agent is free. */
   queued: Record<string, Queued[]>;
@@ -118,6 +123,8 @@ export const initialState: AppState = {
   hostName: null,
   snapshot: null,
   engines: null,
+  checks: {},
+  paused: null,
   feeds: {},
   queued: {},
   sending: {},
@@ -181,6 +188,36 @@ export function appendEvent(s: AppState, threadId: string, event: Event): AppSta
     }
   }
   return { ...s, sending, feeds: { ...s.feeds, [threadId]: { ...feed, events } } };
+}
+
+/** Shown when the host says it isn't ok but gives no line of its own. */
+export const PAUSED_FALLBACK = "Your Weilo computer isn't ready. It will be back in a moment.";
+
+export function setHealth(s: AppState, ok: boolean, message: string | null): AppState {
+  const paused = ok ? null : message?.trim() || PAUSED_FALLBACK;
+  return s.paused === paused ? s : { ...s, paused };
+}
+
+export function setCheck(s: AppState, check: EngineCheck): AppState {
+  return { ...s, checks: { ...s.checks, [check.engine]: check } };
+}
+
+/** The last thing the person said in a thread (for Try again). */
+export function lastUserMessage(events: Event[]): string | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const b = events[i]!.body;
+    if (b.kind === "user_message" && b.text.trim()) return b.text;
+  }
+  return null;
+}
+
+/** The engine a thread runs on: a session's own, else its agent's. */
+export function engineOfThread(s: AppState, threadId: string, agentId?: string | null): string | null {
+  const t = findThread(s, threadId);
+  if (t?.engine) return t.engine;
+  const agent =
+    findAgent(s, t?.agent_id ?? agentId) ?? s.snapshot?.agents.find((a) => a.main_thread_id === threadId);
+  return agent?.engine ?? null;
 }
 
 export function setStreaming(s: AppState, threadId: string, text: string | null): AppState {

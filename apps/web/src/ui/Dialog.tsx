@@ -14,6 +14,10 @@ export interface DialogProps {
   canSubmit?: boolean;
   error?: string | null;
   children?: ReactNode;
+  /** `danger-solid` only for the confirm step of something that can't be undone. */
+  submitVariant?: "primary" | "danger-solid";
+  /** The other button's label ("Cancel"); "Close" for dialogs that only explain. */
+  cancelLabel?: string;
 }
 
 /** A modal form with one primary button. Uses the native dialog for focus and Escape. */
@@ -28,6 +32,8 @@ export function Dialog({
   canSubmit = true,
   error,
   children,
+  submitVariant = "primary",
+  cancelLabel = "Cancel",
 }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -73,9 +79,9 @@ export function Dialog({
           {error && <ErrorLine>{error}</ErrorLine>}
           <div className="flex justify-end gap-2">
             <Button variant="tertiary" onClick={onClose}>
-              Cancel
+              {cancelLabel}
             </Button>
-            <Button variant="primary" type="submit" disabled={busy || !canSubmit}>
+            <Button variant={submitVariant} type="submit" disabled={busy || !canSubmit}>
               {submitLabel}
             </Button>
           </div>

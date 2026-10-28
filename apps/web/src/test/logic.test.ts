@@ -94,9 +94,11 @@ describe("sidebar", () => {
     expect(collapsedLabel([row({ state: "working" }), row({ state: "needs_you" }), row({ state: "needs_you" })])).toBe("2 needs you");
   });
 
-  it("shows Sessions only once one exists, and filters by search", () => {
+  it("always shows Sessions (empty, with a Start button, before the first), and filters by search", () => {
     const snap = snapshot();
-    expect(buildSections(snap).map((s) => s.key)).toEqual(["agents", "channels"]);
+    const empty = buildSections(snap);
+    expect(empty.map((s) => s.key)).toEqual(["agents", "channels", "sessions"]);
+    expect(empty[2]!.rows).toEqual([]);
     const withSession = snapshot({ threads: [thread(), thread({ id: "s1", kind: "session", title: "Fix checkout", state: "needs_you", started_by: "ava" })] });
     const sections = buildSections(withSession);
     expect(sections.map((s) => s.key)).toEqual(["agents", "channels", "sessions"]);

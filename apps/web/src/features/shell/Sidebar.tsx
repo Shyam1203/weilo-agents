@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { savePrefs } from "../../lib/app";
-import { cx } from "../../lib/format";
+import { cx, shortName } from "../../lib/format";
 import { navigate, paths, type Route } from "../../lib/router";
 import {
   allHidden,
@@ -156,6 +156,7 @@ export function Sidebar({ route, floating }: { route: Route; floating?: boolean 
             open={searching || sec.prefs.open}
             onToggle={() => toggle(sec.key)}
             onAdd={ADD_LABEL[sec.key] ? () => setDialog(sec.key) : undefined}
+            mainName={main?.name ?? "Ava"}
             onHide={() => hide(sec.key)}
             selected={selected}
             searching={searching}
@@ -184,11 +185,13 @@ function Section({
   onHide,
   selected,
   searching,
+  mainName,
 }: {
   section: SidebarSection;
   open: boolean;
   onToggle(): void;
   onAdd?: () => void;
+  mainName: string;
   onHide(): void;
   selected: string | null;
   searching: boolean;
@@ -247,8 +250,25 @@ function Section({
           ))}
           {section.rows.length === 0 && section.key === "channels" && (
             <p className="m-0 px-2 text-caption text-text-secondary">
-              <b className="font-medium text-text">No channels yet.</b> Ava files work here as it comes in.
+              <b className="font-medium text-text">No channels yet.</b> {shortName(mainName)} files work here as it comes in.
             </p>
+          )}
+          {/* The "+" shows only on hover, so an empty section gets a real button. */}
+          {section.rows.length === 0 && (section.key === "agents" || section.key === "sessions") && onAdd && (
+            <div className="flex flex-col items-start gap-1.5 px-2 text-caption text-text-secondary">
+              <p className="m-0">
+                {section.key === "agents" ? (
+                  <b className="font-medium text-text">No agents yet.</b>
+                ) : (
+                  <>
+                    <b className="font-medium text-text">No sessions yet.</b> Work on code in a folder on this computer.
+                  </>
+                )}
+              </p>
+              <Button size="sm" onClick={onAdd}>
+                {section.key === "agents" ? "New agent" : "Start a session"}
+              </Button>
+            </div>
           )}
         </div>
       )}

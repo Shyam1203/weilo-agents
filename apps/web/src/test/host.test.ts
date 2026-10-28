@@ -235,3 +235,31 @@ describe("checkPaired", () => {
     expect(await checkPaired((async () => new Response("oops", { status: 500 })) as unknown as typeof fetch)).toBe("ok");
   });
 });
+
+describe("the host's own health", () => {
+  it("reports status frames, and starts healthy on each welcome", () => {
+    const seen: Array<[boolean, string | null]> = [];
+    const { sock } = setup({ health: (ok, message) => seen.push([ok, message]) });
+    sock().open();
+    sock().welcome();
+    sock().receive({ t: "status", ok: false, message: "Your Weilo computer is restarting its data." });
+    sock().receive({ t: "status", ok: true, message: null });
+    expect(seen).toEqual([
+      [true, null],
+      [false, "Your Weilo computer is restarting its data."],
+      [true, null],
+    ]);
+  });
+
+  it("puts busy and unknown errors in plain words", async () => {
+    const { host, sock } = setup();
+    sock().open();
+    sock().welcome();
+    const busy = host.call({ method: "snapshot" });
+    const unknown = host.call({ method: "needs_you" });
+    sock().receive({ t: "ret", call_id: "call-1", result: { ok: "failed", error: { code: "busy", message: "pool timed out" } } });
+    sock().receive({ t: "ret", call_id: "call-2", result: { ok: "failed", error: { code: "unknown", message: "" } } });
+    await expect(busy).rejects.toThrow("Weilo is busy. Try again in a moment.");
+    await expect(unknown).rejects.toThrow("Not sure that went through. Check before trying again.");
+  });
+});

@@ -32,8 +32,9 @@ weilo up      # starts Weilo at http://127.0.0.1:3210
 weilo pair    # gives a one-time code to connect a browser
 ```
 
-Open the address, type the code, and follow the two setup steps: pick the agent that does the
-work, then make your first #channel.
+Open the address and type the code. Setup then asks which AI your agent should use and checks
+that it works. If you have none, paste an API key for Weilo's built-in AI. Your first agent, Ava,
+and a #general channel are made for you.
 
 Your data stays in `~/.weilo-agents`. Set `WEILO_HOME` to keep it somewhere else.
 

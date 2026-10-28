@@ -1,6 +1,6 @@
 import { memo, useState } from "react";
 import { call, showError, stop } from "../../lib/app";
-import { cx, shortName } from "../../lib/format";
+import { cx } from "../../lib/format";
 import type { SidebarRow as Row } from "../../lib/sidebar";
 import { Avatar, SessionMark } from "../../ui/Avatar";
 import { Dot } from "../../ui/bits";
@@ -8,6 +8,7 @@ import { MoreIcon } from "../../ui/glyphs";
 import { IconButton } from "../../ui/IconButton";
 import { Link } from "../../ui/Link";
 import { MenuItem, Popover } from "../../ui/Popover";
+import { useAgentActions } from "./AgentMenu";
 
 const SUB_TONE = { ok: "text-success", warn: "text-warning", quiet: "text-text-tertiary" };
 
@@ -15,7 +16,8 @@ const SUB_TONE = { ok: "text-success", warn: "text-warning", quiet: "text-text-t
 export const SidebarRow = memo(function SidebarRow({ row, selected }: { row: Row; selected: boolean }) {
   const [menu, setMenu] = useState(false);
   const two = !!row.sub;
-  const menuItems = rowMenu(row, () => setMenu(false));
+  const agentActions = useAgentActions(row.kind === "agent" ? row.agent : undefined, () => setMenu(false));
+  const menuItems = agentActions.items ?? rowMenu(row, () => setMenu(false));
   return (
     <div className="reveal-host relative">
       <Link
@@ -70,6 +72,7 @@ export const SidebarRow = memo(function SidebarRow({ row, selected }: { row: Row
           </Popover>
         </div>
       )}
+      {agentActions.dialogs}
     </div>
   );
 });
@@ -79,14 +82,6 @@ function rowMenu(row: Row, close: () => void) {
     close();
     fn().catch(showError);
   };
-  if (row.kind === "agent" && row.agent && row.state === "working") {
-    const agentId = row.agent.id;
-    return (
-      <MenuItem onSelect={run(() => call({ method: "stop_agent", params: { agent_id: agentId } }))}>
-        Stop {shortName(row.name)}
-      </MenuItem>
-    );
-  }
   if (row.kind === "session" && row.state !== "idle") {
     return <MenuItem onSelect={run(() => stop(row.id))}>Stop session</MenuItem>;
   }

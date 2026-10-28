@@ -32,6 +32,8 @@ export function Composer({ threadId, placeholder, label, working, agentName, onS
   const queued = useApp((s) => s.queued[threadId] ?? NO_QUEUE);
   const touch = useTouchOnly();
   const draft = useApp((s) => s.drafts[threadId]);
+  // While the Weilo computer says it isn't ready, typing works but sending waits.
+  const paused = useApp((s) => s.paused);
 
   // Text handed over by Edit or Ask Ava.
   useEffect(() => {
@@ -62,19 +64,20 @@ export function Composer({ threadId, placeholder, label, working, agentName, onS
   }, [text]);
 
   const empty = !text.trim();
+  const blocked = empty || paused !== null;
   const sendNow = useCallback(() => {
-    if (!text.trim()) return;
+    if (!text.trim() || paused) return;
     void send(threadId, text, "now");
     setText("");
-  }, [text, threadId]);
+  }, [text, threadId, paused]);
   const afterJob = useCallback(() => {
-    if (!text.trim()) return;
+    if (!text.trim() || paused) return;
     if (working) queue(threadId, text);
     else void send(threadId, text, "now");
     setText("");
     setMenu(false);
     ref.current?.focus();
-  }, [text, threadId, working]);
+  }, [text, threadId, working, paused]);
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
@@ -131,7 +134,7 @@ export function Composer({ threadId, placeholder, label, working, agentName, onS
           <button
             type="button"
             onClick={afterJob}
-            disabled={empty}
+            disabled={blocked}
             className="h-11 border-0 bg-transparent px-0.5 text-caption font-medium text-text-secondary underline underline-offset-2 disabled:no-underline disabled:opacity-60"
           >
             After this job
@@ -165,8 +168,9 @@ export function Composer({ threadId, placeholder, label, working, agentName, onS
           <button
             type="button"
             onClick={sendNow}
-            disabled={empty}
+            disabled={blocked}
             aria-label={working ? "Tell now" : "Send"}
+            title={paused ?? undefined}
             className="flex size-11 shrink-0 items-center justify-center rounded-full border-0 bg-accent text-on-accent disabled:bg-surface-muted disabled:text-text-tertiary"
           >
             <SendIcon size={20} />
@@ -199,8 +203,9 @@ export function Composer({ threadId, placeholder, label, working, agentName, onS
                 variant="primary"
                 className="rounded-r-none"
                 onClick={sendNow}
-                aria-disabled={empty}
-                title="Enter"
+                aria-disabled={blocked}
+                disabled={paused !== null}
+                title={paused ?? "Enter"}
               >
                 Tell now
               </Button>
@@ -215,14 +220,14 @@ export function Composer({ threadId, placeholder, label, working, agentName, onS
                 <ChevronDownIcon size={12} />
               </button>
               <Popover open={menu} onClose={() => setMenu(false)} label="Send options" role="menu" className="right-0 bottom-10 w-56">
-                <MenuItem onSelect={afterJob} disabled={empty}>
+                <MenuItem onSelect={afterJob} disabled={blocked}>
                   <span className="flex-1">After this job</span>
                   <span className="text-caption text-text-tertiary">Alt+Enter</span>
                 </MenuItem>
               </Popover>
             </div>
           ) : (
-            <Button variant="primary" onClick={sendNow} aria-disabled={empty} title="Enter">
+            <Button variant="primary" onClick={sendNow} aria-disabled={blocked} disabled={paused !== null} title={paused ?? "Enter"}>
               Send
             </Button>
           )}

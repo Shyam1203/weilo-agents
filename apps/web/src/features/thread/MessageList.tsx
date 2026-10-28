@@ -1,16 +1,17 @@
 import { memo, useMemo, useState, type ReactNode } from "react";
-import { send } from "../../lib/app";
 import { cx, timeOf } from "../../lib/format";
 import { paths } from "../../lib/router";
 import { findAgent, useApp, type Sending } from "../../lib/store";
+import { showSteps } from "../../lib/steps";
 import { buildBlocks, type AgentItem, type Block, type StepItem } from "../../lib/timeline";
 import type { AgentSummary } from "../../proto/AgentSummary";
 import { Avatar } from "../../ui/Avatar";
-import { Button } from "../../ui/Button";
-import { AlertIcon, CheckIcon, SpinnerIcon, XCircleIcon } from "../../ui/glyphs";
+import { CheckIcon, ChevronDownIcon, SpinnerIcon, XCircleIcon } from "../../ui/glyphs";
 import { Link } from "../../ui/Link";
+import { Markdown } from "../../ui/Markdown";
 import { MoveDialog } from "../shell/dialogs";
 import { EventCard } from "./EventCard";
+import { Problem } from "./Problem";
 import { useEvents, useVariant } from "./useThread";
 
 const NO_SENDING: Sending[] = [];
@@ -108,28 +109,35 @@ const AgentBlockRow = memo(function AgentBlockRow({
           </div>
         )}
         {items.map((it) => (
-          <Item key={it.key} item={it} threadId={threadId} kind={kind} />
+          <Item key={it.key} item={it} threadId={threadId} kind={kind} agentId={block.agentId} />
         ))}
       </div>
     </div>
   );
 });
 
+/** An agent's words, drawn from Markdown (safely: no raw HTML). */
 function TextBody({ text }: { text: string }) {
   const phone = useVariant() === "phone";
   return (
-    <div
-      className={cx(
-        "break-words whitespace-pre-wrap",
-        phone && "w-fit max-w-[88%] rounded-xl border border-border bg-surface px-4 py-3",
-      )}
-    >
-      {text}
-    </div>
+    <Markdown
+      text={text}
+      className={cx(phone && "w-fit max-w-[88%] rounded-xl border border-border bg-surface px-4 py-3")}
+    />
   );
 }
 
-function Item({ item, threadId, kind }: { item: AgentItem; threadId: string; kind: MessageListProps["kind"] }) {
+function Item({
+  item,
+  threadId,
+  kind,
+  agentId,
+}: {
+  item: AgentItem;
+  threadId: string;
+  kind: MessageListProps["kind"];
+  agentId: string | null;
+}) {
   switch (item.type) {
     case "text":
       return <TextBody text={item.text} />;
@@ -147,7 +155,7 @@ function Item({ item, threadId, kind }: { item: AgentItem; threadId: string; kin
     case "filed":
       return <Filed channelId={item.channelId} threadId={threadId} canMove={kind === "chat"} />;
     case "problem":
-      return <Problem threadId={threadId} message={item.message} action={item.action} />;
+      return <Problem threadId={threadId} agentId={agentId} message={item.message} action={item.action} />;
   }
 }
 
@@ -159,17 +167,44 @@ export function StepIcon({ status }: { status: StepItem["status"] }) {
 
 const STATUS_WORD = { done: "done", failed: "didn't work", running: "in progress" };
 
+/**
+ * Steps in plain words ("Read a file", "Ran a command"). The files and commands, and any
+ * look-ups that failed along the way, are one click away under Show details.
+ */
 function Steps({ steps }: { steps: StepItem[] }) {
+  const { shown, details, folded } = useMemo(() => showSteps(steps), [steps]);
   return (
-    <ul aria-label="Steps" className="m-0 flex list-none flex-col gap-2 p-0 text-body-sm text-text-secondary">
-      {steps.map((s) => (
-        <li key={s.id} className="flex items-center gap-2">
-          <StepIcon status={s.status} />
-          <span className="min-w-0">{s.title}</span>
-          <span className="sr-only">({STATUS_WORD[s.status]})</span>
-        </li>
-      ))}
-    </ul>
+    <div className="flex flex-col gap-2">
+      {shown.length > 0 && (
+        <ul aria-label="Steps" className="m-0 flex list-none flex-col gap-2 p-0 text-body-sm text-text-secondary">
+          {shown.map((s) => (
+            <li key={s.id} className="flex items-center gap-2">
+              <StepIcon status={s.status} />
+              <span className="min-w-0">{s.label}</span>
+              <span className="sr-only">({STATUS_WORD[s.status]})</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {details.length > 0 && (
+        <details className="group text-caption text-text-tertiary">
+          <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-sm font-medium hover:text-text-secondary [&::-webkit-details-marker]:hidden">
+            <ChevronDownIcon size={12} className="shrink-0 -rotate-90 transition-transform duration-[120ms] group-open:rotate-0" />
+            Show details
+            {folded > 0 && <span className="font-normal">· {folded === 1 ? "1 look-up didn't work" : `${folded} look-ups didn't work`}</span>}
+          </summary>
+          <ul className="m-0 mt-2 flex list-none flex-col gap-1 p-0">
+            {details.map((s) => (
+              <li key={s.id} className="flex min-w-0 items-baseline gap-2">
+                <span className="shrink-0">{s.label}</span>
+                {s.detail && <code className="ellipsis rounded-sm bg-surface-muted px-1 text-text-secondary">{s.detail}</code>}
+                {s.status === "failed" && <span className="shrink-0">· didn't work</span>}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
   );
 }
 
@@ -192,20 +227,6 @@ function Filed({ channelId, threadId, canMove }: { channelId: string; threadId: 
           </button>
           <MoveDialog open={moving} onClose={() => setMoving(false)} threadId={threadId} currentChannelId={channelId} />
         </>
-      )}
-    </div>
-  );
-}
-
-function Problem({ threadId, message, action }: { threadId: string; message: string; action: string | null }) {
-  return (
-    <div className="flex items-center gap-2 rounded-md bg-surface-muted px-3 py-2 text-body-sm text-text-secondary" role="note">
-      <AlertIcon className="shrink-0" />
-      <span className="min-w-0 flex-1">{message}</span>
-      {action && (
-        <Button size="sm" onClick={() => void send(threadId, action)}>
-          {action}
-        </Button>
       )}
     </div>
   );
