@@ -1,25 +1,15 @@
 version: 2
 updates:
-  - package-ecosystem: npm
+  - package-ecosystem: cargo
     directory: /
     schedule: { interval: weekly }
-    ignore:
-      - dependency-name: "@types/node"
-        update-types: ["version-update:semver-major"]
+    groups:
+      cargo: { patterns: ["*"] }
   - package-ecosystem: npm
-    directory: /ui
+    directory: /apps/web
     schedule: { interval: weekly }
     groups:
-      ui: { patterns: ["*"] }
-  - package-ecosystem: npm
-    directory: /image/pi
-    schedule: { interval: weekly }
-  - package-ecosystem: docker
-    directory: /image
-    schedule: { interval: weekly }
-    ignore:
-      - dependency-name: node
-        update-types: ["version-update:semver-major"]
+      web: { patterns: ["*"] }
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }

@@ -9,38 +9,35 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  host:
     runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
+      WEILO_PG_BIN: /usr/lib/postgresql/16/bin
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal -c clippy,rustfmt && rustup default stable
+      - name: Postgres binaries
+        run: test -x "$WEILO_PG_BIN/initdb" || (sudo apt-get update && sudo apt-get install -y postgresql-16)
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - name: Generated TypeScript is up to date
+        run: git diff --exit-code -- apps/web/src/proto
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            ui/package-lock.json
+          cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
-      - name: Type-check the daemon
-        run: npm run check
-      - name: Type-check and build the UI
-        working-directory: ui
-        run: npm ci && npm run build
-
-  image:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
-        with:
-          context: .
-          file: image/Dockerfile
-          load: true
-          tags: ghcr.io/shyam1203/weilo-agents:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - name: Start the app and check it
-        env:
-          WEILO_VERSION: ci
-        run: .github/scripts/smoke.sh
+      - run: npm test
+      - run: npm run build
