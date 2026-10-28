@@ -10,7 +10,7 @@ import { Button } from "../../ui/Button";
 import { Switch } from "../../ui/Switch";
 import { Tabs } from "../../ui/Tabs";
 import { canPick, needKind, statusLine } from "../../lib/engines";
-import { engineTitle, whenLabel } from "../../lib/format";
+import { engineTitle, whenInSentence } from "../../lib/format";
 import type { EngineInfo } from "../../proto/EngineInfo";
 import { ErrorLine, TextWithCode } from "../../ui/bits";
 import { EngineHelpDialog } from "../engines/EngineHelpDialog";
@@ -183,7 +183,7 @@ function AllowRuleRow({ rule, phone }: { rule: AllowRuleInfo; phone?: boolean })
           <span>
             <TextWithCode text={rule.description} />
           </span>
-          <span className="text-caption text-text-secondary">Since {whenLabel(rule.created_at)}</span>
+          <span className="text-caption text-text-secondary">Added {whenInSentence(rule.created_at)}</span>
         </span>
         <Button size={phone ? "phone" : "md"} onClick={() => void remove()} disabled={busy}>
           {busy ? "Removing…" : "Remove"}

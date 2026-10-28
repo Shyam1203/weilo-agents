@@ -339,7 +339,9 @@ describe("settings lists", () => {
   it("says which device this is, or when one was last used", () => {
     const now = new Date("2026-10-28T12:00:00");
     expect(deviceLine(dev({ this_device: true }), now)).toBe("This device");
-    expect(deviceLine(dev({ last_seen_at: "2026-10-27T15:00:00" }), now)).toBe("Last used Yesterday");
+    expect(deviceLine(dev({ last_seen_at: "2026-10-27T15:00:00" }), now)).toBe("Last used yesterday");
+    expect(deviceLine(dev({ last_seen_at: "2026-10-28T09:05:00" }), now)).toMatch(/^Last used today at 9:05/);
+    expect(deviceLine(dev({ last_seen_at: "2026-10-01T09:05:00" }), now)).toMatch(/^Last used on /);
     expect(deviceLine(dev(), now)).toMatch(/^Paired /);
     expect(removeDeviceLine(dev({ this_device: true }))).toBe("This device will need a new pairing code to use Weilo again.");
   });

@@ -58,6 +58,15 @@ export function whenLabel(iso: string, now = new Date()): string {
   return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: sameYear ? undefined : "numeric" }).format(d);
 }
 
+/** A time inside a sentence: "today at 9:41", "yesterday", "on Monday" or "on 12 Oct". */
+export function whenInSentence(iso: string, now = new Date()): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  if (isSameDay(d, now)) return `today at ${timeOf(iso)}`;
+  const label = whenLabel(iso, now);
+  return label === "Yesterday" ? "yesterday" : `on ${label}`;
+}
+
 /** Who started a session, in plain words. */
 export function startedByName(startedBy: string | null, agents: AgentSummary[]): string {
   if (!startedBy) return "you";
