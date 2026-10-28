@@ -1,0 +1,10 @@
+{
+  "apiVersion": 1,
+  "kind": "engine",
+  "name": "echo",
+  "title": "Echo",
+  "description": "Answers with what you wrote. For tests; needs no key.",
+  "command": ["{self}", "engine", "echo"],
+  "bindsApprovals": true,
+  "hidden": true
+}

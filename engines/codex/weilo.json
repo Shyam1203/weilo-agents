@@ -1,0 +1,13 @@
+{
+  "apiVersion": 1,
+  "kind": "engine",
+  "name": "codex",
+  "title": "Codex",
+  "description": "OpenAI's coding agent, with your own sign-in.",
+  "install": { "npm": ["@zed-industries/codex-acp@0.16.0"] },
+  "command": ["{install}/node_modules/.bin/codex-acp"],
+  "env": { "CODEX_HOME": "{engine_home}" },
+  "model": { "env": { "CODEX_MODEL": "{model}" } },
+  "detect": { "commands": ["codex"], "paths": ["~/.codex"] },
+  "bindsApprovals": true
+}

@@ -1,0 +1,10 @@
+{
+  "apiVersion": 1,
+  "kind": "engine",
+  "name": "gemini",
+  "title": "Gemini CLI",
+  "description": "Google's coding agent, with your own sign-in.",
+  "command": ["gemini", "--experimental-acp"],
+  "detect": { "commands": ["gemini"] },
+  "bindsApprovals": false
+}
