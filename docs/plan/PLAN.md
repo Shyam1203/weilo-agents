@@ -1,6 +1,6 @@
 # Weilo 1.0: design and architecture plan
 
-**Status:** draft v7, approved by every judge at 9.5 or above. Nothing here is built yet.
+**Status:** draft v8 (local first, bring your own engine). v7 was approved by every judge at 9.5 or above; v8 is being re-checked. Nothing here is built yet.
 
 **Reviews behind it:** eight rounds of independent review.
 
@@ -11,6 +11,11 @@
 §20 lists what each round changed.
 
 **UI mock:** the [Weilo 1.0 UI mock](https://claude.ai/artifact/5P63PzD8BABXgWRzTxwAkP) design canvas (private to the owner). Per CLAUDE.md, no UI is built until the mock is approved.
+
+**Owner decisions (Oct 28):**
+
+- **Local first.** Release 1 runs on your own computer. A hosted cloud computer is a later phase (*Cloud*).
+- **Bring your own engine.** Weilo drives the coding agent you already use (Claude Code, Codex, any ACP agent) with your own sign-in. **pi is the built-in default** when you have none.
 
 **Compatibility:** none is kept; this is a clean design. We keep the *ideas* that work today: the token gateway, sandboxed agents, approvals, Instant actions, pins, memory and the curator, the browser live view, and "Show how" teaching.
 
@@ -41,9 +46,9 @@ No competitor has all five. Dots and Duet are closed and cloud-only. openbot and
 - #channels;
 - any engine;
 - your own Postgres;
-- the agent's own cloud browser.
+- the agent's own browser, on your computer.
 
-Using *your* computer arrives in the *Your computer* track, which runs in parallel and lands about 6 weeks later (§18).
+Using your desktop apps arrives in the *Your computer* track, about 6 weeks later. A cloud computer that stays on when yours sleeps arrives in *Cloud* (§18).
 
 Goals, in order of weight:
 
@@ -76,11 +81,11 @@ Goals, in order of weight:
 | Ask | Where | Release |
 |---|---|---|
 | Frontier model that never delegates to worse | §6.5 | 1 |
-| Coding sessions on your Weilo computer (cloud or local) | §5.2 | 1; on a second computer at the same time in *Your computer* |
+| Coding sessions on your computer | §5.2 | 1; on a second computer at the same time in *Your computer*; in the cloud in *Cloud* |
 | Real-time voice with tool use (Dots-level) | §8 | **1** (Talk v1); voice codes and phone calls in *Talk+* |
 | Codex-level computer use on your computer | §9 | *Your computer* (eval-gated) |
-| Its own computer (cloud) | §4, §9 | 1 when home is a cloud VM (browser and Screen); alongside a laptop home, and the full desktop, in *Your computer* |
-| Always on | §4 | 1 with a cloud home: hosted pilot or bring-your-own (§19.1) |
+| Its own computer | §4, §9 | 1: its own browser and Screen on your computer; its own cloud computer in *Cloud* |
+| Always on | §4 | 1 while your computer is awake (with *Keep awake while plugged in*); around the clock in *Cloud* |
 | Decks, docs and designs at Artifacts quality | §10.2 | *Make* (eval-gated) |
 | Mobile UI like Duet | §11.4 | 1 (PWA); native in *Native* |
 | Inline mini apps in chat, email, Slack and more | §10 | 1 (cards and MCP Apps in the app); Slack and email in *Reach* |
@@ -89,9 +94,9 @@ Goals, in order of weight:
 | Plugins | §14 | 1 (manifest); marketplace in *Grow* |
 | Channels that organize themselves | §5.3 | 1 (interview + rules); classifier in *Make* |
 | Agents *and* sessions (monocode) | §5 | 1 |
-| Connect to any harness | §6 | 1 (ACP, Claude, Codex); pi in *Reach* |
-| Run locally or on a VM | §4, §7 | 1 (macOS, Linux, VM); Windows in *Grow* |
-| VM browser stops getting blocked | §15 | 1 (layers 1, 2, 7); more per §15 |
+| Connect to any harness | §6 | 1: pi (default), Claude Code, Codex and any ACP agent, each with your own sign-in |
+| Run locally or on a VM | §4, §7 | 1 locally (macOS, Linux); your own server with the same install (advanced); hosted in *Cloud*; Windows in *Grow* |
+| Agent browser stops getting blocked | §15 | 1 (layers 1, 2, 7). Running locally gives the browser your home IP, which removes the main cause of blocks; more layers per §15 |
 | Postgres as the source of truth | §7.3 | 1 |
 | Rust where it pays | §7.1 | 1 |
 | openbot-style UI, Buzz and Rakazo ideas | §2, §11 | 1 |
@@ -148,7 +153,7 @@ Goals, in order of weight:
 ## 4. Where things run
 
 ```
- Phone (PWA → native) ─┐                                   ┌─ Your Weilo computer (home): cloud VM or this computer
+ Phone (PWA → native) ─┐                                   ┌─ Your Weilo computer (home): this computer (cloud in *Cloud*)
  Web ──────────────────┼─► Relay: forwarder, TURN, push, ◄──┤    weilo-host · Postgres · engines · plugins · Chrome
  Desktop (Tauri) ──────┘   24 h encrypted mailbox           └─ (later) workers: other laptops for sessions and computer use
  Voice ── WebRTC (TURN via relay) ──► voice orchestrator on home
@@ -170,7 +175,8 @@ Goals, in order of weight:
   - The relay passes TLS through by SNI and never holds a certificate for it, so it can't serve its own code.
   - Link-only confirmation pages (§10.3) are served the same way.
   - Desktop and native apps carry a signed, pinned bundle.
-- **Where to run it.** The recommended home is a small always-on cloud VM. A laptop home works but pauses when it sleeps, and the first run says so. §19.1 asks whether we host the VM.
+- **Where it runs.** In release 1, home is **your own computer**. People who want it always on can run the same install on their own server (advanced, documented, not one-click). A hosted, always-on computer comes in *Cloud*.
+- **On the same Wi-Fi**, devices talk to home directly. The relay is used only when you are away.
 
 ### The relay, honestly
 
@@ -197,10 +203,11 @@ Goals, in order of weight:
 
 ### 24/7 on your laptop
 
-In release 1, a laptop home pauses when it sleeps; the first run says so and recommends the cloud. A cloud computer working alongside your laptop comes with workers in *Your computer*. From then:
+In release 1, home is your computer, and it pauses when the computer sleeps. The first run says so plainly.
 
-- Laptop jobs wait in a queue ("Will run when your Mac is awake").
-- **Allow at night while plugged in** is optional (`caffeinate`/`pmset`, Windows wake timers).
+- **Keep awake while plugged in** is offered at setup and is on by default for desktops (`caffeinate`/`pmset`, systemd inhibit).
+- Phones still show history, and webhooks wait in the relay's mailbox for up to 24 h.
+- From *Cloud*, a hosted computer can take over while yours sleeps. Laptop jobs then wait in a queue ("Will run when your Mac is awake").
 - Setup says plainly that macOS Accessibility and Screen Recording permissions can reset after updates, and that a locked or just-rebooted Mac with FileVault can't be used until you log in.
 
 ## 5. Agents, sessions, channels
@@ -273,7 +280,7 @@ Every engine speaks ACP v1 to the host. Our extras go in `_meta` and a few `weil
 | Any ACP agent (Gemini, Cursor, OpenCode, Goose, Copilot, Droid, Kiro, Qwen…) | Generic ACP, from the ACP Registry | 1 |
 | Claude Code | `claude-agent-acp`, a Node process like any other engine. Permissions arrive as ACP `request_permission`. | 1 |
 | Codex | `codex app-server` mapped to ACP, keeping fork and approvals | 1 |
-| pi | `pi-acp` | *Reach* |
+| **pi (default)** | `pi-acp`, bundled. Used when you have no other engine. | 1 |
 
 **An engine is "a process plus one file":**
 
@@ -326,22 +333,25 @@ What an engine says about its own permissions is advisory; the host enforces.
 - **Protected files.** The sandbox denies writes to `.git/hooks`, `.git/config`, `.envrc`, `.vscode/`, `.claude/`, `.husky/`, package-manager script hooks and `.github/workflows` unless a card allows it. Before "Open in terminal", changes to those files are listed.
 - **Unbound engines** (`bindsApprovals: false`) get the sandbox only: no laptop, no `sends` tools, no Chrome extension.
 
-### 6.4 Credentials
+### 6.4 Credentials: bring your own
 
-**No engine or plugin ever holds a real token or database access.**
+You bring the engine and its sign-in. Weilo never resells model access and never sees your bill.
 
-| Kind | How |
+| How you connect | How it works |
 |---|---|
-| API key (default) | Engine gets a stand-in; the gateway swaps in the real key (manifest `gateway.env`) |
-| Subscription plan | Only after legal review clears it for each provider. Then the same gateway is used. Otherwise refused. |
-| Weilo credits (if hosted, §19.1) | Prepaid and billed by the gateway. A first-run option next to API keys. |
-| Local models | Through the gateway |
+| **pi (built in)** with a plan sign-in (Claude, ChatGPT, Copilot) or an API key | The gateway keeps the real token and swaps it into each request, as the app does today. pi only ever holds a stand-in. |
+| **Claude Code or Codex** with your own sign-in | The engine keeps its sign-in in its own store (for example `~/.claude` or the Keychain). The sandbox lets **that engine alone** read **its own** store. No plugin or other engine can. The session is labelled "Uses your Claude sign-in". |
+| Any engine with an API key | Stand-in plus gateway swap, as for pi |
+| Local models (Ollama, LM Studio) | Through the gateway; no secret |
+
+- Each provider's terms apply to you, as when you use the tool directly. Weilo runs the engine in its documented programmatic mode, on your own computer.
+- **Limits:** for API keys, the daily cap is in dollars. For plan sign-ins, Usage shows the plan's own limit window ("68% of this 5-hour window").
 
 **One exception: the browser's signed-in profiles.** Their cookies stay inside the browser plugin's sandbox, are encrypted at rest, and are never shown to engines.
 
 ### 6.5 Model policy: never delegates to worse
 
-- **Task work** always runs on the agent's model, by default the best on the plan (Opus 5.5).
+- **Task work** always runs on the agent's model: by default the best one your engine and sign-in offer (Opus 5.5 on a Claude plan).
 - **Sub-agents and helper calls inside engines are pinned to the same model** through the manifest's `model.env`. For third-party engines this is best effort; a warning shows when an engine uses another model.
 - **Housekeeping may use a small model,** only where no judgment about the task is made: titles, speech-to-text, text-to-speech, the voice "mouth" (§8) and, from *Make*, channel suggestions.
 - **Fallback asks first,** and says when data would go to another company.
@@ -480,7 +490,13 @@ Retries:
 - **How much you can lose:** up to 24 h on a laptop; on a VM, WAL is archived every 5 min, so up to 5 min.
 - A backup runs whenever the newest one is over 24 h old, at the next idle moment.
 - Backups are **encrypted** (age) to a key in the OS keychain plus your recovery code.
-- They are **copied off the machine**: your S3 or B2, your other Weilo computer, or (hosted pilot) Weilo backup storage with 30-day retention. The 24 h mailbox is never a backup target.
+- They are **copied off the machine**, to a place the user picks at setup:
+  - a synced folder (iCloud Drive, Google Drive, Dropbox), which is the default suggestion;
+  - a USB drive;
+  - S3 or B2;
+  - from *Cloud*, Weilo backup storage with 30-day retention.
+
+  Backups are encrypted before they leave, so the folder's provider can't read them. The 24 h mailbox is never a backup target.
 - Every week the host restores into a scratch cluster, checks it, and **decrypts one secret** to prove keys restore too.
 - **Repair from backup** says what will be lost ("changes after Tue 02:14"). It first saves the readable tables, so newer events can be recovered.
 - Settings shows "**Last good backup: Tue 02:14**".
@@ -581,7 +597,7 @@ mic ─► WebRTC (TURN via the relay) ─► voice orchestrator in the Rust cor
    ├─ end-of-speech detector (the service's own; decides when your turn ends)
    ├─ MOUTH (a voice endpoint): fillers and the brain's text read word for word; one tool: brain(utterance)
    ├─ BRAIN: the agent's own model (Opus 5.5), voice profile, cache kept warm, tools as usual
-   └─ STRICT MODE: no mouth model; streaming STT → brain → streaming TTS
+   └─ STRICT MODE (the default): no mouth model; on-device STT → brain → on-device TTS
 ```
 
 - **Latency.** Measured from when you stop speaking:
@@ -594,6 +610,9 @@ mic ─► WebRTC (TURN via the relay) ─► voice orchestrator in the Rust cor
   - The agent reads the details back.
   - **Talk v1 (release 1):** approvals happen on screen, never by voice. Sends need a tap plus a passkey, as in the app.
   - **Talk+:** a spoken one-time code that matches the verb ("say *move 47*") for reversible actions only. Sends still need a tap plus a passkey. Pay, delete and sign are never approved by voice; they need a tap plus a passkey on a paired device.
+- **Bring your own voice, like the engine.**
+  - Release 1 works with no voice account: **on-device** speech-to-text (whisper.cpp) and text-to-speech (Kokoro-class), with fillers recorded ahead of time for the first 400 ms.
+  - Adding an OpenAI or Gemini key turns on the realtime mouth for lower latency.
 - **The mouth.** It speaks fillers and the brain's words exactly. It never answers, rewords or calls tools. Its provider is named at the first call: "*Voice runs through OpenAI Realtime. Your audio goes to OpenAI. [OK] [Use strict mode]*".
 - **The call bar** (desktop and phone):
   - **Mute · Stop Ava · End**;
@@ -688,20 +707,21 @@ The rules:
 
 ### 11.1 First run
 
-**On a desktop:**
+**On the computer** (the install):
 
-1. **"Where should your agent work?"**
-   - **In the cloud.** *Always on, even with this computer off.* This is the default when hosting is available (§19.1). Otherwise it reads "In the cloud (your own account)", guided, about 5 minutes, with Hetzner or DigitalOcean **sign-in** (OAuth), not a pasted token.
-   - **On this computer.** *No server cost. Pauses when it sleeps.*
-2. **"Connect your AI."**
-   - Weilo credits (if hosted), or a guided **Get an API key**.
-   - Plan sign-in only where legal review has cleared it.
-   - If a key is found: "**We found your Claude key. Use it?**"
+1. **"Connect your AI."** Weilo looks for engines already on the computer.
+   - Found: "**We found Claude Code, signed in. Use it?**" One tap.
+   - None found: "**Use pi (built in)**". Sign in with Claude, ChatGPT or Copilot, or paste an API key.
+   - *Other engines* opens the list (Codex, Gemini CLI, OpenCode…).
+2. **"Keep Ava working while this computer is plugged in?"** [Yes] [Not now]
+
+That is two taps when an engine is found.
 
 **On a phone:**
 
-1. *On my computer*: pair with a code from the desktop app, with the link "*No desktop app yet? Send me the link*". Or *In the cloud*.
-2. Choosing a card selects it. **Continue** moves on. There is a Back link.
+1. "**Scan the code on your computer.**" A camera frame, with "Type the code instead" below.
+2. Pairing shows a safety number on both screens. Then the phone opens Ava's chat.
+3. A link, "*No Weilo on your computer yet? Send me the link*", is for people who start on the phone.
 
 **Then:**
 
@@ -1034,15 +1054,15 @@ What changes:
 
 ## 18. Phases
 
-**Release 1, "Always on, and you can call it": about 16 weeks** for 2–3 developers working with AI. The full scope takes 12–18 months in total.
+**Release 1, "On your computer, and you can call it": about 16 weeks** for 2–3 developers working with AI. The full scope takes 12–18 months in total.
 
 | Weeks | Ships |
 |---|---|
-| 1–2 | Monorepo, `proto/`, tokens and component library, echo and replay engines, CI. **Embedded Postgres gate** (macOS, Linux). Browser measurement. **Owner approves the UI mock** (first run, desktop, phone, call bar, Needs you); weeks 7–10 build only what is approved. **Hosting decided** (§19.1). **Start reviews:** Google OAuth verification and the CASA Tier 2 assessment Gmail's restricted scopes require (8–16 weeks, paid), Meta, TikTok, LinkedIn, Cloudflare signed agents, legal on subscription plans. |
-| 3–6 | `weilo-host`: Postgres, events, projector, jobs and effects, secrets in the keychain, pairing, **the relay with E2E, TURN and health**, **the per-home subdomain and its certificate (§4)**, one WebSocket, the gateway. Engines: generic ACP, Claude Code, Codex. Sessions with worktrees; Changes and Terminal. MCP hub. **Week 6 checkpoint** (below). |
+| 1–2 | Monorepo, `proto/`, tokens and component library, echo and replay engines, CI. **Embedded Postgres gate** (macOS, Linux). Browser measurement. **Owner approves the UI mock** (first run, desktop, phone, call bar, Needs you); weeks 7–10 build only what is approved. **Start reviews:** Google OAuth verification and the CASA Tier 2 assessment Gmail's restricted scopes require (8–16 weeks, paid), Meta, TikTok, LinkedIn, Cloudflare signed agents. |
+| 3–6 | `weilo-host`: Postgres, events, projector, jobs and effects, secrets in the keychain, pairing, **the relay with E2E, TURN and health**, **the per-home subdomain and its certificate (§4)**, one WebSocket, the gateway. Engines: **pi (default)**, generic ACP, Claude Code, Codex, each with your own sign-in. Sessions with worktrees; Changes and Terminal. MCP hub. **Week 6 checkpoint** (below). |
 | 7–10 | Agents, memory (search), routines, Needs you, cards and MCP Apps, the interview that makes channels, rule-based filing. New layout, the customizable sidebar, ⌘K. **Gmail, Google Calendar, web.** Browser layers 2 and 7. Taint, the effects ledger, the failure table. |
-| 11–13 | **Talk v1:** mouth and brain, call bar, captions, tap approvals, latency gate. PWA with passkeys and push. First run. |
-| 14–16 | Incoming webhooks. Off-machine encrypted backups and restore drills. macOS and Linux installers (signed and notarized), the cloud VM image. **Cloud home:** the hosted pilot (if decided), or bring-your-own with Hetzner/DigitalOcean sign-in. Beta hardening. |
+| 11–13 | **Talk v1:** on-device speech (strict mode) plus an optional realtime mouth with your own key; call bar, captions, tap approvals, latency gate. PWA with passkeys and push. First run. |
+| 14–16 | Incoming webhooks. Off-machine encrypted backups and restore drills. macOS and Linux installers (signed and notarized), *Keep awake while plugged in*, a documented server install for advanced users. Beta hardening. |
 
 **Week 6 checkpoint.**
 
@@ -1052,10 +1072,9 @@ Pass criteria:
 - the Postgres gate passes.
 
 Cut order, fixed in advance, if a criterion fails or the schedule slips:
-1. hosted pilot → bring-your-own only;
-2. Codex engine → *Reach*;
-3. Gmail → **published but unverified** (100-user cap, with Google's warning screen); **never testing mode**, whose sign-ins expire every 7 days;
-4. Talk v1 → strict mode only.
+1. Codex engine → *Reach*;
+2. Gmail → **published but unverified** (100-user cap, with Google's warning screen); **never testing mode**, whose sign-ins expire every 7 days;
+3. Talk v1 → strict mode only (no realtime mouth).
 
 Release 1 ships when the remaining scope passes its gates.
 
@@ -1065,44 +1084,53 @@ Then the phases follow in order:
 
 | Phase | Weeks | Ships |
 |---|---|---|
-| *Your computer* (track A, starts right after release 1) | 6 | Workers (§7.4); macOS computer use; full desktop on the cloud computer; Chrome extension (layer 3); OSWorld-style gate |
+| *Your computer* (track A, starts right after release 1) | 6 | Workers (§7.4); macOS computer use; Chrome extension (layer 3); OSWorld-style gate |
 | *Native* (track B, in parallel with track A) | 6–8 | Expo apps: push actions, Live Activities, CallKit, widgets |
 | *Talk+* | 3 | Voice codes, phone number (SIP), a voice per agent |
 | *Make* | 6 | Docs and decks (eval gate), embeddings, the channel classifier, Preview panel |
-| *Reach* | 6 | Slack, email address and Telegram bridges; social; pi engine; browser layers 4 and 5 |
+| *Reach* | 6 | Slack, email address and Telegram bridges; social; browser layers 4 and 5 |
+| *Cloud* | 6 | A hosted, always-on computer per user: the same `weilo-host` on a VM we run, the full Linux desktop for the agent, takeover while your computer sleeps, `weilo move` both ways, KMS-held keys, and a first-run notice: "*On a computer we host, we could technically reach your data. Keys are held in a cloud key service and every access is logged.*" |
 | *Grow* | 6 | Windows (desktop, embedded Postgres, computer use); marketplace and SDK; browser layers 6, 8, 9; shared workspaces (RLS on) |
 
-**Cost controls in release 1:** a forecast per agent, a hard daily cap, and VM costs and voice minutes shown in Usage.
+**Cost controls in release 1:** for API keys, a forecast per agent and a hard daily cap; for plan sign-ins, the plan's own limit window. Voice minutes on your own key are shown in Usage.
 
-## 19. Decisions for you
+## 19. Decisions
 
-1. **Hosted cloud computers.** Decide by the **end of week 2**.
-   - The vision ("always on") and a layman first run both point to hosting a pilot in release 1: invite-only, with a hard spend cap and Weilo credits.
-   - If yes, weeks 11–16 add:
-     - prepaid credits (Stripe);
-     - VM provisioning;
-     - a per-user spend cap;
-     - abuse controls and terms of service;
-     - an on-call owner for operations.
-   - At first run we say: "*On a computer we host, we could technically reach your data. Keys are held in a cloud key service and every access is logged.*" (KMS with access logging.)
-   - The alternative is bring-your-own only.
-   - *Recommendation: a hosted pilot.*
-2. **Mobile.** PWA in release 1, then Expo. *Recommended over Tauri mobile.*
-3. **Subscription plans.** API keys (or Weilo credits) by default; plans only where legal review clears them.
-4. **Stealth browser layers 6 and 8:** off by default, opt-in per site, after legal review.
-5. **License.**
-6. **Relay operator.** Weilo runs the hosted relay: TURN, push keys (APNs and FCM), a 99.9% uptime target, and a cost of about $0.50 per active user per month. Users may self-host it. *Recommendation: we run it.*
-7. **Pricing hypothesis** (to validate in the beta):
+**Decided by the owner (Oct 28):**
 
-   | Cost per active user per month | Estimate |
+1. **Local first.** The hosted cloud computer is the *Cloud* phase, after the release-1 tracks.
+2. **Bring your own engine,** with pi as the built-in default (§6.4). Weilo sells no model access.
+
+**Recommended, waiting for the owner:**
+
+3. **Pricing.** Weilo's own cost per user is small, so release 1 can be free.
+
+   | Who pays for what | Cost |
    |---|---|
-   | Model use, typical | $30–90; the $5 a day cap is a ceiling of about $150 |
-   | Cloud computer (small x86-64 VM) | $5–10 |
-   | Voice (about 60 min a month, mouth plus STT and TTS) | $2–4 |
-   | Relay, TURN and push | about $0.50 |
+   | Model use | **The user**, on their own plan or key. Never Weilo. |
+   | Voice | Free on-device by default; the user's own key for the realtime mouth |
+   | The relay (phone access from outside, push, TURN for calls) | **Weilo**: about $0.20–0.50 per active user per month. Most traffic goes direct on the home Wi-Fi. |
 
-   - **Price:** $29 a month for hosting and relay, plus model use at cost through credits. Or free with your own key and your own computer.
-   - **The default cap** stays at $5 a day: it bounds the worst case at $150 a month, 2–5× a typical month. Usage warns at 80% of the forecast. It is raised in one tap.
+   - **Release 1: free.** The app, the relay and updates. No account needed beyond pairing.
+   - **Later, paid:**
+     - *Weilo Cloud*: an always-on computer for your agent, about $15–25 a month (the VM's cost plus margin).
+     - *Teams*: shared workspaces, admin and audit export, per seat.
+   - The relay stays free for personal use. Self-hosting it stays possible.
+4. **License.**
+   - **AGPL-3.0** for the app and host.
+   - **Apache-2.0** for `proto/`, the plugin and engine SDKs, manifests and templates, so anyone can write plugins under any license.
+   - Contributions under the DCO (sign-off), no CLA.
+
+   | Option | For | Against |
+   |---|---|---|
+   | **AGPL-3.0 + Apache-2.0 SDK** (recommended) | Truly open source, so self-hosters and contributors trust it. A company can't run a closed, hosted fork against *Weilo Cloud*. | Some companies avoid AGPL inside their own products; the Apache SDK covers the case that matters (plugins). |
+   | Apache-2.0 for everything | The widest adoption, the simplest | Anyone can host a closed copy as a competing cloud |
+   | FSL-1.1 (each release turns Apache after 2 years) | Protects the business while young | Not open source by the OSI definition; contributors trust it less |
+   | PolyForm Noncommercial (openbot) | — | Blocks businesses, our target users; avoid |
+
+5. **Mobile.** PWA in release 1, then Expo. *Recommended over Tauri mobile.*
+6. **Stealth browser layers 6 and 8:** off by default, opt-in per site, after legal review.
+7. **Relay operator.** Weilo runs the hosted relay (TURN, push keys for APNs and FCM, a 99.9% uptime target); self-hosting stays possible. *Recommendation: we run it.*
 
 ## 20. What the reviews changed
 
