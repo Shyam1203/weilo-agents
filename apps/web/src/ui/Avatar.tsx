@@ -24,11 +24,16 @@ export interface AvatarProps {
   size?: keyof typeof SIZES;
   /** A white ring, for overlapping faces. */
   ring?: boolean;
+  /**
+   * On a selected row (accent-subtle). The violet face has the same fill as that row,
+   * so it gets a surface ring to stay visible.
+   */
+  selected?: boolean;
   className?: string;
 }
 
 /** A face means an agent. Decorative: the name is always written next to it or in a label. */
-export function Avatar({ name, color, size = 24, ring, className }: AvatarProps) {
+export function Avatar({ name, color, size = 24, ring, selected, className }: AvatarProps) {
   return (
     <span
       aria-hidden="true"
@@ -36,7 +41,7 @@ export function Avatar({ name, color, size = 24, ring, className }: AvatarProps)
         "inline-flex shrink-0 items-center justify-center rounded-full font-semibold select-none",
         SIZES[size],
         avatarColor(color),
-        ring && "shadow-ring-surface",
+        (ring || selected) && "shadow-ring-surface",
         className,
       )}
     >

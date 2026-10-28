@@ -29,7 +29,7 @@ export const SidebarRow = memo(function SidebarRow({ row, selected }: { row: Row
         )}
       >
         {row.kind === "agent" ? (
-          <Avatar name={row.name} color={row.agent?.color} size={24} />
+          <Avatar name={row.name} color={row.agent?.color} size={24} selected={selected} />
         ) : row.kind === "channel" ? (
           <span
             aria-hidden="true"

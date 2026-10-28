@@ -14,6 +14,8 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
   { label, size = 32, className, children, type = "button", title, ...rest },
   ref,
 ) {
+  // A caller's own background (e.g. bg-bg over a label) wins over the default.
+  const ownBg = /(^|\s)bg-/.test(className ?? "");
   return (
     <button
       ref={ref}
@@ -21,7 +23,8 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       aria-label={label}
       title={title ?? label}
       className={cx(
-        "ghost inline-flex shrink-0 items-center justify-center border-0 bg-transparent p-0 text-text-secondary transition-colors disabled:opacity-50",
+        "ghost inline-flex shrink-0 items-center justify-center border-0 p-0 text-text-secondary transition-colors disabled:opacity-50",
+        !ownBg && "bg-transparent",
         SIZES[size],
         className,
       )}

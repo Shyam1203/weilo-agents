@@ -24,6 +24,7 @@ export function AgentChat({ agent, home }: { agent: AgentSummary; home?: boolean
     <ThreadScreen
       threadId={threadId}
       panelOpen={panel}
+      onPanelClose={() => setPanel(false)}
       top={phone && home ? <NeedsYouStack /> : undefined}
       header={
         <TopBar className={phone ? "px-4" : "pr-4 pl-6"}>

@@ -1,4 +1,4 @@
-//! The admin socket (`HOME/admin.sock`, 0600): how local commands like `weilo pair` talk
+//! The admin socket (`Home::admin_socket`, 0600, in a 0700 folder): how local commands like `weilo pair` talk
 //! to the running host. Only the same OS user (or root) may connect.
 //!
 //! One request line, one JSON reply line: `pair` mints a pairing code, `status` gives
@@ -17,6 +17,10 @@ use crate::app::App;
 
 pub fn listen(app: Arc<App>) -> Result<tokio::task::JoinHandle<()>> {
     let path = app.home.admin_socket();
+    if let Some(dir) = path.parent() {
+        crate::home::ensure_runtime_dir(dir)
+            .with_context(|| format!("couldn't make {}", dir.display()))?;
+    }
     let _ = std::fs::remove_file(&path);
     let listener = UnixListener::bind(&path).context("couldn't open the admin socket")?;
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
@@ -57,9 +61,9 @@ async fn serve(app: &App, stream: UnixStream) -> Result<()> {
 
 /// Sends one request to the running host.
 pub async fn request(socket: &Path, what: &str) -> Result<Value> {
-    let stream = UnixStream::connect(socket)
-        .await
-        .context("Weilo isn't running. Start it with `weilo up`.")?;
+    let Ok(stream) = UnixStream::connect(socket).await else {
+        bail!("Weilo isn't running. Start it with `weilo up`.");
+    };
     let (read, mut write) = stream.into_split();
     write.write_all(format!("{what}\n").as_bytes()).await?;
     let mut line = String::new();

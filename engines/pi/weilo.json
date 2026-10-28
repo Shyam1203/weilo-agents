@@ -3,11 +3,16 @@
   "kind": "engine",
   "name": "pi",
   "title": "Weilo's built-in AI",
-  "description": "Works with an API key or a plan sign-in. Built in.",
+  "description": "Works with an API key from Anthropic, OpenAI or Google. Built in.",
   "install": { "npm": ["pi-acp@0.0.34", "@earendil-works/pi-coding-agent@1.4.0"] },
   "command": ["{install}/node_modules/.bin/pi-acp"],
-  "env": { "PATH": "{install}/node_modules/.bin:{PATH}" },
-  "gateway": { "env": { "PI_CODING_AGENT_DIR": "{engine_home}" } },
+  "env": { "PATH": "{install}/node_modules/.bin:{PATH}", "PI_CODING_AGENT_DIR": "{engine_home}" },
+  "passEnv": ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"],
+  "keys": [
+    { "id": "anthropic", "title": "Anthropic", "env": "ANTHROPIC_API_KEY" },
+    { "id": "openai", "title": "OpenAI", "env": "OPENAI_API_KEY" },
+    { "id": "google", "title": "Google", "env": "GEMINI_API_KEY" }
+  ],
   "detect": { "always": true },
   "default": true,
   "bindsApprovals": true

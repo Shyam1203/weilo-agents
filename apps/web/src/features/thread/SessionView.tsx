@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { setComposerDraft, stop } from "../../lib/app";
-import { channelLabel, dollars, shortName, startedByName } from "../../lib/format";
+import { channelLabel, dollars, projectName, shortName, startedByName } from "../../lib/format";
 import { navigate, paths } from "../../lib/router";
 import { useApp } from "../../lib/store";
 import { totalCost } from "../../lib/timeline";
@@ -12,6 +12,7 @@ import { Link } from "../../ui/Link";
 import { PanelToggle, ThreadScreen } from "./ThreadScreen";
 import { BackButton } from "../mobile/TabBar";
 import { useEvents, useThreadState, useVariant } from "./useThread";
+import { shortcut, useTouchOnly } from "../../lib/platform";
 
 /** A coding session: its name, who started it and where, status, Ask Ava and Stop. */
 export function SessionView({ thread }: { thread: ThreadSummary }) {
@@ -24,6 +25,10 @@ export function SessionView({ thread }: { thread: ThreadSummary }) {
   const channel = snap.channels.find((c) => c.id === thread.channel_id);
   const watcher = snap.agents.find((a) => a.id === thread.agent_id) ?? snap.agents[0];
   const by = startedByName(thread.started_by, snap.agents);
+  const hostName = useApp((s) => s.hostName);
+  const touch = useTouchOnly();
+  // Where it runs, in plain words: the computer's name, else the project (the folder's last part).
+  const where = hostName ?? projectName(thread.folder);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -47,6 +52,7 @@ export function SessionView({ thread }: { thread: ThreadSummary }) {
     <ThreadScreen
       threadId={thread.id}
       panelOpen={panel}
+      onPanelClose={() => setPanel(false)}
       header={
         <TopBar className={phone ? "px-4" : "pr-4 pl-6"}>
           {phone ? <BackButton /> : <SessionMark size={24} />}
@@ -60,7 +66,7 @@ export function SessionView({ thread }: { thread: ThreadSummary }) {
                   <Link href={paths.channel(channel.id)}>{channelLabel(channel.slug)}</Link>
                 </>
               )}
-              {thread.folder && ` · ${thread.folder}`}
+              {where && ` · ${where}`}
             </span>
           </div>
           <StatusPill state={state} />
@@ -69,7 +75,7 @@ export function SessionView({ thread }: { thread: ThreadSummary }) {
               Ask {watcherName}
             </Button>
           )}
-          <Button onClick={() => void stop(thread.id)} disabled={state === "idle"} title="⌘.">
+          <Button onClick={() => void stop(thread.id)} disabled={state === "idle"} title={touch ? undefined : shortcut(".")}>
             Stop
           </Button>
           {!phone && <PanelToggle open={panel} onToggle={() => setPanel((v) => !v)} />}
@@ -86,12 +92,15 @@ export function SessionView({ thread }: { thread: ThreadSummary }) {
         working: state === "working",
         agentName: null,
         onStop: () => void stop(thread.id),
-        hint: (
-          <span>
-            ⌘. stops the session{cost > 0n ? ` · ${dollars(cost)} so far` : ""}
-          </span>
-        ),
+        hint: sessionHint(touch ? null : shortcut("."), cost > 0n ? `${dollars(cost)} so far` : null),
       }}
     />
   );
 }
+
+/** "⌘. stops the session · about $0.38 so far"; no key hint on touch screens. */
+function sessionHint(stopKey: string | null, cost: string | null) {
+  const parts = [stopKey && `${stopKey} stops the session`, cost].filter(Boolean);
+  return parts.length ? <span>{parts.join(" · ")}</span> : undefined;
+}
+

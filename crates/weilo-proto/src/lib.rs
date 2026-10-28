@@ -21,9 +21,13 @@ pub type Id = Uuid;
 #[serde(tag = "t", rename_all = "snake_case")]
 #[ts(export)]
 pub enum ClientFrame {
-    /// First frame on every connection.
+    /// First frame on every connection. `token` is the device token from pairing; the
+    /// host answers `welcome` only when it is valid, and closes with 4401 when it isn't.
     Hello {
         version: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        token: Option<String>,
     },
     /// Follow a thread. The host sends every durable event after `after_seq`, then live ones.
     Sub {
@@ -58,8 +62,10 @@ pub enum ServerFrame {
         thread_id: Id,
         event: Event,
     },
-    /// A temporary piece of a reply being written. Never stored. Dropped when the
-    /// durable event with a `seq` above `after_seq` arrives.
+    /// A temporary piece of a reply being written. Never stored. Every piece of one reply
+    /// carries the same `after_seq` (the thread's last `seq` when the reply began) and a
+    /// `sub_seq` counting from 0. The reply is done when an `agent_message` event with a
+    /// `seq` above `after_seq` arrives; other events in between don't end it.
     Delta {
         thread_id: Id,
         after_seq: i64,
@@ -73,6 +79,12 @@ pub enum ServerFrame {
     /// Something the sidebar or Needs you shows changed. The client asks again.
     Changed {
         what: Changed,
+    },
+    /// The host's own health. Sent after `welcome` when something is wrong, and again
+    /// when it changes. `message` is one plain line to show while `ok` is false.
+    Status {
+        ok: bool,
+        message: Option<String>,
     },
 }
 
@@ -109,9 +121,28 @@ pub enum Call {
         name: Option<String>,
         model: Option<String>,
         instructions: Option<String>,
+        /// Moves the agent to another engine. Its next reply starts a fresh conversation.
+        #[serde(default)]
+        #[ts(optional)]
+        engine: Option<String>,
     },
     StopAgent {
         agent_id: Id,
+    },
+    /// Removes the agent from the sidebar and stops it. Its threads are kept.
+    ArchiveAgent {
+        agent_id: Id,
+    },
+    /// Saves an API key for an engine (one of its `key_providers`). An empty key removes
+    /// it. The key is never sent back.
+    SetEngineKey {
+        engine: String,
+        provider: String,
+        key: String,
+    },
+    /// Starts the engine once to see whether it works here (installs it first if needed).
+    CheckEngine {
+        engine: String,
     },
     CreateChannel {
         title: String,
@@ -148,6 +179,11 @@ pub enum Call {
         when: SendWhen,
     },
     Stop {
+        thread_id: Id,
+    },
+    /// Brings a session's changes back into the folder it started from (merges its
+    /// branch). Refuses, changing nothing, when that can't be done cleanly.
+    MergeSession {
         thread_id: Id,
     },
     Decide {
@@ -207,12 +243,16 @@ pub enum CallValue {
     Thread(ThreadSummary),
     NeedsYou(Vec<NeedsYouItem>),
     Setup(SetupStatus),
+    EngineCheck(EngineCheck),
+    /// One plain line saying what happened.
+    Message(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ApiError {
-    /// Stable code for programs (`not_found`, `conflict`, `invalid`, `engine`, `internal`).
+    /// Stable code for programs (`not_found`, `conflict`, `invalid`, `engine`, `busy`,
+    /// `unknown` (it may or may not have happened), `internal`).
     pub code: String,
     /// One plain line for people.
     pub message: String,
@@ -298,6 +338,12 @@ pub struct ThreadSummary {
     pub folder: Option<String>,
     pub started_by: Option<String>,
     pub updated_at: String,
+    /// For sessions in a git repo: the separate copy the session works in.
+    #[ts(optional)]
+    pub worktree: Option<String>,
+    /// The session's branch (`weilo/<name>`), merged back by `merge_session`.
+    #[ts(optional)]
+    pub branch: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -333,6 +379,71 @@ pub struct EngineInfo {
     pub installed: bool,
     pub default: bool,
     pub binds_approvals: bool,
+    /// Can be picked now: here (or downloadable on first use) and signed in or keyed.
+    #[ts(optional)]
+    pub ready: Option<bool>,
+    /// What is missing, when not ready.
+    #[ts(optional)]
+    pub needs: Option<EngineNeed>,
+    /// One plain line: "Signed in on this computer.", "Needs you to sign in.",
+    /// "Not on this computer."
+    #[ts(optional)]
+    pub status: Option<String>,
+    /// One plain line on what to do, like "Open Terminal, run `claude` and sign in."
+    #[ts(optional)]
+    pub how: Option<String>,
+    /// Model companies whose API key this engine can use (`set_engine_key`).
+    #[ts(optional)]
+    pub key_providers: Option<Vec<KeyProvider>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum EngineNeed {
+    /// Sign in with the engine's own app.
+    SignIn,
+    /// An API key (`set_engine_key`).
+    Key,
+    /// The engine's program isn't on this computer.
+    Install,
+    /// Node.js (npm), to download the engine.
+    Node,
+    /// Something else went wrong; the message says what.
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct KeyProvider {
+    /// `anthropic`, `openai`, `google`…
+    pub id: String,
+    pub title: String,
+    /// A key is saved in Weilo, or set where Weilo was started.
+    pub has_key: bool,
+}
+
+/// What `check_engine` found.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct EngineCheck {
+    pub engine: String,
+    pub ready: bool,
+    pub needs: Option<EngineNeed>,
+    /// One plain line.
+    pub message: String,
+    /// A button label: `Sign in`, `Add a key`, `Install`, `Try again`.
+    pub action: Option<String>,
+    /// Ways the engine says it can sign in.
+    pub auth_methods: Vec<AuthMethodInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct AuthMethodInfo {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -342,6 +453,9 @@ pub struct SetupStatus {
     /// Engines found on this computer, best first.
     pub found_engines: Vec<String>,
     pub keep_awake: bool,
+    /// After `finish_setup`: whether the chosen engine worked. Ava is made either way.
+    #[ts(optional)]
+    pub check: Option<EngineCheck>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -427,6 +541,9 @@ pub enum EventBody {
     Filed {
         channel_id: Id,
     },
+    /// Something went wrong or needs attention. `action` is a button label: `Try again`
+    /// (send the last message again), `Sign in`, `Add a key`, `Install`,
+    /// `Choose another folder`.
     Problem {
         message: String,
         action: Option<String>,

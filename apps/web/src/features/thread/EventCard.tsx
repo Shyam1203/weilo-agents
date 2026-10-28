@@ -8,7 +8,7 @@ import type { Card as CardData } from "../../proto/Card";
 import type { CardAction } from "../../proto/CardAction";
 import { Button, type ButtonVariant } from "../../ui/Button";
 import { Card } from "../../ui/Card";
-import { CheckIcon, MailIcon, XCircleIcon } from "../../ui/glyphs";
+import { CheckIcon, ChevronDownIcon, MailIcon, XCircleIcon } from "../../ui/glyphs";
 import { RiskLine } from "../../ui/RiskLine";
 import { focusComposer, useVariant } from "./useThread";
 
@@ -72,8 +72,11 @@ export function EventCard({ card, decided, threadId, detailsLabel = "Show detail
   const [subject, ...rest] = draft && card.body ? card.body.split("\n") : [];
 
   const details = card.details && (
-    <details className="text-body-sm text-text-secondary">
-      <summary className="w-fit cursor-pointer rounded-sm">{detailsLabel}</summary>
+    <details className="group text-body-sm text-text-secondary">
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-sm font-medium hover:text-text [&::-webkit-details-marker]:hidden">
+        <ChevronDownIcon size={12} className="shrink-0 -rotate-90 transition-transform duration-[120ms] group-open:rotate-0" />
+        {detailsLabel}
+      </summary>
       <pre className="m-0 mt-2 overflow-x-auto rounded-sm border border-border bg-surface px-2 py-1.5 font-mono text-body-sm whitespace-pre-wrap text-text">
         {card.details}
       </pre>
@@ -175,19 +178,21 @@ function CardFooter({
       </div>
     );
   }
+  // Phones: the primary first and full width, then the secondary, then "Not now" as a text button.
+  const actions = phone ? [...card.actions].sort((a, b) => RANK[variantOf(a)] - RANK[variantOf(b)]) : card.actions;
   return (
     <div className={cx("flex gap-2", phone ? "flex-col items-stretch" : "flex-wrap items-center")}>
       <RiskLine risk={card.risk} text={card.risk_line} className="flex-1" />
-      {card.actions.length > 0 && (
-        <div className={cx("flex gap-2", phone && "flex-wrap")}>
-          {card.actions.map((a) => (
+      {actions.length > 0 && (
+        <div className={cx("flex gap-2", phone && "flex-col")}>
+          {actions.map((a) => (
             <Button
               key={a.id}
               size={size}
               variant={variantOf(a)}
               disabled={busy}
               onClick={() => onAct(a)}
-              className={cx(phone && "flex-1")}
+              className={cx(phone && "w-full")}
             >
               {a.label}
             </Button>
@@ -197,3 +202,5 @@ function CardFooter({
     </div>
   );
 }
+
+const RANK: Record<ButtonVariant, number> = { primary: 0, secondary: 1, danger: 1, "danger-solid": 1, tertiary: 2 };

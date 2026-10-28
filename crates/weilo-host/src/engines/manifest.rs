@@ -25,6 +25,17 @@ pub struct Manifest {
     pub launch: Launch,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
+    /// Variables passed through from the host's environment when set there, like
+    /// `ANTHROPIC_API_KEY`. Nothing else from the host's environment reaches an engine
+    /// beyond `base_env`.
+    #[serde(default)]
+    pub pass_env: Vec<String>,
+    /// API keys people can save for this engine in Weilo (`set_engine_key`).
+    #[serde(default)]
+    pub keys: Vec<KeySpec>,
+    /// How to tell the engine is signed in, and how to sign in.
+    #[serde(default)]
+    pub sign_in: Option<SignIn>,
     #[serde(default)]
     pub model: Option<EnvBlock>,
     #[serde(default)]
@@ -48,6 +59,30 @@ pub struct Install {
     /// Exact `name@version` packages.
     #[serde(default, deserialize_with = "one_or_many")]
     pub npm: Vec<String>,
+    /// For engines Weilo can't download: one plain line on how to install it.
+    #[serde(default)]
+    pub how: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct KeySpec {
+    /// `anthropic`, `openai`, `google`…
+    pub id: String,
+    pub title: String,
+    /// The variable the engine reads the key from.
+    pub env: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct SignIn {
+    /// Files that exist once the engine is signed in (`~` and `{engine_home}` allowed).
+    #[serde(default)]
+    pub files: Vec<String>,
+    /// macOS Keychain items (by service name) that exist once it is signed in.
+    #[serde(default)]
+    pub keychain: Vec<String>,
+    /// One plain line on how to sign in.
+    pub how: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -119,7 +154,8 @@ fn add(out: &mut BTreeMap<String, Manifest>, bytes: &[u8], from: &str) {
     }
 }
 
-/// Values for `{self}`, `{install}`, `{engine_home}`, `{model}` and `{PATH}`.
+/// Values for `{self}`, `{install}`, `{engine_home}`, `{model}` and `{PATH}`, and the
+/// sign-in variables (passed-through and saved keys) for the engine.
 #[derive(Debug, Clone)]
 pub struct Vars {
     pub self_exe: PathBuf,
@@ -127,6 +163,7 @@ pub struct Vars {
     pub engine_home: PathBuf,
     pub model: Option<String>,
     pub path: String,
+    pub credentials: BTreeMap<String, String>,
 }
 
 /// Fills placeholders. `None` when one is unknown here (like `{gateway}`) or has no
@@ -169,12 +206,13 @@ pub fn launch_spec(m: &Manifest, vars: &Vars) -> Result<LaunchSpec, String> {
         }
     }
     let program = parts.remove(0);
-    let mut env = BTreeMap::new();
+    let mut env = vars.credentials.clone();
+    // Pinned launch settings go last, so nothing else can undo them.
     let blocks = [
-        Some(&m.launch.env),
         Some(&m.env),
         m.model.as_ref().map(|b| &b.env),
         m.gateway.as_ref().map(|b| &b.env),
+        Some(&m.launch.env),
     ];
     for block in blocks.into_iter().flatten() {
         for (k, v) in block {
@@ -207,9 +245,10 @@ mod tests {
         Vars {
             self_exe: "/bin/weilo".into(),
             install: "/h/engines/pi".into(),
-            engine_home: "/h/engine-homes/pi/a1".into(),
+            engine_home: "/h/engines-state/pi".into(),
             model: model.map(Into::into),
             path: "/usr/bin".into(),
+            credentials: BTreeMap::new(),
         }
     }
 
@@ -261,11 +300,34 @@ mod tests {
             "/h/engines/pi/node_modules/.bin/claude-agent-acp"
         );
         assert!(spec.args.is_empty());
-        assert_eq!(spec.env["CLAUDE_CONFIG_DIR"], "/h/engine-homes/pi/a1");
+        assert!(!spec.env.contains_key("CLAUDE_CONFIG_DIR"));
+        assert_eq!(spec.env["CLAUDE_CODE_DISABLE_BYPASS"], "1");
         assert!(!spec.env.contains_key("ANTHROPIC_MODEL"));
         assert!(!spec.env.contains_key("KEY"));
         let spec = launch_spec(&m, &vars(Some("opus"))).unwrap();
         assert_eq!(spec.env["ANTHROPIC_MODEL"], "opus");
+    }
+
+    #[test]
+    fn pinned_env_wins_over_everything() {
+        let mut m = load_all(Path::new("/nonexistent"))["claude-code"].clone();
+        m.env.insert("CLAUDE_CODE_DISABLE_BYPASS".into(), "0".into());
+        let mut v = vars(None);
+        v.credentials
+            .insert("CLAUDE_CODE_DISABLE_BYPASS".into(), "0".into());
+        v.credentials
+            .insert("ANTHROPIC_API_KEY".into(), "sk-test".into());
+        let spec = launch_spec(&m, &v).unwrap();
+        assert_eq!(spec.env["CLAUDE_CODE_DISABLE_BYPASS"], "1");
+        assert_eq!(spec.env["ANTHROPIC_API_KEY"], "sk-test");
+    }
+
+    #[test]
+    fn pi_keeps_its_files_in_its_own_folder() {
+        let m = load_all(Path::new("/nonexistent"))["pi"].clone();
+        let spec = launch_spec(&m, &vars(None)).unwrap();
+        assert_eq!(spec.env["PI_CODING_AGENT_DIR"], "/h/engines-state/pi");
+        assert!(m.keys.iter().any(|k| k.env == "ANTHROPIC_API_KEY"));
     }
 
     #[test]

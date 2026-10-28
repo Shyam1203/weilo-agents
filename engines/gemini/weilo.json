@@ -4,7 +4,14 @@
   "name": "gemini",
   "title": "Gemini CLI",
   "description": "Google's coding agent, with your own sign-in.",
+  "install": { "how": "Install it from Terminal: npm install -g @google/gemini-cli" },
   "command": ["gemini", "--experimental-acp"],
+  "passEnv": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+  "keys": [{ "id": "google", "title": "Google", "env": "GEMINI_API_KEY" }],
+  "signIn": {
+    "files": ["~/.gemini/oauth_creds.json"],
+    "how": "Open Terminal, run `gemini` and sign in."
+  },
   "detect": { "commands": ["gemini"] },
   "bindsApprovals": false
 }

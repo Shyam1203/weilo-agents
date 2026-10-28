@@ -6,6 +6,7 @@ import { Button } from "../../ui/Button";
 import { ChevronDownIcon, CloseIcon, SendIcon } from "../../ui/glyphs";
 import { IconButton } from "../../ui/IconButton";
 import { MenuItem, Popover } from "../../ui/Popover";
+import { useTouchOnly } from "../../lib/platform";
 
 const NO_QUEUE: Queued[] = [];
 const MAX_LINES = 6;
@@ -29,6 +30,7 @@ export function Composer({ threadId, placeholder, label, working, agentName, onS
   const [menu, setMenu] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   const queued = useApp((s) => s.queued[threadId] ?? NO_QUEUE);
+  const touch = useTouchOnly();
   const draft = useApp((s) => s.drafts[threadId]);
 
   // Text handed over by Edit or Ask Ava.
@@ -135,7 +137,7 @@ export function Composer({ threadId, placeholder, label, working, agentName, onS
             After this job
           </button>
         </>
-      ) : (
+      ) : touch ? null : (
         <>
           <span aria-hidden="true">·</span>
           <span>Enter: Tell now · Alt+Enter: After this job</span>

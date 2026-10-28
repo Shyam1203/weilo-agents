@@ -13,7 +13,6 @@ import { IconButton } from "../../ui/IconButton";
 import { Link } from "../../ui/Link";
 import { MenuItem, Popover } from "../../ui/Popover";
 import { Tabs } from "../../ui/Tabs";
-import { ConnectionBanner } from "../shell/Toast";
 import { PanelToggle, ThreadScreen } from "./ThreadScreen";
 import { BackButton } from "../mobile/TabBar";
 import { useThreadState, useVariant } from "./useThread";
@@ -30,10 +29,16 @@ export function channelThreads(channelId: string, threads: ThreadSummary[]): Thr
   return threads.filter((t) => t.channel_id === channelId && t.kind === "chat");
 }
 
-/** The tab to show when the link names none: the newest thread, else Overview. */
-export function defaultTab(list: ThreadSummary[]): string {
-  const newest = [...list].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
-  return newest?.id ?? OVERVIEW;
+/**
+ * The tab to show when the link names none: the lead's conversation, as in the mock.
+ * The host has no "lead" field yet, so the lead is the first member (the main agent when
+ * it has a conversation here) and we open the lead's most recent one. If the lead has none,
+ * the most recent conversation; with none at all, Overview.
+ */
+export function defaultTab(list: ThreadSummary[], leadId?: string | null): string {
+  const newestFirst = [...list].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  const lead = leadId ? newestFirst.find((t) => t.agent_id === leadId) : undefined;
+  return (lead ?? newestFirst[0])?.id ?? OVERVIEW;
 }
 
 export function ChannelView({ channel, threadId }: { channel: ChannelSummary; threadId: string | null }) {
@@ -41,77 +46,45 @@ export function ChannelView({ channel, threadId }: { channel: ChannelSummary; th
   const [panel, setPanel] = useState(false);
   const threads = useMemo(() => channelThreads(channel.id, snap.threads), [channel.id, snap.threads]);
   const members = useMemo(() => channelMembers(channel.id, snap.threads, snap.agents), [channel.id, snap.threads, snap.agents]);
-  const active = threadId && (threadId === OVERVIEW || threads.some((t) => t.id === threadId)) ? threadId : defaultTab(threads);
+  const active =
+    threadId && (threadId === OVERVIEW || threads.some((t) => t.id === threadId)) ? threadId : defaultTab(threads, members[0]?.id);
   const thread = threads.find((t) => t.id === active);
   const owner = snap.agents.find((a) => a.id === thread?.agent_id) ?? members[0] ?? snap.agents[0];
+  const ownerName = owner ? shortName(owner.name) : "Ava";
+  const state = useThreadState(thread?.id ?? "");
+  const slug = slugText(channel.slug);
 
-  const header = (
-    <ChannelHeader
-      channel={channel}
-      threads={threads}
-      active={active}
-      members={members}
-      agents={snap.agents}
-      panel={thread ? { open: panel, toggle: () => setPanel((v) => !v) } : null}
-    />
-  );
-
-  if (!thread) {
-    return (
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-surface">
-        {header}
-        <ConnectionBanner />
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <ChannelOverview channelId={channel.id} />
-        </div>
-      </main>
-    );
-  }
-
-  return (
-    <ThreadView
-      key={thread.id}
-      thread={thread}
-      header={header}
-      panel={panel}
-      slug={slugText(channel.slug)}
-      ownerName={owner ? shortName(owner.name) : "Ava"}
-    />
-  );
-}
-
-function ThreadView({
-  thread,
-  header,
-  panel,
-  slug,
-  ownerName,
-}: {
-  thread: ThreadSummary;
-  header: React.ReactNode;
-  panel: boolean;
-  slug: string;
-  ownerName: string;
-}) {
-  const state = useThreadState(thread.id);
+  // One header for every tab, so arrow keys keep focus in the tab list.
   return (
     <ThreadScreen
-      threadId={thread.id}
+      threadId={thread?.id ?? null}
       panelOpen={panel}
-      header={header}
+      onPanelClose={() => setPanel(false)}
+      header={
+        <ChannelHeader
+          channel={channel}
+          threads={threads}
+          active={active}
+          members={members}
+          agents={snap.agents}
+          panel={thread ? { open: panel, toggle: () => setPanel((v) => !v) } : null}
+        />
+      }
       list={{
-        agentId: thread.agent_id,
+        agentId: thread?.agent_id ?? null,
         kind: "chat",
         empty: <EmptyState title="Nothing here yet." line={`Ask ${ownerName} below.`} />,
       }}
       composer={{
-        placeholder: `Message #${slug}. ${ownerName} answers; type @ to ask someone else.`,
+        placeholder: `Message #${slug}. ${ownerName} answers.`,
         label: `Message #${slug}`,
         working: state === "working",
         agentName: ownerName,
-        onStop: () => void stop(thread.id),
+        onStop: () => thread && void stop(thread.id),
       }}
-    />
+    >
+      <ChannelOverview channelId={channel.id} />
+    </ThreadScreen>
   );
 }
 
@@ -160,7 +133,7 @@ function ChannelHeader({
       items={tabs}
       value={active}
       onChange={(id) => navigate(id === OVERVIEW ? paths.overview(channel.id) : paths.channel(channel.id, id))}
-      label="Threads"
+      label="Chats"
       className={phone ? "no-scrollbar min-w-0 overflow-x-auto" : undefined}
     />
   );
@@ -177,7 +150,7 @@ function ChannelHeader({
         {!phone && tabList}
         <div className="relative shrink-0">
           <IconButton
-            label="New thread"
+            label="New chat"
             size={28}
             aria-haspopup="menu"
             aria-expanded={menu}
@@ -185,11 +158,11 @@ function ChannelHeader({
           >
             <PlusIcon />
           </IconButton>
-          <Popover open={menu} onClose={() => setMenu(false)} label="New thread" role="menu" className={phone ? "top-9 right-0 w-56" : "top-9 left-0 w-56"}>
+          <Popover open={menu} onClose={() => setMenu(false)} label="New chat" role="menu" className={phone ? "top-9 right-0 w-56" : "top-9 left-0 w-56"}>
             {agents.map((a) => (
               <MenuItem key={a.id} onSelect={() => void newThread(a)}>
                 <Avatar name={a.name} color={a.color} size={20} />
-                New thread with {shortName(a.name)}
+                New chat with {shortName(a.name)}
               </MenuItem>
             ))}
           </Popover>
@@ -209,16 +182,16 @@ function ChannelHeader({
   );
 }
 
-/** What is open in a channel: its threads and sessions. */
+/** What is open in a channel: its chats and sessions. */
 function ChannelOverview({ channelId }: { channelId: string }) {
   const snap = useApp((s) => s.snapshot)!;
   const items = snap.threads
     .filter((t) => t.channel_id === channelId && t.kind !== "agent")
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   return (
-    <div className="mx-auto flex w-full max-w-[768px] flex-col gap-2 p-6 max-md:p-4">
-      <h2 className="m-0 flex h-7 items-center text-caption font-medium text-text-tertiary">Threads and sessions</h2>
-      {items.length === 0 && <EmptyState title="Nothing here yet." line="Start a thread with the + above." />}
+    <div className="flex w-full max-w-[768px] flex-col gap-2 p-6 max-md:p-4">
+      <h2 className="m-0 flex h-7 items-center text-caption font-medium text-text-tertiary">Chats and sessions</h2>
+      {items.length === 0 && <EmptyState title="Nothing here yet." line="Start a chat with the + above." />}
       {items.map((t) => {
         const agent = snap.agents.find((a) => a.id === t.agent_id);
         return (

@@ -4,6 +4,9 @@ import { useApp } from "../../lib/store";
 import { allSteps } from "../../lib/timeline";
 import type { ThreadSummary } from "../../proto/ThreadSummary";
 import { EmptyState } from "../../ui/bits";
+import { cx } from "../../lib/format";
+import { CloseIcon } from "../../ui/glyphs";
+import { IconButton } from "../../ui/IconButton";
 import { Tabs } from "../../ui/Tabs";
 import { StepIcon } from "./MessageList";
 import { useEvents } from "./useThread";
@@ -11,24 +14,63 @@ import { useEvents } from "./useThread";
 type AgentTab = "screen" | "files" | "todo";
 type SessionTab = "changes" | "terminal" | "files";
 
-/** 400 wide, closed by default. Shows only what is real; empty states otherwise. */
-export function SidePanel({ thread, agentName }: { thread: ThreadSummary; agentName: string }) {
+/**
+ * 400 wide, closed by default. Shows only what is real; empty states otherwise.
+ * On narrower windows it floats over the conversation, with its own close button.
+ */
+export function SidePanel({
+  thread,
+  agentName,
+  floating,
+  onClose,
+}: {
+  thread: ThreadSummary;
+  agentName: string;
+  floating?: boolean;
+  onClose?: () => void;
+}) {
+  const close = floating && onClose ? onClose : undefined;
   return (
-    <aside aria-label="Side panel" className="flex w-[400px] shrink-0 flex-col border-l border-border bg-bg">
-      {thread.kind === "session" ? <SessionPanel thread={thread} /> : <AgentPanel name={shortName(agentName)} />}
+    <aside
+      aria-label="Side panel"
+      className={cx(
+        "flex w-[400px] max-w-full shrink-0 flex-col border-l border-border bg-bg",
+        floating && "absolute inset-y-0 right-0 z-20 shadow-e2",
+      )}
+    >
+      {thread.kind === "session" ? (
+        <SessionPanel thread={thread} onClose={close} />
+      ) : (
+        <AgentPanel name={shortName(agentName)} onClose={close} />
+      )}
     </aside>
   );
 }
 
-function PanelTabs<T extends string>({ items, value, onChange }: { items: Array<{ id: T; label: string }>; value: NoInfer<T>; onChange(v: NoInfer<T>): void }) {
+function PanelTabs<T extends string>({
+  items,
+  value,
+  onChange,
+  onClose,
+}: {
+  items: Array<{ id: T; label: string }>;
+  value: NoInfer<T>;
+  onChange(v: NoInfer<T>): void;
+  onClose?: () => void;
+}) {
   return (
     <div className="flex h-14 shrink-0 items-center gap-1 px-4 shadow-line">
-      <Tabs items={items} value={value} onChange={(v) => onChange(v as T)} label="Panel" panelPrefix="side" />
+      <Tabs items={items} value={value} onChange={(v) => onChange(v as T)} label="Panel" panelPrefix="side" className="flex-1" />
+      {onClose && (
+        <IconButton label="Close side panel" onClick={onClose}>
+          <CloseIcon size={14} />
+        </IconButton>
+      )}
     </div>
   );
 }
 
-function AgentPanel({ name }: { name: string }) {
+function AgentPanel({ name, onClose }: { name: string; onClose?: () => void }) {
   const [tab, setTab] = useState<AgentTab>("screen");
   const items: Array<{ id: AgentTab; label: string }> = [
     { id: "screen", label: "Screen" },
@@ -37,9 +79,9 @@ function AgentPanel({ name }: { name: string }) {
   ];
   return (
     <>
-      <PanelTabs items={items} value={tab} onChange={(v) => setTab(v)} />
+      <PanelTabs items={items} value={tab} onChange={(v) => setTab(v)} onClose={onClose} />
       <div id="side-panel" role="tabpanel" aria-labelledby={`side-tab-${tab}`} className="p-4">
-        {tab === "screen" && <EmptyState title={`${name} isn't using a screen right now.`} line="You'll see it here while she works." />}
+        {tab === "screen" && <EmptyState title={`${name} isn't using a screen right now.`} line={`You'll see it here while ${name} works.`} />}
         {tab === "files" && <EmptyState title="No files yet." line={`Files ${name} makes show here.`} />}
         {tab === "todo" && <EmptyState title="Nothing to do yet." line="Pins and routines show here." />}
       </div>
@@ -47,7 +89,7 @@ function AgentPanel({ name }: { name: string }) {
   );
 }
 
-function SessionPanel({ thread }: { thread: ThreadSummary }) {
+function SessionPanel({ thread, onClose }: { thread: ThreadSummary; onClose?: () => void }) {
   const [tab, setTab] = useState<SessionTab>("changes");
   const events = useEvents(thread.id);
   const steps = useMemo(() => allSteps(events), [events]);
@@ -59,7 +101,7 @@ function SessionPanel({ thread }: { thread: ThreadSummary }) {
   ];
   return (
     <>
-      <PanelTabs items={items} value={tab} onChange={(v) => setTab(v)} />
+      <PanelTabs items={items} value={tab} onChange={(v) => setTab(v)} onClose={onClose} />
       <div id="side-panel" role="tabpanel" aria-labelledby={`side-tab-${tab}`} className="flex flex-col gap-3 overflow-y-auto p-4">
         {tab === "changes" && (
           <>

@@ -16,9 +16,11 @@ import { pendingNeedsYou, useApp } from "../../lib/store";
 import { Avatar } from "../../ui/Avatar";
 import { Badge, EmptyState } from "../../ui/bits";
 import { Button } from "../../ui/Button";
-import { ChevronDownIcon, InboxIcon, PlusIcon, SearchIcon } from "../../ui/glyphs";
+import { ChevronDownIcon, InboxIcon, MoreIcon, PlusIcon, SearchIcon } from "../../ui/glyphs";
 import { IconButton } from "../../ui/IconButton";
 import { Link } from "../../ui/Link";
+import { MenuItem, Popover } from "../../ui/Popover";
+import { shortcut, useTouchOnly } from "../../lib/platform";
 import { CustomizeSidebar } from "./CustomizeSidebar";
 import { NewAgentDialog, NewChannelDialog, NewSessionDialog } from "./dialogs";
 import { SidebarRow } from "./SidebarRow";
@@ -44,7 +46,7 @@ function selectedId(route: Route, snapAgents: Array<{ id: string }>): string | n
   }
 }
 
-export function Sidebar({ route }: { route: Route }) {
+export function Sidebar({ route, floating }: { route: Route; floating?: boolean }) {
   const snap = useApp((s) => s.snapshot)!;
   const needs = useApp((s) => pendingNeedsYou(s).length);
   const [query, setQuery] = useState("");
@@ -56,6 +58,7 @@ export function Sidebar({ route }: { route: Route }) {
   const selected = selectedId(route, snap.agents);
   const main = snap.agents[0];
   const searching = query.trim().length > 0;
+  const touch = useTouchOnly();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -70,10 +73,18 @@ export function Sidebar({ route }: { route: Route }) {
   }, []);
 
   const toggle = (key: SectionKey) => void savePrefs(withSection(snap.prefs, key, { open: !snap.prefs[key].open }));
+  const hide = (key: SectionKey) => void savePrefs(withSection(snap.prefs, key, { shown: false }));
   const firstMatch = sections.flatMap((s) => s.rows)[0];
 
   return (
-    <aside aria-label="Sidebar" className="flex w-[272px] shrink-0 flex-col border-r border-border bg-bg">
+    <aside
+      id="sidebar"
+      aria-label="Sidebar"
+      className={cx(
+        "flex w-[272px] shrink-0 flex-col border-r border-border bg-bg",
+        floating && "fixed inset-y-0 left-20 z-40 shadow-e3",
+      )}
+    >
       <div className="flex h-14 shrink-0 items-center px-3 shadow-line">
         <label className="ring-within flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-surface px-2 text-text-tertiary">
           <SearchIcon className="shrink-0" />
@@ -93,7 +104,9 @@ export function Sidebar({ route }: { route: Route }) {
             aria-label="Search the sidebar"
             className="min-w-0 flex-1 border-0 bg-transparent text-body-sm text-text outline-none [&::-webkit-search-cancel-button]:hidden"
           />
-          <kbd className="rounded-sm border border-border px-1 font-sans text-caption text-text-tertiary">⌘K</kbd>
+          {!touch && (
+            <kbd className="shrink-0 rounded-sm border border-border px-1 font-sans text-caption text-text-tertiary">{shortcut("K")}</kbd>
+          )}
         </label>
       </div>
 
@@ -143,6 +156,7 @@ export function Sidebar({ route }: { route: Route }) {
             open={searching || sec.prefs.open}
             onToggle={() => toggle(sec.key)}
             onAdd={ADD_LABEL[sec.key] ? () => setDialog(sec.key) : undefined}
+            onHide={() => hide(sec.key)}
             selected={selected}
             searching={searching}
           />
@@ -167,6 +181,7 @@ function Section({
   open,
   onToggle,
   onAdd,
+  onHide,
   selected,
   searching,
 }: {
@@ -174,9 +189,11 @@ function Section({
   open: boolean;
   onToggle(): void;
   onAdd?: () => void;
+  onHide(): void;
   selected: string | null;
   searching: boolean;
 }) {
+  const [menu, setMenu] = useState(false);
   if (searching && section.rows.length === 0) return null;
   const label = open ? "" : collapsedLabel(section.rows);
   const listId = `sidebar-${section.key}`;
@@ -195,16 +212,33 @@ function Section({
           <span className="flex-1">{section.title}</span>
           {label && <span>{label}</span>}
         </button>
-        {onAdd && (
+        {/* Shown on hover and keyboard focus, on an opaque background so the collapsed label never shows through. */}
+        <div className={cx("reveal-on-hover absolute top-0.5 right-1 flex items-center gap-0.5 rounded-sm bg-bg", menu && "opacity-100")}>
           <IconButton
-            label={ADD_LABEL[section.key]!}
+            label={`More for ${section.title}`}
             size={24}
-            onClick={onAdd}
-            className="reveal-on-hover absolute top-0.5 right-1 bg-bg"
+            aria-haspopup="menu"
+            aria-expanded={menu}
+            onClick={() => setMenu((v) => !v)}
           >
-            <PlusIcon />
+            <MoreIcon />
           </IconButton>
-        )}
+          {onAdd && (
+            <IconButton label={ADD_LABEL[section.key]!} size={24} onClick={onAdd}>
+              <PlusIcon />
+            </IconButton>
+          )}
+          <Popover open={menu} onClose={() => setMenu(false)} label={`${section.title} actions`} role="menu" className="top-7 right-0 w-44">
+            <MenuItem
+              onSelect={() => {
+                setMenu(false);
+                onHide();
+              }}
+            >
+              Hide section
+            </MenuItem>
+          </Popover>
+        </div>
       </div>
       {open && (
         <div id={listId} className="flex flex-col gap-0.5">

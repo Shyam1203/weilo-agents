@@ -94,3 +94,19 @@ export function engineTitle(id: string, titles?: Array<{ id: string; title: stri
   };
   return map[id] ?? id;
 }
+
+/** A project's plain name: the last part of its folder ("~/code/shop" → "shop"). */
+export function projectName(folder: string | null | undefined): string | null {
+  if (!folder) return null;
+  const parts = folder.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] ?? null;
+}
+
+/** "Agents, Channels and Sessions" in the reader's language. */
+export function listWords(words: string[], locale?: string): string {
+  try {
+    return new Intl.ListFormat(locale, { style: "long", type: "conjunction" }).format(words);
+  } catch {
+    return words.join(", ");
+  }
+}

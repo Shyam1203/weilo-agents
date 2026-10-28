@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { decide, savePrefs, send, showError, stop } from "../../lib/app";
-import { cx, shortName, timeOf, whenLabel } from "../../lib/format";
+import { cx, listWords, shortName, timeOf, whenLabel } from "../../lib/format";
 import { actionable, approveKey, groupNeedsYou, isHeadsUp, isSmall, yesAction, type NeedsYouGroup } from "../../lib/needsYou";
 import { navigate, threadPath } from "../../lib/router";
 import { SECTION_TITLES, withSection, type SectionKey } from "../../lib/sidebar";
@@ -14,6 +14,7 @@ import { CheckIcon, CodeIcon, XCircleIcon } from "../../ui/glyphs";
 import { Link } from "../../ui/Link";
 import { RiskLine } from "../../ui/RiskLine";
 import { ConnectionBanner } from "../shell/Toast";
+import { useTouchOnly } from "../../lib/platform";
 
 function pathFor(snap: Snapshot, item: NeedsYouItem): string {
   const t = snap.threads.find((x) => x.id === item.thread_id);
@@ -28,6 +29,7 @@ export function NeedsYouPage({ phone }: { phone?: boolean }) {
   const [cursor, setCursor] = useState<string | null>(null);
   const rows = useRef(new Map<string, HTMLElement>());
   const main = snap.agents[0];
+  const touch = useTouchOnly();
   const hidden = (["agents", "channels", "sessions"] as SectionKey[]).filter((k) => !snap.prefs[k].shown);
 
   useEffect(() => {
@@ -70,7 +72,9 @@ export function NeedsYouPage({ phone }: { phone?: boolean }) {
     <main className={cx("flex min-h-0 min-w-0 flex-1 flex-col", phone ? "bg-bg" : "bg-surface")}>
       <TopBar className={phone ? "px-4" : "px-6"}>
         <h1 className={cx("m-0 flex-1 font-semibold", phone ? "text-title" : "text-title-sm")}>Needs you</h1>
-        {!phone && <span className="text-caption whitespace-nowrap text-text-tertiary">J / K to move · Enter to open · A to approve small items</span>}
+        {!phone && !touch && (
+          <span className="ellipsis text-caption text-text-tertiary">J / K to move · Enter to open · A to approve small items</span>
+        )}
       </TopBar>
       <ConnectionBanner />
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -79,7 +83,7 @@ export function NeedsYouPage({ phone }: { phone?: boolean }) {
             <div className="flex flex-wrap items-center gap-2 text-body-sm text-text-secondary">
               <span>
                 <b className="font-medium text-text">
-                  {hidden.map((k) => SECTION_TITLES[k]).join(" and ")} are hidden in your sidebar.
+                  {listWords(hidden.map((k) => SECTION_TITLES[k]))} {hidden.length === 1 ? "is" : "are"} hidden in your sidebar.
                 </b>{" "}
                 Their alerts still show here.
               </span>
@@ -136,11 +140,11 @@ function Group({
           ? (
               <div className="rounded-lg border border-border bg-surface">
                 {group.items.map((item, i) => (
-                  <DoneRow key={item.approval_id} item={item} snap={snap} last={i === group.items.length - 1} {...rowProps(item)} />
+                  <DoneRow key={item.approval_id} item={item} snap={snap} last={i === group.items.length - 1} phone={phone} {...rowProps(item)} />
                 ))}
               </div>
             )
-          : group.items.map((item) => <PastRow key={item.approval_id} item={item} snap={snap} expired={group.key === "expired"} {...rowProps(item)} />)}
+          : group.items.map((item) => <PastRow key={item.approval_id} item={item} snap={snap} expired={group.key === "expired"} phone={phone} {...rowProps(item)} />)}
     </section>
   );
 }
@@ -153,11 +157,11 @@ interface RowProps {
   ref: (el: HTMLElement | null) => void;
 }
 
-function Lead({ item, snap }: { item: NeedsYouItem; snap: Snapshot }) {
+function Lead({ item, snap, selected }: { item: NeedsYouItem; snap: Snapshot; selected: boolean }) {
   const thread = snap.threads.find((t) => t.id === item.thread_id);
-  if (thread?.kind === "session") return <SessionMark size={32} />;
+  if (thread?.kind === "session") return <SessionMark size={32} selected={selected} />;
   const agent = snap.agents.find((a) => a.id === thread?.agent_id) ?? snap.agents[0];
-  return agent ? <Avatar name={agent.name} color={agent.color} size={32} /> : null;
+  return agent ? <Avatar name={agent.name} color={agent.color} size={32} selected={selected} /> : null;
 }
 
 /** "#shop-launch · Ava · 9:42" with the place as a link. */
@@ -191,7 +195,7 @@ function AskRow({ item, snap, selected, onFocus, ref, phone }: RowProps & { phon
       )}
     >
       <div className="flex min-w-0 flex-1 items-center gap-3">
-        <Lead item={item} snap={snap} />
+        <Lead item={item} snap={snap} selected={selected} />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <Source item={item} snap={snap} />
           <div className={cx("text-title-sm font-semibold", selected && "text-accent-text")}>{item.card.title}</div>
@@ -228,7 +232,7 @@ function AskRow({ item, snap, selected, onFocus, ref, phone }: RowProps & { phon
   );
 }
 
-function PastRow({ item, snap, selected, onFocus, ref, expired }: RowProps & { expired: boolean }) {
+function PastRow({ item, snap, selected, onFocus, ref, expired, phone }: RowProps & { expired: boolean; phone?: boolean }) {
   const ask = () =>
     send(item.thread_id, `Please ask me again: ${item.card.title}`).catch(showError);
   return (
@@ -241,22 +245,24 @@ function PastRow({ item, snap, selected, onFocus, ref, expired }: RowProps & { e
         selected ? "bg-accent-subtle [&_.text-text-tertiary]:text-text-secondary" : "bg-surface",
       )}
     >
-      <span className="flex min-w-0 flex-1 items-baseline gap-3 max-md:flex-col max-md:gap-0">
-        <span className="ellipsis min-w-0 max-w-full md:flex-1">{item.card.title}</span>
+      <span className={cx("flex min-w-0 flex-1", phone ? "flex-col" : "items-baseline gap-3")}>
+        <span className={cx("min-w-0", phone ? "break-words" : "ellipsis flex-1")}>{item.card.title}</span>
         <span className="shrink-0 text-caption text-text-tertiary">{whenLabel(item.created_at)}</span>
       </span>
       {expired ? (
-        <Button onClick={() => void ask()}>Ask again</Button>
+        <Button size={phone ? "phone" : "md"} onClick={() => void ask()}>Ask again</Button>
       ) : (
-        <Button onClick={() => navigate(pathFor(snap, item))}>Open</Button>
+        <Button size={phone ? "phone" : "md"} onClick={() => navigate(pathFor(snap, item))}>Open</Button>
       )}
     </div>
   );
 }
 
-function DoneRow({ item, snap, selected, onFocus, ref, last }: RowProps & { last: boolean }) {
+function DoneRow({ item, snap, selected, onFocus, ref, last, phone }: RowProps & { last: boolean; phone?: boolean }) {
+  // Phones: the title wraps and the time goes on a second line, so no key word is cut off.
   const line = cx(
-    "flex h-11 items-center gap-3 px-4 text-text",
+    "flex items-center gap-3 px-4 text-text",
+    phone ? "min-h-14 py-2" : "h-11",
     !last && "shadow-line",
     selected && "bg-accent-subtle [&_.text-text-tertiary]:text-text-secondary",
   );
@@ -266,7 +272,7 @@ function DoneRow({ item, snap, selected, onFocus, ref, last }: RowProps & { last
     return (
       <div ref={ref} tabIndex={-1} onFocus={onFocus} className={line}>
         <CodeIcon className="shrink-0 text-text-secondary" />
-        <span className="ellipsis flex-1">
+        <Lines phone={phone} meta={timeOf(item.created_at)}>
           {name.length ? (
             <>
               {lead}: <Link href={pathFor(snap, item)}>{name.join(": ")}</Link>
@@ -274,8 +280,7 @@ function DoneRow({ item, snap, selected, onFocus, ref, last }: RowProps & { last
           ) : (
             <Link href={pathFor(snap, item)}>{lead}</Link>
           )}
-        </span>
-        <span className="shrink-0 text-caption text-text-tertiary">{timeOf(item.created_at)}</span>
+        </Lines>
         {thread && thread.state !== "idle" && (
           <Button size="sm" variant="tertiary" onClick={() => void stop(thread.id)}>
             Stop
@@ -288,10 +293,27 @@ function DoneRow({ item, snap, selected, onFocus, ref, last }: RowProps & { last
   return (
     <Link ref={ref} href={pathFor(snap, item)} onFocus={onFocus} className={cx(line, "hover:bg-surface-muted hover:no-underline")}>
       {allowed ? <CheckIcon className="shrink-0 text-success" /> : <XCircleIcon className="shrink-0 text-text-secondary" />}
-      <span className="ellipsis flex-1">{item.card.title}</span>
-      <span className="shrink-0 text-caption text-text-tertiary">
-        {allowed ? "You approved" : "You said no"} · {timeOf(item.created_at)}
-      </span>
+      <Lines phone={phone} meta={`${allowed ? "You approved" : "You said no"} · ${timeOf(item.created_at)}`}>
+        {item.card.title}
+      </Lines>
     </Link>
+  );
+}
+
+/** A row's title and its time: one line on desktop, two on phones. */
+function Lines({ phone, meta, children }: { phone?: boolean; meta: string; children: React.ReactNode }) {
+  if (phone) {
+    return (
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="min-w-0 break-words">{children}</span>
+        <span className="text-caption text-text-tertiary">{meta}</span>
+      </span>
+    );
+  }
+  return (
+    <>
+      <span className="ellipsis flex-1">{children}</span>
+      <span className="shrink-0 text-caption text-text-tertiary">{meta}</span>
+    </>
   );
 }
