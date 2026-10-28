@@ -6,7 +6,8 @@ use sqlx::Row;
 use sqlx::postgres::PgRow;
 use uuid::Uuid;
 use weilo_proto::{
-    AgentSummary, ChannelSummary, Changed, SetupStatus, Snapshot, ThreadKind, ThreadSummary, UiPrefs,
+    AgentSummary, Changed, ChannelSummary, SetupStatus, Snapshot, ThreadKind, ThreadSummary,
+    UiPrefs,
 };
 
 use crate::app::App;
@@ -39,12 +40,19 @@ const AGENTS: &str = "
     ORDER BY a.created_at";
 
 pub async fn agents(app: &App, only: Option<Uuid>) -> CallResult<Vec<AgentSummary>> {
-    let rows = sqlx::query(AGENTS).bind(app.space_id).bind(only).fetch_all(&app.db).await?;
+    let rows = sqlx::query(AGENTS)
+        .bind(app.space_id)
+        .bind(only)
+        .fetch_all(&app.db)
+        .await?;
     Ok(rows.iter().map(agent_from_row).collect())
 }
 
 pub async fn agent(app: &App, id: Uuid) -> CallResult<AgentSummary> {
-    agents(app, Some(id)).await?.pop().ok_or_else(|| CallError::not_found("That agent is gone."))
+    agents(app, Some(id))
+        .await?
+        .pop()
+        .ok_or_else(|| CallError::not_found("That agent is gone."))
 }
 
 fn agent_from_row(r: &PgRow) -> AgentSummary {
@@ -56,7 +64,9 @@ fn agent_from_row(r: &PgRow) -> AgentSummary {
         model: r.get("model"),
         state: parse_state(r.get("state")),
         live_line: r.get("live_line"),
-        main_thread_id: r.get::<Option<Uuid>, _>("main_thread_id").unwrap_or_default(),
+        main_thread_id: r
+            .get::<Option<Uuid>, _>("main_thread_id")
+            .unwrap_or_default(),
     }
 }
 
@@ -82,7 +92,10 @@ pub async fn channels(app: &App, only: Option<Uuid>) -> CallResult<Vec<ChannelSu
 }
 
 pub async fn channel(app: &App, id: Uuid) -> CallResult<ChannelSummary> {
-    channels(app, Some(id)).await?.pop().ok_or_else(|| CallError::not_found("That channel is gone."))
+    channels(app, Some(id))
+        .await?
+        .pop()
+        .ok_or_else(|| CallError::not_found("That channel is gone."))
 }
 
 pub async fn threads(app: &App, only: Option<Uuid>) -> CallResult<Vec<ThreadSummary>> {
@@ -100,7 +113,10 @@ pub async fn threads(app: &App, only: Option<Uuid>) -> CallResult<Vec<ThreadSumm
 }
 
 pub async fn thread(app: &App, id: Uuid) -> CallResult<ThreadSummary> {
-    threads(app, Some(id)).await?.pop().ok_or_else(|| CallError::not_found("That thread is gone."))
+    threads(app, Some(id))
+        .await?
+        .pop()
+        .ok_or_else(|| CallError::not_found("That thread is gone."))
 }
 
 fn thread_from_row(r: &PgRow) -> ThreadSummary {
@@ -131,7 +147,9 @@ pub async fn prefs(app: &App, device: Uuid) -> CallResult<UiPrefs> {
             .bind(device)
             .fetch_optional(&app.db)
             .await?;
-    Ok(value.and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default())
+    Ok(value
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default())
 }
 
 pub async fn set_prefs(app: &App, device: Uuid, prefs: &UiPrefs) -> CallResult<()> {

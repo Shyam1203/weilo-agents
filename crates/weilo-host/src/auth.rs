@@ -70,7 +70,11 @@ pub fn token_hash(token: &str) -> Vec<u8> {
 }
 
 /// Creates the device row and returns its id and token.
-pub async fn create_device(pool: &PgPool, space_id: Uuid, name: &str) -> sqlx::Result<(Uuid, String)> {
+pub async fn create_device(
+    pool: &PgPool,
+    space_id: Uuid,
+    name: &str,
+) -> sqlx::Result<(Uuid, String)> {
     let id = new_id();
     let token = new_token();
     sqlx::query("INSERT INTO devices (id, space_id, name, token_hash) VALUES ($1, $2, $3, $4)")
@@ -122,7 +126,10 @@ mod tests {
 
     #[test]
     fn finds_the_cookie() {
-        assert_eq!(cookie_value("a=1; weilo_device=abc; b=2", COOKIE), Some("abc"));
+        assert_eq!(
+            cookie_value("a=1; weilo_device=abc; b=2", COOKIE),
+            Some("abc")
+        );
         assert_eq!(cookie_value("a=1", COOKIE), None);
     }
 }

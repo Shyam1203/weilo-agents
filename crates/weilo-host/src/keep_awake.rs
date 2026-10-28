@@ -17,7 +17,9 @@ impl KeepAwake {
         if slot.is_some() {
             return true;
         }
-        let Some(mut cmd) = inhibitor() else { return false };
+        let Some(mut cmd) = inhibitor() else {
+            return false;
+        };
         cmd.stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -47,8 +49,12 @@ fn inhibitor() -> Option<Command> {
         return Some(cmd);
     }
     let mut cmd = Command::new(which("systemd-inhibit")?);
-    cmd.args(["--what=idle:sleep", "--who=Weilo", "--why=Keeps your agents working"])
-        .args(["sleep", "infinity"]);
+    cmd.args([
+        "--what=idle:sleep",
+        "--who=Weilo",
+        "--why=Keeps your agents working",
+    ])
+    .args(["sleep", "infinity"]);
     Some(cmd)
 }
 

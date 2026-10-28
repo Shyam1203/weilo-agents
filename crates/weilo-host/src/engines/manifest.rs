@@ -96,7 +96,11 @@ pub fn load_all(home_engines: &Path) -> BTreeMap<String, Manifest> {
             add(&mut out, file.contents(), &dir.path().display().to_string());
         }
     }
-    for entry in std::fs::read_dir(home_engines).into_iter().flatten().flatten() {
+    for entry in std::fs::read_dir(home_engines)
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
         let path = entry.path().join("weilo.json");
         if let Ok(bytes) = std::fs::read(&path) {
             add(&mut out, &bytes, &path.display().to_string());
@@ -166,7 +170,12 @@ pub fn launch_spec(m: &Manifest, vars: &Vars) -> Result<LaunchSpec, String> {
     }
     let program = parts.remove(0);
     let mut env = BTreeMap::new();
-    let blocks = [Some(&m.launch.env), Some(&m.env), m.model.as_ref().map(|b| &b.env), m.gateway.as_ref().map(|b| &b.env)];
+    let blocks = [
+        Some(&m.launch.env),
+        Some(&m.env),
+        m.model.as_ref().map(|b| &b.env),
+        m.gateway.as_ref().map(|b| &b.env),
+    ];
     for block in blocks.into_iter().flatten() {
         for (k, v) in block {
             if let Some(v) = expand(v, vars) {
@@ -174,11 +183,20 @@ pub fn launch_spec(m: &Manifest, vars: &Vars) -> Result<LaunchSpec, String> {
             }
         }
     }
-    Ok(LaunchSpec { program, args: parts, env })
+    Ok(LaunchSpec {
+        program,
+        args: parts,
+        env,
+    })
 }
 
 fn is_denied(arg: &str, deny: &[String]) -> bool {
-    deny.iter().any(|d| arg == d || arg.strip_prefix(d.as_str()).is_some_and(|r| r.starts_with('=')))
+    deny.iter().any(|d| {
+        arg == d
+            || arg
+                .strip_prefix(d.as_str())
+                .is_some_and(|r| r.starts_with('='))
+    })
 }
 
 #[cfg(test)]
@@ -198,8 +216,14 @@ mod tests {
     #[test]
     fn expands_known_placeholders() {
         let v = vars(Some("opus"));
-        assert_eq!(expand("{install}/node_modules/.bin/x", &v).unwrap(), "/h/engines/pi/node_modules/.bin/x");
-        assert_eq!(expand("{install}/bin:{PATH}", &v).unwrap(), "/h/engines/pi/bin:/usr/bin");
+        assert_eq!(
+            expand("{install}/node_modules/.bin/x", &v).unwrap(),
+            "/h/engines/pi/node_modules/.bin/x"
+        );
+        assert_eq!(
+            expand("{install}/bin:{PATH}", &v).unwrap(),
+            "/h/engines/pi/bin:/usr/bin"
+        );
         assert_eq!(expand("{self}", &v).unwrap(), "/bin/weilo");
         assert_eq!(expand("{model}", &v).unwrap(), "opus");
         assert_eq!(expand("plain", &v).unwrap(), "plain");
@@ -228,9 +252,14 @@ mod tests {
         let mut m = load_all(Path::new("/nonexistent"))["claude-code"].clone();
         m.command.push("--dangerously-skip-permissions".into());
         m.command.push("--dangerously-skip-permissions=true".into());
-        m.gateway = Some(EnvBlock { env: [("KEY".to_string(), "{standin}".to_string())].into() });
+        m.gateway = Some(EnvBlock {
+            env: [("KEY".to_string(), "{standin}".to_string())].into(),
+        });
         let spec = launch_spec(&m, &vars(None)).unwrap();
-        assert_eq!(spec.program, "/h/engines/pi/node_modules/.bin/claude-agent-acp");
+        assert_eq!(
+            spec.program,
+            "/h/engines/pi/node_modules/.bin/claude-agent-acp"
+        );
         assert!(spec.args.is_empty());
         assert_eq!(spec.env["CLAUDE_CONFIG_DIR"], "/h/engine-homes/pi/a1");
         assert!(!spec.env.contains_key("ANTHROPIC_MODEL"));
@@ -243,6 +272,9 @@ mod tests {
     fn echo_runs_this_binary() {
         let m = load_all(Path::new("/nonexistent"))["echo"].clone();
         let spec = launch_spec(&m, &vars(None)).unwrap();
-        assert_eq!((spec.program.as_str(), spec.args.clone()), ("/bin/weilo", vec!["engine".to_string(), "echo".to_string()]));
+        assert_eq!(
+            (spec.program.as_str(), spec.args.clone()),
+            ("/bin/weilo", vec!["engine".to_string(), "echo".to_string()])
+        );
     }
 }

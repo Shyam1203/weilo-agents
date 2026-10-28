@@ -101,7 +101,12 @@ async fn run(app: &Arc<App>, job: &Job) -> Result<()> {
 
 async fn finish(app: &App, job: &Job, result: Result<()>) {
     let outcome = match result {
-        Ok(()) => sqlx::query("DELETE FROM jobs WHERE id = $1").bind(job.id).execute(&app.db).await,
+        Ok(()) => {
+            sqlx::query("DELETE FROM jobs WHERE id = $1")
+                .bind(job.id)
+                .execute(&app.db)
+                .await
+        }
         Err(e) => {
             tracing::warn!("job {} ({}) failed: {e:#}", job.id, job.queue);
             let backoff = 2f64.powi(job.attempts.min(10));

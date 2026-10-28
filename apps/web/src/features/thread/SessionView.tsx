@@ -10,11 +10,13 @@ import { EmptyState, StatusPill, TopBar } from "../../ui/bits";
 import { Button } from "../../ui/Button";
 import { Link } from "../../ui/Link";
 import { PanelToggle, ThreadScreen } from "./ThreadScreen";
-import { useEvents, useThreadState } from "./useThread";
+import { BackButton } from "../mobile/TabBar";
+import { useEvents, useThreadState, useVariant } from "./useThread";
 
 /** A coding session: its name, who started it and where, status, Ask Ava and Stop. */
 export function SessionView({ thread }: { thread: ThreadSummary }) {
   const [panel, setPanel] = useState(false);
+  const phone = useVariant() === "phone";
   const state = useThreadState(thread.id);
   const snap = useApp((s) => s.snapshot)!;
   const events = useEvents(thread.id);
@@ -46,8 +48,8 @@ export function SessionView({ thread }: { thread: ThreadSummary }) {
       threadId={thread.id}
       panelOpen={panel}
       header={
-        <TopBar className="pr-4 pl-6">
-          <SessionMark size={24} />
+        <TopBar className={phone ? "px-4" : "pr-4 pl-6"}>
+          {phone ? <BackButton /> : <SessionMark size={24} />}
           <div className="flex min-w-0 flex-1 flex-col">
             <h1 className="ellipsis m-0 text-title-sm font-semibold">{thread.title}</h1>
             <span className="ellipsis text-caption text-text-tertiary">
@@ -62,7 +64,7 @@ export function SessionView({ thread }: { thread: ThreadSummary }) {
             </span>
           </div>
           <StatusPill state={state} />
-          {watcherName && (
+          {watcherName && !phone && (
             <Button title={`Ask ${watcherName} about this session`} onClick={askAva}>
               Ask {watcherName}
             </Button>
@@ -70,7 +72,7 @@ export function SessionView({ thread }: { thread: ThreadSummary }) {
           <Button onClick={() => void stop(thread.id)} disabled={state === "idle"} title="⌘.">
             Stop
           </Button>
-          <PanelToggle open={panel} onToggle={() => setPanel((v) => !v)} />
+          {!phone && <PanelToggle open={panel} onToggle={() => setPanel((v) => !v)} />}
         </TopBar>
       }
       list={{

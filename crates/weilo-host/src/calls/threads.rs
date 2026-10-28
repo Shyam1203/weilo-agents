@@ -62,7 +62,9 @@ pub async fn create(
 ) -> CallResult<ThreadSummary> {
     require(app, "channels", channel_id, "That channel is gone.").await?;
     require(app, "agents", agent_id, "That agent is gone.").await?;
-    let title = title.map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+    let title = title
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty());
     let thread = NewThread {
         id: new_id(),
         kind: "chat",
@@ -145,7 +147,12 @@ pub async fn start_session(app: &App, device: Uuid, s: NewSession) -> CallResult
     let mut tx = app.db.begin().await?;
     insert_thread(app, &mut tx, &thread).await?;
     let detail = json!({ "thread_id": thread.id, "folder": thread.folder, "engine": s.engine, "worktree": worktree });
-    let entry = audit::Entry { actor: "device", device_id: Some(device), action: "session.start", detail };
+    let entry = audit::Entry {
+        actor: "device",
+        device_id: Some(device),
+        action: "session.start",
+        detail,
+    };
     audit::append(&mut tx, app.space_id, entry).await?;
     tx.commit().await?;
     if let Some(problem) = problem_for(&prepared) {
@@ -158,15 +165,23 @@ pub async fn start_session(app: &App, device: Uuid, s: NewSession) -> CallResult
 fn problem_for(p: &Prepared) -> Option<EventBody> {
     let message = match p {
         Prepared::Missing => "This folder doesn't exist.",
-        Prepared::Failed { .. } => "Couldn't make a separate copy of the repo, so this session works in the folder itself.",
+        Prepared::Failed { .. } => {
+            "Couldn't make a separate copy of the repo, so this session works in the folder itself."
+        }
         _ => return None,
     };
     let action = matches!(p, Prepared::Missing).then(|| "Choose another folder".to_string());
-    Some(EventBody::Problem { message: message.into(), action })
+    Some(EventBody::Problem {
+        message: message.into(),
+        action,
+    })
 }
 
 fn folder_name(folder: &std::path::Path) -> String {
-    folder.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "Session".into())
+    folder
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "Session".into())
 }
 
 pub async fn send(app: &Arc<App>, thread_id: Uuid, text: String, when: SendWhen) -> CallResult<()> {
@@ -178,9 +193,13 @@ pub async fn send(app: &Arc<App>, thread_id: Uuid, text: String, when: SendWhen)
     if let Some(problem) = session_problem(app, thread_id).await? {
         return Err(problem);
     }
-    let body = EventBody::UserMessage { text: text.clone(), when };
+    let body = EventBody::UserMessage {
+        text: text.clone(),
+        when,
+    };
     app.append(thread_id, body, Source::User).await?;
-    app.runners.send(app, thread_id, Cmd::Message { text, when });
+    app.runners
+        .send(app, thread_id, Cmd::Message { text, when });
     Ok(())
 }
 
@@ -208,8 +227,16 @@ pub async fn stop(app: &App, thread_id: Uuid) -> CallResult<()> {
 
 async fn require(app: &App, table: &str, id: Uuid, missing: &str) -> CallResult<()> {
     let sql = format!("SELECT EXISTS (SELECT 1 FROM {table} WHERE id = $1 AND space_id = $2)");
-    let found: bool = sqlx::query_scalar(&sql).bind(id).bind(app.space_id).fetch_one(&app.db).await?;
-    if found { Ok(()) } else { Err(CallError::not_found(missing)) }
+    let found: bool = sqlx::query_scalar(&sql)
+        .bind(id)
+        .bind(app.space_id)
+        .fetch_one(&app.db)
+        .await?;
+    if found {
+        Ok(())
+    } else {
+        Err(CallError::not_found(missing))
+    }
 }
 
 async fn agent_name(app: &App, id: Uuid) -> CallResult<String> {

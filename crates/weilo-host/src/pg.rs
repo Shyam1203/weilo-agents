@@ -66,7 +66,11 @@ impl Postgres {
     pub async fn start(home: &Home) -> Result<Self> {
         let run_as = run_as_user()?;
         let layout = layout(home, run_as)?;
-        home.ensure(if layout.run_as.is_some() { 0o711 } else { 0o700 })?;
+        home.ensure(if layout.run_as.is_some() {
+            0o711
+        } else {
+            0o700
+        })?;
         let secrets = load_or_create_secrets(home)?;
         prepare_dirs(&layout)?;
         if !layout.data_dir.join("PG_VERSION").exists() {
@@ -74,7 +78,11 @@ impl Postgres {
         }
         clear_stale_pid(&layout).await?;
         let child = spawn_postgres(&layout, secrets.port)?;
-        let mut pg = Self { child: Some(child), layout, secrets };
+        let mut pg = Self {
+            child: Some(child),
+            layout,
+            secrets,
+        };
         if let Err(e) = pg.wait_ready().await {
             pg.stop().await;
             return Err(e);
@@ -159,7 +167,9 @@ impl Postgres {
 
     /// Fast shutdown (SIGINT), then SIGQUIT if it takes over 15 s.
     pub async fn stop(&mut self) {
-        let Some(mut child) = self.child.take() else { return };
+        let Some(mut child) = self.child.take() else {
+            return;
+        };
         let Some(pid) = child.id() else { return };
         signal(pid, libc::SIGINT);
         match tokio::time::timeout(Duration::from_secs(15), child.wait()).await {
@@ -197,7 +207,9 @@ pub fn find_bin_dir() -> Result<PathBuf> {
     if let Some(dir) = std::env::var_os("WEILO_PG_BIN") {
         return Ok(PathBuf::from(dir));
     }
-    if let Ok(out) = std::process::Command::new("pg_config").arg("--bindir").output()
+    if let Ok(out) = std::process::Command::new("pg_config")
+        .arg("--bindir")
+        .output()
         && out.status.success()
     {
         let dir = PathBuf::from(String::from_utf8_lossy(&out.stdout).trim());
@@ -232,7 +244,13 @@ fn run_as_user() -> Result<Option<RunAs>> {
         return Ok(Some(user));
     }
     let status = std::process::Command::new("useradd")
-        .args(["--system", "--no-create-home", "--shell", "/usr/sbin/nologin", &name])
+        .args([
+            "--system",
+            "--no-create-home",
+            "--shell",
+            "/usr/sbin/nologin",
+            &name,
+        ])
         .stderr(Stdio::null())
         .status();
     // Another process may have created it at the same time, so look again either way.
@@ -250,16 +268,24 @@ fn lookup_user(name: &str) -> Option<RunAs> {
     }
     // SAFETY: checked non-null above.
     let (uid, gid) = unsafe { ((*pw).pw_uid, (*pw).pw_gid) };
-    Some(RunAs { name: name.to_string(), uid, gid })
+    Some(RunAs {
+        name: name.to_string(),
+        uid,
+        gid,
+    })
 }
 
 pub fn layout(home: &Home, run_as: Option<RunAs>) -> Result<Layout> {
     let bin_dir = find_bin_dir()?;
     let data_root = match &run_as {
         Some(_) if !others_can_pass(home.root()) => {
-            let hash = hex::encode(&Sha256::digest(home.root().as_os_str().as_encoded_bytes())[..8]);
+            let hash =
+                hex::encode(&Sha256::digest(home.root().as_os_str().as_encoded_bytes())[..8]);
             let dir = PathBuf::from("/var/lib/weilo-agents").join(hash);
-            tracing::info!("Postgres data lives in {} (home isn't reachable)", dir.display());
+            tracing::info!(
+                "Postgres data lives in {} (home isn't reachable)",
+                dir.display()
+            );
             dir
         }
         _ => home.root().to_path_buf(),
@@ -276,7 +302,9 @@ pub fn layout(home: &Home, run_as: Option<RunAs>) -> Result<Layout> {
 /// True when every folder above `dir` lets other users pass through.
 fn others_can_pass(dir: &Path) -> bool {
     dir.ancestors().skip(1).all(|p| {
-        fs::metadata(p).map(|m| m.permissions().mode() & 0o001 != 0).unwrap_or(false)
+        fs::metadata(p)
+            .map(|m| m.permissions().mode() & 0o001 != 0)
+            .unwrap_or(false)
     })
 }
 
@@ -344,7 +372,14 @@ async fn initdb(layout: &Layout, secrets: &PgSecrets) -> Result<()> {
     let out = command(layout, "initdb")
         .arg("-D")
         .arg(&layout.data_dir)
-        .args(["-U", ADMIN_ROLE, "--auth=scram-sha-256", "--data-checksums", "-E", "UTF8"])
+        .args([
+            "-U",
+            ADMIN_ROLE,
+            "--auth=scram-sha-256",
+            "--data-checksums",
+            "-E",
+            "UTF8",
+        ])
         .args(["--locale=C", "--no-instructions"])
         .arg(format!("--pwfile={}", pwfile.display()))
         .output()
@@ -354,7 +389,10 @@ async fn initdb(layout: &Layout, secrets: &PgSecrets) -> Result<()> {
     if !out.status.success() {
         // Leave an empty folder so the next start tries again.
         let _ = fs::remove_dir_all(&layout.data_dir);
-        bail!("initdb failed: {}", String::from_utf8_lossy(&out.stderr).trim());
+        bail!(
+            "initdb failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
     }
     Ok(())
 }
@@ -363,8 +401,14 @@ async fn initdb(layout: &Layout, secrets: &PgSecrets) -> Result<()> {
 /// earlier run of this home is stopped first.
 async fn clear_stale_pid(layout: &Layout) -> Result<()> {
     let pid_file = layout.data_dir.join("postmaster.pid");
-    let Ok(text) = fs::read_to_string(&pid_file) else { return Ok(()) };
-    let Some(pid) = text.lines().next().and_then(|l| l.trim().parse::<i32>().ok()) else {
+    let Ok(text) = fs::read_to_string(&pid_file) else {
+        return Ok(());
+    };
+    let Some(pid) = text
+        .lines()
+        .next()
+        .and_then(|l| l.trim().parse::<i32>().ok())
+    else {
         fs::remove_file(&pid_file)?;
         return Ok(());
     };
@@ -391,7 +435,10 @@ fn process_alive(pid: i32) -> bool {
 }
 
 fn spawn_postgres(layout: &Layout, port: u16) -> Result<Child> {
-    let log = fs::OpenOptions::new().create(true).append(true).open(&layout.log_file)?;
+    let log = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&layout.log_file)?;
     let mut cmd = command(layout, "postgres");
     cmd.arg("-D")
         .arg(&layout.data_dir)

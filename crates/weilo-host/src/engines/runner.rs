@@ -76,7 +76,10 @@ struct Pending {
 
 impl Pending {
     fn answer(self, response: RequestPermissionResponse) {
-        let responder = self.responder.into_inner().unwrap_or_else(|e| e.into_inner());
+        let responder = self
+            .responder
+            .into_inner()
+            .unwrap_or_else(|e| e.into_inner());
         let _ = responder.respond(response);
     }
 }
@@ -137,7 +140,10 @@ impl Runner {
                 }
             }
             Cmd::Stop => self.stop().await,
-            Cmd::Decided { approval_id, decision } => self.decided(approval_id, decision).await,
+            Cmd::Decided {
+                approval_id,
+                decision,
+            } => self.decided(approval_id, decision).await,
         }
     }
 
@@ -158,7 +164,11 @@ impl Runner {
     }
 
     async fn start_next(&mut self) {
-        let Some(text) = self.now_queue.pop_front().or_else(|| self.after_queue.pop_front()) else {
+        let Some(text) = self
+            .now_queue
+            .pop_front()
+            .or_else(|| self.after_queue.pop_front())
+        else {
             return;
         };
         self.set_state(WorkState::Working, "").await;
@@ -166,7 +176,8 @@ impl Runner {
             && let Err(e) = self.connect().await
         {
             tracing::warn!("engine start failed for {}: {e:#}", self.thread_id);
-            self.problem(&format!("Couldn't start the engine: {}", first_line(&e))).await;
+            self.problem(&format!("Couldn't start the engine: {}", first_line(&e)))
+                .await;
             self.now_queue.clear();
             self.after_queue.clear();
             self.set_state(WorkState::Idle, "").await;
@@ -196,7 +207,11 @@ impl Runner {
         std::fs::create_dir_all(&vars.engine_home)?;
         std::fs::create_dir_all(&ctx.cwd)?;
         let spec = launch_spec(&manifest, &vars).map_err(anyhow::Error::msg)?;
-        let log = self.app.home.logs().join(format!("engine-{}.log", manifest.name));
+        let log = self
+            .app
+            .home
+            .logs()
+            .join(format!("engine-{}.log", manifest.name));
         let conn =
             Connection::open(&spec, base_env(), &ctx.cwd, &log, self.engine_tx.clone()).await?;
         sqlx::query("UPDATE threads SET engine_session_id = $2 WHERE id = $1")
@@ -210,7 +225,12 @@ impl Runner {
 
     async fn install(&mut self, m: &super::Manifest) -> Result<()> {
         let needs = m.install.as_ref().is_some_and(|i| !i.npm.is_empty())
-            && !self.app.engines.install_dir(&m.name).join("node_modules/.bin").is_dir();
+            && !self
+                .app
+                .engines
+                .install_dir(&m.name)
+                .join("node_modules/.bin")
+                .is_dir();
         if !needs {
             return Ok(());
         }
@@ -218,7 +238,11 @@ impl Runner {
         let title = format!("Installing {}", m.title);
         self.step(&step_id, &title, StepStatus::Running).await;
         let result = self.app.engines.install(m).await;
-        let status = if result.is_ok() { StepStatus::Done } else { StepStatus::Failed };
+        let status = if result.is_ok() {
+            StepStatus::Done
+        } else {
+            StepStatus::Failed
+        };
         self.step(&step_id, &title, status).await;
         result.map_err(anyhow::Error::msg)
     }
@@ -232,7 +256,11 @@ impl Runner {
             }
             SessionUpdate::ToolCall(call) => {
                 let id = call.tool_call_id.0.to_string();
-                let info = ToolInfo { title: call.title.clone(), kind: Some(call.kind), raw_input: call.raw_input.clone() };
+                let info = ToolInfo {
+                    title: call.title.clone(),
+                    kind: Some(call.kind),
+                    raw_input: call.raw_input.clone(),
+                };
                 self.tools.insert(id.clone(), info);
                 self.step(&id, &call.title, step_status(call.status)).await;
             }
@@ -260,7 +288,12 @@ impl Runner {
         }
         self.text.push_str(&text);
         let after_seq = self.app.last_seq(self.thread_id).await;
-        self.app.publish_delta(self.thread_id, after_seq, self.sub_seq, Delta::AgentText { text });
+        self.app.publish_delta(
+            self.thread_id,
+            after_seq,
+            self.sub_seq,
+            Delta::AgentText { text },
+        );
         self.sub_seq += 1;
     }
 
@@ -271,13 +304,21 @@ impl Runner {
         }
         let text = std::mem::take(&mut self.text);
         self.sub_seq = 0;
-        let agent_id = load_ctx(&self.app, self.thread_id).await.ok().and_then(|c| c.agent_id);
-        self.append(EventBody::AgentMessage { text, agent_id }, Source::Agent).await;
+        let agent_id = load_ctx(&self.app, self.thread_id)
+            .await
+            .ok()
+            .and_then(|c| c.agent_id);
+        self.append(EventBody::AgentMessage { text, agent_id }, Source::Agent)
+            .await;
     }
 
     async fn step(&mut self, step_id: &str, title: &str, status: StepStatus) {
         self.flush_text().await;
-        let body = EventBody::Step { step_id: step_id.into(), title: title.into(), status };
+        let body = EventBody::Step {
+            step_id: step_id.into(),
+            title: title.into(),
+            status,
+        };
         self.append(body, Source::Engine).await;
     }
 
@@ -304,26 +345,37 @@ impl Runner {
         }
         let approval_id = crate::ids::new_id();
         let card = permission_card(&ctx.agent_name, approval_id, &tool, &request);
-        let opened = approvals::open(&self.app, approvals::NewApproval {
-            id: approval_id,
-            thread_id: self.thread_id,
-            card: card.clone(),
-            tool: tool.title.clone(),
-            scope,
-            agent_id: ctx.agent_id,
-        })
+        let opened = approvals::open(
+            &self.app,
+            approvals::NewApproval {
+                id: approval_id,
+                thread_id: self.thread_id,
+                card: card.clone(),
+                tool: tool.title.clone(),
+                scope,
+                agent_id: ctx.agent_id,
+            },
+        )
         .await;
         if let Err(e) = opened {
             tracing::error!("couldn't save an approval: {e:#}");
             let _ = responder.respond(selected(&request, &Decision::Deny));
             return;
         }
-        self.pending.insert(approval_id, Pending { responder: responder.into(), request });
+        self.pending.insert(
+            approval_id,
+            Pending {
+                responder: responder.into(),
+                request,
+            },
+        );
         self.set_state(WorkState::NeedsYou, &card.title).await;
     }
 
     async fn decided(&mut self, approval_id: Uuid, decision: Decision) {
-        let Some(p) = self.pending.remove(&approval_id) else { return };
+        let Some(p) = self.pending.remove(&approval_id) else {
+            return;
+        };
         let response = selected(&p.request, &decision);
         p.answer(response);
         if self.pending.is_empty() && self.turn.is_some() {
@@ -334,7 +386,9 @@ impl Runner {
     async fn stop(&mut self) {
         self.now_queue.clear();
         self.after_queue.clear();
-        let Some(turn) = self.turn.as_mut() else { return };
+        let Some(turn) = self.turn.as_mut() else {
+            return;
+        };
         if turn.stop_by.is_some() {
             return;
         }
@@ -363,7 +417,8 @@ impl Runner {
             Ok(_) => {}
             Err(e) => {
                 tracing::warn!("turn failed in {}: {e}", self.thread_id);
-                self.problem("The engine hit an error and stopped this reply.").await;
+                self.problem("The engine hit an error and stopped this reply.")
+                    .await;
             }
         }
         if self.now_queue.is_empty() && self.after_queue.is_empty() {
@@ -375,11 +430,25 @@ impl Runner {
 
     async fn problem(&mut self, message: &str) {
         self.flush_text().await;
-        self.append(EventBody::Problem { message: message.into(), action: None }, Source::Host).await;
+        self.append(
+            EventBody::Problem {
+                message: message.into(),
+                action: None,
+            },
+            Source::Host,
+        )
+        .await;
     }
 
     async fn set_state(&mut self, state: WorkState, live_line: &str) {
-        self.append(EventBody::State { state, live_line: live_line.into() }, Source::Host).await;
+        self.append(
+            EventBody::State {
+                state,
+                live_line: live_line.into(),
+            },
+            Source::Host,
+        )
+        .await;
     }
 
     async fn append(&self, body: EventBody, source: Source) {
@@ -422,7 +491,11 @@ fn folder_scope(cwd: &std::path::Path) -> String {
 }
 
 fn first_line(e: &anyhow::Error) -> String {
-    e.to_string().lines().next().unwrap_or("unknown error").to_string()
+    e.to_string()
+        .lines()
+        .next()
+        .unwrap_or("unknown error")
+        .to_string()
 }
 
 async fn load_ctx(app: &App, thread_id: Uuid) -> Result<ThreadCtx> {
@@ -438,9 +511,15 @@ async fn load_ctx(app: &App, thread_id: Uuid) -> Result<ThreadCtx> {
     let agent_id: Option<Uuid> = row.get("agent_id");
     let agent_name: Option<String> = row.get("name");
     let session = kind == "session";
-    let engine: Option<String> = if session { row.get("thread_engine") } else { row.get("agent_engine") };
+    let engine: Option<String> = if session {
+        row.get("thread_engine")
+    } else {
+        row.get("agent_engine")
+    };
     let cwd = if session {
-        let dir: Option<String> = row.get::<Option<String>, _>("worktree").or(row.get("folder"));
+        let dir: Option<String> = row
+            .get::<Option<String>, _>("worktree")
+            .or(row.get("folder"));
         PathBuf::from(dir.context("the session has no folder")?)
     } else {
         let slug: Option<String> = row.get("slug");
@@ -452,6 +531,10 @@ async fn load_ctx(app: &App, thread_id: Uuid) -> Result<ThreadCtx> {
         engine: engine.context("the thread has no engine")?,
         model: row.get("model"),
         cwd,
-        owner: if session { thread_id } else { agent_id.unwrap_or(thread_id) },
+        owner: if session {
+            thread_id
+        } else {
+            agent_id.unwrap_or(thread_id)
+        },
     })
 }

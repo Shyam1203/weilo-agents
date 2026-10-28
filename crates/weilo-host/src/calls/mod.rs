@@ -19,14 +19,21 @@ use crate::error::CallError;
 
 /// One lock per `(device, call_id)` while that call runs, so a quick retry waits for
 /// the first try instead of racing it.
+type CallKey = (Uuid, Uuid);
+
 #[derive(Default)]
 pub struct CallLocks {
-    map: Mutex<HashMap<(Uuid, Uuid), Arc<tokio::sync::Mutex<()>>>>,
+    map: Mutex<HashMap<CallKey, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 impl CallLocks {
     fn get(&self, key: (Uuid, Uuid)) -> Arc<tokio::sync::Mutex<()>> {
-        self.map.lock().expect("call locks").entry(key).or_default().clone()
+        self.map
+            .lock()
+            .expect("call locks")
+            .entry(key)
+            .or_default()
+            .clone()
     }
     fn release(&self, key: (Uuid, Uuid)) {
         let mut map = self.map.lock().expect("call locks");
@@ -67,7 +74,9 @@ async fn run_once(app: &Arc<App>, device_id: Uuid, call_id: Uuid, call: Call) ->
 }
 
 fn failed(e: CallError) -> CallResult {
-    CallResult::Failed { error: e.into_api() }
+    CallResult::Failed {
+        error: e.into_api(),
+    }
 }
 
 async fn stored(app: &App, device_id: Uuid, call_id: Uuid) -> sqlx::Result<Option<CallResult>> {
@@ -80,7 +89,12 @@ async fn stored(app: &App, device_id: Uuid, call_id: Uuid) -> sqlx::Result<Optio
     Ok(value.and_then(|v| serde_json::from_value(v).ok()))
 }
 
-async fn store(app: &App, device_id: Uuid, call_id: Uuid, result: &CallResult) -> anyhow::Result<()> {
+async fn store(
+    app: &App,
+    device_id: Uuid,
+    call_id: Uuid,
+    result: &CallResult,
+) -> anyhow::Result<()> {
     sqlx::query(
         "INSERT INTO call_results (device_id, call_id, result) VALUES ($1, $2, $3)
          ON CONFLICT DO NOTHING",
@@ -98,12 +112,17 @@ async fn dispatch(app: &Arc<App>, device: Uuid, call: Call) -> Result<CallValue,
     Ok(match call {
         Call::Snapshot => V::Snapshot(read::snapshot(app, device).await?),
         Call::ListEngines => V::Engines(app.engines.list()),
-        Call::CreateAgent { name, engine, model } => {
-            V::Agent(agents::create(app, device, &name, &engine, model).await?)
-        }
-        Call::UpdateAgent { agent_id, name, model, instructions } => {
-            V::Agent(agents::update(app, device, agent_id, name, model, instructions).await?)
-        }
+        Call::CreateAgent {
+            name,
+            engine,
+            model,
+        } => V::Agent(agents::create(app, device, &name, &engine, model).await?),
+        Call::UpdateAgent {
+            agent_id,
+            name,
+            model,
+            instructions,
+        } => V::Agent(agents::update(app, device, agent_id, name, model, instructions).await?),
         Call::StopAgent { agent_id } => {
             agents::stop(app, agent_id).await?;
             V::None
@@ -112,20 +131,40 @@ async fn dispatch(app: &Arc<App>, device: Uuid, call: Call) -> Result<CallValue,
         Call::RenameChannel { channel_id, title } => {
             V::Channel(channels::rename(app, device, channel_id, &title).await?)
         }
-        Call::ArchiveChannel { channel_id, archived } => {
-            V::Channel(channels::archive(app, device, channel_id, archived).await?)
-        }
-        Call::CreateThread { channel_id, agent_id, title } => {
-            V::Thread(threads::create(app, channel_id, agent_id, title).await?)
-        }
-        Call::MoveThread { thread_id, channel_id } => {
-            V::Thread(threads::move_to(app, thread_id, channel_id).await?)
-        }
-        Call::StartSession { folder, engine, title, channel_id, agent_id } => {
-            let s = threads::NewSession { folder, engine, title, channel_id, agent_id };
+        Call::ArchiveChannel {
+            channel_id,
+            archived,
+        } => V::Channel(channels::archive(app, device, channel_id, archived).await?),
+        Call::CreateThread {
+            channel_id,
+            agent_id,
+            title,
+        } => V::Thread(threads::create(app, channel_id, agent_id, title).await?),
+        Call::MoveThread {
+            thread_id,
+            channel_id,
+        } => V::Thread(threads::move_to(app, thread_id, channel_id).await?),
+        Call::StartSession {
+            folder,
+            engine,
+            title,
+            channel_id,
+            agent_id,
+        } => {
+            let s = threads::NewSession {
+                folder,
+                engine,
+                title,
+                channel_id,
+                agent_id,
+            };
             V::Thread(threads::start_session(app, device, s).await?)
         }
-        Call::Send { thread_id, text, when } => {
+        Call::Send {
+            thread_id,
+            text,
+            when,
+        } => {
             threads::send(app, thread_id, text, when).await?;
             V::None
         }
@@ -133,7 +172,10 @@ async fn dispatch(app: &Arc<App>, device: Uuid, call: Call) -> Result<CallValue,
             threads::stop(app, thread_id).await?;
             V::None
         }
-        Call::Decide { approval_id, decision } => {
+        Call::Decide {
+            approval_id,
+            decision,
+        } => {
             approvals::decide(app, device, approval_id, decision).await?;
             V::None
         }

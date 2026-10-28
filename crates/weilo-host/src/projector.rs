@@ -31,16 +31,20 @@ pub async fn run(app: &App, thread_id: Uuid) -> Result<()> {
     .bind(thread_id)
     .fetch_one(&mut *tx)
     .await?;
-    let thread = sqlx::query("SELECT state, live_line, agent_id, last_seq FROM threads WHERE id = $1")
-        .bind(thread_id)
-        .fetch_one(&mut *tx)
-        .await?;
+    let thread =
+        sqlx::query("SELECT state, live_line, agent_id, last_seq FROM threads WHERE id = $1")
+            .bind(thread_id)
+            .fetch_one(&mut *tx)
+            .await?;
     let last_seq: i64 = thread.get("last_seq");
     if last_seq <= cursor {
         return Ok(());
     }
     let evs = events::read_range(&mut *tx, thread_id, cursor, last_seq).await?;
-    let before = (parse_state(thread.get("state")), thread.get::<String, _>("live_line"));
+    let before = (
+        parse_state(thread.get("state")),
+        thread.get::<String, _>("live_line"),
+    );
     let mut view = before.clone();
     let mut needs_you = false;
     for ev in &evs {
@@ -80,7 +84,11 @@ fn apply(view: &mut (WorkState, String), body: &EventBody) -> bool {
             *view = (*state, live_line.clone());
             false
         }
-        EventBody::Step { title, status: StepStatus::Running, .. } => {
+        EventBody::Step {
+            title,
+            status: StepStatus::Running,
+            ..
+        } => {
             view.1 = title.clone();
             false
         }
@@ -112,13 +120,29 @@ mod tests {
     #[test]
     fn running_step_sets_live_line_and_state_resets_it() {
         let mut view = (WorkState::Idle, String::new());
-        apply(&mut view, &EventBody::State { state: WorkState::Working, live_line: String::new() });
         apply(
             &mut view,
-            &EventBody::Step { step_id: "1".into(), title: "Read the request".into(), status: StepStatus::Running },
+            &EventBody::State {
+                state: WorkState::Working,
+                live_line: String::new(),
+            },
+        );
+        apply(
+            &mut view,
+            &EventBody::Step {
+                step_id: "1".into(),
+                title: "Read the request".into(),
+                status: StepStatus::Running,
+            },
         );
         assert_eq!(view, (WorkState::Working, "Read the request".to_string()));
-        apply(&mut view, &EventBody::State { state: WorkState::Idle, live_line: String::new() });
+        apply(
+            &mut view,
+            &EventBody::State {
+                state: WorkState::Idle,
+                live_line: String::new(),
+            },
+        );
         assert_eq!(view, (WorkState::Idle, String::new()));
     }
 }

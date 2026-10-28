@@ -79,7 +79,7 @@ export function NeedsYouPage({ phone }: { phone?: boolean }) {
             <div className="flex flex-wrap items-center gap-2 text-body-sm text-text-secondary">
               <span>
                 <b className="font-medium text-text">
-                  {hidden.map((k) => SECTION_TITLES[k]).join(" and ")} {hidden.length > 1 ? "are" : "are"} hidden in your sidebar.
+                  {hidden.map((k) => SECTION_TITLES[k]).join(" and ")} are hidden in your sidebar.
                 </b>{" "}
                 Their alerts still show here.
               </span>
@@ -187,7 +187,7 @@ function AskRow({ item, snap, selected, onFocus, ref, phone }: RowProps & { phon
       className={cx(
         "flex gap-3 rounded-lg border border-border p-4 shadow-e1 outline-offset-2",
         phone ? "flex-col" : "items-center",
-        selected ? "bg-accent-subtle" : "bg-surface",
+        selected ? "bg-accent-subtle [&_.text-text-tertiary]:text-text-secondary" : "bg-surface",
       )}
     >
       <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -238,11 +238,13 @@ function PastRow({ item, snap, selected, onFocus, ref, expired }: RowProps & { e
       onFocus={onFocus}
       className={cx(
         "flex min-h-14 items-center gap-3 rounded-lg border border-border px-4 py-2",
-        selected ? "bg-accent-subtle" : "bg-surface",
+        selected ? "bg-accent-subtle [&_.text-text-tertiary]:text-text-secondary" : "bg-surface",
       )}
     >
-      <span className="min-w-0 flex-1">{item.card.title}</span>
-      <span className="shrink-0 text-caption text-text-tertiary">{whenLabel(item.created_at)}</span>
+      <span className="flex min-w-0 flex-1 items-baseline gap-3 max-md:flex-col max-md:gap-0">
+        <span className="ellipsis min-w-0 max-w-full md:flex-1">{item.card.title}</span>
+        <span className="shrink-0 text-caption text-text-tertiary">{whenLabel(item.created_at)}</span>
+      </span>
       {expired ? (
         <Button onClick={() => void ask()}>Ask again</Button>
       ) : (
@@ -253,7 +255,11 @@ function PastRow({ item, snap, selected, onFocus, ref, expired }: RowProps & { e
 }
 
 function DoneRow({ item, snap, selected, onFocus, ref, last }: RowProps & { last: boolean }) {
-  const line = cx("flex h-11 items-center gap-3 px-4 text-text", !last && "shadow-line", selected && "bg-accent-subtle");
+  const line = cx(
+    "flex h-11 items-center gap-3 px-4 text-text",
+    !last && "shadow-line",
+    selected && "bg-accent-subtle [&_.text-text-tertiary]:text-text-secondary",
+  );
   if (isHeadsUp(item)) {
     const thread = snap.threads.find((t) => t.id === item.thread_id);
     const [lead, ...name] = item.card.title.split(": ");

@@ -15,6 +15,7 @@ import { MenuItem, Popover } from "../../ui/Popover";
 import { Tabs } from "../../ui/Tabs";
 import { ConnectionBanner } from "../shell/Toast";
 import { PanelToggle, ThreadScreen } from "./ThreadScreen";
+import { BackButton } from "../mobile/TabBar";
 import { useThreadState, useVariant } from "./useThread";
 
 const OVERVIEW = "overview";
@@ -154,20 +155,26 @@ function ChannelHeader({
       ? undefined
       : `Members: ${members.map((m, i) => (i === 0 ? `${shortName(m.name)} (lead)` : shortName(m.name))).join(" and ")}`;
 
+  const tabList = (
+    <Tabs
+      items={tabs}
+      value={active}
+      onChange={(id) => navigate(id === OVERVIEW ? paths.overview(channel.id) : paths.channel(channel.id, id))}
+      label="Threads"
+      className={phone ? "no-scrollbar min-w-0 overflow-x-auto" : undefined}
+    />
+  );
+
   return (
+    <>
     <TopBar className={phone ? "px-4" : "pr-4 pl-6"}>
-      <h1 className="m-0 flex shrink-0 items-center gap-1 text-title-sm font-semibold whitespace-nowrap">
+      {phone && <BackButton />}
+      <h1 className="m-0 flex min-w-0 shrink-0 items-center gap-1 text-title-sm font-semibold whitespace-nowrap max-md:flex-1 max-md:shrink">
         <span className="font-medium text-text-tertiary">#</span>
-        {slug}
+        <span className="ellipsis">{slug}</span>
       </h1>
-      <div className="flex min-w-0 flex-1 items-center gap-1">
-        <Tabs
-          items={tabs}
-          value={active}
-          onChange={(id) => navigate(id === OVERVIEW ? paths.overview(channel.id) : paths.channel(channel.id, id))}
-          label="Threads"
-          className={phone ? "no-scrollbar overflow-x-auto" : undefined}
-        />
+      <div className={phone ? "flex shrink-0 items-center" : "flex min-w-0 flex-1 items-center gap-1"}>
+        {!phone && tabList}
         <div className="relative shrink-0">
           <IconButton
             label="New thread"
@@ -178,7 +185,7 @@ function ChannelHeader({
           >
             <PlusIcon />
           </IconButton>
-          <Popover open={menu} onClose={() => setMenu(false)} label="New thread" role="menu" className="top-9 left-0 w-56">
+          <Popover open={menu} onClose={() => setMenu(false)} label="New thread" role="menu" className={phone ? "top-9 right-0 w-56" : "top-9 left-0 w-56"}>
             {agents.map((a) => (
               <MenuItem key={a.id} onSelect={() => void newThread(a)}>
                 <Avatar name={a.name} color={a.color} size={20} />
@@ -197,6 +204,8 @@ function ChannelHeader({
       )}
       {panel && !phone && <PanelToggle open={panel.open} onToggle={panel.toggle} />}
     </TopBar>
+    {phone && <div className="flex h-11 shrink-0 items-center px-4 shadow-line">{tabList}</div>}
+    </>
   );
 }
 

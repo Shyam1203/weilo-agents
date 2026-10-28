@@ -34,7 +34,11 @@ pub async fn open(pg: &Postgres) -> Result<Db> {
         .context("couldn't connect as weilo_app")?;
     let fence = host_identity(&pool).await?;
     let space_id = home_space(&pool).await?;
-    Ok(Db { pool, fence, space_id })
+    Ok(Db {
+        pool,
+        fence,
+        space_id,
+    })
 }
 
 pub async fn migrate(pg: &Postgres) -> Result<()> {
@@ -61,10 +65,12 @@ fn grants_sql() -> String {
 }
 
 pub async fn get_setting(pool: &PgPool, key: &str) -> Result<Option<serde_json::Value>> {
-    Ok(sqlx::query_scalar("SELECT value FROM settings WHERE key = $1")
-        .bind(key)
-        .fetch_optional(pool)
-        .await?)
+    Ok(
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = $1")
+            .bind(key)
+            .fetch_optional(pool)
+            .await?,
+    )
 }
 
 pub async fn set_setting<'e>(
@@ -89,8 +95,16 @@ async fn host_identity(pool: &PgPool) -> Result<Fence> {
         let epoch = v["epoch"].as_i64().unwrap_or(1);
         return Ok(Fence { host, epoch });
     }
-    let fence = Fence { host: new_id(), epoch: 1 };
-    set_setting(pool, "host", &json!({ "id": fence.host, "epoch": fence.epoch })).await?;
+    let fence = Fence {
+        host: new_id(),
+        epoch: 1,
+    };
+    set_setting(
+        pool,
+        "host",
+        &json!({ "id": fence.host, "epoch": fence.epoch }),
+    )
+    .await?;
     Ok(fence)
 }
 

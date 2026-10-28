@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::Result;
@@ -24,8 +24,16 @@ use crate::projector;
 /// What travels on the broadcast. Sockets filter by the threads they follow.
 #[derive(Debug, Clone)]
 pub enum HubMsg {
-    Event { thread_id: Uuid, event: Event },
-    Delta { thread_id: Uuid, after_seq: i64, sub_seq: i64, delta: Delta },
+    Event {
+        thread_id: Uuid,
+        event: Box<Event>,
+    },
+    Delta {
+        thread_id: Uuid,
+        after_seq: i64,
+        sub_seq: i64,
+        delta: Delta,
+    },
     Changed(Changed),
 }
 
@@ -36,7 +44,9 @@ pub struct Hub {
 
 impl Hub {
     pub fn new(capacity: usize) -> Self {
-        Self { tx: broadcast::channel(capacity).0 }
+        Self {
+            tx: broadcast::channel(capacity).0,
+        }
     }
     pub fn subscribe(&self) -> broadcast::Receiver<Arc<HubMsg>> {
         self.tx.subscribe()
@@ -61,7 +71,10 @@ impl Settings {
     /// Test knobs come from the environment; defaults are the product's.
     pub fn from_env() -> Self {
         let secs = |key: &str, default: u64| {
-            std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+            std::env::var(key)
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(default)
         };
         Self {
             self_exe: std::env::current_exe().unwrap_or_else(|_| PathBuf::from("weilo")),
@@ -85,6 +98,8 @@ pub struct App {
     pub host_name: String,
     pub keep_awake: KeepAwake,
     pub call_locks: CallLocks,
+    /// Cancelled when the host is stopping.
+    pub shutdown: tokio_util::sync::CancellationToken,
     port: AtomicU16,
     /// The newest seq published per thread, so deltas can name it without a query.
     seqs: Mutex<HashMap<Uuid, i64>>,
@@ -114,6 +129,7 @@ impl App {
             host_name: host_name(),
             keep_awake: KeepAwake::default(),
             call_locks: CallLocks::default(),
+            shutdown: Default::default(),
             port: AtomicU16::new(0),
             seqs: Mutex::new(HashMap::new()),
         })
@@ -143,7 +159,10 @@ impl App {
             *seq = (*seq).max(last.seq);
         }
         for event in evs {
-            self.hub.send(HubMsg::Event { thread_id, event });
+            self.hub.send(HubMsg::Event {
+                thread_id,
+                event: Box::new(event),
+            });
         }
         if let Err(e) = projector::run(self, thread_id).await {
             tracing::error!("projector failed for {thread_id}: {e:#}");
@@ -166,7 +185,12 @@ impl App {
 
     /// A temporary piece of a reply. Never stored.
     pub fn publish_delta(&self, thread_id: Uuid, after_seq: i64, sub_seq: i64, delta: Delta) {
-        self.hub.send(HubMsg::Delta { thread_id, after_seq, sub_seq, delta });
+        self.hub.send(HubMsg::Delta {
+            thread_id,
+            after_seq,
+            sub_seq,
+            delta,
+        });
     }
 }
 
@@ -180,5 +204,9 @@ fn host_name() -> String {
     } else {
         String::new()
     };
-    if name.is_empty() { "This computer".into() } else { name }
+    if name.is_empty() {
+        "This computer".into()
+    } else {
+        name
+    }
 }

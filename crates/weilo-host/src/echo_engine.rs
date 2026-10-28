@@ -27,7 +27,10 @@ pub async fn run() -> anyhow::Result<()> {
     let cancels: Cancels = Arc::default();
     let on_prompt = cancels.clone();
     let on_cancel = cancels;
-    let transport = ByteStreams::new(tokio::io::stdout().compat_write(), tokio::io::stdin().compat());
+    let transport = ByteStreams::new(
+        tokio::io::stdout().compat_write(),
+        tokio::io::stdin().compat(),
+    );
     Agent
         .builder()
         .name("echo")
@@ -61,7 +64,11 @@ pub async fn run() -> anyhow::Result<()> {
         )
         .on_receive_notification(
             async move |n: CancelNotification, _cx| {
-                if let Some(token) = on_cancel.lock().expect("cancels lock").get(n.session_id.0.as_ref()) {
+                if let Some(token) = on_cancel
+                    .lock()
+                    .expect("cancels lock")
+                    .get(n.session_id.0.as_ref())
+                {
                     token.cancel();
                 }
                 Ok(())
@@ -82,13 +89,19 @@ async fn answer(
     let text = prompt_text(req);
     let slow = text.contains("slow");
 
-    let read = ToolCall::new("read-1", "Read the request").kind(ToolKind::Read).status(ToolCallStatus::InProgress);
+    let read = ToolCall::new("read-1", "Read the request")
+        .kind(ToolKind::Read)
+        .status(ToolCallStatus::InProgress);
     update(cx, &sid, SessionUpdate::ToolCall(read))?;
     if !pause(cancel, 30).await {
         return Ok(StopReason::Cancelled);
     }
     let done = ToolCallUpdateFields::new().status(ToolCallStatus::Completed);
-    update(cx, &sid, SessionUpdate::ToolCallUpdate(ToolCallUpdate::new("read-1", done)))?;
+    update(
+        cx,
+        &sid,
+        SessionUpdate::ToolCallUpdate(ToolCallUpdate::new("read-1", done)),
+    )?;
 
     let reply = format!("You said: {text}");
     let (pieces, delay) = if slow { (30, 100) } else { (4, 40) };
@@ -104,15 +117,30 @@ async fn answer(
         if cancel.is_cancelled() {
             return Ok(StopReason::Cancelled);
         }
-        let status = if allowed { ToolCallStatus::Completed } else { ToolCallStatus::Failed };
+        let status = if allowed {
+            ToolCallStatus::Completed
+        } else {
+            ToolCallStatus::Failed
+        };
         let fields = ToolCallUpdateFields::new().status(status);
-        update(cx, &sid, SessionUpdate::ToolCallUpdate(ToolCallUpdate::new("run-1", fields)))?;
-        say(cx, &sid, if allowed { "Allowed." } else { "Not allowed." }.into())?;
+        update(
+            cx,
+            &sid,
+            SessionUpdate::ToolCallUpdate(ToolCallUpdate::new("run-1", fields)),
+        )?;
+        say(
+            cx,
+            &sid,
+            if allowed { "Allowed." } else { "Not allowed." }.into(),
+        )?;
     }
     Ok(StopReason::EndTurn)
 }
 
-async fn ask_to_run_checks(cx: &ConnectionTo<Client>, sid: &SessionId) -> agent_client_protocol::Result<bool> {
+async fn ask_to_run_checks(
+    cx: &ConnectionTo<Client>,
+    sid: &SessionId,
+) -> agent_client_protocol::Result<bool> {
     let input = serde_json::json!({ "command": "npm test -- checkout" });
     let call = ToolCall::new("run-1", "Run the shop's checks")
         .kind(ToolKind::Execute)
@@ -128,7 +156,8 @@ async fn ask_to_run_checks(cx: &ConnectionTo<Client>, sid: &SessionId) -> agent_
         PermissionOption::new("always", "Always allow", PermissionOptionKind::AllowAlways),
         PermissionOption::new("reject", "Not now", PermissionOptionKind::RejectOnce),
     ];
-    let request = RequestPermissionRequest::new(sid.clone(), ToolCallUpdate::new("run-1", fields), options);
+    let request =
+        RequestPermissionRequest::new(sid.clone(), ToolCallUpdate::new("run-1", fields), options);
     let response = cx.send_request(request).block_task().await?;
     Ok(matches!(
         response.outcome,
@@ -147,12 +176,24 @@ fn prompt_text(req: &PromptRequest) -> String {
         .join(" ")
 }
 
-fn update(cx: &ConnectionTo<Client>, sid: &SessionId, update: SessionUpdate) -> agent_client_protocol::Result<()> {
+fn update(
+    cx: &ConnectionTo<Client>,
+    sid: &SessionId,
+    update: SessionUpdate,
+) -> agent_client_protocol::Result<()> {
     cx.send_notification(SessionNotification::new(sid.clone(), update))
 }
 
-fn say(cx: &ConnectionTo<Client>, sid: &SessionId, text: String) -> agent_client_protocol::Result<()> {
-    update(cx, sid, SessionUpdate::AgentMessageChunk(ContentChunk::new(text.into())))
+fn say(
+    cx: &ConnectionTo<Client>,
+    sid: &SessionId,
+    text: String,
+) -> agent_client_protocol::Result<()> {
+    update(
+        cx,
+        sid,
+        SessionUpdate::AgentMessageChunk(ContentChunk::new(text.into())),
+    )
 }
 
 /// Waits `ms`; false when cancelled first.

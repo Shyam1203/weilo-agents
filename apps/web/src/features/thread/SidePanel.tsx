@@ -20,7 +20,7 @@ export function SidePanel({ thread, agentName }: { thread: ThreadSummary; agentN
   );
 }
 
-function PanelTabs<T extends string>({ items, value, onChange }: { items: Array<{ id: T; label: string }>; value: T; onChange(v: T): void }) {
+function PanelTabs<T extends string>({ items, value, onChange }: { items: Array<{ id: T; label: string }>; value: NoInfer<T>; onChange(v: NoInfer<T>): void }) {
   return (
     <div className="flex h-14 shrink-0 items-center gap-1 px-4 shadow-line">
       <Tabs items={items} value={value} onChange={(v) => onChange(v as T)} label="Panel" panelPrefix="side" />
@@ -37,7 +37,7 @@ function AgentPanel({ name }: { name: string }) {
   ];
   return (
     <>
-      <PanelTabs items={items} value={tab} onChange={setTab} />
+      <PanelTabs items={items} value={tab} onChange={(v) => setTab(v)} />
       <div id="side-panel" role="tabpanel" aria-labelledby={`side-tab-${tab}`} className="p-4">
         {tab === "screen" && <EmptyState title={`${name} isn't using a screen right now.`} line="You'll see it here while she works." />}
         {tab === "files" && <EmptyState title="No files yet." line={`Files ${name} makes show here.`} />}
@@ -59,7 +59,7 @@ function SessionPanel({ thread }: { thread: ThreadSummary }) {
   ];
   return (
     <>
-      <PanelTabs items={items} value={tab} onChange={setTab} />
+      <PanelTabs items={items} value={tab} onChange={(v) => setTab(v)} />
       <div id="side-panel" role="tabpanel" aria-labelledby={`side-tab-${tab}`} className="flex flex-col gap-3 overflow-y-auto p-4">
         {tab === "changes" && (
           <>

@@ -67,10 +67,26 @@ pub async fn create_in(
     .bind(thread_id)
     .execute(&mut *tx)
     .await?;
-    let thread = NewThread { id: thread_id, kind: "agent", agent_id: Some(id), title: name.clone(), ..NewThread::default() };
+    let thread = NewThread {
+        id: thread_id,
+        kind: "agent",
+        agent_id: Some(id),
+        title: name.clone(),
+        ..NewThread::default()
+    };
     insert_thread(app, tx, &thread).await?;
     let detail = json!({ "agent_id": id, "name": name, "engine": engine });
-    audit::append(tx, app.space_id, audit::Entry { actor: "device", device_id: Some(device), action: "agent.create", detail }).await?;
+    audit::append(
+        tx,
+        app.space_id,
+        audit::Entry {
+            actor: "device",
+            device_id: Some(device),
+            action: "agent.create",
+            detail,
+        },
+    )
+    .await?;
     Ok(id)
 }
 
@@ -107,7 +123,17 @@ pub async fn update(
             .await?;
     }
     let detail = json!({ "agent_id": agent_id, "name": name, "model": model, "instructions_changed": instructions.is_some() });
-    audit::append(&mut tx, app.space_id, audit::Entry { actor: "device", device_id: Some(device), action: "agent.update", detail }).await?;
+    audit::append(
+        &mut tx,
+        app.space_id,
+        audit::Entry {
+            actor: "device",
+            device_id: Some(device),
+            action: "agent.update",
+            detail,
+        },
+    )
+    .await?;
     tx.commit().await?;
     app.hub.changed(Changed::Agents);
     read::agent(app, agent_id).await
@@ -115,11 +141,12 @@ pub async fn update(
 
 /// Stops whatever the agent is doing, in every thread it owns.
 pub async fn stop(app: &Arc<App>, agent_id: Uuid) -> CallResult<()> {
-    let threads: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM threads WHERE agent_id = $1 AND space_id = $2")
-        .bind(agent_id)
-        .bind(app.space_id)
-        .fetch_all(&app.db)
-        .await?;
+    let threads: Vec<Uuid> =
+        sqlx::query_scalar("SELECT id FROM threads WHERE agent_id = $1 AND space_id = $2")
+            .bind(agent_id)
+            .bind(app.space_id)
+            .fetch_all(&app.db)
+            .await?;
     if threads.is_empty() {
         return Err(CallError::not_found("That agent is gone."));
     }
@@ -132,7 +159,9 @@ pub async fn stop(app: &Arc<App>, agent_id: Uuid) -> CallResult<()> {
 fn clean_name(name: &str) -> CallResult<String> {
     let name = name.trim();
     if name.is_empty() || name.chars().count() > 40 {
-        return Err(CallError::invalid("Give the agent a name of up to 40 letters."));
+        return Err(CallError::invalid(
+            "Give the agent a name of up to 40 letters.",
+        ));
     }
     Ok(name.to_string())
 }

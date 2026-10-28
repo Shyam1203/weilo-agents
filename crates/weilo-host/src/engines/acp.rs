@@ -8,12 +8,12 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
+use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::schema::v1::{
     CancelNotification, InitializeRequest, NewSessionRequest, PromptRequest,
     RequestPermissionRequest, RequestPermissionResponse, SessionId, SessionNotification,
     SessionUpdate, StopReason,
 };
-use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{
     Agent, ByteStreams, Client, ConnectionTo, Responder, on_receive_notification,
     on_receive_request,
@@ -54,7 +54,13 @@ impl Drop for Connection {
 
 impl Connection {
     /// Starts the process, then `initialize` and `session/new` in `cwd`.
-    pub async fn open(spec: &LaunchSpec, base_env: Vec<(String, String)>, cwd: &Path, log: &Path, tx: EngineTx) -> Result<Self> {
+    pub async fn open(
+        spec: &LaunchSpec,
+        base_env: Vec<(String, String)>,
+        cwd: &Path,
+        log: &Path,
+        tx: EngineTx,
+    ) -> Result<Self> {
         let mut child = spawn(spec, base_env, cwd, log)?;
         let stdin = child.stdin.take().context("no stdin")?;
         let stdout = child.stdout.take().context("no stdout")?;
@@ -68,7 +74,12 @@ impl Connection {
             Ok(Err(_)) => return Err(anyhow!("the engine closed before it was ready")),
             Err(_) => return Err(anyhow!("the engine didn't answer in 60 s")),
         };
-        Ok(Self { cx, session_id, _child: child, driver })
+        Ok(Self {
+            cx,
+            session_id,
+            _child: child,
+            driver,
+        })
     }
 
     /// Sends a prompt. The end of the turn arrives on the channel as `TurnEnded`.
@@ -84,12 +95,22 @@ impl Connection {
     }
 
     pub fn cancel(&self) {
-        let _ = self.cx.send_notification(CancelNotification::new(self.session_id.clone()));
+        let _ = self
+            .cx
+            .send_notification(CancelNotification::new(self.session_id.clone()));
     }
 }
 
-fn spawn(spec: &LaunchSpec, base_env: Vec<(String, String)>, cwd: &Path, log: &Path) -> Result<Child> {
-    let stderr = std::fs::OpenOptions::new().create(true).append(true).open(log)?;
+fn spawn(
+    spec: &LaunchSpec,
+    base_env: Vec<(String, String)>,
+    cwd: &Path,
+    log: &Path,
+) -> Result<Child> {
+    let stderr = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log)?;
     tokio::process::Command::new(&spec.program)
         .args(&spec.args)
         .env_clear()
@@ -124,8 +145,10 @@ where
         )
         .on_receive_request(
             async move |request: RequestPermissionRequest, responder, _cx| {
-                let _ = permissions
-                    .send(EngineMsg::Permission { request: Box::new(request), responder });
+                let _ = permissions.send(EngineMsg::Permission {
+                    request: Box::new(request),
+                    responder,
+                });
                 Ok(())
             },
             on_receive_request!(),
@@ -150,8 +173,16 @@ where
     let _ = tx.send(EngineMsg::Closed);
 }
 
-async fn start_session(cx: &ConnectionTo<Agent>, cwd: &Path) -> agent_client_protocol::Result<SessionId> {
-    cx.send_request(InitializeRequest::new(ProtocolVersion::V1)).block_task().await?;
-    let session = cx.send_request(NewSessionRequest::new(cwd)).block_task().await?;
+async fn start_session(
+    cx: &ConnectionTo<Agent>,
+    cwd: &Path,
+) -> agent_client_protocol::Result<SessionId> {
+    cx.send_request(InitializeRequest::new(ProtocolVersion::V1))
+        .block_task()
+        .await?;
+    let session = cx
+        .send_request(NewSessionRequest::new(cwd))
+        .block_task()
+        .await?;
     Ok(session.session_id)
 }

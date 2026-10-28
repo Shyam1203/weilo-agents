@@ -10,7 +10,10 @@ pub struct CallError {
 
 impl CallError {
     fn new(code: &'static str, message: impl Into<String>) -> Self {
-        Self { code, message: message.into() }
+        Self {
+            code,
+            message: message.into(),
+        }
     }
     pub fn not_found(message: impl Into<String>) -> Self {
         Self::new("not_found", message)
@@ -29,7 +32,10 @@ impl CallError {
     }
 
     pub fn into_api(self) -> ApiError {
-        ApiError { code: self.code.into(), message: self.message }
+        ApiError {
+            code: self.code.into(),
+            message: self.message,
+        }
     }
 }
 

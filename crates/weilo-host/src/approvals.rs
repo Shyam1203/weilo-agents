@@ -34,8 +34,18 @@ pub struct NewApproval {
 /// Saves the approval and its card event, and schedules its expiry.
 pub async fn open(app: &App, a: NewApproval) -> Result<()> {
     let mut tx = app.db.begin().await?;
-    let body = EventBody::Card { card: a.card.clone() };
-    let ev = events::append(&mut tx, app.fence, a.thread_id, &body, Source::Engine, false).await?;
+    let body = EventBody::Card {
+        card: a.card.clone(),
+    };
+    let ev = events::append(
+        &mut tx,
+        app.fence,
+        a.thread_id,
+        &body,
+        Source::Engine,
+        false,
+    )
+    .await?;
     let class = risk_str(a.card.risk);
     let payload = json!({
         "approval_id": a.id, "thread_id": a.thread_id, "seq": ev.seq, "class": class,
@@ -64,7 +74,15 @@ pub async fn open(app: &App, a: NewApproval) -> Result<()> {
     .await?;
     let key = format!("expire:{}", a.id);
     let payload = json!({ "approval_id": a.id });
-    jobs::enqueue(&mut tx, app.space_id, jobs::EXPIRE_APPROVAL, &key, expires_at, payload).await?;
+    jobs::enqueue(
+        &mut tx,
+        app.space_id,
+        jobs::EXPIRE_APPROVAL,
+        &key,
+        expires_at,
+        payload,
+    )
+    .await?;
     tx.commit().await?;
     app.committed(a.thread_id, vec![ev]).await;
     Ok(())
@@ -77,7 +95,11 @@ pub async fn decide(
     approval_id: Uuid,
     decision: Decision,
 ) -> CallResult<()> {
-    let state = if decision == Decision::Deny { "denied" } else { "allowed" };
+    let state = if decision == Decision::Deny {
+        "denied"
+    } else {
+        "allowed"
+    };
     let mut tx = app.db.begin().await?;
     let row = sqlx::query(
         "UPDATE approvals SET state = $2, decided_by_device = $3, decided_via = 'app',
@@ -94,7 +116,11 @@ pub async fn decide(
         return Err(why_not_pending(app, approval_id).await);
     };
     let thread_id: Uuid = row.get("thread_id");
-    let body = EventBody::ApprovalDecided { approval_id, decision: decision.clone(), via: "app".into() };
+    let body = EventBody::ApprovalDecided {
+        approval_id,
+        decision: decision.clone(),
+        via: "app".into(),
+    };
     let ev = events::append(&mut tx, app.fence, thread_id, &body, Source::User, false).await?;
     if let Decision::AllowAlways { .. } = &decision {
         sqlx::query(
@@ -111,19 +137,31 @@ pub async fn decide(
         .await?;
     }
     let detail = json!({ "approval_id": approval_id, "decision": decision, "via": "app" });
-    let entry = audit::Entry { actor: "device", device_id: Some(device_id), action: "approval.decide", detail };
+    let entry = audit::Entry {
+        actor: "device",
+        device_id: Some(device_id),
+        action: "approval.decide",
+        detail,
+    };
     audit::append(&mut tx, app.space_id, entry).await?;
     tx.commit().await?;
     app.committed(thread_id, vec![ev]).await;
-    app.runners.send_if_running(thread_id, Cmd::Decided { approval_id, decision });
+    app.runners.send_if_running(
+        thread_id,
+        Cmd::Decided {
+            approval_id,
+            decision,
+        },
+    );
     Ok(())
 }
 
 async fn why_not_pending(app: &App, approval_id: Uuid) -> CallError {
-    let row = sqlx::query("SELECT state, expires_at <= now() AS expired FROM approvals WHERE id = $1")
-        .bind(approval_id)
-        .fetch_optional(&app.db)
-        .await;
+    let row =
+        sqlx::query("SELECT state, expires_at <= now() AS expired FROM approvals WHERE id = $1")
+            .bind(approval_id)
+            .fetch_optional(&app.db)
+            .await;
     match row {
         Ok(None) => CallError::not_found("This request is gone."),
         Ok(Some(r)) if r.get::<String, _>("state") == "expired" || r.get::<bool, _>("expired") => {
@@ -136,7 +174,14 @@ async fn why_not_pending(app: &App, approval_id: Uuid) -> CallError {
 
 /// Run by the job queue when an approval's time is up.
 pub async fn expire(app: &Arc<App>, approval_id: Uuid) -> Result<()> {
-    close(app, approval_id, "expired", "expired", "expires_at <= now()").await
+    close(
+        app,
+        approval_id,
+        "expired",
+        "expired",
+        "expires_at <= now()",
+    )
+    .await
 }
 
 /// Stop was pressed while the approval waited.
@@ -144,7 +189,13 @@ pub async fn close_stopped(app: &Arc<App>, approval_id: Uuid) -> Result<()> {
     close(app, approval_id, "denied", "stopped", "true").await
 }
 
-async fn close(app: &Arc<App>, approval_id: Uuid, state: &str, via: &str, when: &str) -> Result<()> {
+async fn close(
+    app: &Arc<App>,
+    approval_id: Uuid,
+    state: &str,
+    via: &str,
+    when: &str,
+) -> Result<()> {
     let mut tx = app.db.begin().await?;
     let sql = format!(
         "UPDATE approvals SET state = $2, decided_via = $3, decided_at = now()
@@ -156,15 +207,32 @@ async fn close(app: &Arc<App>, approval_id: Uuid, state: &str, via: &str, when: 
         .bind(via)
         .fetch_optional(&mut *tx)
         .await?;
-    let Some(thread_id) = thread_id else { return Ok(()) };
-    let body = EventBody::ApprovalDecided { approval_id, decision: Decision::Deny, via: via.into() };
+    let Some(thread_id) = thread_id else {
+        return Ok(());
+    };
+    let body = EventBody::ApprovalDecided {
+        approval_id,
+        decision: Decision::Deny,
+        via: via.into(),
+    };
     let ev = events::append(&mut tx, app.fence, thread_id, &body, Source::Host, false).await?;
     let detail = json!({ "approval_id": approval_id, "decision": Decision::Deny, "via": via });
-    let entry = audit::Entry { actor: "host", device_id: None, action: "approval.decide", detail };
+    let entry = audit::Entry {
+        actor: "host",
+        device_id: None,
+        action: "approval.decide",
+        detail,
+    };
     audit::append(&mut tx, app.space_id, entry).await?;
     tx.commit().await?;
     app.committed(thread_id, vec![ev]).await;
-    app.runners.send_if_running(thread_id, Cmd::Decided { approval_id, decision: Decision::Deny });
+    app.runners.send_if_running(
+        thread_id,
+        Cmd::Decided {
+            approval_id,
+            decision: Decision::Deny,
+        },
+    );
     Ok(())
 }
 
@@ -204,7 +272,8 @@ pub async fn needs_you(app: &App) -> sqlx::Result<Vec<NeedsYouItem>> {
 }
 
 fn needs_you_item(r: sqlx::postgres::PgRow) -> sqlx::Result<NeedsYouItem> {
-    let card: Card = serde_json::from_value(r.get("card")).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+    let card: Card =
+        serde_json::from_value(r.get("card")).map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
     let created_at: DateTime<Utc> = r.get("created_at");
     let expires_at: DateTime<Utc> = r.get("expires_at");
     let state = match r.get::<&str, _>("state") {
@@ -231,7 +300,11 @@ fn source_line(r: &sqlx::postgres::PgRow) -> String {
     match r.get::<&str, _>("kind") {
         "session" => {
             let by: Option<String> = r.get("started_by");
-            format!("{} · session started by {}", r.get::<String, _>("title"), by.unwrap_or_else(|| "you".into()))
+            format!(
+                "{} · session started by {}",
+                r.get::<String, _>("title"),
+                by.unwrap_or_else(|| "you".into())
+            )
         }
         "chat" => match r.get::<Option<String>, _>("slug") {
             Some(slug) => format!("#{slug} · {agent}"),

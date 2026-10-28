@@ -7,7 +7,7 @@ pub mod manifest;
 mod runner;
 
 use std::collections::{BTreeMap, HashMap};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::mpsc;
@@ -30,7 +30,10 @@ pub struct Registry {
 
 impl Registry {
     pub fn load(home: &Home) -> Self {
-        Self { manifests: manifest::load_all(&home.engines()), home: home.clone() }
+        Self {
+            manifests: manifest::load_all(&home.engines()),
+            home: home.clone(),
+        }
     }
 
     pub fn get(&self, name: &str) -> Option<&Manifest> {
@@ -39,8 +42,12 @@ impl Registry {
 
     /// Engines people can pick (hidden ones, like echo, still run when named).
     pub fn list(&self) -> Vec<EngineInfo> {
-        let mut out: Vec<EngineInfo> =
-            self.manifests.values().filter(|m| !m.hidden).map(|m| self.info(m)).collect();
+        let mut out: Vec<EngineInfo> = self
+            .manifests
+            .values()
+            .filter(|m| !m.hidden)
+            .map(|m| self.info(m))
+            .collect();
         out.sort_by_key(|e| rank(&e.id));
         out
     }
@@ -100,7 +107,12 @@ impl Registry {
         let out = tokio::process::Command::new(npm)
             .args(["install", "--prefix"])
             .arg(&dir)
-            .args(["--ignore-scripts", "--no-audit", "--no-fund", "--save-exact"])
+            .args([
+                "--ignore-scripts",
+                "--no-audit",
+                "--no-fund",
+                "--save-exact",
+            ])
             .args(pkgs)
             .env_clear()
             .envs(base_env())
@@ -111,13 +123,20 @@ impl Registry {
             Ok(())
         } else {
             let err = String::from_utf8_lossy(&out.stderr);
-            Err(err.lines().last().unwrap_or("npm install failed").to_string())
+            Err(err
+                .lines()
+                .last()
+                .unwrap_or("npm install failed")
+                .to_string())
         }
     }
 }
 
 fn rank(name: &str) -> (usize, String) {
-    let pos = PREFERRED.iter().position(|p| *p == name).unwrap_or(PREFERRED.len());
+    let pos = PREFERRED
+        .iter()
+        .position(|p| *p == name)
+        .unwrap_or(PREFERRED.len());
     (pos, name.to_string())
 }
 
@@ -138,9 +157,22 @@ pub fn expand_tilde(p: &str) -> PathBuf {
 /// The only variables an engine gets from the host's environment.
 pub fn base_env() -> Vec<(String, String)> {
     const KEEP: [&str; 16] = [
-        "PATH", "HOME", "LANG", "LC_ALL", "TZ", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
-        "ALL_PROXY", "http_proxy", "https_proxy", "no_proxy", "SSL_CERT_FILE", "SSL_CERT_DIR",
-        "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE",
+        "PATH",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "TZ",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "NODE_EXTRA_CA_CERTS",
+        "REQUESTS_CA_BUNDLE",
     ];
     KEEP.iter()
         .filter_map(|k| std::env::var(k).ok().map(|v| (k.to_string(), v)))
@@ -150,9 +182,15 @@ pub fn base_env() -> Vec<(String, String)> {
 /// What a thread's runner is asked to do.
 #[derive(Debug)]
 pub enum Cmd {
-    Message { text: String, when: SendWhen },
+    Message {
+        text: String,
+        when: SendWhen,
+    },
     Stop,
-    Decided { approval_id: Uuid, decision: Decision },
+    Decided {
+        approval_id: Uuid,
+        decision: Decision,
+    },
 }
 
 /// The live runners, by thread.
@@ -192,8 +230,4 @@ impl Runners {
 /// Where an engine for this thread works and keeps its own files.
 pub fn engine_home(home: &Home, engine: &str, owner: Uuid) -> PathBuf {
     home.engine_home(engine, &owner.to_string())
-}
-
-pub fn ensure_dir(p: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(p)
 }

@@ -11,18 +11,27 @@ pub enum Prepared {
     Missing,
     /// Not a git repo: the session works in the folder itself.
     Plain,
-    Worktree { path: PathBuf, branch: String },
+    Worktree {
+        path: PathBuf,
+        branch: String,
+    },
     /// A repo, but the worktree couldn't be made; the session works in the folder.
-    Failed { reason: String },
+    Failed {
+        reason: String,
+    },
 }
 
 pub async fn prepare(folder: &Path, slug: &str) -> Prepared {
     if !folder.is_dir() {
         return Prepared::Missing;
     }
-    let Some(repo) = repo_root(folder).await else { return Prepared::Plain };
+    let Some(repo) = repo_root(folder).await else {
+        return Prepared::Plain;
+    };
     let Some(parent) = repo.parent() else {
-        return Prepared::Failed { reason: "the repo has no parent folder".into() };
+        return Prepared::Failed {
+            reason: "the repo has no parent folder".into(),
+        };
     };
     let base = parent.join(".weilo-worktrees");
     for candidate in candidates(slug) {
@@ -36,12 +45,20 @@ pub async fn prepare(folder: &Path, slug: &str) -> Prepared {
             Err(reason) => Prepared::Failed { reason },
         };
     }
-    Prepared::Failed { reason: "no free name".into() }
+    Prepared::Failed {
+        reason: "no free name".into(),
+    }
 }
 
 fn candidates(slug: &str) -> impl Iterator<Item = String> + '_ {
     let base = if slug.is_empty() { "session" } else { slug };
-    (1..=50).map(move |n| if n == 1 { base.to_string() } else { format!("{base}-{n}") })
+    (1..=50).map(move |n| {
+        if n == 1 {
+            base.to_string()
+        } else {
+            format!("{base}-{n}")
+        }
+    })
 }
 
 async fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
@@ -60,12 +77,17 @@ async fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
 }
 
 async fn repo_root(folder: &Path) -> Option<PathBuf> {
-    git(folder, &["rev-parse", "--show-toplevel"]).await.ok().map(PathBuf::from)
+    git(folder, &["rev-parse", "--show-toplevel"])
+        .await
+        .ok()
+        .map(PathBuf::from)
 }
 
 async fn branch_exists(repo: &Path, slug: &str) -> bool {
     let reference = format!("refs/heads/weilo/{slug}");
-    git(repo, &["rev-parse", "--verify", "--quiet", &reference]).await.is_ok()
+    git(repo, &["rev-parse", "--verify", "--quiet", &reference])
+        .await
+        .is_ok()
 }
 
 async fn add_worktree(repo: &Path, path: &Path, branch: &str) -> Result<(), String> {
@@ -73,5 +95,7 @@ async fn add_worktree(repo: &Path, path: &Path, branch: &str) -> Result<(), Stri
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let path = path.to_string_lossy();
-    git(repo, &["worktree", "add", "-b", branch, &path]).await.map(|_| ())
+    git(repo, &["worktree", "add", "-b", branch, &path])
+        .await
+        .map(|_| ())
 }

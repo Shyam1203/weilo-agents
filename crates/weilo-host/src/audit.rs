@@ -92,7 +92,9 @@ pub async fn verify(pool: &PgPool, space_id: Uuid) -> sqlx::Result<Verdict> {
     if head != prev {
         return Ok(Verdict::BrokenAt { seq: expected_seq });
     }
-    Ok(Verdict::Intact { rows: rows.len() as i64 })
+    Ok(Verdict::Intact {
+        rows: rows.len() as i64,
+    })
 }
 
 fn row_hash(prev: &[u8], seq: i64, at: DateTime<Utc>, e: &Entry<'_>) -> Vec<u8> {
@@ -154,17 +156,28 @@ mod tests {
     #[test]
     fn canonical_json_sorts_keys_at_every_level() {
         let v = json!({ "b": 1, "a": { "d": [1, { "z": true, "y": null }], "c": "x" } });
-        assert_eq!(canonical_json(&v), r#"{"a":{"c":"x","d":[1,{"y":null,"z":true}]},"b":1}"#);
+        assert_eq!(
+            canonical_json(&v),
+            r#"{"a":{"c":"x","d":[1,{"y":null,"z":true}]},"b":1}"#
+        );
     }
 
     #[test]
     fn hash_depends_on_previous_hash_and_content() {
         let at = Utc::now().trunc_subsecs(6);
-        let e = Entry { actor: "host", device_id: None, action: "setup", detail: json!({}) };
+        let e = Entry {
+            actor: "host",
+            device_id: None,
+            action: "setup",
+            detail: json!({}),
+        };
         let a = row_hash(&[0; 32], 1, at, &e);
         assert_eq!(a, row_hash(&[0; 32], 1, at, &e));
         assert_ne!(a, row_hash(&[1; 32], 1, at, &e));
-        let e2 = Entry { action: "setup.done", ..e };
+        let e2 = Entry {
+            action: "setup.done",
+            ..e
+        };
         assert_ne!(a, row_hash(&[0; 32], 1, at, &e2));
     }
 }

@@ -22,29 +22,58 @@ pub type Id = Uuid;
 #[ts(export)]
 pub enum ClientFrame {
     /// First frame on every connection.
-    Hello { version: u32 },
+    Hello {
+        version: u32,
+    },
     /// Follow a thread. The host sends every durable event after `after_seq`, then live ones.
-    Sub { thread_id: Id, after_seq: i64 },
-    Unsub { thread_id: Id },
+    Sub {
+        thread_id: Id,
+        after_seq: i64,
+    },
+    Unsub {
+        thread_id: Id,
+    },
     /// Every action the UI takes. Idempotent by `call_id`.
-    Call { call_id: Id, call: Call },
+    Call {
+        call_id: Id,
+        call: Call,
+    },
     /// Which thread this device is looking at (push is skipped while someone looks).
-    Presence { thread_id: Option<Id> },
+    Presence {
+        thread_id: Option<Id>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "t", rename_all = "snake_case")]
 #[ts(export)]
 pub enum ServerFrame {
-    Welcome { version: u32, host_name: String, device_id: Id },
+    Welcome {
+        version: u32,
+        host_name: String,
+        device_id: Id,
+    },
     /// A durable event of a thread the device follows.
-    Ev { thread_id: Id, event: Event },
+    Ev {
+        thread_id: Id,
+        event: Event,
+    },
     /// A temporary piece of a reply being written. Never stored. Dropped when the
     /// durable event with a `seq` above `after_seq` arrives.
-    Delta { thread_id: Id, after_seq: i64, sub_seq: i64, delta: Delta },
-    Ret { call_id: Id, result: CallResult },
+    Delta {
+        thread_id: Id,
+        after_seq: i64,
+        sub_seq: i64,
+        delta: Delta,
+    },
+    Ret {
+        call_id: Id,
+        result: CallResult,
+    },
     /// Something the sidebar or Needs you shows changed. The client asks again.
-    Changed { what: Changed },
+    Changed {
+        what: Changed,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -70,24 +99,70 @@ pub enum Call {
     /// Everything the first screen needs, in one round trip.
     Snapshot,
     ListEngines,
-    CreateAgent { name: String, engine: String, model: Option<String> },
-    UpdateAgent { agent_id: Id, name: Option<String>, model: Option<String>, instructions: Option<String> },
-    StopAgent { agent_id: Id },
-    CreateChannel { title: String },
-    RenameChannel { channel_id: Id, title: String },
-    ArchiveChannel { channel_id: Id, archived: bool },
+    CreateAgent {
+        name: String,
+        engine: String,
+        model: Option<String>,
+    },
+    UpdateAgent {
+        agent_id: Id,
+        name: Option<String>,
+        model: Option<String>,
+        instructions: Option<String>,
+    },
+    StopAgent {
+        agent_id: Id,
+    },
+    CreateChannel {
+        title: String,
+    },
+    RenameChannel {
+        channel_id: Id,
+        title: String,
+    },
+    ArchiveChannel {
+        channel_id: Id,
+        archived: bool,
+    },
     /// A new thread (tab) in a channel, owned by one agent.
-    CreateThread { channel_id: Id, agent_id: Id, title: Option<String> },
-    MoveThread { thread_id: Id, channel_id: Id },
+    CreateThread {
+        channel_id: Id,
+        agent_id: Id,
+        title: Option<String>,
+    },
+    MoveThread {
+        thread_id: Id,
+        channel_id: Id,
+    },
     /// Start a coding session in a folder. `agent_id` is the agent that watches it, if any.
-    StartSession { folder: String, engine: String, title: Option<String>, channel_id: Option<Id>, agent_id: Option<Id> },
-    Send { thread_id: Id, text: String, when: SendWhen },
-    Stop { thread_id: Id },
-    Decide { approval_id: Id, decision: Decision },
+    StartSession {
+        folder: String,
+        engine: String,
+        title: Option<String>,
+        channel_id: Option<Id>,
+        agent_id: Option<Id>,
+    },
+    Send {
+        thread_id: Id,
+        text: String,
+        when: SendWhen,
+    },
+    Stop {
+        thread_id: Id,
+    },
+    Decide {
+        approval_id: Id,
+        decision: Decision,
+    },
     NeedsYou,
-    SetPrefs { prefs: UiPrefs },
+    SetPrefs {
+        prefs: UiPrefs,
+    },
     SetupStatus,
-    FinishSetup { engine: String, keep_awake: bool },
+    FinishSetup {
+        engine: String,
+        keep_awake: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -106,7 +181,9 @@ pub enum SendWhen {
 pub enum Decision {
     Allow,
     /// Always allow, with a named scope ("in this folder", "for this site").
-    AllowAlways { scope: String },
+    AllowAlways {
+        scope: String,
+    },
     Deny,
 }
 
@@ -285,12 +362,18 @@ pub struct UiPrefs {
 
 impl Default for UiPrefs {
     fn default() -> Self {
-        let on = SectionPrefs { shown: true, open: true };
+        let on = SectionPrefs {
+            shown: true,
+            open: true,
+        };
         Self {
             agents: on.clone(),
             channels: on.clone(),
             sessions: on,
-            archived: SectionPrefs { shown: true, open: false },
+            archived: SectionPrefs {
+                shown: true,
+                open: false,
+            },
         }
     }
 }
@@ -315,16 +398,44 @@ pub struct Event {
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[ts(export)]
 pub enum EventBody {
-    UserMessage { text: String, when: SendWhen },
-    AgentMessage { text: String, agent_id: Option<Id> },
+    UserMessage {
+        text: String,
+        when: SendWhen,
+    },
+    AgentMessage {
+        text: String,
+        agent_id: Option<Id>,
+    },
     /// A step the agent took ("Read the checkout code").
-    Step { step_id: String, title: String, status: StepStatus },
-    Card { card: Card },
-    ApprovalDecided { approval_id: Id, decision: Decision, via: String },
-    State { state: WorkState, live_line: String },
-    Filed { channel_id: Id },
-    Problem { message: String, action: Option<String> },
-    Usage { tokens_in: i64, tokens_out: i64, cost_micros: i64 },
+    Step {
+        step_id: String,
+        title: String,
+        status: StepStatus,
+    },
+    Card {
+        card: Card,
+    },
+    ApprovalDecided {
+        approval_id: Id,
+        decision: Decision,
+        via: String,
+    },
+    State {
+        state: WorkState,
+        live_line: String,
+    },
+    Filed {
+        channel_id: Id,
+    },
+    Problem {
+        message: String,
+        action: Option<String>,
+    },
+    Usage {
+        tokens_in: i64,
+        tokens_out: i64,
+        cost_micros: i64,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -393,12 +504,22 @@ mod tests {
     fn frames_round_trip() {
         let f = ClientFrame::Call {
             call_id: Uuid::nil(),
-            call: Call::Send { thread_id: Uuid::nil(), text: "hi".into(), when: SendWhen::Now },
+            call: Call::Send {
+                thread_id: Uuid::nil(),
+                text: "hi".into(),
+                when: SendWhen::Now,
+            },
         };
         let s = serde_json::to_string(&f).unwrap();
         assert!(s.contains(r#""t":"call""#) && s.contains(r#""method":"send""#));
         let back: ClientFrame = serde_json::from_str(&s).unwrap();
-        assert!(matches!(back, ClientFrame::Call { call: Call::Send { .. }, .. }));
+        assert!(matches!(
+            back,
+            ClientFrame::Call {
+                call: Call::Send { .. },
+                ..
+            }
+        ));
     }
 
     #[test]

@@ -16,7 +16,11 @@ pub fn tool_info(req: &RequestPermissionRequest, known: Option<&ToolInfo>) -> To
     let f = &req.tool_call.fields;
     let known = known.cloned().unwrap_or_default();
     ToolInfo {
-        title: f.title.clone().filter(|t| !t.is_empty()).unwrap_or(known.title),
+        title: f
+            .title
+            .clone()
+            .filter(|t| !t.is_empty())
+            .unwrap_or(known.title),
         kind: f.kind.or(known.kind),
         raw_input: f.raw_input.clone().or(known.raw_input),
     }
@@ -28,7 +32,11 @@ pub fn permission_card(
     tool: &ToolInfo,
     req: &RequestPermissionRequest,
 ) -> Card {
-    let title = if tool.title.is_empty() { "Use a tool".to_string() } else { tool.title.clone() };
+    let title = if tool.title.is_empty() {
+        "Use a tool".to_string()
+    } else {
+        tool.title.clone()
+    };
     let (risk, risk_line) = risk(tool);
     let has = |k: PermissionOptionKind| req.options.iter().any(|o| o.kind == k);
     let mut actions = vec![CardAction {
@@ -42,7 +50,9 @@ pub fn permission_card(
             id: "always".into(),
             label: "Always allow in this folder".into(),
             primary: false,
-            decision: Some(Decision::AllowAlways { scope: "folder".into() }),
+            decision: Some(Decision::AllowAlways {
+                scope: "folder".into(),
+            }),
         });
     }
     actions.push(CardAction {
@@ -69,7 +79,9 @@ fn risk(tool: &ToolInfo) -> (RiskClass, &'static str) {
         return (RiskClass::Send, "Can't unsend");
     }
     match tool.kind {
-        Some(ToolKind::Read | ToolKind::Search | ToolKind::Think) => (RiskClass::Read, "Changes nothing"),
+        Some(ToolKind::Read | ToolKind::Search | ToolKind::Think) => {
+            (RiskClass::Read, "Changes nothing")
+        }
         Some(ToolKind::Edit | ToolKind::Move) => (RiskClass::Reversible, "Changes your files"),
         Some(ToolKind::Execute) => (RiskClass::Reversible, "Runs a command"),
         Some(ToolKind::Delete) => (RiskClass::Destructive, "Deletes files"),
@@ -80,9 +92,14 @@ fn risk(tool: &ToolInfo) -> (RiskClass, &'static str) {
 
 fn looks_like_send(title: &str) -> bool {
     let t = title.to_lowercase();
-    ["send", "post", "email", "publish", "submit", "tweet", "git push"]
-        .iter()
-        .any(|w| t.split(|c: char| !c.is_alphanumeric() && c != ' ').any(|part| part.contains(w)))
+    [
+        "send", "post", "email", "publish", "submit", "tweet", "git push",
+    ]
+    .iter()
+    .any(|w| {
+        t.split(|c: char| !c.is_alphanumeric() && c != ' ')
+            .any(|part| part.contains(w))
+    })
 }
 
 /// A command when there is one, otherwise the input as pretty JSON.
@@ -106,14 +123,19 @@ pub fn option_for(req: &RequestPermissionRequest, decision: &Decision) -> Option
         Decision::Deny => &[RejectOnce, RejectAlways],
     };
     order.iter().find_map(|kind| {
-        req.options.iter().find(|o| o.kind == *kind).map(|o| o.option_id.0.to_string())
+        req.options
+            .iter()
+            .find(|o| o.kind == *kind)
+            .map(|o| o.option_id.0.to_string())
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agent_client_protocol::schema::v1::{PermissionOption, ToolCallUpdate, ToolCallUpdateFields};
+    use agent_client_protocol::schema::v1::{
+        PermissionOption, ToolCallUpdate, ToolCallUpdateFields,
+    };
 
     fn request(kind: ToolKind, title: &str) -> RequestPermissionRequest {
         let fields = ToolCallUpdateFields::new()
@@ -146,16 +168,31 @@ mod tests {
     #[test]
     fn sends_are_flagged_and_reads_change_nothing() {
         let req = request(ToolKind::Execute, "Send the invoice email");
-        assert_eq!(permission_card("Ava", Uuid::nil(), &tool_info(&req, None), &req).risk, RiskClass::Send);
+        assert_eq!(
+            permission_card("Ava", Uuid::nil(), &tool_info(&req, None), &req).risk,
+            RiskClass::Send
+        );
         let req = request(ToolKind::Read, "Read the checkout code");
-        assert_eq!(permission_card("Ava", Uuid::nil(), &tool_info(&req, None), &req).risk, RiskClass::Read);
+        assert_eq!(
+            permission_card("Ava", Uuid::nil(), &tool_info(&req, None), &req).risk,
+            RiskClass::Read
+        );
     }
 
     #[test]
     fn decisions_pick_matching_options() {
         let req = request(ToolKind::Execute, "x");
         assert_eq!(option_for(&req, &Decision::Allow).as_deref(), Some("a"));
-        assert_eq!(option_for(&req, &Decision::AllowAlways { scope: "folder".into() }).as_deref(), Some("aa"));
+        assert_eq!(
+            option_for(
+                &req,
+                &Decision::AllowAlways {
+                    scope: "folder".into()
+                }
+            )
+            .as_deref(),
+            Some("aa")
+        );
         assert_eq!(option_for(&req, &Decision::Deny).as_deref(), Some("r"));
     }
 }
