@@ -1,8 +1,7 @@
 # Weilo
 
 An AI teammate that runs on your own computer. Give it a job in a #channel, and it works on it
-while you do something else. It asks before anything risky, and you answer from your computer or
-your phone.
+while you do something else. It asks before anything risky, and you answer when it suits you.
 
 Weilo uses the coding agent you already have: Claude Code, Codex or Gemini. If you have none, it
 uses pi.
@@ -30,7 +29,7 @@ You can also download the file for your computer from the
 
 ```sh
 weilo up      # starts Weilo at http://127.0.0.1:3210
-weilo pair    # gives a one-time code to connect a browser or phone
+weilo pair    # gives a one-time code to connect a browser
 ```
 
 Open the address, type the code, and follow the two setup steps: pick the agent that does the
@@ -45,7 +44,7 @@ Your data stays in `~/.weilo-agents`. Set `WEILO_HOME` to keep it somewhere else
 - The first time you use an agent, Weilo downloads it from npm.
 
 Nothing else is sent anywhere. Weilo listens only on `127.0.0.1` and answers only devices you
-paired. See [SECURITY.md](SECURITY.md).
+paired. Reaching it from your phone comes in the next version. See [SECURITY.md](SECURITY.md).
 
 ## Develop
 

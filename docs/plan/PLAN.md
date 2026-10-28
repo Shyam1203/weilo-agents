@@ -1,6 +1,6 @@
 # Weilo 1.0: design and architecture plan
 
-**Status:** draft v10 (local first, bring your own engine). Nothing here is built yet.
+**Status:** v10 (local first, bring your own engine). Approved at 9.5. The first build is in progress; see *Build 1* below for what it has and how it differs.
 
 **Reviews behind it:** ten rounds of independent review.
 
@@ -11,6 +11,26 @@
 §20 lists what each round changed.
 
 **UI mock:** the [Weilo 1.0 UI mock](https://claude.ai/artifact/5P63PzD8BABXgWRzTxwAkP) design canvas (private to the owner). Per CLAUDE.md, no UI is built until the mock is approved.
+
+**Build 1 (Oct 28): the first slice of release 1.**
+
+- **In it:**
+  - the Rust host with its own Postgres, the event log, approvals and Needs you;
+  - engines over ACP: Claude Code, Codex, Gemini and pi;
+  - #channels, chats and coding sessions;
+  - pairing;
+  - the desktop and phone web app;
+  - binary releases and an install script.
+- **Next, in order:**
+  1. Phone access from outside the computer: same Wi-Fi first, then the relay.
+  2. Talk v1 (§8).
+  3. The engine sandbox (§6.3) and the gateway with stand-in keys (§6.4).
+  4. MCP, the agent's browser, routines and connections.
+- **Where it differs from this plan, for now:**
+  - Claude Code and Codex use the person's own sign-in and config, not a Weilo-managed folder (§6.4).
+  - API keys for pi are passed to the engine directly, because the gateway isn't built yet.
+  - SECURITY.md says plainly that there is no sandbox yet.
+  - On screen, "thread" reads **chat**.
 
 **Owner decisions (Oct 28):**
 

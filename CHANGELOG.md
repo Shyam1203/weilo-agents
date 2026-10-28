@@ -18,10 +18,12 @@ Weilo is rebuilt from the ground up. Nothing carries over from 0.1: install it f
   once from any device; the others see it's done.
 - **Tell now or after this job.** Say something to a working agent right away, or line it up for
   when it finishes.
-- **Phone.** The same app works on a phone, with a tab bar and Needs you on top.
-- **Paired devices only.** Connect a browser or phone with a one-time code from `weilo pair`.
+- **Phone-ready.** The app fits a phone screen, with a tab bar and Needs you on top. Reaching
+  your computer from your phone comes next.
+- **Paired devices only.** Connect a browser with a one-time code from `weilo pair`.
 
-Not yet: voice, the cloud version, a sandbox around agents, routines and connections.
+Not yet: reaching Weilo from your phone, voice, a sandbox around agents, routines and
+connections, and the cloud version.
 
 ## 0.1.2
 
