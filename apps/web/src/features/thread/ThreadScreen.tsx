@@ -88,10 +88,11 @@ export function ThreadScreen({ header, threadId, list, composer, panelOpen, onPa
               <MessageList threadId={threadId} {...list} tail={after} />
             </div>
           </div>
-          <div className={cx(column, "relative shrink-0", phone ? "py-2" : "pb-6")}>
+          <div data-composer-area="" className={cx(column, "relative shrink-0", phone ? "py-2" : "pb-6")}>
             {!atBottom && (
               <button
                 type="button"
+                data-jump=""
                 onClick={jump}
                 className="absolute -top-12 left-1/2 z-[2] flex h-9 -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-body-sm font-medium text-text shadow-e2"
               >

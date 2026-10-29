@@ -18,6 +18,8 @@ export interface EventCardProps {
   threadId: string;
   /** "Show the command" in sessions, "Show details" elsewhere. */
   detailsLabel?: string;
+  /** While the Weilo computer is away: this card carries the one line saying answers wait. */
+  awayNote?: boolean;
 }
 
 function variantOf(a: CardAction): ButtonVariant {
@@ -32,7 +34,7 @@ function needsConfirm(card: CardData, a: CardAction): boolean {
 }
 
 /** Draft and approval cards: title, optional body, details behind a disclosure, one risk line, one primary. */
-export function EventCard({ card, decided, threadId, detailsLabel = "Show details" }: EventCardProps) {
+export function EventCard({ card, decided, threadId, detailsLabel = "Show details", awayNote = false }: EventCardProps) {
   const phone = useVariant() === "phone";
   const itemState = useApp((s) =>
     card.approval_id ? s.snapshot?.needs_you.find((n) => n.approval_id === card.approval_id)?.state : undefined,
@@ -104,6 +106,7 @@ export function EventCard({ card, decided, threadId, detailsLabel = "Show detail
       confirming={confirming}
       busy={busy}
       away={away}
+      awayNote={awayNote}
       phone={phone}
       onAct={act}
       onBack={() => setConfirming(null)}
@@ -144,6 +147,7 @@ function CardFooter({
   confirming,
   busy,
   away,
+  awayNote,
   phone,
   onAct,
   onBack,
@@ -153,6 +157,7 @@ function CardFooter({
   confirming: CardAction | null;
   busy: boolean;
   away: string | null;
+  awayNote: boolean;
   phone: boolean;
   onAct(a: CardAction): void;
   onBack(): void;
@@ -172,12 +177,12 @@ function CardFooter({
   if (confirming) {
     const destructive = card.risk === "destructive";
     return (
-      <div className={cx("flex gap-2", phone ? "flex-col" : "items-center")} role="group" aria-label="Confirm">
-        <span className="min-w-0 flex-1 text-body-sm">
+      <div className={cx("flex gap-2", phone ? "flex-col" : "flex-wrap items-center")} role="group" aria-label="Confirm">
+        <span className={cx("min-w-0 text-body-sm", phone ? undefined : "flex-[1_1_12rem]")}>
           <b className="font-semibold">{confirming.label}?</b>{" "}
           <span className="text-text-secondary">{card.risk_line}.</span>
         </span>
-        <div className="flex gap-2">
+        <div className={cx("flex gap-2", !phone && "ml-auto")}>
           <Button size={size} variant="tertiary" onClick={onBack} disabled={busy} className={cx(phone && "flex-1")}>
             Cancel
           </Button>
@@ -200,9 +205,10 @@ function CardFooter({
   const actions = phone ? [...card.actions].sort((a, b) => RANK[variantOf(a)] - RANK[variantOf(b)]) : card.actions;
   return (
     <div className={cx("flex gap-2", phone ? "flex-col items-stretch" : "flex-wrap items-center")}>
-      <RiskLine risk={card.risk} text={card.risk_line} className="flex-1" />
+      {/* At least 12rem for the risk line: on a narrow card the buttons wrap below it rather than squeeze it to a word a line. */}
+      <RiskLine risk={card.risk} text={card.risk_line} className={phone ? undefined : "flex-[1_1_12rem]"} />
       {actions.length > 0 && (
-        <div className={cx("flex gap-2", phone && "flex-col")}>
+        <div className={cx("flex gap-2", phone ? "flex-col" : "ml-auto flex-wrap justify-end")}>
           {actions.map((a) => (
             <Button
               key={a.id}
@@ -218,8 +224,9 @@ function CardFooter({
           ))}
         </div>
       )}
-      {away && actions.some((a) => a.decision) && (
-        <span className={cx("text-caption text-text-secondary", !phone && "basis-full")}>{away} You can answer when it's back.</span>
+      {/* The banner says why; one card says what it means for answers. */}
+      {away && awayNote && actions.some((a) => a.decision) && (
+        <span className={cx("text-caption text-text-secondary", !phone && "basis-full")}>You can answer when your Weilo computer is back.</span>
       )}
     </div>
   );

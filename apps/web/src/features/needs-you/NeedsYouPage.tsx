@@ -18,6 +18,8 @@ import { Menu, MenuItem } from "../../ui/Menu";
 import type { CardAction } from "../../proto/CardAction";
 import { Link } from "../../ui/Link";
 import { RiskLine } from "../../ui/RiskLine";
+import { decidedAt, outcomeWords } from "../../lib/timeline";
+import type { Event } from "../../proto/Event";
 import { ConnectionBanner } from "../shell/Toast";
 import { useTouchOnly } from "../../lib/platform";
 
@@ -111,7 +113,16 @@ export function NeedsYouPage({ phone }: { phone?: boolean }) {
           )}
           {groups.length === 0 && <EmptyState title="Nothing needs you." line={pingLine(snap)} />}
           {groups.map((g) => (
-            <Group key={g.key} group={g} snap={snap} cursor={cursor} setCursor={setCursor} register={register} phone={phone} />
+            <Group
+              key={g.key}
+              group={g}
+              snap={snap}
+              cursor={cursor}
+              setCursor={setCursor}
+              register={register}
+              phone={phone}
+              awayNote={g.key === groups.find((x) => x.key === "waiting" || x.key === "questions")?.key}
+            />
           ))}
         </div>
       </div>
@@ -126,6 +137,7 @@ function Group({
   setCursor,
   register,
   phone,
+  awayNote,
 }: {
   group: NeedsYouGroup;
   snap: Snapshot;
@@ -133,8 +145,11 @@ function Group({
   setCursor(id: string): void;
   register(id: string): (el: HTMLElement | null) => void;
   phone?: boolean;
+  /** The first group of questions: says once, while the Weilo computer is away, that answers wait. */
+  awayNote?: boolean;
 }) {
   const id = `ny-${group.key}`;
+  const away = useApp(awayLine);
   const rowProps = (item: NeedsYouItem) => ({
     ref: register(item.approval_id),
     selected: cursor === item.approval_id,
@@ -146,6 +161,10 @@ function Group({
         {group.title}
         {group.count !== null ? ` · ${group.count}` : ""}
       </h2>
+      {/* The banner says why; this says it once for every card, not on each. */}
+      {away && awayNote && (
+        <p className="m-0 -mt-1 text-caption text-text-secondary">You can answer when your Weilo computer is back.</p>
+      )}
       {group.key === "waiting" || group.key === "questions"
         ? group.items.map((item) => <AskRow key={item.approval_id} item={item} snap={snap} phone={phone} {...rowProps(item)} />)
         : group.key === "done"
@@ -274,7 +293,6 @@ function AskRow({ item, snap, selected, onFocus, ref, phone }: RowProps & { phon
             </Disclosure>
           )}
           <RiskLine risk={item.card.risk} text={item.card.risk_line} />
-          {away && <span className="text-caption text-text-secondary">{away} You can answer when it's back.</span>}
         </div>
       </div>
       {confirming ? (
@@ -427,14 +445,29 @@ function DoneRow({ item, snap, selected, onFocus, ref, last, phone }: RowProps &
     );
   }
   const allowed = item.state === "allowed";
+  const events = useApp((s) => s.feeds[item.thread_id]?.events);
   return (
     <Link ref={ref} href={pathFor(snap, item)} onFocus={onFocus} className={cx(line, "hover:bg-surface-muted hover:no-underline")}>
       {allowed ? <CheckIcon className="shrink-0 text-success" /> : <XCircleIcon className="shrink-0 text-text-secondary" />}
-      <Lines phone={phone} meta={`${allowed ? "You approved" : "You said no"} · ${timeOf(item.created_at)}`}>
+      <Lines phone={phone} meta={doneLine(item, events)}>
         {item.card.title}
       </Lines>
     </Link>
   );
+}
+
+/**
+ * "You allowed it · 9:30": the same words as the card in the chat, and the time it was
+ * answered. The host doesn't list that time with the item, so it comes from the chat's own
+ * events when they are here (or `decided_at`, once the host sends it); otherwise no time
+ * rather than the time it was asked.
+ */
+export function doneLine(item: NeedsYouItem, events: Event[] | undefined): string {
+  const found = decidedAt(events, item.approval_id);
+  const decision = found?.decision ?? (item.state === "allowed" ? { kind: "allow" as const } : { kind: "deny" as const });
+  const words = outcomeWords(decision, item.card.kind, item.card.actions);
+  const at = (item as NeedsYouItem & { decided_at?: string | null }).decided_at ?? found?.at ?? null;
+  return at ? `${words} · ${timeOf(at)}` : words;
 }
 
 /** A row's title and its time: one line on desktop, two on phones. */

@@ -74,7 +74,12 @@ export function SessionView({ thread }: { thread: ThreadSummary }) {
       changes={changes}
       panelOpen={panel}
       onPanelClose={() => setPanel(false)}
-      top={phone && changes && hasChanges ? <ChangesRow thread={thread} changes={changes} /> : undefined}
+      top={
+        // Phones, and windows where the panel doesn't open by itself: a line that opens the changes.
+        changes && hasChanges && (phone || (!inline && !panel)) ? (
+          <ChangesRow thread={thread} changes={changes} onOpen={phone ? undefined : () => setPanel(true)} />
+        ) : undefined
+      }
       header={
         <TopBar className={phone ? "px-4" : "pr-4 pl-6"}>
           {phone ? <BackButton /> : <SessionMark size={24} />}

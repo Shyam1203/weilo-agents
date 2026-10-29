@@ -230,21 +230,32 @@ export function totalCost(events: Event[]): bigint {
 }
 
 /**
- * Plain words for a decision, shown under a decided card. "Always allow" follows the
- * card's own button ("Always allow for Ava" becomes "Always allowed for Ava").
+ * Plain words for a decision, the same under a decided card and in Needs you: "You allowed
+ * it", "You said no" (drafts: "You approved it", "You discarded it"). "Always allow" follows
+ * the card's own button ("Always allow for Ava" becomes "You always allow this for Ava").
  */
 export function outcomeWords(decision: Decision, cardKind: string, actions: CardAction[] = []): string {
   switch (decision.kind) {
     case "allow":
-      return cardKind === "draft" ? "Approved" : "Allowed";
+      return cardKind === "draft" ? "You approved it" : "You allowed it";
     case "allow_always": {
       const label = actions.find((a) => a.decision?.kind === "allow_always")?.label.trim() ?? "";
       const m = /^always allow\s+(.+)$/i.exec(label);
-      return `Always allowed ${m ? m[1] : scopeWords(decision.scope)}`;
+      return `You always allow this ${m ? m[1] : scopeWords(decision.scope)}`;
     }
     case "deny":
-      return cardKind === "draft" ? "Discarded" : "Not allowed";
+      return cardKind === "draft" ? "You discarded it" : "You said no";
   }
+}
+
+/** When an approval was answered, from its thread's events (the host doesn't list it with the item). */
+export function decidedAt(events: Event[] | undefined, approvalId: string): { at: string; decision: Decision } | null {
+  if (!events) return null;
+  for (let i = events.length - 1; i >= 0; i--) {
+    const b = events[i]!.body;
+    if (b.kind === "approval_decided" && b.approval_id === approvalId) return { at: events[i]!.at, decision: b.decision };
+  }
+  return null;
 }
 
 export function scopeWords(scope: string): string {

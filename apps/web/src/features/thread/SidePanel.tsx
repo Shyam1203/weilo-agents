@@ -391,7 +391,7 @@ function CopyBack({ thread }: { thread: ThreadSummary }) {
  * Phones: "2 files changed +13 −1 · See changes", which opens the changes full screen,
  * with Copy the changes when the session worked in its own copy.
  */
-export function ChangesRow({ thread, changes }: { thread: ThreadSummary; changes: SessionChanges }) {
+export function ChangesRow({ thread, changes, onOpen }: { thread: ThreadSummary; changes: SessionChanges; onOpen?(): void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDialogElement>(null);
   const added = changes.files.reduce((n, f) => n + f.added, 0);
@@ -406,8 +406,11 @@ export function ChangesRow({ thread, changes }: { thread: ThreadSummary; changes
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
-        className="flex min-h-12 w-full shrink-0 items-center gap-2 border-0 bg-surface px-4 text-left text-body-sm text-text shadow-line"
+        onClick={() => (onOpen ? onOpen() : setOpen(true))}
+        className={cx(
+          "flex w-full shrink-0 items-center gap-2 border-0 bg-surface text-left text-body-sm text-text shadow-line",
+          onOpen ? "min-h-10 px-6 hover:bg-surface-muted" : "min-h-12 px-4",
+        )}
       >
         <span className="min-w-0 flex-1">
           {filesChangedLine(changes.files)} <Counts added={added} removed={removed} />

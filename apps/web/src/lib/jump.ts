@@ -60,8 +60,9 @@ function act(id: string, label: string, action: JumpAction, words?: string): Jum
 }
 
 /**
- * The items that match what was typed, best first: names that start with it, then words
- * that start with it, then anything that contains it. A leading # matches channels.
+ * The items that match what was typed, best first: names that start with it, then names
+ * with a word that starts with it ("ge" finds #general, not "New agent"). Only when nothing
+ * starts that way does a name that merely contains it count. A leading # matches channels.
  */
 export function searchJump(items: JumpItem[], query: string, limit = 12): JumpItem[] {
   const raw = query.trim().toLowerCase();
@@ -85,7 +86,8 @@ export function searchJump(items: JumpItem[], query: string, limit = 12): JumpIt
     if (score >= 0) scored.push({ item, score, i });
   });
   scored.sort((a, b) => a.score - b.score || a.i - b.i);
-  return scored.slice(0, limit).map((s) => s.item);
+  const starts = scored.filter((x) => x.score < 2);
+  return (starts.length ? starts : scored).slice(0, limit).map((s) => s.item);
 }
 
 /**

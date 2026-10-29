@@ -161,7 +161,7 @@ function ChannelHeader({
       value={active}
       onChange={(id) => navigate(id === OVERVIEW ? paths.overview(channel.id) : paths.channel(channel.id, id))}
       label="Chats"
-      className={phone ? "no-scrollbar min-w-0 overflow-x-auto" : undefined}
+      scroll
     />
   );
 

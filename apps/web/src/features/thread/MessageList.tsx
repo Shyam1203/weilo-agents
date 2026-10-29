@@ -44,17 +44,25 @@ export function MessageList({ threadId, agentId, kind, empty, faces = true, tail
   }, [blocks]);
   const phone = variant === "phone";
   const showFace = faces && !phone;
+  // While the Weilo computer is away, the first open card says once that answers wait.
+  const awayCard = useMemo(() => {
+    for (const b of blocks)
+      if (b.type === "agent")
+        for (const it of b.items)
+          if (it.type === "card" && !it.decided && it.card.approval_id && it.card.actions.some((a) => a.decision)) return it.card.approval_id;
+    return null;
+  }, [blocks]);
 
   return (
     <div className={cx("flex flex-col", gap)}>
       {blocks.length === 0 && sending.length === 0 && empty}
-      {blocks.map((b) =>
-        b.type === "user" ? (
-          <UserRow key={b.key} text={b.text} at={b.at} afterJob={b.when === "after_job"} />
-        ) : (
-          <AgentBlockRow key={b.key} block={b} threadId={threadId} kind={kind} faces={faces} />
-        ),
-      )}
+      {blocks.map((b, i) => {
+        if (b.type === "user") return <UserRow key={b.key} text={b.text} at={b.at} afterJob={b.when === "after_job"} />;
+        // More from the same agent, with no new words: 12px under what it said before, as in the mock.
+        const prev = blocks[i - 1];
+        const more = !phone && !b.hasText && prev?.type === "agent" && prev.agentId === b.agentId;
+        return <AgentBlockRow key={b.key} block={b} threadId={threadId} kind={kind} faces={faces} more={more} awayCard={awayCard} />;
+      })}
       {sending.map((m) => (
         <UserRow key={m.id} text={m.text} at={null} />
       ))}
@@ -105,11 +113,15 @@ const AgentBlockRow = memo(function AgentBlockRow({
   threadId,
   kind,
   faces,
+  more,
+  awayCard,
 }: {
   block: Extract<Block, { type: "agent" }>;
   threadId: string;
   kind: MessageListProps["kind"];
   faces: boolean;
+  more?: boolean;
+  awayCard: string | null;
 }) {
   const agent = useApp((s) => findAgent(s, block.agentId));
   const phone = useVariant() === "phone";
@@ -122,7 +134,7 @@ const AgentBlockRow = memo(function AgentBlockRow({
   if (shown.length === 0) return null;
 
   return (
-    <div className={cx("row-cv flex", phone ? "flex-col gap-2" : "gap-3")}>
+    <div className={cx("row-cv flex", phone ? "flex-col gap-2" : "gap-3", more && (kind === "session" ? "-mt-1" : "-mt-3"))}>
       {showFace && (face ? <Avatar name={agent.name} color={agent.color} size={32} /> : <span aria-hidden="true" className="w-8 shrink-0" />)}
       <div className={cx("flex min-w-0 flex-1 flex-col", phone ? "gap-2" : "gap-3")}>
         {lead && (
@@ -132,7 +144,7 @@ const AgentBlockRow = memo(function AgentBlockRow({
           </div>
         )}
         {items.map((it) => (
-          <Item key={it.key} item={it} threadId={threadId} kind={kind} agentId={block.agentId} />
+          <Item key={it.key} item={it} threadId={threadId} kind={kind} agentId={block.agentId} awayCard={awayCard} />
         ))}
       </div>
     </div>
@@ -155,11 +167,13 @@ function Item({
   threadId,
   kind,
   agentId,
+  awayCard,
 }: {
   item: AgentItem;
   threadId: string;
   kind: MessageListProps["kind"];
   agentId: string | null;
+  awayCard: string | null;
 }) {
   switch (item.type) {
     case "text":
@@ -172,6 +186,7 @@ function Item({
           card={item.card}
           decided={item.decided}
           threadId={threadId}
+          awayNote={!!item.card.approval_id && item.card.approval_id === awayCard}
           detailsLabel={kind === "session" && item.card.kind === "approval" ? "Show the command" : "Show details"}
         />
       );
@@ -285,7 +300,13 @@ function StreamingRow({ threadId, agentId, faces }: { threadId: string; agentId:
   const agent = useApp((s) => findAgent(s, agentId));
   const phone = useVariant() === "phone";
   return (
-    <div aria-live="polite" aria-atomic="false" aria-label={text ? `${agent?.name ?? "Agent"} is writing` : undefined}>
+    // Empty, it is taken out of the flow, so it doesn't add a second gap above what follows.
+    <div
+      aria-live="polite"
+      aria-atomic="false"
+      aria-label={text ? `${agent?.name ?? "Agent"} is writing` : undefined}
+      className="empty:absolute"
+    >
       {text && (
         <div className={cx("flex", phone ? "flex-col gap-2" : "gap-3")}>
           {faces && !phone && <Avatar name={agent?.name ?? "?"} color={agent?.color} size={32} />}

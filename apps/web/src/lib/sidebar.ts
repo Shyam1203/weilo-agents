@@ -68,17 +68,24 @@ export function buildRows(snap: Snapshot, problems: Record<string, string> = {})
     agent: a,
     };
   });
-  const channelRow = (c: Snapshot["channels"][number]): SidebarRow => ({
-    id: c.id,
-    kind: "channel",
-    name: slugText(c.slug),
-    sub: null,
-    tone: "quiet",
-    href: paths.channel(c.id),
-    state: worst(snap.threads.filter((t) => t.channel_id === c.id && t.kind === "chat").map((t) => t.state)),
-    unread: c.unread,
-    archived: c.archived,
-  });
+  // A channel is as urgent as anything in it: its chats and the sessions filed there. A chat
+  // or session whose last reply didn't work needs you too (§11.2: the most urgent wins).
+  const channelRow = (c: Snapshot["channels"][number]): SidebarRow => {
+    const inside = snap.threads.filter((t) => t.channel_id === c.id && (t.kind === "chat" || t.kind === "session"));
+    const problem = inside.some((t) => t.state === "idle" && problems[t.id]);
+    const state = worst(inside.map((t) => t.state));
+    return {
+      id: c.id,
+      kind: "channel",
+      name: slugText(c.slug),
+      sub: null,
+      tone: problem ? "warn" : "quiet",
+      href: paths.channel(c.id),
+      state,
+      unread: c.unread,
+      archived: c.archived,
+    };
+  };
   const channels = snap.channels.filter((c) => !c.archived).map(channelRow);
   const archived = snap.channels.filter((c) => c.archived).map(channelRow);
   const sessions: SidebarRow[] = snap.threads
@@ -101,11 +108,16 @@ export function buildRows(snap: Snapshot, problems: Record<string, string> = {})
   return { agents, channels, sessions, archived };
 }
 
+/** True for a row that needs the person: waiting on them, or a problem only they can fix ("Needs an API key"). */
+export function needsYou(r: SidebarRow): boolean {
+  return r.state === "needs_you" || r.tone === "warn";
+}
+
 /**
  * What a folded section says: only its most urgent state ("1 needs you", "1 working", "1 new"), or nothing.
  */
 export function collapsedLabel(rows: SidebarRow[]): string {
-  const needs = rows.filter((r) => r.state === "needs_you").length;
+  const needs = rows.filter(needsYou).length;
   if (needs) return `${needs} needs you`;
   const working = rows.filter((r) => r.state === "working").length;
   if (working) return `${working} working`;
