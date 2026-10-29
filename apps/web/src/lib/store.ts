@@ -11,6 +11,7 @@ import type { ThreadSummary } from "../proto/ThreadSummary";
 import type { UiPrefs } from "../proto/UiPrefs";
 import type { WorkState } from "../proto/WorkState";
 import type { ConnStatus } from "./host";
+import { isNoteProblem } from "./timeline";
 
 // ---------------------------------------------------------------------------
 // A tiny store
@@ -494,7 +495,8 @@ export function openProblem(events: Event[]): OpenProblem | null {
     const b = e.body;
     // A reply since, or a message sent again (Try again), means it was dealt with.
     if (b.kind === "agent_message" || b.kind === "user_message") return null;
-    if (b.kind === "problem") return { seq: e.seq, at: e.at, message: b.message, action: b.action, code: b.code ?? null, engine: b.engine ?? null };
+    // Notes ("This folder isn't a git repo…") aren't problems; one that is stays open past them.
+    if (b.kind === "problem" && !isNoteProblem(b.code)) return { seq: e.seq, at: e.at, message: b.message, action: b.action, code: b.code ?? null, engine: b.engine ?? null };
   }
   return null;
 }
@@ -523,9 +525,6 @@ const DIDNT_WORK_CODES = new Set([
   "engine_error",
   "couldnt_ask",
   "restarted",
-  "fresh_start",
-  "not_git",
-  "no_copy",
 ]);
 
 /** What a chat's sidebar line says while a problem is open. By the host's code; older events by their button and words. */

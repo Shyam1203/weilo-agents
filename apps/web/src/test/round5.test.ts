@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { channelLine } from "../features/shell/Pages";
 import { jumpItems, searchJump, startJump } from "../lib/jump";
-import { openProblem, plainProblem, problemLine, problemTitle, awayLine, initialState, applySnapshot, setNeedsYou, store, type AppState } from "../lib/store";
+import { openProblem, plainProblem, problemLine, problemLines, problemNeedsYou, problemTitle, awayLine, initialState, applySnapshot, setNeedsYou, store, type AppState } from "../lib/store";
+import { allSteps, buildBlocks } from "../lib/timeline";
 import { doLater, flushUndo, hasPending, undoPending } from "../lib/undo";
 import { agent, item, snapshot, thread } from "./fixtures";
 
@@ -123,6 +124,41 @@ describe("problems by the host's code", () => {
       } as never,
     ]);
     expect(p).toMatchObject({ code: "not_responding", engine: "codex" });
+  });
+});
+
+describe("set-up notes aren't problems", () => {
+  let n = 0n;
+  const ev = (body: Record<string, unknown>) => ({ seq: ++n, at: "2026-10-28T07:40:00Z", thread_id: "s1", source: "host", body }) as never;
+  const note = (code: string, message: string) => ev({ kind: "problem", message, action: null, code });
+
+  it("shows them as a quiet line in the chat, not an open problem", () => {
+    const events = [
+      note("not_git", "This folder isn't a git repo, so changes go straight into it."),
+      ev({ kind: "step", step_id: "a", title: "Read app.ts", status: "running" }),
+      note("fresh_start", "Ava started a fresh conversation; earlier messages aren't in its memory."),
+    ];
+    expect(openProblem(events)).toBeNull();
+    // A note doesn't end what is running.
+    expect(allSteps(events)[0]!.status).toBe("running");
+    const items = buildBlocks(events).flatMap((b) => (b.type === "agent" ? b.items : []));
+    expect(items.filter((i) => i.type === "problem")).toHaveLength(0);
+    expect(items.filter((i) => i.type === "note").map((i) => (i as { text: string }).text)).toEqual([
+      "This folder isn't a git repo, so changes go straight into it.",
+      "Ava started a fresh conversation; earlier messages aren't in its memory.",
+    ]);
+  });
+
+  it("leaves a real problem open past a note, and keeps notes out of Needs you", () => {
+    const real = ev({ kind: "problem", message: "Codex stopped responding.", action: "Try again", code: "not_responding" });
+    expect(openProblem([real, note("no_copy", "Couldn't make a separate copy of the repo.")])?.code).toBe("not_responding");
+    const s = applySnapshot(
+      initialState,
+      snapshot({ agents: [agent()], threads: [thread({ id: "s1", kind: "session", title: "Fix checkout", channel_id: null, started_by: "ava" })] }),
+    );
+    const withNote = { ...s, feeds: { ...s.feeds, s1: { ...(s.feeds.s1 ?? { events: [], streaming: null }), events: [note("not_git", "This folder isn't a git repo.")] } } } as AppState;
+    expect(problemNeedsYou(withNote)).toEqual([]);
+    expect(problemLines(withNote)).toEqual({});
   });
 });
 

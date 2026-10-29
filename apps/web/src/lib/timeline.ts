@@ -5,6 +5,15 @@ import type { Event } from "../proto/Event";
 import type { SendWhen } from "../proto/SendWhen";
 import type { StepStatus } from "../proto/StepStatus";
 
+// Problems the host sends that only say how things are set up ("This folder isn't a git
+// repo…"): a quiet line in the chat, not something that went wrong.
+const NOTE_CODES = new Set(["not_git", "no_copy", "fresh_start"]);
+
+/** True for a problem event that is only a note. */
+export function isNoteProblem(code: string | null | undefined): boolean {
+  return !!code && NOTE_CODES.has(code);
+}
+
 /** A step's status as drawn: "stopped" when its reply ended (a problem, Stop) before it finished. */
 export type ShownStatus = StepStatus | "stopped";
 
@@ -150,6 +159,10 @@ export function buildBlocks(events: Event[], defaultAgentId: string | null = nul
         agentBlock(e, null).items.push({ type: "filed", key: `f${e.seq}`, channelId: body.channel_id });
         break;
       case "problem":
+        if (isNoteProblem(body.code)) {
+          say(e, body.message);
+          break;
+        }
         // A problem ends the reply: nothing in it is still going.
         settle();
         {
@@ -198,7 +211,7 @@ export function allSteps(events: Event[]): StepItem[] {
   const map = new Map<string, StepItem>();
   for (const e of events) {
     const b = e.body;
-    if (b.kind === "problem" || (b.kind === "state" && b.state === "idle")) {
+    if ((b.kind === "problem" && !isNoteProblem(b.code)) || (b.kind === "state" && b.state === "idle")) {
       for (const st of map.values()) if (st.status === "running") st.status = "stopped";
       continue;
     }
