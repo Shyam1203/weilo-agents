@@ -482,6 +482,30 @@ export function problemLine(p: Pick<OpenProblem, "action" | "message">): string 
   }
 }
 
+export type StatusTone = "ok" | "warn" | "quiet";
+
+/**
+ * An agent's one status line, the same everywhere (sidebar, Agents page, its own header):
+ * an open problem while it is idle ("Needs an API key", in the warning colour), else what
+ * it is doing.
+ */
+export function agentStatus(
+  a: Pick<AgentSummary, "state" | "live_line" | "main_thread_id">,
+  problems: Record<string, string>,
+): { line: string | null; tone: StatusTone; problem: boolean } {
+  const problem = a.state === "idle" ? problems[a.main_thread_id] : undefined;
+  if (problem) return { line: problem, tone: "warn", problem: true };
+  const tone: StatusTone = a.state === "needs_you" ? "warn" : a.state === "working" ? "ok" : "quiet";
+  return { line: a.live_line || null, tone, problem: false };
+}
+
+/** The text colour for a status tone. */
+export const STATUS_TONE_CLASS: Record<StatusTone, string> = {
+  ok: "text-success",
+  warn: "text-warning",
+  quiet: "text-text-tertiary",
+};
+
 /** Open problems by thread: the sidebar's line for each. */
 export function problemLines(s: AppState): Record<string, string> {
   const out: Record<string, string> = {};

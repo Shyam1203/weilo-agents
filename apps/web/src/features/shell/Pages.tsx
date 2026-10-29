@@ -1,6 +1,8 @@
-import { cx, shortName } from "../../lib/format";
+import { cx, engineTitle, shortName } from "../../lib/format";
 import { paths, type Route } from "../../lib/router";
-import { findThread, mainAgent, useApp } from "../../lib/store";
+import { agentStatus, findThread, mainAgent, problemLines, STATUS_TONE_CLASS, useApp } from "../../lib/store";
+import { useEngineList } from "../engines/EnginePicker";
+import { AgentMenuButton } from "./AgentMenu";
 import { Avatar } from "../../ui/Avatar";
 import { Dot, EmptyState } from "../../ui/bits";
 import { Button } from "../../ui/Button";
@@ -38,9 +40,9 @@ export function RoutePage({ route, phone }: { route: Route; phone?: boolean }) {
     case "settings":
       return <SettingsPage phone={phone} />;
     case "routines":
-      return <Calm title="Routines" heading="Coming soon." line={`Soon ${main ? shortName(main.name) : "Ava"} can do things on a schedule.`} />;
+      return <Calm title="Routines" heading="Coming in the next version." line={`Then ${main ? shortName(main.name) : "Ava"} can do things on a schedule.`} />;
     case "connections":
-      return <Calm title="Connections" heading="Coming soon." line="Soon you can connect email, calendar and more." />;
+      return <Calm title="Connections" heading="Coming in the next version." line="Then you can connect email, calendar and more." />;
     case "channels":
       return <ChannelList phone={phone} />;
     case "agents":
@@ -132,24 +134,29 @@ function ChannelList({ phone }: { phone?: boolean }) {
 
 function AgentList({ phone }: { phone?: boolean }) {
   const agents = useApp((s) => s.snapshot!.agents);
+  const problems = useApp(problemLines);
+  const engines = useEngineList();
   const [adding, setAdding] = useState(false);
   return (
     <PageFrame title="Agents" phone={phone} actions={<AddButton label="New agent" phone={phone} onClick={() => setAdding(true)} />}>
       <NewAgentDialog open={adding} onClose={() => setAdding(false)} />
       <nav aria-label="Agents" className="flex flex-col gap-0.5">
-        {agents.map((a) => (
-          <Link key={a.id} href={paths.agent(a.id)} className={cx(listRow, "min-h-14")}>
-            <Avatar name={a.name} color={a.color} size={32} />
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="ellipsis font-medium">{a.name}</span>
-              {a.live_line && (
-                <span className={cx("ellipsis text-caption", a.state === "working" ? "text-success" : a.state === "needs_you" ? "text-warning" : "text-text-tertiary")}>
-                  {a.live_line}
+        {agents.map((a) => {
+          const status = agentStatus(a, problems);
+          return (
+            <div key={a.id} className="flex items-center gap-1">
+              <Link href={paths.agent(a.id)} className={cx(listRow, "min-h-14 min-w-0 flex-1 py-1.5")}>
+                <Avatar name={a.name} color={a.color} size={32} />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="ellipsis font-medium">{a.name}</span>
+                  {status.line && <span className={cx("ellipsis text-caption", STATUS_TONE_CLASS[status.tone])}>{status.line}</span>}
+                  {!phone && <span className="ellipsis text-caption text-text-tertiary">Uses {engineTitle(a.engine, engines ?? undefined)}</span>}
                 </span>
-              )}
-            </span>
-          </Link>
-        ))}
+              </Link>
+              {!phone && <AgentMenuButton agent={a} />}
+            </div>
+          );
+        })}
       </nav>
     </PageFrame>
   );

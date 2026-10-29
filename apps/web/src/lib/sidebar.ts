@@ -5,6 +5,7 @@ import type { UiPrefs } from "../proto/UiPrefs";
 import type { WorkState } from "../proto/WorkState";
 import { paths } from "./router";
 import { slugText, startedByName } from "./format";
+import { agentStatus } from "./store";
 
 export type SectionKey = keyof UiPrefs;
 export const SECTION_KEYS: SectionKey[] = ["agents", "channels", "sessions", "archived"];
@@ -54,13 +55,13 @@ function worst(states: WorkState[]): WorkState {
  */
 export function buildRows(snap: Snapshot, problems: Record<string, string> = {}): Record<SectionKey, SidebarRow[]> {
   const agents: SidebarRow[] = snap.agents.map((a) => {
-    const problem = a.state === "idle" ? problems[a.main_thread_id] : undefined;
+    const status = agentStatus(a, problems);
     return {
     id: a.id,
     kind: "agent",
     name: a.name,
-    sub: problem ?? (a.live_line || null),
-    tone: problem ? "warn" : a.state === "idle" ? "quiet" : toneOf(a.state),
+    sub: status.line,
+    tone: status.tone,
     href: paths.agent(a.id),
     state: a.state,
     unread: false,

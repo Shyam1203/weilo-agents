@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { stopAgent } from "../../lib/app";
-import { shortName } from "../../lib/format";
-import { useApp } from "../../lib/store";
+import { cx, shortName } from "../../lib/format";
+import { agentStatus, problemLines, STATUS_TONE_CLASS, useApp } from "../../lib/store";
 import type { AgentSummary } from "../../proto/AgentSummary";
 import { Avatar } from "../../ui/Avatar";
 import { EmptyState, TopBar } from "../../ui/bits";
@@ -18,7 +18,9 @@ export function AgentChat({ agent, home }: { agent: AgentSummary; home?: boolean
   const threadId = agent.main_thread_id;
   const state = useThreadState(threadId);
   const name = shortName(agent.name);
-  const live = useApp((s) => s.snapshot?.agents.find((a) => a.id === agent.id)?.live_line ?? "");
+  const current = useApp((s) => s.snapshot?.agents.find((a) => a.id === agent.id)) ?? agent;
+  const problems = useApp(problemLines);
+  const status = agentStatus(current, problems);
 
   return (
     <ThreadScreen
@@ -32,7 +34,9 @@ export function AgentChat({ agent, home }: { agent: AgentSummary; home?: boolean
           <Avatar name={agent.name} color={agent.color} size={phone ? 32 : 24} />
           <div className="flex min-w-0 flex-1 flex-col">
             <h1 className="m-0 text-title-sm font-semibold whitespace-nowrap">{agent.name}</h1>
-            {live && <span className="ellipsis text-caption text-text-tertiary">{live}</span>}
+            {status.line && (
+              <span className={cx("ellipsis text-caption", status.problem ? STATUS_TONE_CLASS.warn : "text-text-tertiary")}>{status.line}</span>
+            )}
           </div>
           <AgentMenuButton agent={agent} phone={phone} />
           {!phone && <PanelToggle open={panel} onToggle={() => setPanel((v) => !v)} />}

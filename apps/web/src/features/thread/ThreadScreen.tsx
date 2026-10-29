@@ -49,9 +49,9 @@ export function ThreadScreen({ header, threadId, list, composer, panelOpen, onPa
     return () => window.removeEventListener("keydown", onKey);
   }, [panelOpen, floating, onPanelClose]);
 
-  // The message column sits on the left with a 24px gutter, like the mock. It takes the width
-  // there is (so a 1024 window has no empty band) and stops growing at 880, about 100 characters.
-  const column = cx("w-full max-w-[880px]", phone ? "px-4" : "px-6");
+  // The message column is centred, like the mock: 720 wide plus its 24px gutters, and it
+  // takes the width there is on narrower windows.
+  const column = cx("mx-auto w-full max-w-[768px]", phone ? "px-4" : "px-6");
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1">
