@@ -1912,3 +1912,83 @@ async fn a_card_left_while_postgres_is_down_is_closed_when_it_is_back() {
         .await;
     assert!(failed_with(&late, "conflict").is_some(), "{late:?}");
 }
+
+/// Postgres's server processes other than the postmaster (killing one makes Postgres
+/// reset every connection and recover, without stopping).
+fn postgres_backends(postmaster: i32) -> Vec<i32> {
+    let Ok(dir) = std::fs::read_dir("/proc") else {
+        return vec![];
+    };
+    dir.flatten()
+        .filter_map(|e| e.file_name().to_str()?.parse::<i32>().ok())
+        .filter(|pid| {
+            let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
+            // pid (comm) state ppid …
+            stat.rsplit_once(") ")
+                .and_then(|(_, rest)| rest.split_whitespace().nth(1)?.parse::<i32>().ok())
+                == Some(postmaster)
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn a_message_waiting_through_a_database_blip_still_runs() {
+    let Some(host) = Host::start_with(&[("WEILO_DB_WAIT_SECS", "1")]).await else {
+        return;
+    };
+    let token = host.pair().await;
+    let mut c = Client::connect(&host, Some(&token)).await.unwrap();
+    let thread = setup_with_echo(&mut c).await;
+    let postmaster = host.postgres_pid().expect("postgres pid");
+    // Postgres keeps resetting its connections for a while (it never stops, so Weilo
+    // isn't told it's down); the message is sent during that, and its engine has to
+    // start then.
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let blips = {
+        let stop = stop.clone();
+        tokio::spawn(async move {
+            while !stop.load(std::sync::atomic::Ordering::SeqCst) {
+                for pid in postgres_backends(postmaster) {
+                    let app = std::fs::read_to_string(format!("/proc/{pid}/cmdline"))
+                        .is_ok_and(|c| c.contains("weilo_app"));
+                    if app {
+                        // SAFETY: killing one of the test host's Postgres server processes.
+                        unsafe {
+                            libc::kill(pid, libc::SIGKILL);
+                        }
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+    };
+    let started = std::time::Instant::now();
+    loop {
+        let call = Call::Send {
+            thread_id: thread,
+            text: "hello again".into(),
+            when: SendWhen::Now,
+        };
+        match c.call(call).await {
+            CallResult::Done { .. } => break,
+            other => assert!(started.elapsed() < common::WAIT, "{other:?}"),
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    stop.store(true, std::sync::atomic::Ordering::SeqCst);
+    blips.await.unwrap();
+    assert_eq!(host.postgres_pid(), Some(postmaster), "Postgres itself stayed up");
+    let mut d = Client::connect(&host, Some(&token)).await.unwrap();
+    d.sub(thread, 0).await;
+    let f = d
+        .next(|f| agent_text(f) == Some("You said: hello again") || problem(f).is_some())
+        .await;
+    assert_eq!(agent_text(&f), Some("You said: hello again"), "{f:?}\n{}", host.log());
+    assert!(
+        host.log().contains("waits to start")
+            || host.log().contains("couldn't note"),
+        "the start never met the blip, so this didn't test anything:\n{}",
+        host.log()
+    );
+}

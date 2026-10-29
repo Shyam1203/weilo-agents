@@ -388,7 +388,7 @@ describe("settings lists", () => {
 
   it("says Always allowed the way the card's button did", () => {
     const actions = [{ id: "a", label: "Always allow for Ava", primary: false, decision: { kind: "allow_always" as const, scope: "agent" } }];
-    expect(outcomeWords({ kind: "allow_always", scope: "agent" }, "approval", actions)).toBe("Always allowed for Ava");
-    expect(outcomeWords({ kind: "allow_always", scope: "folder" }, "approval")).toBe("Always allowed in this folder");
+    expect(outcomeWords({ kind: "allow_always", scope: "agent" }, "approval", actions)).toBe("You always allow this for Ava");
+    expect(outcomeWords({ kind: "allow_always", scope: "folder" }, "approval")).toBe("You always allow this in this folder");
   });
 });

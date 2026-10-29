@@ -83,6 +83,7 @@ pub fn spawn(app: Arc<App>, thread_id: Uuid) -> mpsc::UnboundedSender<Cmd> {
             log: None,
             outbox: VecDeque::new(),
             retry_at: None,
+            start_again_at: None,
             dropped: false,
             state: (WorkState::Idle, String::new()),
             agent_id: None,
@@ -194,6 +195,8 @@ struct Runner {
     outbox: VecDeque<Out>,
     /// When to try the outbox again.
     retry_at: Option<Instant>,
+    /// When to try starting the next message again (the database was out of reach).
+    start_again_at: Option<Instant>,
     /// The outbox overflowed and lost events while Postgres was away.
     dropped: bool,
     /// The state this runner last said, said again after an outage.
@@ -302,6 +305,12 @@ impl Runner {
                 // While Postgres is known to be down, nothing is tried: it is written
                 // when Postgres is back (above).
                 _ = sleep_until(self.retry_at), if db_ok => self.drain().await,
+                _ = sleep_until(self.start_again_at), if db_ok => {
+                    self.start_again_at = None;
+                    if self.turn.is_none() {
+                        self.start_next().await;
+                    }
+                }
                 _ = sleep_until(idle_at) => {
                     tracing::info!("stopping the idle engine of {}", self.thread_id);
                     self.drop_conn();
@@ -479,7 +488,7 @@ impl Runner {
             match self.download_needed().await {
                 Ok(Some(m)) => return self.begin_install(m, text).await,
                 Ok(None) => {}
-                Err(e) => return self.start_failed(e).await,
+                Err(e) => return self.start_failed(e, Some(text)).await,
             }
         }
         self.begin_turn(text).await;
@@ -498,7 +507,7 @@ impl Runner {
             && let Err(e) = self.connect().await
         {
             self.slot = None;
-            return self.start_failed(e).await;
+            return self.start_failed(e, Some(text)).await;
         }
         self.turns += 1;
         self.turn = Some(Turn {
@@ -572,7 +581,19 @@ impl Runner {
         self.begin_turn(waiting.text.clone()).await;
     }
 
-    async fn start_failed(&mut self, e: (Explained, String)) {
+    /// A message couldn't start. When only the database was out of reach, the message
+    /// goes back first in line, the queues are kept, and it is tried again soon (or as
+    /// soon as the database is back). Otherwise the person is told, and the queues are
+    /// cleared.
+    async fn start_failed(&mut self, e: (Explained, String), text: Option<String>) {
+        if e.1.starts_with(DB_AWAY) {
+            tracing::warn!("{} waits to start: {}", self.thread_id, e.1);
+            if let Some(text) = text {
+                self.now_queue.push_front(text);
+            }
+            self.start_again_at = Some(Instant::now() + RETRY_WRITE);
+            return;
+        }
         tracing::warn!("engine start failed for {}: {}", self.thread_id, e.1);
         self.problem(e.0.code(), &e.0.message, Some(e.0.action))
             .await;
@@ -638,7 +659,7 @@ impl Runner {
                 let f = Failure::other(e);
                 let key = self.app.engines.key_in_use(&inst.manifest);
                 let explained = (explain(&inst.manifest, &f, key.as_deref()), f.text);
-                self.start_failed(explained).await;
+                self.start_failed(explained, None).await;
             }
         }
     }
@@ -680,12 +701,19 @@ impl Runner {
         )
         .await
         .map_err(explained)?;
-        sqlx::query("UPDATE threads SET engine_session_id = $2 WHERE id = $1")
+        let saved = sqlx::query("UPDATE threads SET engine_session_id = $2 WHERE id = $1")
             .bind(self.thread_id)
             .bind(conn.session_id.0.as_ref())
             .execute(&self.app.db)
-            .await
-            .map_err(|e| internal(e.into()))?;
+            .await;
+        if let Err(e) = saved.map_err(anyhow::Error::from) {
+            if !unreachable_db(&e) {
+                return Err(internal(e));
+            }
+            // The engine is running: keep it. Only picking this conversation up after a
+            // restart is lost.
+            tracing::warn!("couldn't note {}'s engine conversation: {e}", self.thread_id);
+        }
         self.fresh = conn.started == Started::New;
         if conn.started == Started::New && resume.is_some() {
             let message = format!(
@@ -1400,8 +1428,15 @@ fn changed_instructions(ctx: &ThreadCtx) -> String {
 }
 
 /// An error people can't act on, explained plainly (and kept whole for the log).
+/// How the log text of a start failure begins when only the database was out of reach.
+const DB_AWAY: &str = "the database can't be reached";
+
 fn internal(e: anyhow::Error) -> (Explained, String) {
-    let text = format!("{e:#}");
+    let text = if unreachable_db(&e) {
+        format!("{DB_AWAY}: {e:#}")
+    } else {
+        format!("{e:#}")
+    };
     (
         Explained {
             needs: EngineNeed::Error,

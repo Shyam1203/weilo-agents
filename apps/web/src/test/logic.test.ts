@@ -111,7 +111,8 @@ describe("sidebar", () => {
     expect(sections[2]!.rows[0]!.sub).toBe("Started by Ava · needs you");
     expect(buildSections(withSession, "#shop").find((s) => s.key === "channels")!.rows).toHaveLength(1);
     expect(buildSections(withSession, "nothing").every((s) => s.rows.length === 0)).toBe(true);
-    expect(buildRows(withSession).channels[0]!.state).toBe("idle");
+    // A session filed in the channel counts toward it: the most urgent state wins.
+    expect(buildRows(withSession).channels[0]!.state).toBe("needs_you");
   });
 
   it("puts a dot on Customize only when a hidden section has live work", () => {
@@ -173,7 +174,7 @@ describe("timeline", () => {
   });
 
   it("says decisions in plain words, naming the scope", () => {
-    expect(outcomeWords({ kind: "allow_always", scope: "folder" }, "approval")).toBe("Always allowed in this folder");
-    expect(outcomeWords({ kind: "deny" }, "draft")).toBe("Discarded");
+    expect(outcomeWords({ kind: "allow_always", scope: "folder" }, "approval")).toBe("You always allow this in this folder");
+    expect(outcomeWords({ kind: "deny" }, "draft")).toBe("You discarded it");
   });
 });

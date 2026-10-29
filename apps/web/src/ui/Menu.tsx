@@ -96,7 +96,8 @@ export function Menu({ open, onClose, anchor, label, className, align = "end", p
   useEffect(() => {
     if (!open) return;
     const el = ref.current;
-    el?.querySelector<HTMLElement>("[role=menuitem]:not([disabled])")?.focus();
+    // The chosen one, for a menu that picks a value; else the first.
+    (el?.querySelector<HTMLElement>(`[aria-checked=true]${ITEM_OK}`) ?? el?.querySelector<HTMLElement>(ITEMS_OK))?.focus();
     const back = () => anchor.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -136,11 +137,11 @@ export function Menu({ open, onClose, anchor, label, className, align = "end", p
         className,
       )}
       onClickCapture={(e) => {
-        const item = (e.target as HTMLElement).closest("[role=menuitem]");
+        const item = (e.target as HTMLElement).closest(ITEMS);
         if (item && !(item as HTMLButtonElement).disabled) anchor.current?.focus();
       }}
       onKeyDown={(e) => {
-        const items = [...(ref.current?.querySelectorAll<HTMLElement>("[role=menuitem]:not([disabled])") ?? [])];
+        const items = [...(ref.current?.querySelectorAll<HTMLElement>(ITEMS_OK) ?? [])];
         if (items.length === 0) return;
         const i = items.indexOf(document.activeElement as HTMLElement);
         let next: number | null = null;
@@ -155,23 +156,32 @@ export function Menu({ open, onClose, anchor, label, className, align = "end", p
     >
       {children}
     </div>,
-    document.body,
+    // Inside a dialog, in the dialog: the rest of the page can't be used while it is open.
+    anchor.current?.closest("dialog") ?? document.body,
   );
 }
+
+const ITEMS = "[role=menuitem], [role=menuitemradio]";
+const ITEM_OK = ":not([disabled])";
+const ITEMS_OK = "[role=menuitem]:not([disabled]), [role=menuitemradio]:not([disabled])";
 
 export function MenuItem({
   children,
   onSelect,
   disabled,
+  checked,
 }: {
   children: ReactNode;
   onSelect(): void;
   disabled?: boolean;
+  /** Set for a menu that picks one value: this item is the chosen one (or not). */
+  checked?: boolean;
 }) {
   return (
     <button
       type="button"
-      role="menuitem"
+      role={checked === undefined ? "menuitem" : "menuitemradio"}
+      aria-checked={checked}
       disabled={disabled}
       onClick={onSelect}
       className="ghost flex h-8 w-full items-center gap-2 rounded-md border-0 bg-transparent px-2 text-left text-body-sm font-medium whitespace-nowrap text-text disabled:opacity-50 max-md:h-11"

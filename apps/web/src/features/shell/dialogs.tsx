@@ -1,12 +1,13 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { archiveAgent, changeAgentEngine, create, loadEngines } from "../../lib/app";
 import { canPick, preferredEngine, statusLine } from "../../lib/engines";
-import { engineTitle, lowerYour, projectName, shortName, slugPreview } from "../../lib/format";
+import { lowerYour, projectName, shortName, slugPreview } from "../../lib/format";
 import { navigate, paths, useRoute } from "../../lib/router";
 import { useApp } from "../../lib/store";
 import type { AgentSummary } from "../../proto/AgentSummary";
 import { ChoiceChips } from "../../ui/ChoiceChips";
 import { Dialog, Field, inputClass } from "../../ui/Dialog";
+import { Select } from "../../ui/Select";
 import { EnginePicker, useEngineList } from "../engines/EnginePicker";
 
 interface Props {
@@ -215,8 +216,8 @@ export function NewSessionDialog({ open, onClose }: Props) {
       </div>
       <div className="flex flex-col gap-1.5 text-caption text-text-secondary">
         <span>
+          {/* Which AI app it uses is behind Change (it names the app), unless that app needs something. */}
           Runs on {lowerYour(hostName) ?? "this computer"}
-          {ai ? ` with ${engineTitle(ai.id, [ai])}` : ""}
           {ai && !ai.ready && !changeAi ? `. ${statusLine(ai)}` : ""}
           {engines && engines.filter(canPick).length > 1 && !changeAi && (
             <>
@@ -259,13 +260,7 @@ export function MoveDialog({ open, onClose, threadId, currentChannelId }: Props 
       }
     >
       <Field label="Channel">
-        <select className={inputClass} value={target} onChange={(e) => setTarget(e.target.value)}>
-          {options.map((c) => (
-            <option key={c.id} value={c.id}>
-              #{c.slug}
-            </option>
-          ))}
-        </select>
+        <Select label="Channel" value={target} onChange={setTarget} options={options.map((c) => ({ id: c.id, label: `#${c.slug}` }))} />
       </Field>
     </Dialog>
   );

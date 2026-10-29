@@ -99,7 +99,7 @@ test("an approval shows up in Needs you and can be allowed", async ({ page }) =>
 
   await expect(card).toBeHidden();
   await expect(page.getByRole("heading", { name: "Done today" })).toBeVisible();
-  const done = page.getByRole("link", { name: /Run the shop's checks.*You approved/ });
+  const done = page.getByRole("link", { name: /Run the shop's checks.*You allowed it/ });
   await expect(done).toBeVisible();
 
   // Ava carries on.

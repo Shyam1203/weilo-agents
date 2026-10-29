@@ -294,14 +294,15 @@
   .reveal-on-hover {
     opacity: 0;
   }
+  /* Keyboard focus shows them; a mouse click (which also focuses) doesn't keep them shown. */
   .reveal-host:hover .reveal-on-hover,
-  .reveal-host:focus-within .reveal-on-hover,
+  .reveal-host:has(:focus-visible) .reveal-on-hover,
   .reveal-on-hover[aria-expanded="true"] {
     opacity: 1;
   }
   /* What sits under revealed buttons (a collapsed section's "1 needs you") steps aside for them. */
   .reveal-host:hover .reveal-under,
-  .reveal-host:focus-within .reveal-under {
+  .reveal-host:has(:focus-visible) .reveal-under {
     opacity: 0;
   }
   @media (hover: none) {
