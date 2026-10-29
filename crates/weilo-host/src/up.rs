@@ -34,6 +34,14 @@ pub async fn run(opts: UpOptions) -> Result<()> {
     process::end_leftovers(&home.live_engines(), process::GRACE);
     process::record_in(home.live_engines());
     let mut pg = Postgres::start(&home).await?;
+    if !pg.layout.data_dir.starts_with(home.root()) {
+        // As root, when Postgres's own user can't reach the Weilo folder.
+        println!(
+            "Weilo's database is in {} (Postgres can't reach {}).",
+            pg.layout.data_dir.display(),
+            home.root().display()
+        );
+    }
     let db = match db::open(&pg).await {
         Ok(db) => db,
         Err(e) => {

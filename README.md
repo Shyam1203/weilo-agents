@@ -38,7 +38,9 @@ Open the address and type the code. Setup then asks which AI your agent should u
 that it works. If you have none, paste an API key for Weilo's built-in AI. Your first agent, Ava,
 and a #general channel are made for you.
 
-Your data stays in `~/.weilo-agents`. Set `WEILO_HOME` to keep it somewhere else.
+Your data stays in `~/.weilo-agents`. Set `WEILO_HOME` to keep it somewhere else. When Weilo runs
+as root and Postgres can't reach that folder, the database goes to `/var/lib/weilo-agents` instead,
+and `weilo up` says where.
 
 ## What leaves your computer
 

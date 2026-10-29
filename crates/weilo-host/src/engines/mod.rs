@@ -1122,7 +1122,10 @@ mod tests {
         assert_eq!(reg.readiness(&pi).needs, Some(EngineNeed::Key));
         assert_eq!(reg.readiness(&pi).status, "The key didn't work.");
         let saved = std::fs::read_to_string(key_states_file(&home)).unwrap();
-        assert!(!saved.contains("sk-first"), "the key itself isn't kept there");
+        assert!(
+            !saved.contains("sk-first"),
+            "the key itself isn't kept there"
+        );
         // A new key starts clean; one that couldn't be checked says so after a restart.
         reg.save_key(&pi, "anthropic", "sk-second").unwrap();
         assert!(reg.readiness(&pi).ready());
@@ -1133,6 +1136,33 @@ mod tests {
             "Has an API key. Weilo couldn't check it yet."
         );
         assert_eq!(reg.unchecked_keys(&pi).len(), 1);
+    }
+
+    #[test]
+    fn the_built_in_ai_keeps_its_adapter_files_in_weilos_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let pi = manifest("pi");
+        let own = pi.launch.own_home.as_ref().expect("pi has its own home");
+        let vars = manifest::Vars {
+            self_exe: "/bin/weilo".into(),
+            install: dir.path().join("install"),
+            engine_home: dir.path().join("state"),
+            model: None,
+            path: "/usr/bin".into(),
+            credentials: BTreeMap::new(),
+        };
+        std::fs::create_dir_all(&vars.engine_home).unwrap();
+        let mut spec = manifest::launch_spec(&pi, &vars).unwrap();
+        own_home(own, &vars, &mut spec).unwrap();
+        // pi-acp writes under its HOME: that is inside Weilo's folder now.
+        let home = PathBuf::from(&spec.env["HOME"]);
+        assert!(home.starts_with(dir.path()) && home.is_dir());
+        // pi itself is started through a launcher that gives it the person's home.
+        let launcher = PathBuf::from(&spec.env["PI_ACP_PI_COMMAND"]);
+        let script = std::fs::read_to_string(&launcher).unwrap();
+        let real = std::env::var("HOME").unwrap();
+        assert!(script.contains(&format!("HOME='{real}'")), "{script}");
+        assert!(script.contains("node_modules/.bin/pi'"), "{script}");
     }
 
     #[test]
