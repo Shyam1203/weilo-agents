@@ -11,10 +11,13 @@ use crate::audit;
 use crate::engines::{Cmd, check};
 use crate::error::{CallError, CallResult};
 
-/// Saves (or, when empty, removes) a key. The key itself is never logged, audited or
-/// sent back; the answer is the engine list, with `has_key` updated.
+/// Saves (or, when empty, removes) a key. The key is first shown to its provider (a
+/// free call): one it turns down is not saved. When the provider can't be reached, the
+/// key is saved and noted as not checked yet. The key itself is never logged, audited
+/// or sent back; the answer is the engine list, with `has_key` updated. An engine Weilo
+/// downloads starts downloading now, so it is ready sooner.
 pub async fn set_key(
-    app: &App,
+    app: &Arc<App>,
     device: Uuid,
     engine: &str,
     provider: &str,
@@ -24,9 +27,37 @@ pub async fn set_key(
         .engines
         .get(engine)
         .ok_or_else(|| CallError::invalid("That engine isn't available."))?;
+    let Some(spec) = m.keys.iter().find(|k| k.id == provider) else {
+        return Err(CallError::invalid(format!(
+            "{} doesn't use {provider} keys.",
+            m.title
+        )));
+    };
+    let trimmed = key.trim();
+    let answer = if trimmed.is_empty() {
+        Some(true)
+    } else {
+        check::try_key(provider, trimmed).await
+    };
+    if answer == Some(false) {
+        return Err(CallError::invalid(format!(
+            "That {} key didn't work, so it wasn't saved. Check it and try again.",
+            spec.title
+        )));
+    }
     app.engines
         .save_key(m, provider, key)
         .map_err(CallError::invalid)?;
+    app.engines.mark_key(m, provider, answer);
+    if !trimmed.is_empty() && app.engines.needs_download(m) {
+        let (app, m) = (app.clone(), m.clone());
+        tokio::spawn(async move {
+            if let Err(e) = app.engines.install(&m).await {
+                tracing::warn!("couldn't download {}: {e}", m.name);
+            }
+            app.hub.changed(Changed::Engines);
+        });
+    }
     let mut tx = app.db.begin().await?;
     let detail =
         json!({ "engine": engine, "provider": provider, "removed": key.trim().is_empty() });

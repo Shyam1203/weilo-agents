@@ -14,8 +14,8 @@ On macOS or Linux:
 curl -fsSL https://github.com/Shyam1203/weilo-agents/releases/latest/download/install.sh | sh
 ```
 
-Weilo keeps its data in Postgres. The installer tells you how to add it if it's missing
-(`brew install postgresql@16` on a Mac, `sudo apt install postgresql` on Debian or Ubuntu).
+Weilo keeps its data in Postgres 16 or newer. The installer tells you how to add it if it's missing
+(`brew install postgresql@16` on a Mac, `sudo apt install postgresql-16` on Debian or Ubuntu).
 Weilo starts and stops its own copy, so there is nothing to set up. Weilo's built-in AI
 and some AI apps also need [Node.js](https://nodejs.org).
 
@@ -66,7 +66,7 @@ Add `?fixture=1` to the dev address to try the app with sample data and no host.
 |---|---|
 | `crates/weilo-host` | The `weilo` program: Postgres, the event log, engines, approvals, and the web server ([README](crates/weilo-host/README.md)) |
 | `crates/weilo-proto` | The messages between the app and the host; the TypeScript in `apps/web/src/proto` is made from it |
-| `apps/web` | The app for desktop and phone |
+| `apps/web` | The app, made to fit desktop and phone screens (reaching it from your phone comes later) |
 | `engines` | How Weilo starts each coding agent |
 | `docs/plan` | The design plan and the UI mock |
 

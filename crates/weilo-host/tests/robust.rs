@@ -10,8 +10,7 @@ use common::{Client, Host, agent_text, eventually, is_state, pid_alive, send, se
 use uuid::Uuid;
 use weilo_proto::{
     ApprovalState, Call, CallResult, CallValue, Card, ClientFrame, Decision, Delta, EngineNeed,
-    EventBody,
-    FileChange, SendWhen, ServerFrame, WorkState,
+    EventBody, FileChange, SendWhen, ServerFrame, WorkState,
 };
 
 fn problem(f: &ServerFrame) -> Option<(&str, Option<&str>)> {
@@ -620,7 +619,24 @@ async fn session_folders_are_checked_and_changes_come_back() {
 
 #[tokio::test]
 async fn engine_keys_stay_private() {
-    let Some(host) = Host::start().await else {
+    // The provider can't be reached (the key is saved, not checked yet), and saving a
+    // key starts a download, here from a stand-in npm.
+    let tools = tempfile::Builder::new()
+        .prefix("weilo-npm-")
+        .tempdir_in("/tmp")
+        .unwrap();
+    let bin = fake_npm_for(tools.path(), "pi-acp");
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let Some(host) = Host::start_with(&[
+        ("PATH", &path),
+        ("WEILO_PROVIDER_URL_ANTHROPIC", "http://127.0.0.1:9"),
+    ])
+    .await
+    else {
         return;
     };
     let mut c = host.connect().await;
@@ -996,6 +1012,11 @@ async fn bring_back_waits_for_the_session_to_finish() {
 /// A stand-in `npm` that "downloads" an engine running echo, noting each run. With a
 /// `slow` file beside it, it takes 30 s.
 fn fake_npm(dir: &std::path::Path) -> std::path::PathBuf {
+    fake_npm_for(dir, "fake-acp")
+}
+
+/// Like `fake_npm`, with the engine's program named `program`.
+fn fake_npm_for(dir: &std::path::Path, program: &str) -> std::path::PathBuf {
     let bin = dir.join("fakebin");
     std::fs::create_dir_all(&bin).unwrap();
     let script = format!(
@@ -1004,8 +1025,8 @@ fn fake_npm(dir: &std::path::Path) -> std::path::PathBuf {
          if [ -f {slow} ]; then sleep 30; fi\n\
          sleep 1\n\
          mkdir -p node_modules/.bin\n\
-         printf '#!/bin/sh\\nexec {weilo} engine echo\\n' > node_modules/.bin/fake-acp\n\
-         chmod +x node_modules/.bin/fake-acp\n",
+         printf '#!/bin/sh\\nexec {weilo} engine echo\\n' > node_modules/.bin/{program}\n\
+         chmod +x node_modules/.bin/{program}\n",
         runs = dir.join("npm-runs").display(),
         slow = dir.join("slow").display(),
         weilo = env!("CARGO_BIN_EXE_weilo"),
@@ -1344,15 +1365,19 @@ async fn keys_are_checked_and_silent_replies_are_said() {
         engine: "keyed".into(),
     };
 
-    // Checking asks the provider, for free, whether it takes the key.
-    c.ok(set_key("bad")).await;
+    // A key is shown to its provider (for free) before it is saved; one it turns down
+    // isn't saved.
+    let r = c.call(set_key("bad")).await;
+    assert_eq!(
+        failed_with(&r, "invalid").as_deref(),
+        Some("That Anthropic key didn't work, so it wasn't saved. Check it and try again.")
+    );
+    assert!(!host.home.join("secrets/keys-keyed.json").exists());
     let CallValue::EngineCheck(r) = c.ok(check()).await else {
         panic!()
     };
     assert!(!r.ready);
     assert_eq!(r.needs, Some(EngineNeed::Key));
-    assert_eq!(r.message, "That Anthropic key didn't work.");
-    assert_eq!(r.action.as_deref(), Some("Change key"));
     c.ok(set_key("good")).await;
     let CallValue::EngineCheck(r) = c.ok(check()).await else {
         panic!()
@@ -1368,8 +1393,14 @@ async fn keys_are_checked_and_silent_replies_are_said() {
     assert_eq!(problem(&f), Some(("Ava didn't answer.", Some("Try again"))));
     c.next(|f| is_state(f, WorkState::Idle)).await;
 
-    // When the engine's log shows the key was turned down, that is the reason given.
-    c.ok(set_key("bad")).await;
+    // A key that stops working later (written here as if it had been saved before):
+    // when the engine's log shows it was turned down, that is the reason given.
+    c.ok(set_key("")).await;
+    std::fs::write(
+        host.home.join("secrets/keys-keyed.json"),
+        r#"{"anthropic":"bad"}"#,
+    )
+    .unwrap();
     send(&mut c, thread, "say nothing").await;
     let f = c
         .next(|f| problem(f).is_some() || agent_text(f).is_some())
@@ -1694,7 +1725,9 @@ async fn idle_runners_end_and_engine_processes_are_capped() {
     c.sub(a.id, 0).await;
     c.sub(b.id, 0).await;
     let on = |id: Uuid, want: WorkState| {
-        move |f: &ServerFrame| matches!(f, ServerFrame::Ev { thread_id, .. } if *thread_id == id) && is_state(f, want)
+        move |f: &ServerFrame| {
+            matches!(f, ServerFrame::Ev { thread_id, .. } if *thread_id == id) && is_state(f, want)
+        }
     };
     // A holds the only engine; B waits, says so, and runs once A's engine is idle.
     send(&mut c, a.id, "slow").await;
@@ -1720,4 +1753,67 @@ async fn idle_runners_end_and_engine_processes_are_capped() {
         host.log().contains("gives its place up")
     })
     .await;
+}
+
+#[tokio::test]
+async fn the_built_in_ai_is_downloaded_on_first_use() {
+    let tools = tempfile::Builder::new()
+        .prefix("weilo-npm-")
+        .tempdir_in("/tmp")
+        .unwrap();
+    let bin = fake_npm_for(tools.path(), "pi-acp");
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let provider = fake_provider().await;
+    let Some(host) =
+        Host::start_with(&[("PATH", &path), ("WEILO_PROVIDER_URL_ANTHROPIC", &provider)]).await
+    else {
+        return;
+    };
+    let mut c = host.connect().await;
+    let CallValue::Engines(engines) = c.ok(Call::ListEngines).await else {
+        panic!()
+    };
+    let pi = engines.iter().find(|e| e.id == "pi").unwrap();
+    assert!(!pi.installed, "nothing was downloaded yet");
+    assert_eq!(pi.needs, Some(EngineNeed::Key));
+    // "Use it" in setup tries it: it is downloaded (once), then asks for a key.
+    let CallValue::Setup(setup) = c
+        .ok(Call::FinishSetup {
+            engine: "pi".into(),
+            keep_awake: false,
+        })
+        .await
+    else {
+        panic!()
+    };
+    let check = setup.check.expect("a check");
+    assert!(!check.ready);
+    assert_eq!(check.needs, Some(EngineNeed::Key), "{check:?}");
+    assert_eq!(npm_runs(tools.path()), 1);
+    assert!(host.home.join("engines/pi/.weilo-installed").is_file());
+    let CallValue::Engines(engines) = c.ok(Call::ListEngines).await else {
+        panic!()
+    };
+    assert!(engines.iter().find(|e| e.id == "pi").unwrap().installed);
+    // With a key the provider takes, it is ready.
+    c.ok(Call::SetEngineKey {
+        engine: "pi".into(),
+        provider: "anthropic".into(),
+        key: "good".into(),
+    })
+    .await;
+    let CallValue::EngineCheck(check) = c
+        .ok(Call::CheckEngine {
+            engine: "pi".into(),
+        })
+        .await
+    else {
+        panic!()
+    };
+    assert!(check.ready, "{check:?}");
+    assert_eq!(npm_runs(tools.path()), 1);
 }

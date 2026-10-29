@@ -130,6 +130,8 @@ pub struct Detect {
     pub commands: Vec<String>,
     #[serde(default)]
     pub paths: Vec<String>,
+    /// Always offered in setup (Weilo's built-in AI). It is still downloaded before
+    /// first use like any npm engine; this says nothing about being installed.
     #[serde(default)]
     pub always: bool,
 }
@@ -314,7 +316,9 @@ mod tests {
         for name in ["claude-code", "codex", "echo", "gemini", "pi"] {
             assert!(all.contains_key(name), "{name} missing");
         }
+        // Always offered, but downloaded like the others (see `Registry::is_installed`).
         assert!(all["pi"].default && all["pi"].detect.always);
+        assert!(all["pi"].install.is_some());
         assert_eq!(all["pi"].install.as_ref().unwrap().npm.len(), 2);
     }
 

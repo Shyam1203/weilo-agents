@@ -339,6 +339,18 @@ impl Runner {
                 // Awaited here: commands (a new message, say) wait in the queue until
                 // the merge is done, so no turn touches the copy meanwhile.
                 let result = crate::worktree::merge_back(&folder, &worktree, &title).await;
+                if let Ok(said) = &result
+                    && said.starts_with(crate::worktree::BROUGHT_BACK)
+                {
+                    // A line in the thread, so devices see it and read the changes
+                    // again (there are none left to bring back).
+                    let body = EventBody::Step {
+                        step_id: format!("bring-back-{}", crate::ids::new_id()),
+                        title: said.clone(),
+                        status: StepStatus::Done,
+                    };
+                    self.append(body, Source::Host).await;
+                }
                 let _ = reply.send(result);
             }
         }
@@ -386,8 +398,7 @@ impl Runner {
     }
 
     async fn start_next(&mut self) {
-        if !*self.app.db_up.borrow() || self.installing.is_some() || self.waiting_slot.is_some()
-        {
+        if !*self.app.db_up.borrow() || self.installing.is_some() || self.waiting_slot.is_some() {
             // Postgres is restarting, the engine is downloading, or every engine slot is
             // taken; the queue waits.
             return;
@@ -918,6 +929,7 @@ impl Runner {
                     auth_required: true,
                     ..Failure::default()
                 };
+                self.key_turned_down(&m);
                 let e = explain(&m, &f, self.app.engines.key_in_use(&m).as_deref());
                 self.problem(&e.message, Some(e.action)).await;
                 // A new key or sign-in only reaches a new engine process.
@@ -932,6 +944,9 @@ impl Runner {
                 match m {
                     Some(m) => {
                         let e = explain(&m, &f, self.app.engines.key_in_use(&m).as_deref());
+                        if e.needs == EngineNeed::Key {
+                            self.key_turned_down(&m);
+                        }
                         self.problem(&e.message, Some(e.action)).await;
                         if matches!(e.needs, EngineNeed::SignIn | EngineNeed::Key) {
                             self.drop_conn();
@@ -976,6 +991,7 @@ impl Runner {
             let message = format!("{name} didn't answer.");
             return self.problem(&message, Some("Try again")).await;
         }
+        self.key_turned_down(m);
         let (message, action) = match self.app.engines.key_in_use(m) {
             Some(provider) => (
                 format!("{name} didn't answer: your {provider} key didn't work."),
@@ -989,6 +1005,15 @@ impl Runner {
         self.problem(&message, Some(action)).await;
         // A new key only reaches a new engine process.
         self.drop_conn();
+    }
+
+    /// The engine's provider turned its key down: readiness says so from now on (until a
+    /// new key is saved or a check finds it works).
+    fn key_turned_down(&self, m: &Manifest) {
+        if let Some((spec, _)) = self.app.engines.keys_in_use(m).into_iter().next() {
+            self.app.engines.mark_key(m, &spec.id, Some(false));
+            self.app.hub.changed(weilo_proto::Changed::Engines);
+        }
     }
 
     async fn problem(&mut self, message: &str, action: Option<&str>) {
@@ -1056,7 +1081,10 @@ impl Runner {
             }
         }
         if recovering {
-            tracing::info!("wrote what {} kept while the database was away", self.thread_id);
+            tracing::info!(
+                "wrote what {} kept while the database was away",
+                self.thread_id
+            );
             let (state, live_line) = self.state.clone();
             if std::mem::take(&mut self.dropped) || self.turn.is_none() {
                 let body = EventBody::State { state, live_line };
@@ -1075,10 +1103,12 @@ pub const STILL_WORKING: &str =
 /// Whether a failed write failed because Postgres couldn't be reached (restarting, or
 /// the connection broke), so it is worth trying again.
 fn unreachable_db(e: &anyhow::Error) -> bool {
-    let sql = e.downcast_ref::<sqlx::Error>().or_else(|| match e.downcast_ref() {
-        Some(AppendError::Db(sql)) => Some(sql),
-        _ => None,
-    });
+    let sql = e
+        .downcast_ref::<sqlx::Error>()
+        .or_else(|| match e.downcast_ref() {
+            Some(AppendError::Db(sql)) => Some(sql),
+            _ => None,
+        });
     match sql {
         Some(
             sqlx::Error::Io(_)

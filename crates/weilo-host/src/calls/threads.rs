@@ -298,11 +298,7 @@ impl Drop for BringingBack<'_> {
 /// Brings a session's changes back into its folder (see `worktree::merge_back`). The
 /// thread's runner does the merge between turns, so a message sent meanwhile waits for
 /// it; a second Bring back at the same time is told one is under way.
-pub async fn merge_session(
-    app: &Arc<App>,
-    device: Uuid,
-    thread_id: Uuid,
-) -> CallResult<String> {
+pub async fn merge_session(app: &Arc<App>, device: Uuid, thread_id: Uuid) -> CallResult<String> {
     let row: Option<(Option<String>, Option<String>, String)> = sqlx::query_as(
         "SELECT folder, worktree, title FROM threads
          WHERE id = $1 AND space_id = $2 AND kind = 'session'",

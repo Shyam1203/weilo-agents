@@ -57,6 +57,19 @@ pub struct Registry {
     install_timeout: Duration,
     /// Held while the saved keys file is read, changed and written.
     keys_lock: Mutex<()>,
+    /// Engines being downloaded right now.
+    downloading: Mutex<std::collections::HashSet<String>>,
+    /// What the provider said of a key (by engine and provider), when it wasn't "yes".
+    key_states: Mutex<HashMap<(String, String), KeyState>>,
+}
+
+/// A key the provider hasn't taken.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeyState {
+    /// The provider couldn't be asked yet.
+    Unchecked,
+    /// The provider turned it down.
+    Rejected,
 }
 
 /// Written inside an engine's install folder once its download is complete; an install
@@ -78,6 +91,8 @@ impl Registry {
             install_locks: Mutex::default(),
             install_timeout: Duration::from_secs(secs),
             keys_lock: Mutex::default(),
+            downloading: Mutex::default(),
+            key_states: Mutex::default(),
         }
     }
 
@@ -128,6 +143,63 @@ impl Registry {
 
     /// Readiness against this computer: its environment, saved keys and home folder.
     pub fn readiness(&self, m: &Manifest) -> Readiness {
+        let mut r = self.probe_readiness(m);
+        if r.needs.is_none() && r.status == HAS_KEY {
+            match self.key_state(m) {
+                Some(KeyState::Rejected) => {
+                    let names: Vec<&str> = m.keys.iter().map(|k| k.title.as_str()).collect();
+                    return Readiness {
+                        needs: Some(EngineNeed::Key),
+                        status: "The key didn't work.".into(),
+                        how: Some(format!("Add another API key from {}.", or_list(&names))),
+                    };
+                }
+                Some(KeyState::Unchecked) => {
+                    r.status = "Has an API key. Weilo couldn't check it yet.".into();
+                }
+                None => {}
+            }
+        }
+        if r.needs.is_none() && self.is_downloading(m) {
+            r.status = "Downloading now.".into();
+        }
+        r
+    }
+
+    /// Whether the engine is being downloaded right now.
+    pub fn is_downloading(&self, m: &Manifest) -> bool {
+        self.downloading
+            .lock()
+            .expect("downloading lock")
+            .contains(&m.name)
+    }
+
+    /// The state of the key the engine uses (the first in use), when it isn't "taken".
+    fn key_state(&self, m: &Manifest) -> Option<KeyState> {
+        let (spec, _) = self.keys_in_use(m).into_iter().next()?;
+        let states = self.key_states.lock().expect("key states lock");
+        states.get(&(m.name.clone(), spec.id)).copied()
+    }
+
+    /// Notes what the provider said of a key: `Some(true)` taken, `Some(false)` turned
+    /// down, `None` couldn't ask.
+    pub fn mark_key(&self, m: &Manifest, provider: &str, answer: Option<bool>) {
+        let mut states = self.key_states.lock().expect("key states lock");
+        let entry = (m.name.clone(), provider.to_string());
+        match answer {
+            Some(true) => {
+                states.remove(&entry);
+            }
+            Some(false) => {
+                states.insert(entry, KeyState::Rejected);
+            }
+            None => {
+                states.insert(entry, KeyState::Unchecked);
+            }
+        }
+    }
+
+    fn probe_readiness(&self, m: &Manifest) -> Readiness {
         let installable = self.is_installed(m) || (is_npm(m) && which("npm").is_some());
         readiness(
             m,
@@ -136,11 +208,7 @@ impl Registry {
                 installable,
                 npm_engine: is_npm(m),
                 has_credentials: !self.credentials(m).is_empty(),
-                sign_in_cli: m
-                    .sign_in
-                    .as_ref()
-                    .and_then(|s| s.command.as_deref())
-                    .is_none_or(|c| which(c).is_some()),
+                sign_in_cli: sign_in_cli_present(m),
                 engine_home: self.home.engine_state(&m.name),
                 user_home: dirs::home_dir(),
                 keychain: &keychain_has,
@@ -225,9 +293,10 @@ impl Registry {
         out
     }
 
-    /// Ready to start without fetching anything (or `detect.always`).
+    /// Ready to start without fetching anything. An engine Weilo downloads counts only
+    /// once its download is complete (`detect.always` only means it is always offered).
     pub fn is_installed(&self, m: &Manifest) -> bool {
-        if m.command[0] == "{self}" || m.detect.always {
+        if m.command[0] == "{self}" {
             return true;
         }
         if is_npm(m) {
@@ -286,7 +355,15 @@ impl Registry {
         remove_leftovers(&parent, &m.name);
         let staging = parent.join(format!(".install-{}-{}", m.name, crate::auth::new_token()));
         std::fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
+        self.downloading
+            .lock()
+            .expect("downloading lock")
+            .insert(m.name.clone());
         let result = self.npm(&npm, m, pkgs, &staging).await;
+        self.downloading
+            .lock()
+            .expect("downloading lock")
+            .remove(&m.name);
         let result = result.and_then(|()| put_in_place(&staging, &dir, &parent, &m.name));
         if result.is_err() {
             let _ = std::fs::remove_dir_all(&staging);
@@ -543,7 +620,7 @@ pub fn readiness(m: &Manifest, p: Probe<'_>) -> Readiness {
     if p.has_credentials {
         return Readiness {
             needs: None,
-            status: "Has an API key.".into(),
+            status: HAS_KEY.into(),
             how: None,
         };
     }
@@ -555,38 +632,54 @@ pub fn readiness(m: &Manifest, p: Probe<'_>) -> Readiness {
             how: Some(format!("Add an API key from {}.", or_list(&names))),
         };
     };
-    // Signing in needs the engine's own program; without it, only a key works here.
-    let (status, sign_in) = if p.sign_in_cli {
-        ("Needs you to sign in.", s.how.clone())
-    } else {
-        let get = s.get.clone();
-        let get = get.unwrap_or_else(|| format!("Install {} first.", m.title));
-        ("Not on this computer.", get)
-    };
-    if names.is_empty() {
-        let needs = if p.sign_in_cli {
-            EngineNeed::SignIn
-        } else {
-            EngineNeed::Install
-        };
+    // Signing in needs the engine's own program. Without it, a key is the one way here
+    // (Weilo downloads the engine itself), so that is all that is said.
+    if !p.sign_in_cli {
+        if names.is_empty() {
+            let get = s.get.clone();
+            return Readiness {
+                needs: Some(EngineNeed::Install),
+                status: "Not on this computer.".into(),
+                how: Some(get.unwrap_or_else(|| format!("Install {} first.", m.title))),
+            };
+        }
         return Readiness {
-            needs: Some(needs),
-            status: status.into(),
-            how: Some(sign_in),
+            needs: Some(EngineNeed::Key),
+            status: "Needs an API key.".into(),
+            how: Some(format!("Add an API key from {}.", or_list(&names))),
+        };
+    }
+    if names.is_empty() {
+        return Readiness {
+            needs: Some(EngineNeed::SignIn),
+            status: "Needs you to sign in.".into(),
+            how: Some(s.how.clone()),
         };
     }
     Readiness {
         needs: Some(EngineNeed::Key),
-        status: status.into(),
+        status: "Needs you to sign in.".into(),
         how: Some(format!(
-            "{sign_in} Or add an API key from {}.",
+            "{} Or add an API key from {}.",
+            s.how,
             or_list(&names)
         )),
     }
 }
 
+/// The status of an engine that has an API key.
+const HAS_KEY: &str = "Has an API key.";
+
+/// Whether the program an engine signs in with is on this computer (or it needs none).
+pub fn sign_in_cli_present(m: &Manifest) -> bool {
+    m.sign_in
+        .as_ref()
+        .and_then(|s| s.command.as_deref())
+        .is_none_or(|c| which(c).is_some())
+}
+
 /// "A", "A or B", "A, B or C".
-fn or_list(items: &[&str]) -> String {
+pub(crate) fn or_list(items: &[&str]) -> String {
     match items {
         [] => "your model provider".into(),
         [one] => one.to_string(),
@@ -624,10 +717,11 @@ fn rank(name: &str) -> (usize, String) {
     (pos, name.to_string())
 }
 
+/// Offered first in setup: always (Weilo's built-in AI), or its program is on this
+/// computer. A leftover settings folder (`detect.paths`) alone isn't the program, so it
+/// doesn't count.
 fn detected(m: &Manifest) -> bool {
-    m.detect.always
-        || m.detect.commands.iter().any(|c| which(c).is_some())
-        || m.detect.paths.iter().any(|p| expand_tilde(p).exists())
+    m.detect.always || m.detect.commands.iter().any(|c| which(c).is_some())
 }
 
 pub fn expand_tilde(p: &str) -> PathBuf {
@@ -816,20 +910,32 @@ mod tests {
     }
 
     #[test]
+    fn the_built_in_ai_is_downloaded_not_assumed() {
+        let dir = tempfile::tempdir().unwrap();
+        let reg = Registry::load(&Home::new(dir.path()));
+        let pi = reg.get("pi").unwrap().clone();
+        assert!(pi.detect.always, "always offered in setup");
+        assert!(!reg.is_installed(&pi));
+        assert!(reg.needs_download(&pi));
+        assert!(reg.found().contains(&"pi".to_string()));
+        // Once its download is complete, it is installed.
+        let marker = reg.install_dir("pi").join(INSTALLED_MARKER);
+        std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        std::fs::write(&marker, "ok\n").unwrap();
+        assert!(reg.is_installed(&pi) && !reg.needs_download(&pi));
+    }
+
+    #[test]
     fn codex_without_its_program_offers_a_key() {
         let dir = tempfile::tempdir().unwrap();
         let mut p = probe(dir.path(), false);
         p.sign_in_cli = false;
         let r = readiness(&manifest("codex"), p);
+        // Weilo downloads the engine itself; without the program to sign in with, a key
+        // is the one way, and that is all that is said.
         assert_eq!(r.needs, Some(EngineNeed::Key));
-        assert_eq!(r.status, "Not on this computer.");
-        assert_eq!(
-            r.how.as_deref(),
-            Some(
-                "Install it from Terminal: npm install -g @openai/codex. \
-                 Or add an API key from OpenAI."
-            )
-        );
+        assert_eq!(r.status, "Needs an API key.");
+        assert_eq!(r.how.as_deref(), Some("Add an API key from OpenAI."));
         // With a key it's ready, program or not.
         let mut p = probe(dir.path(), true);
         p.sign_in_cli = false;

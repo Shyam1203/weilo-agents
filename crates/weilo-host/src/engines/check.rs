@@ -74,9 +74,31 @@ pub fn key_failed(message: &str) -> Explained {
     }
 }
 
-/// "Isn't signed in" for engines with a sign-in, "needs an API key" for the rest.
+/// "Isn't signed in" for engines with a sign-in, "needs an API key" for the rest. When
+/// the program it signs in with isn't on this computer, a key is the one way, and only
+/// that is said.
 pub fn needs_sign_in(m: &Manifest) -> Explained {
+    let names: Vec<&str> = m.keys.iter().map(|k| k.title.as_str()).collect();
     match &m.sign_in {
+        Some(s) if !super::sign_in_cli_present(m) => match names.as_slice() {
+            [] => Explained {
+                needs: EngineNeed::Install,
+                message: match &s.get {
+                    Some(get) => format!("{} isn't on this computer. {get}", m.title),
+                    None => format!("{} isn't on this computer.", m.title),
+                },
+                action: "Install",
+            },
+            _ => Explained {
+                needs: EngineNeed::Key,
+                message: format!(
+                    "{} needs an API key from {} to work here.",
+                    m.title,
+                    super::or_list(&names)
+                ),
+                action: "Add a key",
+            },
+        },
         Some(s) => Explained {
             needs: EngineNeed::SignIn,
             message: format!("{} isn't signed in. {}", m.title, s.how),
@@ -147,7 +169,11 @@ pub async fn run(app: &Arc<App>, m: &Manifest) -> EngineCheck {
     // Each key is tried with a free call to its provider; one that is turned down is
     // named. When the provider can't be reached, the engine is still started.
     for (spec, value) in app.engines.keys_in_use(m) {
-        if try_key(&spec.id, &value).await == Some(false) {
+        let answer = try_key(&spec.id, &value).await;
+        if answer.is_some() {
+            app.engines.mark_key(m, &spec.id, answer);
+        }
+        if answer == Some(false) {
             return not_ready(
                 key_failed(&format!("That {} key didn't work.", spec.title)),
                 vec![],
@@ -276,7 +302,10 @@ mod tests {
     #[test]
     fn sign_in_errors_ask_to_sign_in_and_pi_asks_for_a_key() {
         let f = Failure::other("Invalid API key · Please run /login");
-        let e = explain(&manifest("claude-code"), &f, None);
+        let mut claude = manifest("claude-code");
+        // Its sign-in program is here (any program that is will do).
+        claude.sign_in.as_mut().unwrap().command = Some("sh".into());
+        let e = explain(&claude, &f, None);
         assert_eq!((e.needs, e.action), (EngineNeed::SignIn, "Sign in"));
         assert_eq!(
             e.message,
@@ -287,6 +316,19 @@ mod tests {
             ..Failure::default()
         };
         assert_eq!(explain(&manifest("pi"), &f, None).action, "Add a key");
+    }
+
+    #[test]
+    fn without_its_sign_in_program_only_a_key_is_offered() {
+        let mut claude = manifest("claude-code");
+        claude.sign_in.as_mut().unwrap().command = Some("weilo-no-such-program".into());
+        let e = needs_sign_in(&claude);
+        assert_eq!((e.needs, e.action), (EngineNeed::Key, "Add a key"));
+        assert_eq!(
+            e.message,
+            "Claude Code needs an API key from Anthropic to work here."
+        );
+        assert!(!e.message.contains("Terminal"));
     }
 
     #[test]

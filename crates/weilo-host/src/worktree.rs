@@ -137,7 +137,7 @@ pub async fn merge_back(folder: &Path, worktree: &Path, title: &str) -> Result<S
     .concat();
     let merged = run_git(&repo, &args, None).await?;
     if merged.ok {
-        return Ok(format!("Brought the session's changes into {place}."));
+        return Ok(format!("{BROUGHT_BACK} {place}."));
     }
     if let Some(files) = in_the_way(&merged.stderr) {
         // Git stopped before it changed anything; there is no merge to undo.
@@ -175,6 +175,9 @@ fn in_the_way(stderr: &str) -> Option<Vec<String>> {
         .collect();
     (!files.is_empty()).then_some(files)
 }
+
+/// How a successful Bring back begins its answer.
+pub const BROUGHT_BACK: &str = "Brought the session's changes into";
 
 /// The most diff text sent; the rest is cut.
 const MAX_DIFF: usize = 200 * 1024;
@@ -482,7 +485,11 @@ async fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
 /// Like `git`, with the output untrimmed.
 async fn git_raw(dir: &Path, args: &[&str]) -> Result<String, String> {
     let out = run_git(dir, args, None).await?;
-    if out.ok { Ok(out.stdout) } else { Err(out.stderr) }
+    if out.ok {
+        Ok(out.stdout)
+    } else {
+        Err(out.stderr)
+    }
 }
 
 async fn repo_root(folder: &Path) -> Option<PathBuf> {
@@ -545,7 +552,9 @@ mod tests {
             .unwrap();
         assert!(out.cut && out.ok);
         assert_eq!(out.stdout.len(), 1000);
-        let whole = run_git(dir.path(), &["diff", "--cached"], None).await.unwrap();
+        let whole = run_git(dir.path(), &["diff", "--cached"], None)
+            .await
+            .unwrap();
         assert!(!whole.cut && whole.stdout.len() > 500_000);
     }
 
@@ -567,9 +576,18 @@ mod tests {
             "A file in shop is in the way: cart.txt. Move it, then try again."
         );
         // Nothing changed; once it is moved, it works.
-        assert_eq!(std::fs::read_to_string(repo.join("cart.txt")).unwrap(), "mine\n");
+        assert_eq!(
+            std::fs::read_to_string(repo.join("cart.txt")).unwrap(),
+            "mine\n"
+        );
         std::fs::remove_file(repo.join("cart.txt")).unwrap();
         let said = merge_back(&repo, &path, "Fix").await.unwrap();
         assert_eq!(said, "Brought the session's changes into shop.");
+        // Once brought back, nothing is left to bring back.
+        let left = changes(&repo, Some(&path), SystemTime::now())
+            .await
+            .unwrap();
+        assert!(left.files.is_empty(), "{:?}", left.files);
+        assert_eq!(left.diff.as_deref(), Some(""));
     }
 }

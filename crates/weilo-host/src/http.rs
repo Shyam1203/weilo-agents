@@ -150,7 +150,11 @@ struct PairBody {
 }
 
 /// Trades a pairing code for a device token: `{ device_id, token }`, in the body only.
-async fn pair(State(app): State<Arc<App>>, Json(body): Json<PairBody>) -> Response {
+async fn pair(
+    State(app): State<Arc<App>>,
+    headers: HeaderMap,
+    Json(body): Json<PairBody>,
+) -> Response {
     // Every guess waits its turn, before the code is even looked at.
     let gate = app.pairing.gate.lock().await;
     match app.pairing.redeem(&body.code) {
@@ -176,7 +180,18 @@ async fn pair(State(app): State<Arc<App>>, Json(body): Json<PairBody>) -> Respon
         }
     }
     drop(gate);
-    match create_device(&app, body.name.as_deref()).await {
+    // The app sends no name, so the device is named after its browser.
+    let agent = headers
+        .get(header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
+    let name = body
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map_or_else(|| device_name(agent), str::to_string);
+    match create_device(&app, Some(&name)).await {
         Ok((device_id, token)) => {
             Json(json!({ "device_id": device_id, "token": token })).into_response()
         }
@@ -213,6 +228,50 @@ async fn token(State(app): State<Arc<App>>, headers: HeaderMap) -> Response {
             Json(json!({ "error": "Pair this device first." })),
         )
             .into_response(),
+    }
+}
+
+/// A plain name for a device from its browser's User-Agent: "Chrome on Mac", "Safari
+/// on iPhone", "Firefox on Linux"; "Browser" when it can't tell.
+pub fn device_name(agent: &str) -> String {
+    let has = |s: &str| agent.contains(s);
+    let browser = if has("Edg/") || has("EdgiOS") || has("EdgA/") {
+        Some("Edge")
+    } else if has("OPR/") || has("Opera") {
+        Some("Opera")
+    } else if has("Firefox/") || has("FxiOS") {
+        Some("Firefox")
+    } else if has("CriOS") || (has("Chrome/") && !has("Chromium/")) {
+        Some("Chrome")
+    } else if has("Chromium/") {
+        Some("Chromium")
+    } else if has("Safari/") && has("Version/") {
+        Some("Safari")
+    } else {
+        None
+    };
+    let system = if has("iPhone") {
+        Some("iPhone")
+    } else if has("iPad") {
+        Some("iPad")
+    } else if has("Android") {
+        Some("Android")
+    } else if has("CrOS") {
+        Some("Chromebook")
+    } else if has("Macintosh") || has("Mac OS X") {
+        Some("Mac")
+    } else if has("Windows") {
+        Some("Windows")
+    } else if has("Linux") {
+        Some("Linux")
+    } else {
+        None
+    };
+    match (browser, system) {
+        (Some(b), Some(s)) => format!("{b} on {s}"),
+        (Some(b), None) => b.to_string(),
+        (None, Some(s)) => format!("Browser on {s}"),
+        (None, None) => "Browser".to_string(),
     }
 }
 
@@ -281,5 +340,36 @@ mod tests {
             .is_err()
         );
         assert!(check_request(&headers(&[]), 3210).is_err());
+    }
+
+    #[test]
+    fn devices_are_named_after_their_browser() {
+        let cases = [
+            (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                "Chrome on Mac",
+            ),
+            (
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1",
+                "Safari on iPhone",
+            ),
+            (
+                "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0",
+                "Firefox on Linux",
+            ),
+            (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+                "Edge on Windows",
+            ),
+            (
+                "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                "Chrome on Android",
+            ),
+            ("", "Browser"),
+            ("curl/8.5.0", "Browser"),
+        ];
+        for (agent, want) in cases {
+            assert_eq!(super::device_name(agent), want, "{agent}");
+        }
     }
 }
