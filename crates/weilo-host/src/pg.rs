@@ -105,6 +105,7 @@ impl Postgres {
     async fn launch(&mut self) -> Result<()> {
         write_auth_files(&self.layout, !self.locked)?;
         clear_stale_pid(&self.layout).await?;
+        end_leftovers(&self.layout.data_dir).await;
         self.child = Some(spawn_postgres(&self.layout, self.secrets.port)?);
         if let Err(e) = self.wait_ready().await {
             self.stop().await;
@@ -184,7 +185,14 @@ impl Postgres {
                     Ok(()) => break,
                     Err(e) => {
                         tracing::warn!("Postgres didn't start again: {e:#}");
-                        pause = (pause * 2).min(Duration::from_secs(30));
+                        // Server processes of the last run still holding its shared
+                        // memory go away by themselves soon: try again shortly.
+                        // Anything else waits longer each time.
+                        pause = if format!("{e:#}").contains("shared memory block") {
+                            Duration::from_millis(250)
+                        } else {
+                            (pause * 2).min(Duration::from_secs(30))
+                        };
                     }
                 }
             }
@@ -703,6 +711,55 @@ async fn clear_stale_pid(layout: &Layout) -> Result<()> {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     bail!("Another Postgres ({pid}) is using this home folder.")
+}
+
+/// Server processes left by a Postgres that was killed (they outlive it for a moment,
+/// still holding its shared memory, and a new Postgres won't start until they are
+/// gone). Waits for them to end, then ends those still there. Found by their working
+/// folder, the data folder, where `/proc` shows it (Linux); elsewhere a new start is
+/// simply tried again soon.
+async fn end_leftovers(data_dir: &Path) {
+    let Ok(dir) = data_dir.canonicalize() else {
+        return;
+    };
+    let started = std::time::Instant::now();
+    let mut killed = false;
+    loop {
+        let left = leftovers(&dir);
+        if left.is_empty() {
+            if killed || started.elapsed() > Duration::from_millis(100) {
+                tracing::info!("the last Postgres's server processes are gone");
+            }
+            return;
+        }
+        if started.elapsed() > Duration::from_secs(3) && !killed {
+            tracing::warn!("ending {} server processes left by the last Postgres", left.len());
+            for pid in &left {
+                signal(*pid as u32, libc::SIGKILL);
+            }
+            killed = true;
+        }
+        if started.elapsed() > Duration::from_secs(6) {
+            tracing::warn!("server processes left by the last Postgres are still there");
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// Postgres processes working in `data_dir` (Linux; empty elsewhere).
+fn leftovers(data_dir: &Path) -> Vec<i32> {
+    let Ok(procs) = fs::read_dir("/proc") else {
+        return vec![];
+    };
+    procs
+        .flatten()
+        .filter_map(|e| e.file_name().to_str()?.parse::<i32>().ok())
+        .filter(|pid| {
+            fs::read_link(format!("/proc/{pid}/cwd")).is_ok_and(|cwd| cwd == data_dir)
+                && is_postgres(*pid)
+        })
+        .collect()
 }
 
 fn same_dir(a: &Path, b: &Path) -> bool {

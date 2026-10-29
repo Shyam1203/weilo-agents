@@ -1673,10 +1673,23 @@ async fn a_reply_ending_while_postgres_is_down_is_kept() {
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    eventually("Postgres to come back", || {
-        host.postgres_pid().is_some_and(pid_alive)
-    })
-    .await;
+    // Back soon after the last kill: leftover server processes are waited for, not
+    // retried against with ever longer pauses.
+    let killed_at = std::time::Instant::now();
+    while host.connect_as("weilo_app").await.is_err() {
+        assert!(
+            killed_at.elapsed() < common::WAIT,
+            "Postgres didn't come back\n{}",
+            host.log()
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let took = killed_at.elapsed();
+    assert!(
+        took < Duration::from_secs(10),
+        "Postgres took {took:?} to come back\n{}",
+        host.log()
+    );
     // A device that comes back finds the whole reply, and the thread idle.
     let started = std::time::Instant::now();
     let mut d = loop {
@@ -1933,16 +1946,21 @@ fn postgres_backends(postmaster: i32) -> Vec<i32> {
 
 #[tokio::test]
 async fn a_message_waiting_through_a_database_blip_still_runs() {
-    let Some(host) = Host::start_with(&[("WEILO_DB_WAIT_SECS", "1")]).await else {
+    // Engines stop after 1 s idle, so each message starts one again.
+    let Some(host) = Host::start_with(&[
+        ("WEILO_DB_WAIT_SECS", "1"),
+        ("WEILO_ENGINE_IDLE_SECS", "1"),
+    ])
+    .await
+    else {
         return;
     };
     let token = host.pair().await;
     let mut c = Client::connect(&host, Some(&token)).await.unwrap();
     let thread = setup_with_echo(&mut c).await;
     let postmaster = host.postgres_pid().expect("postgres pid");
-    // Postgres keeps resetting its connections for a while (it never stops, so Weilo
-    // isn't told it's down); the message is sent during that, and its engine has to
-    // start then.
+    // Postgres keeps resetting its connections (it never stops, so Weilo isn't told
+    // it's down) while messages are sent and their engine starts.
     let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let blips = {
         let stop = stop.clone();
@@ -1962,33 +1980,46 @@ async fn a_message_waiting_through_a_database_blip_still_runs() {
             }
         })
     };
-    let started = std::time::Instant::now();
-    loop {
-        let call = Call::Send {
-            thread_id: thread,
-            text: "hello again".into(),
-            when: SendWhen::Now,
-        };
-        match c.call(call).await {
-            CallResult::Done { .. } => break,
-            other => assert!(started.elapsed() < common::WAIT, "{other:?}"),
+    let met = |log: &str| log.contains("waits to start") || log.contains("couldn't note");
+    let mut sent = Vec::new();
+    for n in 0..6 {
+        if n >= 2 && met(&host.log()) {
+            break;
         }
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        let text = format!("hello {n}");
+        let started = std::time::Instant::now();
+        loop {
+            let call = Call::Send {
+                thread_id: thread,
+                text: text.clone(),
+                when: SendWhen::Now,
+            };
+            match c.call(call).await {
+                CallResult::Done { .. } => break,
+                other => assert!(started.elapsed() < common::WAIT, "{other:?}"),
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        sent.push(text);
+        // Long enough for the reply and for the engine to stop again.
+        tokio::time::sleep(Duration::from_millis(2500)).await;
     }
-    tokio::time::sleep(Duration::from_secs(3)).await;
     stop.store(true, std::sync::atomic::Ordering::SeqCst);
     blips.await.unwrap();
     assert_eq!(host.postgres_pid(), Some(postmaster), "Postgres itself stayed up");
-    let mut d = Client::connect(&host, Some(&token)).await.unwrap();
-    d.sub(thread, 0).await;
-    let f = d
-        .next(|f| agent_text(f) == Some("You said: hello again") || problem(f).is_some())
-        .await;
-    assert_eq!(agent_text(&f), Some("You said: hello again"), "{f:?}\n{}", host.log());
     assert!(
-        host.log().contains("waits to start")
-            || host.log().contains("couldn't note"),
-        "the start never met the blip, so this didn't test anything:\n{}",
+        met(&host.log()),
+        "no start met the blips, so this didn't test anything:\n{}",
         host.log()
     );
+    // Every message got its reply, and nothing was said to have failed.
+    let mut d = Client::connect(&host, Some(&token)).await.unwrap();
+    d.sub(thread, 0).await;
+    for text in sent {
+        let want = format!("You said: {text}");
+        let f = d
+            .next(|f| agent_text(f) == Some(want.as_str()) || problem(f).is_some())
+            .await;
+        assert_eq!(agent_text(&f), Some(want.as_str()), "{f:?}\n{}", host.log());
+    }
 }
