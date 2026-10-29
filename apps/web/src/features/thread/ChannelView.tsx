@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { create, showError, stop } from "../../lib/app";
-import { cx, shortName, slugText } from "../../lib/format";
+import { shortName, slugText } from "../../lib/format";
 import { navigate, paths, threadPath } from "../../lib/router";
 import { useApp } from "../../lib/store";
 import type { AgentSummary } from "../../proto/AgentSummary";
@@ -106,6 +106,7 @@ export function ChannelView({ channel, threadId }: { channel: ChannelSummary; th
       }}
       composer={{
         placeholder: `Message #${slug}. ${ownerName} answers.`,
+        shortPlaceholder: `Message #${slug}`,
         label: `Message #${slug}`,
         working: state === "working",
         agentName: ownerName,
@@ -211,9 +212,8 @@ function ChannelHeader({
 
 /** "Fix checkout · Session · needs you [Open]", under the chat it came from. */
 function WaitingSessions({ sessions }: { sessions: ThreadSummary[] }) {
-  const phone = useVariant() === "phone";
   return (
-    <div className={cx("flex flex-col gap-2", phone ? "mt-3" : "mt-3 pl-11")}>
+    <div className="flex flex-col gap-2">
       {sessions.map((t) => (
         <div key={t.id} className="flex min-h-14 items-center gap-3 rounded-lg border border-border bg-surface px-4 py-2 shadow-e1">
           <SessionMark size={32} />

@@ -135,7 +135,17 @@ pub async fn merge_back(folder: &Path, worktree: &Path, title: &str) -> Result<S
         &["merge", "--no-ff", "--no-edit", "--no-verify", &branch],
     ]
     .concat();
-    let merged = run_git(&repo, &args, None).await?;
+    let merged = match run_git(&repo, &args, None).await {
+        Ok(merged) => merged,
+        Err(e) => {
+            // Ended part way (it took too long, say): undo whatever it started.
+            tracing::warn!("bring back stopped: {e}");
+            undo_merge(&repo, true).await;
+            return Err(
+                "Couldn't bring the changes back, so nothing was changed. Try again.".into(),
+            );
+        }
+    };
     if merged.ok {
         return Ok(format!("{BROUGHT_BACK} {place}."));
     }
@@ -151,7 +161,7 @@ pub async fn merge_back(folder: &Path, worktree: &Path, title: &str) -> Result<S
             files.join(", ")
         ));
     }
-    let _ = git(&repo, &["merge", "--abort"]).await;
+    undo_merge(&repo, false).await;
     if merged.stdout.contains("CONFLICT") {
         return Err(
             "These changes clash with changes in the original folder, so nothing was changed."
@@ -160,6 +170,17 @@ pub async fn merge_back(folder: &Path, worktree: &Path, title: &str) -> Result<S
     }
     tracing::warn!("bring back failed: {}", merged.stderr);
     Err("Couldn't bring the changes back, so nothing was changed. Try again.".into())
+}
+
+/// Undoes a merge that didn't finish. A git Weilo ended part way (`killed`) may leave
+/// its lock behind, which would stop the undo; it is removed then.
+async fn undo_merge(repo: &Path, killed: bool) {
+    if killed && let Ok(dir) = git(repo, &["rev-parse", "--absolute-git-dir"]).await {
+        let _ = std::fs::remove_file(Path::new(dir.trim()).join("index.lock"));
+    }
+    if git(repo, &["merge", "--abort"]).await.is_err() {
+        tracing::warn!("couldn't undo a merge in {}", repo.display());
+    }
 }
 
 /// Files git won't write over because they aren't saved in the repo ("untracked working

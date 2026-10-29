@@ -120,7 +120,7 @@ describe("one agent status everywhere", () => {
     expect(problemTitle("Mia", { action: "Add a key", message: "Weilo's built-in AI needs an API key to work." })).toBe("Mia needs an API key");
     expect(problemTitle("Fix checkout", { action: "Choose another folder", message: "…" })).toBe("Fix checkout can't open its folder");
     // Nothing better to say: the problem's own words.
-    expect(problemTitle("Ava", { action: "Try again", message: "Codex stopped responding." })).toBe("Codex stopped responding.");
+    expect(problemTitle("Ava", { action: "Try again", message: "Codex stopped responding." })).toBe("Ava's AI stopped responding.");
     expect(problemTitle(null, { action: "Add a key", message: "Needs a key." })).toBe("Needs a key.");
   });
 });
@@ -157,7 +157,7 @@ describe("folded step failures say what failed", () => {
       { id: "a", title: "Read ~/.claude/memory/MEMORY.md", status: "failed", at: "" },
       { id: "b", title: "Read src/theme.css", status: "done", at: "" },
     ]);
-    expect(out.shown.map((s) => s.label)).toEqual(["Read a file"]);
+    expect(out.shown.map((s) => s.label)).toEqual(["Read theme.css"]);
     expect(out.failedLine).toBe("1 file couldn't be read");
   });
 });

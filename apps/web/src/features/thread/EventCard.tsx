@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { decide, setComposerDraft } from "../../lib/app";
+import { decide, sayNoLater, setComposerDraft } from "../../lib/app";
 import { cx, timeOf } from "../../lib/format";
 import { isSmall } from "../../lib/needsYou";
-import { useApp } from "../../lib/store";
+import { awayLine, useApp } from "../../lib/store";
 import { outcomeWords, type Decided } from "../../lib/timeline";
 import type { Card as CardData } from "../../proto/Card";
 import type { CardAction } from "../../proto/CardAction";
@@ -40,6 +40,8 @@ export function EventCard({ card, decided, threadId, detailsLabel = "Show detail
   const [confirming, setConfirming] = useState<CardAction | null>(null);
   const [busy, setBusy] = useState(false);
   const draft = card.kind === "draft";
+  // Answers wait while the Weilo computer can't be reached; the reason shows under the buttons.
+  const away = useApp(awayLine);
 
   const act = async (a: CardAction) => {
     if (!a.decision) {
@@ -47,7 +49,13 @@ export function EventCard({ card, decided, threadId, detailsLabel = "Show detail
       focusComposer();
       return;
     }
-    if (!card.approval_id) return;
+    if (!card.approval_id || away) return;
+    // A no can be taken back for a few seconds (Undo in the toast).
+    if (a.decision.kind === "deny") {
+      sayNoLater(card.approval_id, a.decision, draft);
+      setConfirming(null);
+      return;
+    }
     if (!confirming && needsConfirm(card, a)) {
       setConfirming(a);
       return;
@@ -95,6 +103,7 @@ export function EventCard({ card, decided, threadId, detailsLabel = "Show detail
       outcome={outcome}
       confirming={confirming}
       busy={busy}
+      away={away}
       phone={phone}
       onAct={act}
       onBack={() => setConfirming(null)}
@@ -134,6 +143,7 @@ function CardFooter({
   outcome,
   confirming,
   busy,
+  away,
   phone,
   onAct,
   onBack,
@@ -142,6 +152,7 @@ function CardFooter({
   outcome: { text: string; at: string | null; yes: boolean } | null;
   confirming: CardAction | null;
   busy: boolean;
+  away: string | null;
   phone: boolean;
   onAct(a: CardAction): void;
   onBack(): void;
@@ -174,7 +185,8 @@ function CardFooter({
             size={size}
             variant={destructive ? "danger-solid" : "primary"}
             onClick={() => onAct(confirming)}
-            disabled={busy}
+            disabled={busy || away !== null}
+            title={away ?? undefined}
             autoFocus
             className={cx(phone && "flex-1")}
           >
@@ -196,7 +208,8 @@ function CardFooter({
               key={a.id}
               size={size}
               variant={variantOf(a)}
-              disabled={busy}
+              disabled={busy || (away !== null && a.decision !== null)}
+              title={a.decision && away ? away : undefined}
               onClick={() => onAct(a)}
               className={cx(phone && "w-full")}
             >
@@ -204,6 +217,9 @@ function CardFooter({
             </Button>
           ))}
         </div>
+      )}
+      {away && actions.some((a) => a.decision) && (
+        <span className={cx("text-caption text-text-secondary", !phone && "basis-full")}>{away} You can answer when it's back.</span>
       )}
     </div>
   );

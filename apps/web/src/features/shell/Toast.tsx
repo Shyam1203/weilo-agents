@@ -1,5 +1,7 @@
 import { clearError } from "../../lib/app";
 import { useApp } from "../../lib/store";
+import { flushUndo, undoPending } from "../../lib/undo";
+import { Button } from "../../ui/Button";
 import { TextWithCode } from "../../ui/bits";
 import { CloseIcon } from "../../ui/glyphs";
 import { IconButton } from "../../ui/IconButton";
@@ -11,6 +13,7 @@ import { IconButton } from "../../ui/IconButton";
 export function Toast() {
   const error = useApp((s) => s.error);
   const notice = useApp((s) => s.notice);
+  const undo = useApp((s) => s.undo);
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex flex-col items-center gap-2 px-4 max-md:bottom-24">
       {/* An alert is read out when it appears, so it only exists while there's one. */}
@@ -20,19 +23,28 @@ export function Toast() {
         </div>
       )}
       <div role="status" aria-live="polite">
-        {notice && <ToastLine text={notice} />}
+        {undo ? (
+          <ToastLine key={undo.id} text={undo.text} onDismiss={flushUndo}>
+            <Button size="sm" variant="tertiary" className="text-accent-text" onClick={undoPending}>
+              Undo
+            </Button>
+          </ToastLine>
+        ) : (
+          notice && <ToastLine text={notice} />
+        )}
       </div>
     </div>
   );
 }
 
-function ToastLine({ text }: { text: string }) {
+function ToastLine({ text, children, onDismiss = clearError }: { text: string; children?: React.ReactNode; onDismiss?(): void }) {
   return (
     <div className="pointer-events-auto flex max-w-[480px] items-center gap-2 rounded-lg border border-border bg-surface py-1 pr-1 pl-4 text-body-sm text-text shadow-e2">
       <span className="min-w-0 flex-1">
         <TextWithCode text={text} />
       </span>
-      <IconButton label="Dismiss" size={28} onClick={clearError}>
+      {children}
+      <IconButton label="Dismiss" size={28} onClick={onDismiss}>
         <CloseIcon size={12} />
       </IconButton>
     </div>

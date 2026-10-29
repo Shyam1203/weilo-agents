@@ -7,6 +7,7 @@ import type { SendWhen } from "../proto/SendWhen";
 import type { SessionChanges } from "../proto/SessionChanges";
 import type { UiPrefs } from "../proto/UiPrefs";
 import { HostError, type HostApi, type HostListener } from "./host";
+import { doLater } from "./undo";
 import {
   addQueued,
   addSending,
@@ -404,4 +405,21 @@ export async function finishSetup(engine: string, keepAwake: boolean): Promise<v
 
 export function closeFirstRun(): void {
   store.set((s) => ({ ...s, firstRunOpen: false }));
+}
+
+// -- One-click actions with Undo ----------------------------------------------
+
+/** "Discard" / "Not now": shown as answered at once, sent when the Undo runs out. */
+export function sayNoLater(approvalId: string, decision: Decision, draft: boolean): void {
+  doLater({ text: draft ? "Draft discarded" : "You said no", approvalId }, () => decide(approvalId, decision));
+}
+
+/** Stop a session, with a few seconds to take it back. */
+export function stopLater(threadId: string, title: string): void {
+  doLater({ text: `Stopped ${title}`, stopThreadId: threadId }, () => stop(threadId));
+}
+
+/** Remove an "Always allow", with a few seconds to take it back. */
+export function revokeAllowRuleLater(ruleId: string): void {
+  doLater({ text: "Removed. The agent will ask next time", ruleId }, () => revokeAllowRule(ruleId).catch(showError));
 }

@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { decide } from "../../lib/app";
 import { isSmall, yesAction } from "../../lib/needsYou";
 import { navigate, paths, threadPath } from "../../lib/router";
-import { pendingNeedsYou, useApp } from "../../lib/store";
+import { awayLine, pendingNeedsYou, useApp } from "../../lib/store";
 import type { NeedsYouItem } from "../../proto/NeedsYouItem";
 import { Button } from "../../ui/Button";
 import { Link } from "../../ui/Link";
@@ -50,8 +50,10 @@ function StackCard({ item, n, total }: { item: NeedsYouItem; n: number; total: n
   const small = isSmall(item.card.risk);
   const thread = snap.threads.find((t) => t.id === item.thread_id);
   const open = () => navigate(thread ? threadPath(thread) : paths.home());
+  // Answers wait while the Weilo computer can't be reached.
+  const away = useApp(awayLine);
   const approve = async () => {
-    if (!yes?.decision) return;
+    if (!yes?.decision || away) return;
     setBusy(true);
     await decide(item.approval_id, yes.decision);
     setBusy(false);
@@ -72,6 +74,7 @@ function StackCard({ item, n, total }: { item: NeedsYouItem; n: number; total: n
       ) : (
         <RiskLine risk={item.card.risk} text={item.card.risk_line} />
       )}
+      {away && <div className="text-caption text-text-secondary">{away} You can answer when it's back.</div>}
       <div className="flex gap-2 pt-1">
         {confirming ? (
           <>
@@ -82,7 +85,7 @@ function StackCard({ item, n, total }: { item: NeedsYouItem; n: number; total: n
               size="phone"
               variant={item.card.risk === "destructive" ? "danger-solid" : "primary"}
               className="flex-1"
-              disabled={busy}
+              disabled={busy || away !== null}
               onClick={() => void approve()}
             >
               {yes?.label}
@@ -94,7 +97,7 @@ function StackCard({ item, n, total }: { item: NeedsYouItem; n: number; total: n
               Open
             </Button>
             {yes && (
-              <Button size="phone" variant="primary" className="flex-1" disabled={busy} onClick={() => void approve()}>
+              <Button size="phone" variant="primary" className="flex-1" disabled={busy || away !== null} onClick={() => void approve()}>
                 {yes.label}
               </Button>
             )}

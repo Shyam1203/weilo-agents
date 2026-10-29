@@ -1,6 +1,7 @@
-import { cx, engineTitle, shortName } from "../../lib/format";
+import { cx, engineTitle, listWords, shortName, whenInSentence } from "../../lib/format";
+import type { Snapshot } from "../../proto/Snapshot";
 import { paths, type Route } from "../../lib/router";
-import { agentStatus, findThread, mainAgent, problemLines, STATUS_TONE_CLASS, useApp } from "../../lib/store";
+import { agentStatus, findThread, mainAgent, problemLines, STATUS_TONE_CLASS, useApp, type StatusTone } from "../../lib/store";
 import { useEngineList } from "../engines/EnginePicker";
 import { AgentMenuButton } from "./AgentMenu";
 import { Avatar } from "../../ui/Avatar";
@@ -103,8 +104,33 @@ function AddButton({ label, phone, onClick }: { label: string; phone?: boolean; 
   );
 }
 
+/**
+ * A channel's one line on the Channels page: what needs you, who is working, else when it
+ * was last active.
+ */
+export function channelLine(channelId: string, snap: Pick<Snapshot, "threads" | "agents">, now = new Date()): { text: string; tone: StatusTone } {
+  const threads = snap.threads.filter((t) => t.channel_id === channelId);
+  const waiting = threads.filter((t) => t.state === "needs_you").length;
+  if (waiting > 0) return { text: waiting === 1 ? "Needs you" : `${waiting} need you`, tone: "warn" };
+  const working = threads.filter((t) => t.state === "working");
+  if (working.length > 0) {
+    const names = [
+      ...new Set(
+        working.map((t) => {
+          const a = snap.agents.find((x) => x.id === t.agent_id) ?? snap.agents.find((x) => x.id === t.started_by || x.name === t.started_by);
+          return a ? shortName(a.name) : null;
+        }),
+      ),
+    ].filter((n): n is string => !!n);
+    return { text: names.length ? `${listWords(names)} ${names.length === 1 ? "is" : "are"} working` : "Working", tone: "ok" };
+  }
+  const last = threads.map((t) => t.updated_at).sort().pop();
+  return last ? { text: `Last active ${whenInSentence(last, now)}`, tone: "quiet" } : { text: "Nothing here yet", tone: "quiet" };
+}
+
 function ChannelList({ phone }: { phone?: boolean }) {
   const channels = useApp((s) => s.snapshot!.channels);
+  const snap = useApp((s) => s.snapshot!);
   const [adding, setAdding] = useState(false);
   const open = channels.filter((c) => !c.archived);
   return (
@@ -114,18 +140,24 @@ function ChannelList({ phone }: { phone?: boolean }) {
         <EmptyState title="No channels yet." line="Ava files work here as it comes in." />
       ) : (
         <nav aria-label="Channels" className="flex flex-col gap-0.5">
-          {open.map((c) => (
-            <Link key={c.id} href={paths.channel(c.id)} className={listRow}>
-              <span aria-hidden="true" className="w-6 text-center font-medium text-text-tertiary">
-                #
-              </span>
-              <span className="ellipsis flex-1 font-medium">
-                <span className="sr-only">#</span>
-                {c.slug}
-              </span>
-              {c.unread && <Dot label="New" />}
-            </Link>
-          ))}
+          {open.map((c) => {
+            const line = channelLine(c.id, snap);
+            return (
+              <Link key={c.id} href={paths.channel(c.id)} className={cx(listRow, "min-h-14 py-1.5")}>
+                <span aria-hidden="true" className="w-6 self-start pt-0.5 text-center font-medium text-text-tertiary">
+                  #
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="ellipsis font-medium">
+                    <span className="sr-only">#</span>
+                    {c.slug}
+                  </span>
+                  <span className={cx("ellipsis text-caption", STATUS_TONE_CLASS[line.tone])}>{line.text}</span>
+                </span>
+                {c.unread && <Dot label="New" />}
+              </Link>
+            );
+          })}
         </nav>
       )}
     </PageFrame>

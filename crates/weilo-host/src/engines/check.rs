@@ -204,6 +204,16 @@ pub async fn run(app: &Arc<App>, m: &Manifest) -> EngineCheck {
     }
     let log = app.home.logs().join(format!("engine-{}.log", m.name));
     let (tx, _rx) = mpsc::unbounded_channel();
+    // A check starts an engine process too, so it counts against WEILO_MAX_ENGINES.
+    let slot = tokio::time::timeout(SLOT_WAIT, super::runner::engine_slot(app)).await;
+    let Ok(_slot) = slot else {
+        let e = Explained {
+            needs: EngineNeed::Error,
+            message: "Other agents are busy right now. Try again in a minute.".into(),
+            action: "Try again",
+        };
+        return not_ready(e, vec![]);
+    };
     match Connection::open(&spec, base_env(), &cwd, &log, tx, 0, None).await {
         Ok(conn) => {
             let methods = conn.auth_methods.clone();
@@ -223,6 +233,32 @@ pub async fn run(app: &Arc<App>, m: &Manifest) -> EngineCheck {
         Err(f) => not_ready(explain(m, &f, key.as_deref()), vec![]),
     }
 }
+
+/// Asks the providers again, in the background, about the engine's keys that couldn't
+/// be checked yet; their state is updated when they answer. Cheap: one free call each,
+/// and only for keys still unchecked.
+pub fn recheck_keys(app: &Arc<App>, m: &Manifest) {
+    let unchecked = app.engines.unchecked_keys(m);
+    if unchecked.is_empty() {
+        return;
+    }
+    let (app, m) = (app.clone(), m.clone());
+    tokio::spawn(async move {
+        let mut changed = false;
+        for (provider, value) in unchecked {
+            if let Some(answer) = try_key(&provider, &value).await {
+                app.engines.mark_key(&m, &provider, Some(answer));
+                changed = true;
+            }
+        }
+        if changed {
+            app.hub.changed(weilo_proto::Changed::Engines);
+        }
+    });
+}
+
+/// How long a check waits for an engine slot when they are all taken.
+const SLOT_WAIT: Duration = Duration::from_secs(60);
 
 /// How long a provider gets to answer a key check.
 const KEY_CHECK_TIMEOUT: Duration = Duration::from_secs(10);

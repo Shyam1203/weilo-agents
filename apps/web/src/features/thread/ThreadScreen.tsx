@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, type ReactNode } from "react";
 import { cx } from "../../lib/format";
-import { useApp } from "../../lib/store";
+import { store, useApp } from "../../lib/store";
 import { useMedia } from "../../lib/useMedia";
 import { PanelIcon } from "../../ui/glyphs";
 import { IconButton } from "../../ui/IconButton";
@@ -11,8 +11,10 @@ import { SidePanel } from "./SidePanel";
 import type { SessionChanges } from "../../proto/SessionChanges";
 import { useFollow, useStickToBottom, useVariant } from "./useThread";
 
-/** Below this width the side panel floats over the conversation instead of squeezing it. */
+/** From this width the side panel opens by itself, next to the sidebar and the chat. */
 export const PANEL_INLINE_MIN_WIDTH = 1280;
+/** Below this width (rail 80 + chat 480 + panel 400) the side panel floats over the chat, with a scrim. */
+export const PANEL_BESIDE_MIN_WIDTH = 960;
 
 export interface ThreadScreenProps {
   header: ReactNode;
@@ -38,12 +40,20 @@ export interface ThreadScreenProps {
  */
 export function ThreadScreen({ header, threadId, list, composer, panelOpen, onPanelClose, top, changes, after, children }: ThreadScreenProps) {
   const phone = useVariant() === "phone";
-  const wide = useMedia(`(min-width: ${PANEL_INLINE_MIN_WIDTH}px)`);
+  const wide = useMedia(`(min-width: ${PANEL_BESIDE_MIN_WIDTH}px)`);
   const scroll = useRef<HTMLDivElement>(null);
   const thread = useApp((s) => s.snapshot?.threads.find((t) => t.id === threadId));
   useFollow(threadId);
   useStickToBottom(scroll, threadId ?? "");
   const floating = !wide;
+  const showPanel = !!panelOpen && !!thread && !phone;
+
+  // The shell folds the sidebar on mid-width windows while a panel is open.
+  useEffect(() => {
+    if (!showPanel) return;
+    store.set((s) => ({ ...s, panelOpen: true }));
+    return () => store.set((s) => ({ ...s, panelOpen: false }));
+  }, [showPanel]);
 
   useEffect(() => {
     if (!panelOpen || !floating || !onPanelClose) return;
@@ -75,8 +85,7 @@ export function ThreadScreen({ header, threadId, list, composer, panelOpen, onPa
             {/* Under the Needs you cards, the chat fades in instead of being cut by a hard edge. */}
             {top && <div aria-hidden="true" className="pointer-events-none sticky top-0 z-[1] -mb-4 h-4 bg-linear-to-b from-bg to-transparent" />}
             <div className={cx(column, phone ? "py-3" : "py-6")}>
-              <MessageList threadId={threadId} {...list} />
-              {after}
+              <MessageList threadId={threadId} {...list} tail={after} />
             </div>
           </div>
           <div className={cx(column, "shrink-0", phone ? "py-2" : "pb-6")}>
@@ -85,7 +94,10 @@ export function ThreadScreen({ header, threadId, list, composer, panelOpen, onPa
         </Fragment>
         )}
       </main>
-      {panelOpen && thread && !phone && (
+      {showPanel && floating && onPanelClose && (
+        <div aria-hidden="true" className="absolute inset-0 z-10 bg-[var(--scrim)]" onClick={onPanelClose} />
+      )}
+      {showPanel && thread && (
         <SidePanel
           key={threadId}
           thread={thread}

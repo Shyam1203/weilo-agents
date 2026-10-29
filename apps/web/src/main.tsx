@@ -6,8 +6,10 @@ import { connect, listener } from "./lib/app";
 import { checkPaired, HostConnection, socketUrl } from "./lib/host";
 import { fixtureRequested } from "./lib/mode";
 import { applyTheme } from "./lib/theme";
+import { installUndoGuards } from "./lib/undo";
 
 applyTheme();
+installUndoGuards();
 
 async function boot(): Promise<void> {
   const onPairPage = window.location.pathname.startsWith("/pair");

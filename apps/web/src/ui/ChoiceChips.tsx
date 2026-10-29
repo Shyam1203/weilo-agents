@@ -55,7 +55,7 @@ export function ChoiceChips({
             onKeyDown={(e) => onKey(e, i)}
             className={cx(
               "h-8 max-w-full rounded-md border px-3 text-body-sm font-medium max-md:h-11",
-              on ? "border-accent bg-accent-subtle text-accent-text" : "ghost border-border bg-surface text-text",
+              on ? "border-transparent bg-accent-subtle text-accent-text" : "ghost border-border bg-surface text-text",
             )}
           >
             <span className="ellipsis block">{it.label}</span>

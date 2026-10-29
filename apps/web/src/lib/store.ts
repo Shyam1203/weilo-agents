@@ -63,6 +63,18 @@ export interface Sending {
   afterSeq?: bigint;
 }
 
+export interface UndoState {
+  id: number;
+  /** "Draft discarded" — the toast says this, with Undo. */
+  text: string;
+  /** A no that waits: the item shows as answered until then. */
+  approvalId?: string;
+  /** A Stop that waits: its Stop button is gone until then. */
+  stopThreadId?: string;
+  /** A removed "Always allow" that waits: hidden until then. */
+  ruleId?: string;
+}
+
 export interface AppState {
   conn: ConnStatus;
   hostName: string | null;
@@ -93,6 +105,10 @@ export interface AppState {
   stoppedCards: Record<string, true>;
   /** Every agent name seen, kept after an agent is removed, so its old replies keep its name. */
   agentNames: Record<string, string>;
+  /** An action shown as done with an Undo, sent to the host only when the Undo runs out. */
+  undo: UndoState | null;
+  /** A thread's side panel is open (desktop): mid-width windows fold the sidebar to make room. */
+  panelOpen: boolean;
 }
 
 // "Next up" lives in this browser until the host can hold and cancel queued messages.
@@ -152,6 +168,8 @@ export const initialState: AppState = {
   stopped: {},
   stoppedCards: {},
   agentNames: {},
+  undo: null,
+  panelOpen: false,
 };
 
 export const EMPTY_FEED: Feed = { events: [], streaming: null };
@@ -162,12 +180,13 @@ export const EMPTY_FEED: Feed = { events: [], streaming: null };
 
 export function applySnapshot(s: AppState, snapshot: Snapshot): AppState {
   const fresh = snapshot.agents.filter((a) => s.agentNames[a.id] !== a.name);
-  return {
+  const next: AppState = {
     ...s,
     snapshot,
     agentNames: fresh.length ? { ...s.agentNames, ...Object.fromEntries(fresh.map((a) => [a.id, a.name])) } : s.agentNames,
     firstRunOpen: s.firstRunOpen || !snapshot.setup.done,
   };
+  return holdUndo(next);
 }
 
 export function patchSnapshot(s: AppState, patch: Partial<Snapshot>): AppState {
@@ -176,7 +195,12 @@ export function patchSnapshot(s: AppState, patch: Partial<Snapshot>): AppState {
 }
 
 export function setNeedsYou(s: AppState, items: NeedsYouItem[]): AppState {
-  return patchSnapshot(s, { needs_you: items });
+  return holdUndo(patchSnapshot(s, { needs_you: items }));
+}
+
+/** A fresh list from the host still shows a no that is waiting on its Undo as answered. */
+export function holdUndo(s: AppState): AppState {
+  return s.undo?.approvalId ? decideLocally(s, s.undo.approvalId, false) : s;
 }
 
 export function setPrefs(s: AppState, prefs: UiPrefs): AppState {
@@ -395,6 +419,12 @@ export function hostAway(s: AppState): boolean {
   return s.conn === "reconnecting" || s.paused !== null;
 }
 
+/** Why answering has to wait: the computer can't be reached, or its own line while it isn't ready. */
+export function awayLine(s: AppState): string | null {
+  if (s.conn === "reconnecting") return "Can't reach your Weilo computer.";
+  return s.paused;
+}
+
 export function pendingNeedsYou(s: AppState): NeedsYouItem[] {
   return s.snapshot?.needs_you.filter((n) => n.state === "pending" && n.card.kind !== "heads_up") ?? [];
 }
@@ -515,10 +545,48 @@ export const STATUS_TONE_CLASS: Record<StatusTone, string> = {
  * A problem as a Needs you title that names who it's about: "Mia needs an API key",
  * "Fix checkout can't open its folder". An unknown problem keeps its own words.
  */
-export function problemTitle(who: string | null, p: Pick<OpenProblem, "action" | "message">): string {
+export function problemTitle(
+  who: string | null,
+  p: Pick<OpenProblem, "action" | "message">,
+  owner: string | null = who,
+  titles: string[] = [],
+): string {
   const line = problemLine(p);
-  if (!who || line === "Didn't work") return p.message;
+  if (!who || line === "Didn't work") return plainProblem(p.message, owner, titles).line;
   return `${who} ${line[0]!.toLowerCase()}${line.slice(1)}`;
+}
+
+// AI apps' names as the host may write them, for messages from before the engines list loads.
+const KNOWN_ENGINE_TITLES = ["Claude Code", "Codex", "Gemini CLI", "Gemini", "Weilo's built-in AI", "pi", "Echo"];
+
+/**
+ * A problem said about the agent, not the AI app behind it (§11.0): "Codex stopped
+ * responding…" reads "Ava's AI stopped responding…". `named` is true when the app's
+ * name was taken out, so the original can go under Details.
+ */
+export function plainProblem(message: string, owner: string | null, titles: string[] = []): { line: string; named: boolean } {
+  const all = [...new Set([...titles, ...KNOWN_ENGINE_TITLES])].filter(Boolean).sort((a, b) => b.length - a.length);
+  for (const t of all) {
+    if (message.startsWith(`${t} `) || message.startsWith(`${t}'s `) || message.startsWith(`${t},`)) {
+      return { line: `${owner ? `${owner}'s` : "Your"} AI${message.slice(t.length)}`, named: true };
+    }
+  }
+  return { line: message, named: false };
+}
+
+/** Whose AI a thread uses, by the agent's short name: a session's is the agent that started it. */
+export function aiOwner(snap: Snapshot | null, threadId: string, agentId?: string | null): string | null {
+  if (!snap) return null;
+  const t = snap.threads.find((x) => x.id === threadId);
+  const agent =
+    snap.agents.find((a) => a.id === (agentId ?? t?.agent_id)) ??
+    snap.agents.find((a) => a.main_thread_id === threadId) ??
+    snap.agents.find((a) => !!t?.started_by && (a.id === t.started_by || a.name === t.started_by));
+  return agent ? agent.name.split(" · ")[0]!.trim() : null;
+}
+
+export function engineTitles(s: Pick<AppState, "engines">): string[] {
+  return (s.engines ?? []).map((e) => e.title);
 }
 
 /** Open problems by thread: the sidebar's line for each. */
@@ -553,7 +621,7 @@ export function problemNeedsYou(s: AppState): NeedsYouItem[] {
         card: {
           kind: "problem",
           approval_id: null,
-          title: problemTitle(whoOf(snap, t), p),
+          title: problemTitle(whoOf(snap, t), p, aiOwner(snap, t.id), engineTitles(s)),
           body: p.message,
           details: null,
           risk: "read",

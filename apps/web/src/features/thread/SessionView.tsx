@@ -6,14 +6,14 @@ import { hostAway, problemLines, useApp } from "../../lib/store";
 import { totalCost } from "../../lib/timeline";
 import type { ThreadSummary } from "../../proto/ThreadSummary";
 import { SessionMark } from "../../ui/Avatar";
-import { EmptyState, StatusPill, TopBar } from "../../ui/bits";
+import { EmptyState, Kbd, StatusPill, TopBar } from "../../ui/bits";
 import { Button } from "../../ui/Button";
 import { Link } from "../../ui/Link";
 import { PANEL_INLINE_MIN_WIDTH, PanelToggle, ThreadScreen } from "./ThreadScreen";
 import { useMedia } from "../../lib/useMedia";
 import { BackButton } from "../mobile/TabBar";
 import { useEvents, useThreadState, useVariant } from "./useThread";
-import { useSessionChanges } from "./SidePanel";
+import { ChangesRow, useSessionChanges } from "./SidePanel";
 import { shortcut, useTouchOnly } from "../../lib/platform";
 
 /** Sessions whose panel already opened by itself (this page load). */
@@ -30,7 +30,7 @@ export function SessionView({ thread }: { thread: ThreadSummary }) {
   const snap = useApp((s) => s.snapshot)!;
   const events = useEvents(thread.id);
   const cost = useMemo(() => totalCost(events), [events]);
-  const changes = useSessionChanges(phone ? null : thread.id, events.length);
+  const changes = useSessionChanges(thread.id, events.length);
   const hasChanges = (changes?.files.length ?? 0) > 0;
 
   // The panel opens by itself once a session has changes to show (§11.0 rule 4): once per
@@ -74,6 +74,7 @@ export function SessionView({ thread }: { thread: ThreadSummary }) {
       changes={changes}
       panelOpen={panel}
       onPanelClose={() => setPanel(false)}
+      top={phone && changes && hasChanges ? <ChangesRow thread={thread} changes={changes} /> : undefined}
       header={
         <TopBar className={phone ? "px-4" : "pr-4 pl-6"}>
           {phone ? <BackButton /> : <SessionMark size={24} />}
@@ -110,7 +111,8 @@ export function SessionView({ thread }: { thread: ThreadSummary }) {
         empty: <EmptyState title="This session hasn't started yet." line="Tell it what to do below." />,
       }}
       composer={{
-        placeholder: thread.agent_id && watcherName ? `Tell this session what to change. ${watcherName} sees it too.` : "Tell this session what to change.",
+        placeholder: thread.agent_id && watcherName ? `Message this session. ${watcherName} sees it too.` : "Message this session",
+        shortPlaceholder: "Message this session",
         label: "Message this session",
         working: state === "working",
         agentName: null,
@@ -132,7 +134,21 @@ export function stopKeyApplies(target: EventTarget | null): boolean {
 
 /** "⌘. stops the session · about $0.38 so far"; no key hint on touch screens. */
 function sessionHint(stopKey: string | null, cost: string | null) {
-  const parts = [stopKey && `${stopKey} stops the session`, cost].filter(Boolean);
-  return parts.length ? <span>{parts.join(" · ")}</span> : undefined;
+  if (!stopKey && !cost) return undefined;
+  const keys = stopKey ? (stopKey.startsWith("Ctrl+") ? ["Ctrl", stopKey.slice(5)] : [stopKey]) : [];
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      {keys.length > 0 && (
+        <>
+          {keys.map((k) => (
+            <Kbd key={k}>{k}</Kbd>
+          ))}
+          <span>stops the session</span>
+        </>
+      )}
+      {keys.length > 0 && cost && <span aria-hidden="true">·</span>}
+      {cost && <span>{cost}</span>}
+    </span>
+  );
 }
 

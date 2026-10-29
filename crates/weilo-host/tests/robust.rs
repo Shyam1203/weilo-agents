@@ -1696,8 +1696,8 @@ async fn a_reply_ending_while_postgres_is_down_is_kept() {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     assert!(
-        host.log().contains("will try again"),
-        "no write failed, so this didn't test anything:\n{}",
+        host.log().contains("will try again") || host.log().contains("until the database is back"),
+        "no write waited, so this didn't test anything:\n{}",
         host.log()
     );
     // And it takes the next message.
@@ -1816,4 +1816,81 @@ async fn the_built_in_ai_is_downloaded_on_first_use() {
     };
     assert!(check.ready, "{check:?}");
     assert_eq!(npm_runs(tools.path()), 1);
+}
+
+#[tokio::test]
+async fn a_card_left_while_postgres_is_down_is_closed_when_it_is_back() {
+    let Some(host) = Host::start_with(&[("WEILO_DB_WAIT_SECS", "1")]).await else {
+        return;
+    };
+    let token = host.pair().await;
+    let mut c = Client::connect(&host, Some(&token)).await.unwrap();
+    let thread = setup_with_echo(&mut c).await;
+    c.sub(thread, 0).await;
+    let pid = start_helper(&mut c, thread).await;
+    // SAFETY: asking for the group of a process this test's host started.
+    let pgid = unsafe { libc::getpgid(pid) };
+    send(&mut c, thread, "approve the checks").await;
+    let card = next_card(&mut c).await;
+    c.next(|f| is_state(f, WorkState::NeedsYou)).await;
+    let approval_id = card.approval_id.unwrap();
+    // Postgres goes away; meanwhile the engine dies, so the card must be closed, and
+    // that can't be written until Postgres is back.
+    let kill_postgres = |for_how_long: Duration| {
+        let host = &host;
+        async move {
+            let until = std::time::Instant::now() + for_how_long;
+            while std::time::Instant::now() < until {
+                if let Some(pid) = host.postgres_pid().filter(|p| pid_alive(*p)) {
+                    // SAFETY: killing the test host's Postgres.
+                    unsafe {
+                        libc::kill(pid, libc::SIGKILL);
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        }
+    };
+    kill_postgres(Duration::from_secs(2)).await;
+    // SAFETY: killing the engine's group, as a crash of the engine would.
+    unsafe { libc::kill(-pgid, libc::SIGKILL) };
+    kill_postgres(Duration::from_secs(3)).await;
+    eventually("Postgres to come back", || {
+        host.postgres_pid().is_some_and(pid_alive)
+    })
+    .await;
+    // Closed as interrupted once Postgres is back, long before the sweep would.
+    let started = std::time::Instant::now();
+    loop {
+        let row: Option<(String, Option<String>)> = match host.connect_as("weilo_app").await {
+            Ok(mut db) => sqlx::query_as("SELECT state, decided_via FROM approvals WHERE id = $1")
+                .bind(approval_id)
+                .fetch_one(&mut db)
+                .await
+                .ok(),
+            Err(_) => None,
+        };
+        if let Some((state, via)) = &row
+            && state != "pending"
+        {
+            assert_eq!(state, "denied");
+            assert_eq!(via.as_deref(), Some("interrupted"));
+            break;
+        }
+        assert!(
+            started.elapsed() < common::WAIT,
+            "the card stayed {row:?}\n{}",
+            host.log()
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    // A late answer finds it closed.
+    let mut d = Client::connect(&host, Some(&token)).await.unwrap();
+    let late = d
+        .call(Call::Decide {
+            approval_id,
+            decision: Decision::Allow,
+        })
+        .await;
+    assert!(failed_with(&late, "conflict").is_some(), "{late:?}");
 }

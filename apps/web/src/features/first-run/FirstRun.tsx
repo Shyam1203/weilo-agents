@@ -146,7 +146,10 @@ function EngineStep({ found, onPick }: { found: string[]; onPick(id: string): vo
 
   return (
     <>
-      <Heading title="Connect your AI" line="Weilo works with the AI app you already use." />
+      <Heading
+        title="Connect your AI"
+        line={best ? "Weilo works with the AI app you already use." : "Weilo's built-in AI works with a key from an AI company."}
+      />
       <Card phone={!desktop} className="flex flex-col gap-4 p-4">
         {best ? (
           <>

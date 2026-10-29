@@ -5,7 +5,10 @@ import type { StepItem } from "./timeline";
  * "`npm test`"). People see plain words; the file or command stays under Show details.
  */
 export interface PlainStep {
+  /** What people see: "Read theme.css", "Ran the tests". */
   label: string;
+  /** The plain kind of step ("Read a file"), for counting failures. */
+  kind: string;
   /** The file, command or address, when the title named one. */
   detail: string | null;
   /** Reading or looking: a failure here is folded into details. */
@@ -13,7 +16,7 @@ export interface PlainStep {
 }
 
 const WORDS: Array<[RegExp, string, boolean]> = [
-  [/^(toolsearch|tool_search)$/, "Looked for a tool", true],
+  [/^(toolsearch|tool_search)$/, "Got its tools ready", true],
   [/^(read|readfile|read_file|readmanyfiles|read_many_files|view|cat|open)$/, "Read a file", true],
   [/^(bash|execute|exec|shell|run|run_shell_command|runcommand|terminal|command|killshell|bashoutput)$/, "Ran a command", false],
   [/^(edit|multiedit|write|writefile|write_file|replace|create|patch|apply_patch|applypatch|notebookedit|delete|move)$/, "Changed a file", false],
@@ -52,17 +55,17 @@ function stripTicks(s: string): string {
 
 export function plainStep(title: string): PlainStep {
   const raw = title.trim();
-  if (!raw) return { label: "Did a step", detail: null, quiet: true };
+  if (!raw) return plain("Did a step", null, true);
   // A whole command in backticks: "`npm test`".
-  if (/^`[^`]+`$/.test(raw)) return { label: "Ran a command", detail: stripTicks(raw), quiet: false };
+  if (/^`[^`]+`$/.test(raw)) return withObject(plain("Ran a command", stripTicks(raw), false));
   // MCP tools: "mcp__server__tool".
-  if (/^mcp__/i.test(raw)) return { label: "Used a connection", detail: raw, quiet: true };
+  if (/^mcp__/i.test(raw)) return plain("Used a connection", raw, true);
 
   const lower = raw.toLowerCase();
   for (const [phrase, tool] of Object.entries(PHRASES)) {
     if (lower === phrase || lower.startsWith(`${phrase} `)) {
       const rest = raw.slice(phrase.length).trim();
-      return match(tool, rest) ?? { label: raw, detail: null, quiet: false };
+      return match(tool, rest) ?? plain(raw, null, false);
     }
   }
   const m = /^([A-Za-z_]+)(?::\s*|\s+|$)(.*)$/s.exec(raw);
@@ -70,7 +73,11 @@ export function plainStep(title: string): PlainStep {
     const found = match(m[1]!.toLowerCase(), m[2]!.trim());
     if (found) return found;
   }
-  return { label: raw, detail: null, quiet: false };
+  return plain(raw, null, false);
+}
+
+function plain(label: string, detail: string | null, quiet: boolean): PlainStep {
+  return { label, kind: label, detail, quiet };
 }
 
 function match(tool: string, rest: string): PlainStep | null {
@@ -78,7 +85,57 @@ function match(tool: string, rest: string): PlainStep | null {
   if (!hit) return null;
   // "Read the checkout code" is already plain words; only tool-like titles are renamed.
   if (rest && !technical(rest)) return null;
-  return { label: hit[1], detail: rest ? stripTicks(rest) : null, quiet: hit[2] };
+  return withObject(plain(hit[1], rest ? stripTicks(rest) : null, hit[2]));
+}
+
+/** The file's name without its folders: "src/theme.css" → "theme.css". */
+function fileName(path: string): string | null {
+  const first = path.split(/\s+/)[0]!.replace(/[:,]+$/, "");
+  const name = first.split(/[/\\]/).filter(Boolean).pop();
+  return name && name.length <= 48 ? name : null;
+}
+
+// Common commands, said in plain words. Anything else stays "Ran a command".
+const COMMANDS: Array<[RegExp, string]> = [
+  [/^(npm|pnpm|yarn|bun)( run)? (test|vitest|jest)\b|^(npx )?(vitest|jest|pytest|mocha)\b|^cargo (test|nextest)\b|^go test\b|^make test\b/, "Ran the tests"],
+  [/^(npm|pnpm|yarn|bun)( run)? build\b|^cargo build\b|^go build\b|^make\b|^(npx )?(tsc|vite build)\b/, "Built the project"],
+  [/^(npm|pnpm|yarn|bun) (install|i|add|ci)\b|^pip3? install\b|^cargo add\b|^brew install\b/, "Installed what it needs"],
+  [/^(npm|pnpm|yarn|bun)( run)? (lint|format|fmt)\b|^(npx )?(eslint|prettier|biome)\b|^cargo (fmt|clippy)\b|^ruff\b/, "Checked the code style"],
+  [/^(npm|pnpm|yarn|bun)( run)? (dev|start|serve)\b/, "Started the app"],
+  [/^git (status|diff|log|show)\b/, "Looked at the changes"],
+  [/^git (add|commit)\b/, "Saved the changes"],
+  [/^git (checkout|switch|branch)\b/, "Switched branches"],
+  [/^git (pull|fetch)\b/, "Got the latest changes"],
+  [/^git push\b/, "Sent the changes"],
+  [/^(ls|tree|pwd)\b/, "Looked through files"],
+  [/^(cat|head|tail|less)\s/, "Read a file"],
+  [/^(rg|grep|find|fd)\s/, "Looked through files"],
+  [/^(mkdir|touch|cp|mv)\s/, "Changed files"],
+  [/^rm\s/, "Deleted files"],
+  [/^curl\b|^wget\b/, "Opened a web page"],
+];
+
+/** Adds the object when the step names one: the file's name, or the command in plain words. */
+function withObject(p: PlainStep): PlainStep {
+  if (!p.detail) return p;
+  switch (p.kind) {
+    case "Read a file":
+    case "Changed a file": {
+      const name = fileName(p.detail);
+      return name ? { ...p, label: `${p.kind === "Read a file" ? "Read" : "Changed"} ${name}` } : p;
+    }
+    case "Ran a command": {
+      const cmd = p.detail.replace(/^(cd \S+ && |sudo )+/, "").trim();
+      const hit = COMMANDS.find(([re]) => re.test(cmd));
+      return hit ? { ...p, label: hit[1] } : p;
+    }
+    case "Opened a web page": {
+      const host = /^[a-z]+:\/\/(?:www\.)?([^/:?#]+)/i.exec(p.detail)?.[1];
+      return host ? { ...p, label: `Opened ${host}` } : p;
+    }
+    default:
+      return p;
+  }
 }
 
 export interface ShownSteps {
@@ -97,7 +154,7 @@ const FAILED_WORDS: Record<string, [string, string]> = {
   "Opened a web page": ["web page couldn't be opened", "web pages couldn't be opened"],
   "Searched the web": ["web search didn't work", "web searches didn't work"],
   "Looked through files": ["file search didn't work", "file searches didn't work"],
-  "Looked for a tool": ["tool wasn't found", "tools weren't found"],
+  "Got its tools ready": ["tool wasn't found", "tools weren't found"],
 };
 
 /** "1 file couldn't be read", "2 web pages couldn't be opened"; mixed kinds: "3 steps didn't work". */
@@ -126,7 +183,7 @@ export function showSteps(steps: StepItem[]): ShownSteps {
     if (p.label !== s.title) extra = true;
     if (s.status === "failed" && p.quiet) {
       folded += 1;
-      failed.push(p.label);
+      failed.push(p.kind);
       extra = true;
       continue;
     }

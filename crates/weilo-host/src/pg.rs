@@ -127,16 +127,21 @@ impl Postgres {
         signal(pid, libc::SIGHUP);
         // The reload is quick but not instant: wait until the owner is turned away.
         let opts = self.options(OWNER_ROLE, DATABASE);
+        let mut last = String::new();
         for _ in 0..100 {
             match PgConnection::connect_with(&opts).await {
                 Ok(conn) => {
                     conn.close().await.ok();
-                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    last = "the owner could still sign in".into();
                 }
-                Err(_) => return Ok(()),
+                // Only a refusal of the sign-in itself counts; anything else (a busy
+                // or restarting server) is tried again.
+                Err(e) if refused_sign_in(&e) => return Ok(()),
+                Err(e) => last = e.to_string(),
             }
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
-        bail!("Postgres didn't take the new sign-in rules")
+        bail!("Postgres didn't take the new sign-in rules ({last})")
     }
 
     pub fn options(&self, role: &str, database: &str) -> PgConnectOptions {
@@ -287,6 +292,12 @@ fn signal(pid: u32, sig: i32) {
     }
 }
 
+/// Whether Postgres turned the sign-in down (SQLSTATE 28000 or 28P01: no such
+/// mapping, failed authentication), as opposed to any other failure to connect.
+fn refused_sign_in(e: &sqlx::Error) -> bool {
+    matches!(e, sqlx::Error::Database(db) if db.code().is_some_and(|c| c.starts_with("28")))
+}
+
 /// The oldest Postgres a new cluster may be made with.
 pub const MIN_MAJOR: u32 = 16;
 
@@ -307,6 +318,11 @@ pub fn find_bin_dir_for(data_dir: Option<&Path>) -> Result<PathBuf> {
             (Some(want), Some(have)) if want != have => bail!(
                 "WEILO_PG_BIN is Postgres {have}, but your Weilo data was made with Postgres {want}. {}",
                 install_hint(want)
+            ),
+            // A new cluster needs a new enough Postgres, wherever it comes from.
+            (None, Some(have)) if have < MIN_MAJOR => bail!(
+                "WEILO_PG_BIN is Postgres {have}, but Weilo needs Postgres {MIN_MAJOR} or newer. {}",
+                install_hint(MIN_MAJOR)
             ),
             _ => Ok(dir),
         };

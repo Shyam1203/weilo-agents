@@ -24,16 +24,26 @@ export interface MessageListProps {
   empty?: ReactNode;
   /** Agent's own chat on a phone: bubbles without faces. */
   faces?: boolean;
+  /** Under the last reply, before "Filed in" (a channel chat's sessions that need you). */
+  tail?: ReactNode;
 }
 
 /** The conversation. Rows are memoised, so only the reply being written re-renders while it streams. */
-export function MessageList({ threadId, agentId, kind, empty, faces = true }: MessageListProps) {
+export function MessageList({ threadId, agentId, kind, empty, faces = true, tail }: MessageListProps) {
   const events = useEvents(threadId);
   const stoppedAt = useApp((s) => s.stopped[threadId] ?? null);
   const blocks = useMemo(() => buildBlocks(events, agentId, stoppedAt), [events, agentId, stoppedAt]);
   const sending = useApp((s) => s.sending[threadId] ?? NO_SENDING);
   const variant = useVariant();
   const gap = variant === "phone" ? "gap-3" : kind === "session" ? "gap-4" : "gap-6";
+  // "Filed in #channel · Move" goes once, at the very end, as in the mock.
+  const filed = useMemo(() => {
+    let last: string | null = null;
+    for (const b of blocks) if (b.type === "agent") for (const it of b.items) if (it.type === "filed") last = it.channelId;
+    return last;
+  }, [blocks]);
+  const phone = variant === "phone";
+  const showFace = faces && !phone;
 
   return (
     <div className={cx("flex flex-col", gap)}>
@@ -49,6 +59,16 @@ export function MessageList({ threadId, agentId, kind, empty, faces = true }: Me
         <UserRow key={m.id} text={m.text} at={null} />
       ))}
       <StreamingRow threadId={threadId} agentId={agentId} faces={faces} />
+      {(tail || filed) && (
+        // Part of the last reply: under its text, 12px below it.
+        <div className={cx("flex gap-3", !phone && "-mt-3")}>
+          {showFace && <span aria-hidden="true" className="w-8 shrink-0" />}
+          <div className="flex min-w-0 flex-1 flex-col gap-3">
+            {tail}
+            {filed && <Filed channelId={filed} threadId={threadId} canMove={kind === "chat"} />}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -93,11 +113,13 @@ const AgentBlockRow = memo(function AgentBlockRow({
 }) {
   const agent = useApp((s) => findAgent(s, block.agentId));
   const phone = useVariant() === "phone";
-  const [first, ...rest] = block.items;
+  const shown = block.items.filter((it) => it.type !== "filed");
+  const [first, ...rest] = shown;
   const lead = first?.type === "text" ? first : null;
-  const items = lead ? rest : block.items;
+  const items = lead ? rest : shown;
   const showFace = faces && !phone;
   const face = block.hasText && agent && showFace;
+  if (shown.length === 0) return null;
 
   return (
     <div className={cx("row-cv flex", phone ? "flex-col gap-2" : "gap-3")}>
@@ -154,7 +176,7 @@ function Item({
         />
       );
     case "filed":
-      return <Filed channelId={item.channelId} threadId={threadId} canMove={kind === "chat"} />;
+      return null; // shown once at the end of the list
     case "problem":
       return <Problem threadId={threadId} agentId={agentId} message={item.message} action={item.action} resolved={item.resolved} />;
     case "note":
@@ -185,7 +207,12 @@ function Steps({ steps }: { steps: StepItem[] }) {
             <li key={s.id} className="flex items-center gap-2">
               <StepIcon status={s.status} />
               <span className="min-w-0">{s.label}</span>
-              <span className="sr-only">({STATUS_WORD[s.status]})</span>
+              {/* An icon alone doesn't say what happened: a step that ended early says so. */}
+              {s.status === "stopped" || s.status === "failed" ? (
+                <span className="shrink-0 text-text-tertiary">· {s.status === "stopped" ? "Not finished" : "Didn't work"}</span>
+              ) : (
+                <span className="sr-only">({STATUS_WORD[s.status]})</span>
+              )}
             </li>
           ))}
         </ul>

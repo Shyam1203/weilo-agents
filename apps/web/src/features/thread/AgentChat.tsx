@@ -49,7 +49,7 @@ export function AgentChat({ agent, home }: { agent: AgentSummary; home?: boolean
         empty: <EmptyState title={`Say hi to ${name}.`} line="Ask for anything, like “Plan my week”." />,
       }}
       composer={{
-        placeholder: `Message ${name}…`,
+        placeholder: `Message ${name}`,
         label: `Message ${name}`,
         working: state === "working",
         agentName: name,

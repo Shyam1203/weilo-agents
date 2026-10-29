@@ -13,7 +13,7 @@ import {
   type SidebarSection,
 } from "../../lib/sidebar";
 import { pendingNeedsYou, problemLines, useApp } from "../../lib/store";
-import { jumpItems, searchJump, type JumpItem } from "../../lib/jump";
+import { jumpItems, recentPlaces, searchJump, startJump, type JumpItem } from "../../lib/jump";
 import { Avatar } from "../../ui/Avatar";
 import { Badge, EmptyState } from "../../ui/bits";
 import { Button } from "../../ui/Button";
@@ -58,7 +58,12 @@ export function Sidebar({ route, floating, focusSearch }: { route: Route; floati
   const problems = useApp(problemLines);
   const sections = useMemo(() => buildSections(snap, "", problems), [snap, problems]);
   const everything = useMemo(() => jumpItems(snap, problems), [snap, problems]);
-  const results = useMemo(() => searchJump(everything, query), [everything, query]);
+  // Focused with nothing typed: recent places and the common things to do.
+  const [jumpOpen, setJumpOpen] = useState(false);
+  const results = useMemo(
+    () => (query.trim() ? searchJump(everything, query) : jumpOpen ? startJump(everything, recentPlaces()) : []),
+    [everything, query, jumpOpen],
+  );
   const [active, setActive] = useState(0);
   useEffect(() => setActive(0), [query]);
   useEffect(() => {
@@ -67,7 +72,7 @@ export function Sidebar({ route, floating, focusSearch }: { route: Route; floati
   const hiddenLive = useMemo(() => hiddenHasLiveWork(snap), [snap]);
   const selected = selectedId(route, snap.agents);
   const main = snap.agents[0];
-  const searching = query.trim().length > 0;
+  const searching = query.trim().length > 0 || (jumpOpen && results.length > 0);
   const touch = useTouchOnly();
 
   useEffect(() => {
@@ -86,6 +91,7 @@ export function Sidebar({ route, floating, focusSearch }: { route: Route; floati
   const hide = (key: SectionKey) => void savePrefs(withSection(snap.prefs, key, { shown: false }));
   const run = (item: JumpItem) => {
     setQuery("");
+    setJumpOpen(false);
     search.current?.blur();
     const a = item.action;
     if (a.type === "go") {
@@ -115,6 +121,8 @@ export function Sidebar({ route, floating, focusSearch }: { route: Route; floati
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onFocus={() => setJumpOpen(true)}
+            onBlur={() => setJumpOpen(false)}
             onKeyDown={(e) => {
               if (e.key === "Escape") {
                 if (query) setQuery("");

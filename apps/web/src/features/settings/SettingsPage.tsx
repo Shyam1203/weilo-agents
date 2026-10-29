@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { loadAllowRules, loadDevices, revokeAllowRule, revokeDevice, savePrefs } from "../../lib/app";
+import { loadAllowRules, loadDevices, revokeAllowRuleLater, revokeDevice, savePrefs } from "../../lib/app";
 import { deviceLine, removeDeviceLine } from "../../lib/settings";
 import type { AllowRuleInfo } from "../../proto/AllowRuleInfo";
 import type { DeviceInfo } from "../../proto/DeviceInfo";
@@ -136,7 +136,10 @@ function EngineRow({ engine: e, phone }: { engine: EngineInfo; phone?: boolean }
 
 /** Things you said yes to for good. Remove one and the agent asks again next time. */
 function AllowRules({ phone }: { phone?: boolean }) {
-  const rules = useApp((s) => s.allowRules);
+  const all = useApp((s) => s.allowRules);
+  // One just removed is hidden while its Undo is showing.
+  const waiting = useApp((s) => s.undo?.ruleId);
+  const rules = all && all.filter((r) => r.id !== waiting);
   useEffect(() => {
     loadAllowRules().catch(() => {});
   }, []);
@@ -153,18 +156,6 @@ function AllowRules({ phone }: { phone?: boolean }) {
 }
 
 function AllowRuleRow({ rule, phone }: { rule: AllowRuleInfo; phone?: boolean }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const remove = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await revokeAllowRule(rule.id);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "That didn't work. Try again.");
-      setBusy(false);
-    }
-  };
   return (
     <div className="flex min-h-14 flex-col justify-center gap-1 py-2 shadow-line">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -174,15 +165,10 @@ function AllowRuleRow({ rule, phone }: { rule: AllowRuleInfo; phone?: boolean })
           </span>
           <span className="text-caption text-text-secondary">Added {whenInSentence(rule.created_at)}</span>
         </span>
-        <Button size={phone ? "phone" : "md"} onClick={() => void remove()} disabled={busy}>
-          {busy ? "Removing…" : "Remove"}
+        <Button size={phone ? "phone" : "md"} onClick={() => revokeAllowRuleLater(rule.id)}>
+          Remove
         </Button>
       </div>
-      {error && (
-        <ErrorLine>
-          <TextWithCode text={error} />
-        </ErrorLine>
-      )}
     </div>
   );
 }

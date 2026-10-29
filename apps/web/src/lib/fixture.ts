@@ -251,8 +251,9 @@ const CHANNELS: ChannelSummary[] = [
   { id: ID.holiday, slug: "holiday-sale", title: "Holiday sale", archived: true, unread: false },
 ];
 
-function seedEngines(): EngineInfo[] {
-  return [
+/** The AI apps on this computer. `none`: a computer with no AI app yet (only the built-in AI). */
+function seedEngines(none = false): EngineInfo[] {
+  const all: EngineInfo[] = [
     {
       id: "claude-code", title: "Claude Code", description: "Anthropic's coding agent, with your own sign-in.", installed: true, default: false, binds_approvals: true,
       ready: true, status: "Signed in on this computer.",
@@ -275,6 +276,12 @@ function seedEngines(): EngineInfo[] {
       ],
     },
   ];
+  if (!none) return all;
+  return all.map((e) =>
+    e.id === "pi"
+      ? e
+      : { ...e, installed: false, ready: false, needs: e.id === "gemini" ? "node" : "install", status: "Not on this computer.", how: e.how ?? `Get ${e.title}, then check again.` },
+  );
 }
 
 function checkOf(e: EngineInfo): EngineCheck {
@@ -305,7 +312,7 @@ export class FixtureHost implements HostApi {
     { id: "rule-search", agent_id: ID.mia, description: "Mia may always search the web", created_at: at(7, 20) },
   ];
 
-  private engines = seedEngines();
+  private engines: EngineInfo[];
   private readonly down: boolean;
 
   constructor(
@@ -313,6 +320,7 @@ export class FixtureHost implements HostApi {
     opts: { setupDone?: boolean; down?: boolean; noEngines?: boolean } = {},
   ) {
     this.down = !!opts.down;
+    this.engines = seedEngines(!!opts.noEngines);
     const seeds = seedThreads();
     for (const s of seeds) {
       const events = s.events.map(([when, source, body], i) => ({ seq: BigInt(i + 1), at: when, source, tainted: false, body }));
@@ -472,7 +480,7 @@ export class FixtureHost implements HostApi {
         return { type: "agent", data: a };
       }
       case "create_thread": {
-        const t = this.newThread({ kind: "chat", title: c.params.title ?? "New thread", channel_id: c.params.channel_id, agent_id: c.params.agent_id });
+        const t = this.newThread({ kind: "chat", title: c.params.title ?? "New chat", channel_id: c.params.channel_id, agent_id: c.params.agent_id });
         this.changed("threads");
         return { type: "thread", data: t };
       }

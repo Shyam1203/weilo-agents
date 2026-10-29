@@ -227,6 +227,22 @@ struct WaitingSlot {
     task: tokio::task::JoinHandle<()>,
 }
 
+/// Waits for a free engine slot, asking idle engines, one at a time, to give theirs
+/// up: the one that has waited longest for something to do goes first.
+pub(crate) async fn engine_slot(app: &Arc<App>) -> tokio::sync::OwnedSemaphorePermit {
+    if let Ok(permit) = app.engine_slots.clone().try_acquire_owned() {
+        return permit;
+    }
+    let _waiting = SlotWaiter::new(app);
+    loop {
+        app.slot_wanted.notify_one();
+        let wait = app.engine_slots.clone().acquire_owned();
+        if let Ok(Ok(permit)) = tokio::time::timeout(RETRY_WRITE, wait).await {
+            return permit;
+        }
+    }
+}
+
 /// Counts a thread among those waiting for a slot while it lives.
 struct SlotWaiter(Arc<App>);
 
@@ -533,18 +549,9 @@ impl Runner {
         let id = self.slots;
         let (app, tx) = (self.app.clone(), self.engine_tx.clone());
         let task = tokio::spawn(async move {
-            let _waiting = SlotWaiter::new(&app);
-            loop {
-                // One idle engine at a time gives its slot up: the one that has waited
-                // longest for something to do.
-                app.slot_wanted.notify_one();
-                let wait = app.engine_slots.clone().acquire_owned();
-                if let Ok(Ok(permit)) = tokio::time::timeout(RETRY_WRITE, wait).await {
-                    let msg = EngineMsg::Slot { id, permit };
-                    let _ = tx.send(Tagged { generation: 0, msg });
-                    return;
-                }
-            }
+            let permit = engine_slot(&app).await;
+            let msg = EngineMsg::Slot { id, permit };
+            let _ = tx.send(Tagged { generation: 0, msg });
         });
         self.waiting_slot = Some(WaitingSlot { id, text, task });
     }
@@ -644,6 +651,7 @@ impl Runner {
             .cloned()
             .with_context(|| format!("no engine named {}", ctx.engine))
             .map_err(internal)?;
+        super::check::recheck_keys(&self.app, &manifest);
         let key = self.app.engines.key_in_use(&manifest);
         let explained = |f: Failure| (explain(&manifest, &f, key.as_deref()), f.text.clone());
         let spec = spec_for(&self.app, &manifest, ctx.model.clone()).map_err(explained)?;
@@ -1131,7 +1139,11 @@ impl Runner {
         self.outbox.push_back(Out::Event { id, body, source });
         if self.outbox.len() > OUTBOX_MAX {
             // The oldest event goes; a card's closing never does.
-            if let Some(at) = self.outbox.iter().position(|o| matches!(o, Out::Event { .. })) {
+            if let Some(at) = self
+                .outbox
+                .iter()
+                .position(|o| matches!(o, Out::Event { .. }))
+            {
                 self.outbox.remove(at);
                 self.dropped = true;
             }
@@ -1142,7 +1154,16 @@ impl Runner {
     /// Writes the outbox now, unless it waits for a retry or Postgres is known to be
     /// down (then it is written when Postgres is back).
     async fn write_soon(&mut self) {
-        if self.retry_at.is_none() && *self.app.db_up.borrow() {
+        if !*self.app.db_up.borrow() {
+            if self.outbox.len() == 1 {
+                tracing::info!(
+                    "keeping what {} writes until the database is back",
+                    self.thread_id
+                );
+            }
+            return;
+        }
+        if self.retry_at.is_none() {
             self.drain().await;
         }
     }

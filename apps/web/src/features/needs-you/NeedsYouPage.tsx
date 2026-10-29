@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { decide, savePrefs, send, showNotice, stop } from "../../lib/app";
+import { decide, savePrefs, sayNoLater, send, showNotice, stopLater } from "../../lib/app";
 import { cx, listWords, shortName, timeOf, whenLabel } from "../../lib/format";
 import { actionable, approveKey, groupNeedsYou, isHeadsUp, isSmall, yesAction, type NeedsYouGroup } from "../../lib/needsYou";
 import { navigate, threadPath } from "../../lib/router";
 import { SECTION_TITLES, withSection, type SectionKey } from "../../lib/sidebar";
-import { hostAway, problemNeedsYou, useApp } from "../../lib/store";
+import { awayLine, hostAway, problemNeedsYou, store, useApp } from "../../lib/store";
 import type { NeedsYouItem } from "../../proto/NeedsYouItem";
 import type { Snapshot } from "../../proto/Snapshot";
 import { Avatar, SessionMark } from "../../ui/Avatar";
@@ -60,6 +60,7 @@ export function NeedsYouPage({ phone }: { phone?: boolean }) {
       }
       if (key === "a") {
         e.preventDefault();
+        if (awayLine(store.get())) return;
         const r = approveKey(item);
         if (r.kind === "decide" && r.action.decision) {
           // The cursor moves on to the next item, like reading down a list.
@@ -226,13 +227,21 @@ function AskRow({ item, snap, selected, onFocus, ref, phone }: RowProps & { phon
   const more = useRef<HTMLButtonElement>(null);
   const closeMenu = useCallback(() => setMenu(false), []);
   const open = () => navigate(pathFor(snap, item));
+  // Answers wait while the Weilo computer can't be reached; the reason shows as one line.
+  const away = useApp(awayLine);
   const act = async (a: CardAction) => {
-    if (!a.decision) return;
+    if (!a.decision || away) return;
+    // A no can be taken back for a few seconds (Undo in the toast).
+    if (a.decision.kind === "deny") {
+      sayNoLater(item.approval_id, a.decision, item.card.kind === "draft");
+      return;
+    }
     setBusy(true);
     await decide(item.approval_id, a.decision);
     setBusy(false);
   };
   const size = phone ? "phone" : "md";
+  const off = busy || away !== null;
   return (
     <article
       ref={ref}
@@ -258,11 +267,12 @@ function AskRow({ item, snap, selected, onFocus, ref, phone }: RowProps & { phon
             </Disclosure>
           )}
           <RiskLine risk={item.card.risk} text={item.card.risk_line} />
+          {away && <span className="text-caption text-text-secondary">{away} You can answer when it's back.</span>}
         </div>
       </div>
       <div className={cx("flex shrink-0 items-center gap-2", phone && "flex-wrap")}>
         {no && (
-          <Button size={size} variant="tertiary" className={cx(phone && "flex-1")} disabled={busy} onClick={() => void act(no)}>
+          <Button size={size} variant="tertiary" className={cx(phone && "flex-1")} disabled={off} title={away ?? undefined} onClick={() => void act(no)}>
             {no.label}
           </Button>
         )}
@@ -271,7 +281,7 @@ function AskRow({ item, snap, selected, onFocus, ref, phone }: RowProps & { phon
             <Button size={size} className={cx(phone && "flex-1")} onClick={open}>
               Open
             </Button>
-            <Button size={size} variant="primary" className={cx(phone && "flex-1")} disabled={busy} onClick={() => void act(yes)}>
+            <Button size={size} variant="primary" className={cx(phone && "flex-1")} disabled={off} title={away ?? undefined} onClick={() => void act(yes)}>
               {yes.label}
             </Button>
           </>
@@ -288,6 +298,8 @@ function AskRow({ item, snap, selected, onFocus, ref, phone }: RowProps & { phon
               size={phone ? 44 : 32}
               aria-haspopup="menu"
               aria-expanded={menu}
+              disabled={off}
+              title={away ?? undefined}
               onClick={() => setMenu((v) => !v)}
             >
               <MoreIcon />
@@ -368,6 +380,7 @@ function DoneRow({ item, snap, selected, onFocus, ref, last, phone }: RowProps &
     selected && "bg-accent-subtle [&_.text-text-tertiary]:text-text-secondary",
   );
   const away = useApp(hostAway);
+  const stopping = useApp((s) => s.undo?.stopThreadId);
   if (isHeadsUp(item)) {
     const thread = snap.threads.find((t) => t.id === item.thread_id);
     const [lead, ...name] = item.card.title.split(": ");
@@ -383,8 +396,8 @@ function DoneRow({ item, snap, selected, onFocus, ref, last, phone }: RowProps &
             <Link href={pathFor(snap, item)}>{lead}</Link>
           )}
         </Lines>
-        {thread && thread.state !== "idle" && !away && (
-          <Button size="sm" variant="tertiary" onClick={() => void stop(thread.id)}>
+        {thread && thread.state !== "idle" && !away && stopping !== thread.id && (
+          <Button size="sm" variant="tertiary" onClick={() => stopLater(thread.id, thread.title)}>
             Stop
           </Button>
         )}

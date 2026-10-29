@@ -59,41 +59,50 @@ pub enum Verdict {
 }
 
 pub async fn verify(pool: &PgPool, space_id: Uuid) -> sqlx::Result<Verdict> {
-    let rows = sqlx::query(
-        "SELECT seq, at, actor, device_id, action, detail, prev_hash, hash
-         FROM audit WHERE space_id = $1 ORDER BY seq",
-    )
-    .bind(space_id)
-    .fetch_all(pool)
-    .await?;
+    use futures::TryStreamExt;
+    // One snapshot for the rows and the head, so entries added meanwhile don't count
+    // as a break; rows are read as they come, never all at once.
+    let mut tx = pool.begin().await?;
+    sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+        .execute(&mut *tx)
+        .await?;
     let mut prev = vec![0u8; 32];
     let mut expected_seq = 1;
-    for row in &rows {
-        let seq: i64 = row.get("seq");
-        let stored_prev: Vec<u8> = row.get("prev_hash");
-        let stored_hash: Vec<u8> = row.get("hash");
-        let entry = Entry {
-            actor: row.get("actor"),
-            device_id: row.get("device_id"),
-            action: row.get("action"),
-            detail: row.get("detail"),
-        };
-        let hash = row_hash(&prev, seq, row.get("at"), &entry);
-        if seq != expected_seq || stored_prev != prev || stored_hash != hash {
-            return Ok(Verdict::BrokenAt { seq });
+    {
+        let mut rows = sqlx::query(
+            "SELECT seq, at, actor, device_id, action, detail, prev_hash, hash
+             FROM audit WHERE space_id = $1 ORDER BY seq",
+        )
+        .bind(space_id)
+        .fetch(&mut *tx);
+        while let Some(row) = rows.try_next().await? {
+            let seq: i64 = row.get("seq");
+            let stored_prev: Vec<u8> = row.get("prev_hash");
+            let stored_hash: Vec<u8> = row.get("hash");
+            let entry = Entry {
+                actor: row.get("actor"),
+                device_id: row.get("device_id"),
+                action: row.get("action"),
+                detail: row.get("detail"),
+            };
+            let hash = row_hash(&prev, seq, row.get("at"), &entry);
+            if seq != expected_seq || stored_prev != prev || stored_hash != hash {
+                return Ok(Verdict::BrokenAt { seq });
+            }
+            prev = hash;
+            expected_seq += 1;
         }
-        prev = hash;
-        expected_seq += 1;
     }
     let head: Vec<u8> = sqlx::query_scalar("SELECT hash FROM audit_head WHERE space_id = $1")
         .bind(space_id)
-        .fetch_one(pool)
+        .fetch_one(&mut *tx)
         .await?;
+    tx.commit().await?;
     if head != prev {
         return Ok(Verdict::BrokenAt { seq: expected_seq });
     }
     Ok(Verdict::Intact {
-        rows: rows.len() as i64,
+        rows: expected_seq - 1,
     })
 }
 

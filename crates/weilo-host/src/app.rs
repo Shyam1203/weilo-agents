@@ -213,9 +213,16 @@ impl App {
         source: Source,
     ) -> Result<Option<Event>> {
         let mut tx = self.db.begin().await?;
-        let event =
-            events::append_named(&mut tx, self.fence, thread_id, body, source, false, Some(event_id))
-                .await?;
+        let event = events::append_named(
+            &mut tx,
+            self.fence,
+            thread_id,
+            body,
+            source,
+            false,
+            Some(event_id),
+        )
+        .await?;
         tx.commit().await?;
         if let Some(event) = &event {
             self.committed(thread_id, vec![event.clone()]).await;

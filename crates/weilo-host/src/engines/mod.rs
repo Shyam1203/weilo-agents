@@ -181,6 +181,20 @@ impl Registry {
         states.get(&(m.name.clone(), spec.id)).copied()
     }
 
+    /// The engine's keys in use that the provider couldn't be asked about yet, by
+    /// provider id, with their values.
+    pub fn unchecked_keys(&self, m: &Manifest) -> Vec<(String, String)> {
+        let in_use = self.keys_in_use(m);
+        let states = self.key_states.lock().expect("key states lock");
+        in_use
+            .into_iter()
+            .filter(|(spec, _)| {
+                states.get(&(m.name.clone(), spec.id.clone())) == Some(&KeyState::Unchecked)
+            })
+            .map(|(spec, value)| (spec.id, value))
+            .collect()
+    }
+
     /// Notes what the provider said of a key: `Some(true)` taken, `Some(false)` turned
     /// down, `None` couldn't ask.
     pub fn mark_key(&self, m: &Manifest, provider: &str, answer: Option<bool>) {
@@ -424,7 +438,11 @@ struct Downloading<'a> {
 }
 
 impl<'a> Downloading<'a> {
-    fn new(set: &'a Mutex<std::collections::HashSet<String>>, name: &str, staging: PathBuf) -> Self {
+    fn new(
+        set: &'a Mutex<std::collections::HashSet<String>>,
+        name: &str,
+        staging: PathBuf,
+    ) -> Self {
         set.lock()
             .expect("downloading lock")
             .insert(name.to_string());
@@ -957,7 +975,7 @@ mod tests {
         let npm = dir.path().join("npm");
         std::fs::write(&npm, "#!/bin/sh\nsleep 30\n").unwrap();
         std::fs::set_permissions(&npm, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let reg = Arc::new(Registry::load(&Home::new(&dir.path().join("home"))));
+        let reg = Arc::new(Registry::load(&Home::new(dir.path().join("home"))));
         let pi = reg.get("pi").unwrap().clone();
         let pkgs = pi.install.as_ref().unwrap().npm.clone();
         let task = {

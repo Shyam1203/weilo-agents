@@ -233,14 +233,16 @@ describe("markdown in agent messages", () => {
 
 describe("step names", () => {
   it("maps tool names to plain words, keeping the file or command", () => {
-    expect(plainStep("ToolSearch")).toMatchObject({ label: "Looked for a tool", detail: null });
-    expect(plainStep("Read /Users/me/shop/src/app.ts")).toMatchObject({ label: "Read a file", detail: "/Users/me/shop/src/app.ts" });
+    expect(plainStep("ToolSearch")).toMatchObject({ label: "Got its tools ready", detail: null });
+    expect(plainStep("Read /Users/me/shop/src/app.ts")).toMatchObject({ label: "Read app.ts", kind: "Read a file", detail: "/Users/me/shop/src/app.ts" });
     expect(plainStep("Bash")).toMatchObject({ label: "Ran a command" });
-    expect(plainStep("Execute `npm test`")).toMatchObject({ label: "Ran a command", detail: "npm test" });
-    expect(plainStep("`git status`")).toMatchObject({ label: "Ran a command", detail: "git status" });
-    expect(plainStep("Edit `src/theme.css`")).toMatchObject({ label: "Changed a file", detail: "src/theme.css" });
-    expect(plainStep("Write src/new.ts")).toMatchObject({ label: "Changed a file", detail: "src/new.ts" });
-    expect(plainStep("Fetch https://example.com/docs")).toMatchObject({ label: "Opened a web page", detail: "https://example.com/docs" });
+    expect(plainStep("Execute `npm test`")).toMatchObject({ label: "Ran the tests", detail: "npm test" });
+    expect(plainStep("`git status`")).toMatchObject({ label: "Looked at the changes", detail: "git status" });
+    expect(plainStep("`cd shop && npm run build`")).toMatchObject({ label: "Built the project" });
+    expect(plainStep("`./scripts/odd-thing --x`")).toMatchObject({ label: "Ran a command" });
+    expect(plainStep("Edit `src/theme.css`")).toMatchObject({ label: "Changed theme.css", detail: "src/theme.css" });
+    expect(plainStep("Write src/new.ts")).toMatchObject({ label: "Changed new.ts", detail: "src/new.ts" });
+    expect(plainStep("Fetch https://example.com/docs")).toMatchObject({ label: "Opened example.com", detail: "https://example.com/docs" });
     expect(plainStep("grep \"saved card\" src")).toMatchObject({ label: "Looked through files" });
     expect(plainStep("mcp__weilo__post")).toMatchObject({ label: "Used a connection" });
   });
@@ -258,7 +260,7 @@ describe("step names", () => {
       { id: "b", title: "Read src/theme.css", status: "done", at },
       { id: "c", title: "`npm run build`", status: "failed", at },
     ]);
-    expect(out.shown.map((s) => s.label)).toEqual(["Read a file", "Ran a command"]);
+    expect(out.shown.map((s) => s.label)).toEqual(["Read theme.css", "Built the project"]);
     expect(out.folded).toBe(1);
     expect(out.details.map((s) => s.detail)).toEqual(["~/.claude/memory/MEMORY.md", "src/theme.css", "npm run build"]);
     expect(showSteps([{ id: "x", title: "Read the request", status: "done", at }]).details).toEqual([]);

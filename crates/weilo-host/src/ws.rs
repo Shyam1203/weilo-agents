@@ -45,6 +45,9 @@ const BACKLOG_PAGE: i64 = 500;
 const HELLO_WAIT: Duration = Duration::from_secs(5);
 /// The largest frame (or message) a device may send. Calls are small.
 const MAX_MESSAGE: usize = 1024 * 1024;
+/// How long one frame may take to reach a device. A device that stops reading is let go
+/// after this, so it can't hold its socket's place forever.
+const WRITE_WAIT: Duration = Duration::from_secs(20);
 
 pub async fn upgrade(State(app): State<Arc<App>>, ws: WebSocketUpgrade) -> Response {
     // Every open socket holds one place; when they're all taken, new ones are refused.
@@ -93,12 +96,17 @@ impl Session {
                     biased;
                     close = &mut close_rx => {
                         if let Ok(close) = close {
-                            let _ = sink.send(close).await;
+                            let _ = tokio::time::timeout(WRITE_WAIT, sink.send(close)).await;
                         }
                         break;
                     }
                     msg = out_rx.recv() => match msg {
-                        Some(msg) => if sink.send(msg).await.is_err() { break },
+                        Some(msg) => {
+                            let sent = tokio::time::timeout(WRITE_WAIT, sink.send(msg)).await;
+                            if !matches!(sent, Ok(Ok(()))) {
+                                break;
+                            }
+                        }
                         None => break,
                     },
                 }
@@ -115,6 +123,8 @@ impl Session {
             rets,
         };
         let hello_by = tokio::time::Instant::now() + HELLO_WAIT;
+        // Ends the session when the writer gave up on the device.
+        let writing = s.out.clone();
         let close = loop {
             let greeted = s.device_id.is_some();
             let step = tokio::select! {
@@ -133,6 +143,7 @@ impl Session {
                     Err(Close(CLOSE_BAD_FRAME, "Say hello first."))
                 }
                 _ = shutdown.cancelled() => Err(Close(1001, "Weilo is stopping.")),
+                () = writing.closed() => break None,
             };
             if let Err(close) = step {
                 break Some(close);
@@ -145,7 +156,11 @@ impl Session {
             })));
         }
         drop(s);
-        let _ = writer.await;
+        drop(writing);
+        let mut writer = writer;
+        if tokio::time::timeout(WRITE_WAIT, &mut writer).await.is_err() {
+            writer.abort();
+        }
     }
 
     /// Queues a frame. A full queue means the device can't keep up.

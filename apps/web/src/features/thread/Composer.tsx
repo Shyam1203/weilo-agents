@@ -14,7 +14,10 @@ const MAX_LINES = 6;
 
 export interface ComposerProps {
   threadId: string;
+  /** "Message #shop-launch. Ava answers." on wide screens. */
   placeholder: string;
+  /** The first part alone, for phones: "Message #shop-launch". Defaults to the placeholder. */
+  shortPlaceholder?: string;
   label: string;
   working: boolean;
   /** "Ava": for "Ava is working · Stop Ava". */
@@ -26,7 +29,7 @@ export interface ComposerProps {
 }
 
 /** The message box: a textarea on its own row, send on a toolbar row beneath it. */
-export function Composer({ threadId, placeholder, label, working: stateWorking, agentName, onStop, hint, phone }: ComposerProps) {
+export function Composer({ threadId, placeholder, shortPlaceholder, label, working: stateWorking, agentName, onStop, hint, phone }: ComposerProps) {
   // "After this job" only while there is a job: a thread that says it's working but has
   // nothing in it yet (a session still starting) takes its first message as a plain Send.
   const hasJob = useApp((s) => (s.feeds[threadId]?.events ?? []).some((e) => e.body.kind === "user_message" || e.body.kind === "step" || e.body.kind === "agent_message"));
@@ -167,10 +170,10 @@ export function Composer({ threadId, placeholder, label, working: stateWorking, 
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={onKey}
-            placeholder={placeholder}
+            placeholder={shortPlaceholder ?? placeholder}
             aria-label={label}
             data-composer=""
-            className="my-2.5 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 text-phone text-text outline-none"
+            className="my-2.5 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 text-phone text-text outline-none placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap"
           />
           <button
             type="button"
@@ -216,7 +219,7 @@ export function Composer({ threadId, placeholder, label, working: stateWorking, 
           placeholder={placeholder}
           aria-label={label}
           data-composer=""
-          className="block w-full resize-none border-0 bg-transparent p-0 text-body text-text outline-none"
+          className="block w-full resize-none border-0 bg-transparent p-0 text-body text-text outline-none placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap"
         />
         <div className="flex items-center gap-1">
           <div className="flex-1" />

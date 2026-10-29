@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { retryLast } from "../../lib/app";
 import { problemKind } from "../../lib/engines";
-import { engineOfThread, useApp } from "../../lib/store";
-import { TextWithCode } from "../../ui/bits";
+import { aiOwner, engineOfThread, engineTitles, plainProblem, useApp } from "../../lib/store";
+import { Disclosure, TextWithCode } from "../../ui/bits";
 import { Button, type ButtonSize } from "../../ui/Button";
 import { AlertIcon } from "../../ui/glyphs";
 import { EngineHelpDialog } from "../engines/EngineHelpDialog";
@@ -26,11 +26,20 @@ export function Problem({
   action: string | null;
   resolved?: boolean;
 }) {
+  // Said about the agent; the AI app's own words stay under Details.
+  const owner = useApp((s) => aiOwner(s.snapshot, threadId, agentId));
+  const titles = useApp(engineTitles);
+  const plain = plainProblem(message, owner, titles);
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md bg-surface-muted px-3 py-2 text-body-sm text-text-secondary" role="note">
       <AlertIcon className="shrink-0" />
-      <span className="min-w-0 flex-1">
-        <TextWithCode text={message} />
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <TextWithCode text={plain.line} />
+        {plain.named && (
+          <Disclosure label="Details" className="text-caption">
+            <TextWithCode text={message} />
+          </Disclosure>
+        )}
       </span>
       {!resolved && <ProblemButton threadId={threadId} agentId={agentId} action={action} size="sm" />}
     </div>

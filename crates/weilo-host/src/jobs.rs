@@ -157,15 +157,17 @@ pub async fn sweep_expired(app: &Arc<App>) -> Result<()> {
 /// closed those left by the last run, the same way. A runner marks its approval live
 /// before saving it, so one being opened is never taken for an orphan.
 pub async fn close_orphans(app: &Arc<App>) -> Result<()> {
-    let waiting: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM approvals WHERE space_id = $1 AND state = 'pending'",
-    )
-    .bind(app.space_id)
-    .fetch_all(&app.db)
-    .await?;
+    let waiting: Vec<Uuid> =
+        sqlx::query_scalar("SELECT id FROM approvals WHERE space_id = $1 AND state = 'pending'")
+            .bind(app.space_id)
+            .fetch_all(&app.db)
+            .await?;
     let orphans: Vec<Uuid> = {
         let live = app.live_approvals.lock().expect("live approvals lock");
-        waiting.into_iter().filter(|id| !live.contains(id)).collect()
+        waiting
+            .into_iter()
+            .filter(|id| !live.contains(id))
+            .collect()
     };
     for id in orphans {
         tracing::info!("closing approval {id}: nothing waits on it");

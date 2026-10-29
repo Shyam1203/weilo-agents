@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { mergeSession, sessionChanges } from "../../lib/app";
 import { fileChangeWord, filesChangedLine, lineCounts, parseDiff, type DiffFile, type DiffLine } from "../../lib/changes";
 import { engineTitle, projectName, shortName } from "../../lib/format";
@@ -372,5 +372,58 @@ function CopyBack({ thread }: { thread: ThreadSummary }) {
           </ErrorLine>
         ))}
     </div>
+  );
+}
+
+/**
+ * Phones: "2 files changed +13 −1 · See changes", which opens the changes full screen,
+ * with Copy the changes when the session worked in its own copy.
+ */
+export function ChangesRow({ thread, changes }: { thread: ThreadSummary; changes: SessionChanges }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDialogElement>(null);
+  const added = changes.files.reduce((n, f) => n + f.added, 0);
+  const removed = changes.files.reduce((n, f) => n + f.removed, 0);
+  useEffect(() => {
+    const d = ref.current;
+    if (!d) return;
+    if (open && !d.open) d.showModal?.();
+    if (!open && d.open) d.close();
+  }, [open]);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex min-h-12 w-full shrink-0 items-center gap-2 border-0 bg-surface px-4 text-left text-body-sm text-text shadow-line"
+      >
+        <span className="min-w-0 flex-1">
+          {filesChangedLine(changes.files)} <Counts added={added} removed={removed} />
+        </span>
+        <span className="font-medium text-accent-text">See changes</span>
+        <ChevronDownIcon size={12} className="-rotate-90 text-text-secondary" />
+      </button>
+      <dialog
+        ref={ref}
+        aria-label="Changes"
+        onClose={() => setOpen(false)}
+        className="m-0 h-dvh max-h-none w-full max-w-none border-0 bg-bg p-0 text-text"
+      >
+        {open && (
+          <div className="flex h-full flex-col">
+            <div className="safe-top flex min-h-14 shrink-0 items-center gap-2 px-4 shadow-line">
+              <h2 className="m-0 min-w-0 flex-1 text-title-sm font-semibold">Changes</h2>
+              <IconButton label="Close" size={44} onClick={() => setOpen(false)} autoFocus>
+                <CloseIcon />
+              </IconButton>
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+              <ChangedFiles changes={changes} />
+              {thread.worktree && <CopyBack thread={thread} />}
+            </div>
+          </div>
+        )}
+      </dialog>
+    </>
   );
 }

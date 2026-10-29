@@ -22,12 +22,10 @@ export function canPick(e: EngineInfo): boolean {
  */
 export function foundEngine(found: string[], engines: EngineInfo[] | null): EngineInfo | null {
   if (!engines) return null;
-  for (const id of found) {
-    if (id === "pi") continue;
-    const e = engines.find((x) => x.id === id);
-    if (e && e.installed && canPick(e)) return e;
-  }
-  return null;
+  const apps = engines.filter((e) => e.id !== "pi" && e.installed && canPick(e));
+  // Best first, as the host found them; then any ready app it didn't list; then one that's there but not ready.
+  const byFound = found.map((id) => apps.find((e) => e.id === id)).filter((e): e is EngineInfo => !!e);
+  return byFound.find((e) => e.ready) ?? apps.find((e) => e.ready) ?? byFound[0] ?? null;
 }
 
 /** "Anthropic, OpenAI or Google": the companies whose key an engine takes. */
