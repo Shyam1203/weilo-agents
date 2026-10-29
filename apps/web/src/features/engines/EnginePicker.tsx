@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react";
 import { loadEngines } from "../../lib/app";
-import { canPick, engineLine, pickOrder } from "../../lib/engines";
+import { canPick, engineHow, engineLine, pickOrder } from "../../lib/engines";
 import { cx, engineTitle } from "../../lib/format";
 import { useApp } from "../../lib/store";
 import type { EngineInfo } from "../../proto/EngineInfo";
-import { TextWithCode } from "../../ui/bits";
+import { Disclosure, TextWithCode } from "../../ui/bits";
 
 /** The engine list, asked for once when something needs it. */
 export function useEngineList(when = true): EngineInfo[] | null {
@@ -63,9 +63,10 @@ export function EnginePicker({
       {list.map((e, i) => {
         const ok = canPick(e);
         const on = ok && e.id === value;
+        const how = engineHow(e);
         return (
+          <div key={e.id} className={cx(i < list.length - 1 && "shadow-line", on ? "bg-accent-subtle" : "bg-surface")}>
           <button
-            key={e.id}
             type="button"
             role="radio"
             data-engine={e.id}
@@ -83,9 +84,7 @@ export function EnginePicker({
               }
             }}
             className={cx(
-              "flex min-h-12 w-full items-start gap-3 border-0 px-3 py-2 text-left whitespace-normal max-md:min-h-14",
-              i < list.length - 1 && "shadow-line",
-              on ? "bg-accent-subtle" : "bg-surface",
+              "flex min-h-12 w-full items-start gap-3 border-0 bg-transparent px-3 py-2 text-left whitespace-normal max-md:min-h-14",
               ok ? "ghost" : "cursor-default",
             )}
           >
@@ -108,6 +107,12 @@ export function EnginePicker({
               </span>
             </span>
           </button>
+          {how && (
+            <Disclosure label="Details" className="-mt-1 pr-3 pb-2 pl-10">
+              <TextWithCode text={how} />
+            </Disclosure>
+          )}
+          </div>
         );
       })}
     </div>

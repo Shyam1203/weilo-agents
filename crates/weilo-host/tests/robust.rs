@@ -9,7 +9,8 @@ use std::time::Duration;
 use common::{Client, Host, agent_text, eventually, is_state, pid_alive, send, setup_with_echo};
 use uuid::Uuid;
 use weilo_proto::{
-    ApprovalState, Call, CallResult, CallValue, Card, Decision, Delta, EngineNeed, EventBody,
+    ApprovalState, Call, CallResult, CallValue, Card, ClientFrame, Decision, Delta, EngineNeed,
+    EventBody,
     FileChange, SendWhen, ServerFrame, WorkState,
 };
 
@@ -1489,4 +1490,234 @@ async fn a_sessions_changes_can_be_seen() {
     let paths: Vec<&str> = ch.files.iter().map(|f| f.path.as_str()).collect();
     assert_eq!(paths, ["sub/after.txt"]);
     assert!(ch.diff.is_none());
+}
+
+/// Makes a git repo `shop` in `dir` with one empty commit.
+fn shop_repo(dir: &std::path::Path) -> std::path::PathBuf {
+    let repo = dir.join("shop");
+    std::fs::create_dir(&repo).unwrap();
+    for args in [
+        &["init", "-q"][..],
+        &["commit", "-q", "--allow-empty", "-m", "start"],
+    ] {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["-c", "user.email=t@t", "-c", "user.name=t"])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}");
+    }
+    repo
+}
+
+async fn start_session(c: &mut Client, repo: &std::path::Path) -> weilo_proto::ThreadSummary {
+    let CallValue::Thread(t) = c
+        .ok(Call::StartSession {
+            folder: repo.display().to_string(),
+            engine: "echo".into(),
+            title: Some("Fix cart".into()),
+            channel_id: None,
+            agent_id: None,
+            task: None,
+        })
+        .await
+    else {
+        panic!()
+    };
+    t
+}
+
+#[tokio::test]
+async fn bring_back_runs_alone() {
+    // A git whose merges take 2 s, and which notes when one is done.
+    let tools = tempfile::Builder::new()
+        .prefix("weilo-git-")
+        .tempdir_in("/tmp")
+        .unwrap();
+    let real = std::process::Command::new("sh")
+        .args(["-c", "command -v git"])
+        .output()
+        .unwrap();
+    let real = String::from_utf8(real.stdout).unwrap().trim().to_string();
+    let mark = tools.path().join("merged");
+    let script = format!(
+        "#!/bin/sh\ncase \"$*\" in *\"merge --no-ff\"*) sleep 2; \"{real}\" \"$@\"; s=$?; touch \"{mark}\"; exit $s;; esac\nexec \"{real}\" \"$@\"\n",
+        mark = mark.display()
+    );
+    std::fs::write(tools.path().join("git"), script).unwrap();
+    std::fs::set_permissions(
+        tools.path().join("git"),
+        std::fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+    let path = format!(
+        "{}:{}",
+        tools.path().display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let Some(host) = Host::start_with(&[("PATH", &path)]).await else {
+        return;
+    };
+    let mut c = host.connect().await;
+    setup_with_echo(&mut c).await;
+    let mut d = host.connect().await;
+    let repo = shop_repo(host.dir());
+    let t = start_session(&mut c, &repo).await;
+    c.sub(t.id, 0).await;
+    let worktree = std::path::PathBuf::from(t.worktree.clone().unwrap());
+    std::fs::write(worktree.join("cart.txt"), "fixed\n").unwrap();
+
+    // One device starts Bring back; the other asks too, and sends a message meanwhile.
+    let first = Uuid::now_v7();
+    c.send(&ClientFrame::Call {
+        call_id: first,
+        call: Call::MergeSession { thread_id: t.id },
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let r = d.call(Call::MergeSession { thread_id: t.id }).await;
+    assert_eq!(
+        failed_with(&r, "conflict").as_deref(),
+        Some("Already bringing these changes back.")
+    );
+    send(&mut d, t.id, "hi").await;
+    // The turn starts only once the merge is done.
+    c.next(|f| is_state(f, WorkState::Working)).await;
+    assert!(mark.exists(), "a turn started during Bring back");
+    let ServerFrame::Ret { result, .. } = c
+        .next(|f| matches!(f, ServerFrame::Ret { call_id, .. } if *call_id == first))
+        .await
+    else {
+        unreachable!()
+    };
+    assert!(
+        matches!(&result, CallResult::Done { value: CallValue::Message(m) } if m == "Brought the session's changes into shop."),
+        "{result:?}"
+    );
+    c.next(|f| agent_text(f) == Some("You said: hi")).await;
+    assert!(repo.join("cart.txt").exists());
+}
+
+#[tokio::test]
+async fn a_reply_ending_while_postgres_is_down_is_kept() {
+    // Queries give up after 1 s, so writes fail while Postgres is away.
+    let Some(host) = Host::start_with(&[("WEILO_DB_WAIT_SECS", "1")]).await else {
+        return;
+    };
+    let token = host.pair().await;
+    let mut c = Client::connect(&host, Some(&token)).await.unwrap();
+    let thread = setup_with_echo(&mut c).await;
+    c.sub(thread, 0).await;
+    send(&mut c, thread, "slow").await;
+    c.next(|f| is_state(f, WorkState::Working)).await;
+    // Postgres goes away until well after the turn ends (about 3 s): each time it comes
+    // back, it is ended again.
+    let until = std::time::Instant::now() + Duration::from_secs(7);
+    while std::time::Instant::now() < until {
+        if let Some(pid) = host.postgres_pid().filter(|p| pid_alive(*p)) {
+            // SAFETY: killing the test host's Postgres.
+            unsafe {
+                libc::kill(pid, libc::SIGKILL);
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    eventually("Postgres to come back", || {
+        host.postgres_pid().is_some_and(pid_alive)
+    })
+    .await;
+    // A device that comes back finds the whole reply, and the thread idle.
+    let started = std::time::Instant::now();
+    let mut d = loop {
+        match Client::connect(&host, Some(&token)).await {
+            Ok(d) => break d,
+            Err(e) => assert!(
+                started.elapsed() < common::WAIT,
+                "can't connect: {e:?}\n{}",
+                host.log()
+            ),
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    };
+    d.sub(thread, 0).await;
+    d.next(|f| agent_text(f).is_some_and(|t| t.starts_with("You said: slow")))
+        .await;
+    let started = std::time::Instant::now();
+    loop {
+        let state: Option<String> = match host.connect_as("weilo_app").await {
+            Ok(mut db) => sqlx::query_scalar("SELECT state FROM threads WHERE id = $1")
+                .bind(thread)
+                .fetch_one(&mut db)
+                .await
+                .ok(),
+            Err(_) => None,
+        };
+        if state.as_deref() == Some("idle") {
+            break;
+        }
+        assert!(
+            started.elapsed() < common::WAIT,
+            "the thread stayed {state:?}\n{}",
+            host.log()
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    assert!(
+        host.log().contains("will try again"),
+        "no write failed, so this didn't test anything:\n{}",
+        host.log()
+    );
+    // And it takes the next message.
+    send(&mut d, thread, "still there?").await;
+    d.next(|f| agent_text(f) == Some("You said: still there?"))
+        .await;
+}
+
+#[tokio::test]
+async fn idle_runners_end_and_engine_processes_are_capped() {
+    let Some(host) = Host::start_with(&[
+        ("WEILO_MAX_ENGINES", "1"),
+        ("WEILO_RUNNER_IDLE_SECS", "1"),
+        ("WEILO_ENGINE_IDLE_SECS", "600"),
+    ])
+    .await
+    else {
+        return;
+    };
+    let mut c = host.connect().await;
+    setup_with_echo(&mut c).await;
+    let repo = shop_repo(host.dir());
+    let a = start_session(&mut c, &repo).await;
+    let b = start_session(&mut c, &repo).await;
+    c.sub(a.id, 0).await;
+    c.sub(b.id, 0).await;
+    let on = |id: Uuid, want: WorkState| {
+        move |f: &ServerFrame| matches!(f, ServerFrame::Ev { thread_id, .. } if *thread_id == id) && is_state(f, want)
+    };
+    // A holds the only engine; B waits, says so, and runs once A's engine is idle.
+    send(&mut c, a.id, "slow").await;
+    c.next(on(a.id, WorkState::Working)).await;
+    send(&mut c, b.id, "hello").await;
+    let waiting = c
+        .next(|f| match f {
+            ServerFrame::Ev { thread_id, event } if *thread_id == b.id => matches!(
+                &event.body,
+                EventBody::State { live_line, .. } if live_line == "Waiting for another agent to finish"
+            ),
+            _ => false,
+        })
+        .await;
+    drop(waiting);
+    c.next(on(a.id, WorkState::Idle)).await;
+    c.next(|f| agent_text(f) == Some("You said: hello")).await;
+    c.next(on(b.id, WorkState::Idle)).await;
+    // A runner with nothing to do ends (its engine first, after it idles).
+    let mut d = host.connect().await;
+    let _ = d.ok(Call::Snapshot).await;
+    eventually("an idle engine to give its place up", || {
+        host.log().contains("gives its place up")
+    })
+    .await;
 }

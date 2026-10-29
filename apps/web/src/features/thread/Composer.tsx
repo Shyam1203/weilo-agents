@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { queue, send, setComposerDraft, unqueue } from "../../lib/app";
 import { cx } from "../../lib/format";
-import { useApp, type Queued } from "../../lib/store";
+import { hostAway, useApp, type Queued } from "../../lib/store";
 import { Button } from "../../ui/Button";
 import { ChevronDownIcon, CloseIcon, SendIcon } from "../../ui/glyphs";
 import { IconButton } from "../../ui/IconButton";
@@ -37,6 +37,7 @@ export function Composer({ threadId, placeholder, label, working, agentName, onS
   const draft = useApp((s) => s.drafts[threadId]);
   // While the Weilo computer says it isn't ready, typing works but sending waits.
   const paused = useApp((s) => s.paused);
+  const away = useApp(hostAway);
 
   // Text handed over by Edit or Ask Ava.
   useEffect(() => {
@@ -121,7 +122,8 @@ export function Composer({ threadId, placeholder, label, working, agentName, onS
     </div>
   );
 
-  const workingHint = working && (
+  // While the computer is away, "Stop Ava" couldn't reach it: say nothing rather than offer it.
+  const workingHint = working && !away && (
     <>
       <span>{agentName ? `${agentName} is working` : "This session is working"}</span>
       <span aria-hidden="true">·</span>

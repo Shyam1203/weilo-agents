@@ -16,7 +16,7 @@ use crate::app::{App, AppParts, Settings};
 use crate::engines::{Registry, process};
 use crate::home::{Home, try_lock, write_private};
 use crate::pg::Postgres;
-use crate::{admin, db, http, jobs, recovery};
+use crate::{admin, audit, db, http, jobs, recovery};
 
 pub struct UpOptions {
     pub home: Option<PathBuf>,
@@ -41,6 +41,11 @@ pub async fn run(opts: UpOptions) -> Result<()> {
             return Err(e);
         }
     };
+    // Setup is done: from here on only the app's role may sign in.
+    if let Err(e) = pg.lock_down().await {
+        pg.stop().await;
+        return Err(e);
+    }
     serve(&home, pg, db, opts.port, opts.web).await
 }
 
@@ -89,6 +94,7 @@ async fn serve_app(home: &Home, app: &Arc<App>, port: u16, web: Option<PathBuf>)
     if let Err(e) = recovery::run(&app).await {
         tracing::warn!("couldn't tidy up after the last run: {e:#}");
     }
+    check_audit(&app).await;
     if let Err(e) = jobs::schedule_prune(&app, chrono::Utc::now()).await {
         tracing::warn!("couldn't schedule the daily tidy-up: {e}");
     }
@@ -134,6 +140,20 @@ async fn serve_app(home: &Home, app: &Arc<App>, port: u16, web: Option<PathBuf>)
         .await
         .ok();
     served.context("server failed")
+}
+
+/// Checks the audit log's chain at start. A break is reported (in the log and in the
+/// terminal), not fatal: Weilo still starts.
+async fn check_audit(app: &App) {
+    match audit::verify(&app.db, app.space_id).await {
+        Ok(audit::Verdict::Intact { .. }) => {}
+        Ok(audit::Verdict::BrokenAt { seq }) => {
+            let line = audit::broken_line(seq);
+            tracing::warn!("{line}");
+            println!("Warning: {line}");
+        }
+        Err(e) => tracing::warn!("couldn't check the audit log: {e}"),
+    }
 }
 
 async fn stop_signal() {

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { diffTone, fileChangeWord, filesChangedLine, lineCounts } from "../lib/changes";
 import { connect, listener, loadDevices, loadSnapshot, revokeDevice, showError, showNotice } from "../lib/app";
 import { deviceLine, removeDeviceLine } from "../lib/settings";
-import { alreadySays, engineLine, problemKind, signInWays } from "../lib/engines";
+import { alreadySays, engineHow, engineLine, problemKind, signInWays } from "../lib/engines";
 import { lowerYour } from "../lib/format";
 import { HostConnection, HostError, type HostApi, type SocketLike } from "../lib/host";
 import { buildRows } from "../lib/sidebar";
@@ -86,10 +86,12 @@ describe("engine messages", () => {
     expect(alreadySays("Codex isn't signed in.", "Open Terminal, run codex and sign in")).toBe(false);
     expect(alreadySays(null, "x")).toBe(false);
   });
-  it("gives an AI that can't be used yet one line on what to do", () => {
+  it("gives an AI that can't be used yet the same one line everywhere, with what to do under Details", () => {
     const gemini = { id: "gemini", title: "Gemini CLI", description: "", installed: false, default: false, binds_approvals: false, ready: false, needs: "node", status: "Not on this computer.", how: "Get Node.js from nodejs.org, then check again." } as EngineInfo;
-    expect(engineLine(gemini)).toBe("Get Node.js from nodejs.org, then check again.");
-    expect(engineLine({ ...gemini, needs: "sign_in", installed: true })).toBe("Not on this computer.");
+    expect(engineLine(gemini)).toBe("Not on this computer.");
+    expect(engineHow(gemini)).toBe("Get Node.js from nodejs.org, then check again.");
+    // One that can be picked needs no help line.
+    expect(engineHow({ ...gemini, needs: "sign_in", installed: true })).toBeNull();
   });
   it("opens the key dialog for Change key, and says honestly when a key didn't work", () => {
     expect(problemKind("Change key")).toBe("key");
@@ -183,7 +185,7 @@ describe("failures reach Needs you", () => {
     const s = withFeed(base, "tm", [ev(1, said("Post it")), ev(2, problem("Weilo's built-in AI needs an API key to work.", "Add a key"), "2026-10-28T07:40:00Z")]);
     const items = problemNeedsYou(s);
     expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({ thread_id: "tm", source: "Mia", state: "pending", card: { kind: "problem", title: "Weilo's built-in AI needs an API key to work." } });
+    expect(items[0]).toMatchObject({ thread_id: "tm", source: "Mia", state: "pending", card: { kind: "problem", title: "Mia needs an API key", body: "Weilo's built-in AI needs an API key to work.", actions: [{ label: "Add a key", decision: null }] } });
     // The same object while nothing changed, so screens don't redraw.
     expect(problemNeedsYou(s)[0]).toBe(items[0]);
     const lines = problemLines(s);

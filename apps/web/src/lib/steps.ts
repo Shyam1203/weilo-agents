@@ -88,6 +88,26 @@ export interface ShownSteps {
   details: Array<StepItem & { label: string; detail: string | null }>;
   /** How many failed look-ups were folded away. */
   folded: number;
+  /** Those failures in plain words ("1 file couldn't be read"), shown with the fold; null when none. */
+  failedLine: string | null;
+}
+
+const FAILED_WORDS: Record<string, [string, string]> = {
+  "Read a file": ["file couldn't be read", "files couldn't be read"],
+  "Opened a web page": ["web page couldn't be opened", "web pages couldn't be opened"],
+  "Searched the web": ["web search didn't work", "web searches didn't work"],
+  "Looked through files": ["file search didn't work", "file searches didn't work"],
+  "Looked for a tool": ["tool wasn't found", "tools weren't found"],
+};
+
+/** "1 file couldn't be read", "2 web pages couldn't be opened"; mixed kinds: "3 steps didn't work". */
+export function failedLine(labels: string[]): string | null {
+  const n = labels.length;
+  if (n === 0) return null;
+  const kinds = new Set(labels);
+  const words = kinds.size === 1 ? FAILED_WORDS[labels[0]!] : undefined;
+  if (words) return `${n} ${n === 1 ? words[0] : words[1]}`;
+  return `${n} ${n === 1 ? "step didn't work" : "steps didn't work"}`;
 }
 
 /**
@@ -98,6 +118,7 @@ export function showSteps(steps: StepItem[]): ShownSteps {
   const shown: ShownSteps["shown"] = [];
   const details: ShownSteps["details"] = [];
   let folded = 0;
+  const failed: string[] = [];
   let extra = false;
   for (const s of steps) {
     const p = plainStep(s.title);
@@ -105,10 +126,11 @@ export function showSteps(steps: StepItem[]): ShownSteps {
     if (p.label !== s.title) extra = true;
     if (s.status === "failed" && p.quiet) {
       folded += 1;
+      failed.push(p.label);
       extra = true;
       continue;
     }
     shown.push({ ...s, label: p.label });
   }
-  return { shown, details: extra ? details : [], folded };
+  return { shown, details: extra ? details : [], folded, failedLine: failedLine(failed) };
 }

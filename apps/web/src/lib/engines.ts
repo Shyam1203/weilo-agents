@@ -118,10 +118,15 @@ export function signInWays(methods: Array<{ name: string }>): string | null {
 }
 
 /**
- * One plain line for an AI in a list. Ones that can't be used yet say what to do instead
- * of what's wrong ("Get Node.js from nodejs.org, then check again.").
+ * One plain line for an AI, the same everywhere (first run, Change AI, Settings): its
+ * status, like "Not on this computer.". How to fix it is under Details (engineHow).
  */
 export function engineLine(e: EngineInfo): string {
-  if (!canPick(e) && e.how?.trim()) return e.how.trim();
   return statusLine(e);
+}
+
+/** What to do to use an AI that can't be picked yet ("Get Node.js from nodejs.org…"), for Details. */
+export function engineHow(e: EngineInfo): string | null {
+  if (canPick(e) || !e.how?.trim()) return null;
+  return alreadySays(statusLine(e), e.how) ? null : e.how.trim();
 }

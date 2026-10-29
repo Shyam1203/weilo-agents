@@ -50,6 +50,12 @@ pub enum EngineMsg {
         id: u64,
         result: Result<(), String>,
     },
+    /// A place for one more engine process came free (see `App::engine_slots`). Not
+    /// tied to a connection.
+    Slot {
+        id: u64,
+        permit: tokio::sync::OwnedSemaphorePermit,
+    },
 }
 
 /// A message and the connection generation it came from.

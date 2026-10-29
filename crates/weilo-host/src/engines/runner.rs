@@ -8,6 +8,17 @@
 //! Each engine connection has a generation and each turn a number; messages from an
 //! older connection or another turn are dropped, so a late answer from an engine that
 //! was replaced can't end the turn that followed.
+//!
+//! What the runner writes to the thread goes through an outbox, in order. When Postgres
+//! is unreachable the outbox keeps it (the reply text included) and tries again until
+//! the database is back, then says the runner's current state once more, so the thread
+//! never stays "working" after its turn ended.
+//!
+//! Bring back runs here too, between turns: no turn can start while it merges.
+//!
+//! Engine processes are capped across all threads (`App::engine_slots`). A thread that
+//! needs one when none is free waits with a plain status, and idle engines give theirs
+//! up. A runner with nothing left to do ends after a while.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -31,7 +42,15 @@ use super::check::{Explained, explain, looks_like_auth, needs_sign_in};
 use super::{Cmd, Manifest, base_env, engine_home, spec_for};
 use crate::app::App;
 use crate::approvals;
-use crate::events::Source;
+use crate::events::{AppendError, Source};
+
+/// How soon a write that failed because Postgres was unreachable is tried again (also
+/// tried as soon as Postgres is back).
+const RETRY_WRITE: std::time::Duration = std::time::Duration::from_secs(2);
+/// The most events kept while Postgres is unreachable; older ones are dropped beyond it.
+const OUTBOX_MAX: usize = 10_000;
+/// The live line while a thread waits for an engine slot.
+const WAITING_FOR_SLOT: &str = "Waiting for another agent to finish";
 
 pub fn spawn(app: Arc<App>, thread_id: Uuid) -> mpsc::UnboundedSender<Cmd> {
     let (tx, rx) = mpsc::unbounded_channel();
@@ -58,6 +77,14 @@ pub fn spawn(app: Arc<App>, thread_id: Uuid) -> mpsc::UnboundedSender<Cmd> {
             installs: 0,
             installing: None,
             log: None,
+            outbox: VecDeque::new(),
+            retry_at: None,
+            dropped: false,
+            state: (WorkState::Idle, String::new()),
+            agent_id: None,
+            slot: None,
+            slots: 0,
+            waiting_slot: None,
         };
         runner.run(rx, engine_rx).await;
     });
@@ -159,6 +186,34 @@ struct Runner {
     installing: Option<Installing>,
     /// The engine's log, once it has started.
     log: Option<PathBuf>,
+    /// Events not yet written, in order (Postgres was unreachable).
+    outbox: VecDeque<(EventBody, Source)>,
+    /// When to try the outbox again.
+    retry_at: Option<Instant>,
+    /// The outbox overflowed and lost events while Postgres was away.
+    dropped: bool,
+    /// The state this runner last said, said again after an outage.
+    state: (WorkState, String),
+    /// The thread's agent, kept for when the database can't be read.
+    agent_id: Option<Uuid>,
+    /// This thread's place among the running engine processes, held while `conn` is.
+    slot: Option<tokio::sync::OwnedSemaphorePermit>,
+    /// Bumped for every wait for a slot.
+    slots: u64,
+    /// The message waiting for a slot, with the wait's id and the task asking for one.
+    waiting_slot: Option<WaitingSlot>,
+}
+
+struct WaitingSlot {
+    id: u64,
+    text: String,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for WaitingSlot {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
 }
 
 impl Runner {
@@ -168,9 +223,13 @@ impl Runner {
         mut engine: mpsc::UnboundedReceiver<Tagged>,
     ) {
         let mut db_up = self.app.db_up.subscribe();
+        let app = self.app.clone();
         loop {
-            let idle_at = (self.turn.is_none() && self.conn.is_some())
-                .then(|| Instant::now() + self.app.settings.engine_idle);
+            let idle = self.turn.is_none() && self.conn.is_some();
+            let idle_at = idle.then(|| Instant::now() + self.app.settings.engine_idle);
+            let retire_at = self
+                .quiet()
+                .then(|| Instant::now() + self.app.settings.runner_idle);
             let stop_by = self.turn.as_ref().and_then(|t| t.stop_by);
             let hang_at = self.hang_at();
             tokio::select! {
@@ -180,13 +239,27 @@ impl Runner {
                 },
                 Some(msg) = engine.recv() => self.on_engine(msg).await,
                 Ok(()) = db_up.changed() => {
-                    if *db_up.borrow_and_update() && self.turn.is_none() {
-                        self.start_next().await;
+                    if *db_up.borrow_and_update() {
+                        self.drain().await;
+                        if self.turn.is_none() {
+                            self.start_next().await;
+                        }
                     }
                 }
+                _ = sleep_until(self.retry_at) => self.drain().await,
                 _ = sleep_until(idle_at) => {
                     tracing::info!("stopping the idle engine of {}", self.thread_id);
                     self.drop_conn();
+                }
+                _ = app.slot_wanted.notified(), if idle => {
+                    tracing::info!("the idle engine of {} gives its place up", self.thread_id);
+                    self.drop_conn();
+                }
+                _ = sleep_until(retire_at) => {
+                    if self.app.runners.retire(self.thread_id, &cmds) {
+                        tracing::debug!("runner of {} ends: nothing to do", self.thread_id);
+                        break;
+                    }
                 }
                 _ = sleep_until(stop_by) => {
                     tracing::warn!("engine ignored Stop; ending it");
@@ -196,6 +269,28 @@ impl Runner {
                 _ = sleep_until(hang_at) => self.hung().await,
             }
         }
+    }
+
+    /// Nothing running, waiting or left to write: the runner may end.
+    fn quiet(&self) -> bool {
+        self.turn.is_none()
+            && self.conn.is_none()
+            && self.installing.is_none()
+            && self.waiting_slot.is_none()
+            && self.now_queue.is_empty()
+            && self.after_queue.is_empty()
+            && self.pending.is_empty()
+            && self.outbox.is_empty()
+            && self.text.is_empty()
+    }
+
+    /// Whether a turn is under way or about to start.
+    fn busy(&self) -> bool {
+        self.turn.is_some()
+            || self.installing.is_some()
+            || self.waiting_slot.is_some()
+            || !self.now_queue.is_empty()
+            || !self.after_queue.is_empty()
     }
 
     /// When the turn counts as hung: no word from the engine for a while, with no tool
@@ -231,14 +326,30 @@ impl Runner {
                     self.restart = true;
                 }
             }
+            Cmd::BringBack {
+                folder,
+                worktree,
+                title,
+                reply,
+            } => {
+                if self.busy() {
+                    let _ = reply.send(Err(STILL_WORKING.into()));
+                    return;
+                }
+                // Awaited here: commands (a new message, say) wait in the queue until
+                // the merge is done, so no turn touches the copy meanwhile.
+                let result = crate::worktree::merge_back(&folder, &worktree, &title).await;
+                let _ = reply.send(result);
+            }
         }
     }
 
     async fn on_engine(&mut self, tagged: Tagged) {
-        if let EngineMsg::Installed { id, result } = tagged.msg {
-            self.installed(id, result).await;
-            return;
-        }
+        let tagged = match tagged.msg {
+            EngineMsg::Installed { id, result } => return self.installed(id, result).await,
+            EngineMsg::Slot { id, permit } => return self.slot_free(id, permit).await,
+            msg => Tagged { msg, ..tagged },
+        };
         if tagged.generation != self.generation {
             // From an engine process that was replaced: nothing it says matters now.
             if let EngineMsg::Permission { responder, .. } = tagged.msg {
@@ -260,19 +371,25 @@ impl Runner {
                 }
             }
             EngineMsg::Closed => {
-                if self.conn.take().is_some() && self.turn.is_some() {
+                let had = self.conn.take().is_some();
+                if had {
+                    self.slot = None;
+                }
+                if had && self.turn.is_some() {
                     self.problem("The engine stopped unexpectedly.", Some("Try again"))
                         .await;
                     self.end_turn(Ok(StopReason::Cancelled)).await;
                 }
             }
-            EngineMsg::Installed { .. } => {}
+            EngineMsg::Installed { .. } | EngineMsg::Slot { .. } => {}
         }
     }
 
     async fn start_next(&mut self) {
-        if !*self.app.db_up.borrow() || self.installing.is_some() {
-            // Postgres is restarting, or the engine is downloading; the queue waits.
+        if !*self.app.db_up.borrow() || self.installing.is_some() || self.waiting_slot.is_some()
+        {
+            // Postgres is restarting, the engine is downloading, or every engine slot is
+            // taken; the queue waits.
             return;
         }
         let Some(text) = self
@@ -293,11 +410,19 @@ impl Runner {
         self.begin_turn(text).await;
     }
 
-    /// Connects if needed, then sends the prompt.
+    /// Connects if needed, then sends the prompt. A new engine process needs a free
+    /// slot; without one, the message waits for it.
     async fn begin_turn(&mut self, text: String) {
+        if self.conn.is_none() && self.slot.is_none() {
+            match self.app.engine_slots.clone().try_acquire_owned() {
+                Ok(permit) => self.slot = Some(permit),
+                Err(_) => return self.wait_for_slot(text).await,
+            }
+        }
         if self.conn.is_none()
             && let Err(e) = self.connect().await
         {
+            self.slot = None;
             return self.start_failed(e).await;
         }
         self.turns += 1;
@@ -342,6 +467,40 @@ impl Runner {
                 tracing::warn!("couldn't note the instructions sent: {e}");
             }
         }
+    }
+
+    /// Every engine slot is taken: says so, asks idle engines to give theirs up, and
+    /// waits for one in the background (Stop still works meanwhile).
+    async fn wait_for_slot(&mut self, text: String) {
+        tracing::info!("{} waits for a free engine slot", self.thread_id);
+        self.set_state(WorkState::Working, WAITING_FOR_SLOT).await;
+        self.slots += 1;
+        let id = self.slots;
+        let (app, tx) = (self.app.clone(), self.engine_tx.clone());
+        let task = tokio::spawn(async move {
+            loop {
+                app.slot_wanted.notify_waiters();
+                let wait = app.engine_slots.clone().acquire_owned();
+                if let Ok(Ok(permit)) = tokio::time::timeout(RETRY_WRITE, wait).await {
+                    let msg = EngineMsg::Slot { id, permit };
+                    let _ = tx.send(Tagged { generation: 0, msg });
+                    return;
+                }
+            }
+        });
+        self.waiting_slot = Some(WaitingSlot { id, text, task });
+    }
+
+    async fn slot_free(&mut self, id: u64, permit: tokio::sync::OwnedSemaphorePermit) {
+        if self.waiting_slot.as_ref().is_none_or(|w| w.id != id) {
+            return;
+        }
+        let Some(waiting) = self.waiting_slot.take() else {
+            return;
+        };
+        self.slot = Some(permit);
+        self.set_state(WorkState::Working, "").await;
+        self.begin_turn(waiting.text.clone()).await;
     }
 
     async fn start_failed(&mut self, e: (Explained, String)) {
@@ -515,6 +674,7 @@ impl Runner {
     /// Ends the engine process. Anything it still sends is ignored from now on.
     fn drop_conn(&mut self) {
         self.conn = None;
+        self.slot = None;
         self.generation += 1;
     }
 
@@ -564,10 +724,11 @@ impl Runner {
         let text = std::mem::take(&mut self.text);
         self.sub_seq = 0;
         self.reply_after = None;
-        let agent_id = load_ctx(&self.app, self.thread_id)
-            .await
-            .ok()
-            .and_then(|c| c.agent_id);
+        if let Ok(ctx) = load_ctx(&self.app, self.thread_id).await {
+            self.agent_id = ctx.agent_id;
+        }
+        // The text goes into the outbox, so it is kept even when it can't be written yet.
+        let agent_id = self.agent_id;
         self.append(EventBody::AgentMessage { text, agent_id }, Source::Agent)
             .await;
     }
@@ -590,8 +751,13 @@ impl Runner {
         request: Box<RequestPermissionRequest>,
         responder: Responder<RequestPermissionResponse>,
     ) {
-        if let Some(turn) = self.turn.as_mut() {
-            turn.acted = true;
+        // Outside a turn, or once Stop was pressed, nobody will answer: no card.
+        match self.turn.as_mut() {
+            Some(turn) if turn.stop_by.is_none() => turn.acted = true,
+            _ => {
+                let _ = responder.respond(cancelled());
+                return;
+            }
         }
         self.flush_text().await;
         let known = self.tools.get(request.tool_call.tool_call_id.0.as_ref());
@@ -667,6 +833,11 @@ impl Runner {
     async fn stop(&mut self) {
         self.now_queue.clear();
         self.after_queue.clear();
+        if self.waiting_slot.take().is_some() {
+            // Dropping it stops the wait.
+            self.set_state(WorkState::Idle, "").await;
+            return;
+        }
         if let Some(inst) = self.installing.take() {
             let (step_id, title) = (inst.step_id.clone(), inst.title.clone());
             // Dropping it stops the download.
@@ -834,6 +1005,7 @@ impl Runner {
 
     async fn set_state(&mut self, state: WorkState, live_line: &str) {
         self.flush_text().await;
+        self.state = (state, live_line.to_string());
         self.append(
             EventBody::State {
                 state,
@@ -844,10 +1016,81 @@ impl Runner {
         .await;
     }
 
-    async fn append(&self, body: EventBody, source: Source) {
-        if let Err(e) = self.app.append(self.thread_id, body, source).await {
-            tracing::error!("append to {} failed: {e:#}", self.thread_id);
+    /// Writes an event after any still waiting in the outbox.
+    async fn append(&mut self, body: EventBody, source: Source) {
+        self.outbox.push_back((body, source));
+        if self.outbox.len() > OUTBOX_MAX {
+            self.outbox.pop_front();
+            self.dropped = true;
         }
+        if self.retry_at.is_none() {
+            self.drain().await;
+        }
+    }
+
+    /// Writes the outbox in order. A write that fails because Postgres can't be reached
+    /// stays first in line and is tried again (soon, and when Postgres is back); any
+    /// other failure is logged and that event dropped. After an outage, the current
+    /// state is said again.
+    async fn drain(&mut self) {
+        let recovering = self.retry_at.take().is_some();
+        while let Some((body, source)) = self.outbox.front().cloned() {
+            match self.app.append(self.thread_id, body, source).await {
+                Ok(_) => {
+                    self.outbox.pop_front();
+                }
+                Err(e) if unreachable_db(&e) => {
+                    if !recovering {
+                        tracing::warn!(
+                            "couldn't write to {} yet, will try again: {e:#}",
+                            self.thread_id
+                        );
+                    }
+                    self.retry_at = Some(Instant::now() + RETRY_WRITE);
+                    return;
+                }
+                Err(e) => {
+                    tracing::error!("append to {} failed: {e:#}", self.thread_id);
+                    self.outbox.pop_front();
+                }
+            }
+        }
+        if recovering {
+            tracing::info!("wrote what {} kept while the database was away", self.thread_id);
+            let (state, live_line) = self.state.clone();
+            if std::mem::take(&mut self.dropped) || self.turn.is_none() {
+                let body = EventBody::State { state, live_line };
+                if let Err(e) = self.app.append(self.thread_id, body, Source::Host).await {
+                    tracing::warn!("couldn't say the state of {}: {e:#}", self.thread_id);
+                }
+            }
+        }
+    }
+}
+
+/// The message said when Bring back is asked for while the session works.
+pub const STILL_WORKING: &str =
+    "The session is still working. Wait for it to finish, then try again.";
+
+/// Whether a failed write failed because Postgres couldn't be reached (restarting, or
+/// the connection broke), so it is worth trying again.
+fn unreachable_db(e: &anyhow::Error) -> bool {
+    let sql = e.downcast_ref::<sqlx::Error>().or_else(|| match e.downcast_ref() {
+        Some(AppendError::Db(sql)) => Some(sql),
+        _ => None,
+    });
+    match sql {
+        Some(
+            sqlx::Error::Io(_)
+            | sqlx::Error::PoolTimedOut
+            | sqlx::Error::WorkerCrashed
+            | sqlx::Error::Protocol(_),
+        ) => true,
+        Some(sqlx::Error::Database(db)) => db.code().is_some_and(|c| {
+            // Connection problems, shutdown or crash recovery, too many connections.
+            c.starts_with("08") || c.starts_with("57P") || c == "53300"
+        }),
+        _ => false,
     }
 }
 

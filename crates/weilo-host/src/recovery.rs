@@ -14,6 +14,8 @@ use crate::{approvals, projector};
 
 pub const INTERRUPTED: &str = "Weilo restarted while this was working, so it stopped.";
 
+/// Each item is handled on its own: one that fails is logged and the rest still are.
+/// Errors only when the lists can't be read at all.
 pub async fn run(app: &Arc<App>) -> Result<()> {
     let behind: Vec<Uuid> = sqlx::query_scalar(
         "SELECT t.id FROM threads t
@@ -24,7 +26,9 @@ pub async fn run(app: &Arc<App>) -> Result<()> {
     .fetch_all(&app.db)
     .await?;
     for thread_id in behind {
-        projector::run(app, thread_id).await?;
+        if let Err(e) = projector::run(app, thread_id).await {
+            tracing::warn!("couldn't bring thread {thread_id} up to date: {e:#}");
+        }
     }
 
     let waiting: Vec<Uuid> =
@@ -33,7 +37,9 @@ pub async fn run(app: &Arc<App>) -> Result<()> {
             .fetch_all(&app.db)
             .await?;
     for approval_id in waiting {
-        approvals::close_interrupted(app, approval_id).await?;
+        if let Err(e) = approvals::close_interrupted(app, approval_id).await {
+            tracing::warn!("couldn't close approval {approval_id}: {e:#}");
+        }
     }
 
     let busy: Vec<Uuid> = sqlx::query_scalar(
@@ -43,16 +49,24 @@ pub async fn run(app: &Arc<App>) -> Result<()> {
     .fetch_all(&app.db)
     .await?;
     for thread_id in busy {
-        let problem = EventBody::Problem {
-            message: INTERRUPTED.into(),
-            action: Some("Try again".into()),
-        };
-        app.append(thread_id, problem, Source::Host).await?;
-        let idle = EventBody::State {
-            state: WorkState::Idle,
-            live_line: String::new(),
-        };
-        app.append(thread_id, idle, Source::Host).await?;
+        if let Err(e) = settle(app, thread_id).await {
+            tracing::warn!("couldn't settle thread {thread_id}: {e:#}");
+        }
     }
+    Ok(())
+}
+
+/// A thread that was working: says why it stopped, and goes back to Idle.
+async fn settle(app: &Arc<App>, thread_id: Uuid) -> Result<()> {
+    let problem = EventBody::Problem {
+        message: INTERRUPTED.into(),
+        action: Some("Try again".into()),
+    };
+    app.append(thread_id, problem, Source::Host).await?;
+    let idle = EventBody::State {
+        state: WorkState::Idle,
+        live_line: String::new(),
+    };
+    app.append(thread_id, idle, Source::Host).await?;
     Ok(())
 }

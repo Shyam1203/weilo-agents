@@ -19,11 +19,7 @@ test("pair this browser with a code and finish first run", async ({ page }) => {
   await page.getByRole("button", { name: "Other AI apps" }).click();
   await page.getByRole("listitem").filter({ hasText: "Echo" }).getByRole("button", { name: "Use" }).click();
 
-  // Weilo checks the chosen AI once and shows what it found before moving on.
-  const check = page.getByRole("region", { name: "Echo" });
-  await expect(check.getByRole("status")).toHaveText("Echo is ready.");
-  await check.getByRole("button", { name: "Continue" }).click();
-
+  // Weilo checks the chosen AI once; when it's ready, first run goes straight on.
   // Step 2 (the last): keep awake.
   await expect(page.getByText("Step 2 of 2")).toBeVisible();
   await page.getByRole("button", { name: "Not now" }).click();

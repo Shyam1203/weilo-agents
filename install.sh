@@ -78,18 +78,27 @@ ln -sf "$dest/weilo" "$prefix/bin/weilo"
 
 say "Weilo $version is installed in $dest."
 
+# Weilo needs Postgres 16 or newer; older ones don't count.
 has_pg=0
-command -v pg_config >/dev/null 2>&1 && has_pg=1
+pg_ok() { [ -n "$1" ] && [ "$1" -ge 16 ] 2>/dev/null; }
+if command -v pg_config >/dev/null 2>&1; then
+  major="$(pg_config --version 2>/dev/null | sed -n 's/^PostgreSQL \([0-9][0-9]*\).*/\1/p')"
+  pg_ok "$major" && has_pg=1
+fi
 for initdb in /usr/lib/postgresql/*/bin/initdb /opt/homebrew/opt/postgresql@*/bin/initdb /usr/local/opt/postgresql@*/bin/initdb; do
-  [ -x "$initdb" ] && has_pg=1
+  [ -x "$initdb" ] || continue
+  major="${initdb%/bin/initdb}"
+  major="${major##*/}"
+  major="${major#postgresql@}"
+  pg_ok "$major" && has_pg=1
 done
 if [ "$has_pg" = 0 ]; then
   say ""
-  say "Weilo keeps its data in Postgres, which isn't installed yet. Install it with:"
+  say "Weilo keeps its data in Postgres 16 or newer, which isn't installed yet. Install it with:"
   if [ "$os" = "apple-darwin" ]; then
     say "  brew install postgresql@16"
   else
-    say "  sudo apt install postgresql"
+    say "  sudo apt install postgresql-16"
   fi
   say "Weilo starts and stops its own copy, so you don't need to set it up or run it."
 fi

@@ -35,6 +35,11 @@ enum Command {
         #[arg(long)]
         home: Option<PathBuf>,
     },
+    /// Check Weilo's activity record.
+    Audit {
+        #[command(subcommand)]
+        audit: AuditCommand,
+    },
     /// Run a built-in engine over stdio.
     Engine {
         #[command(subcommand)]
@@ -42,6 +47,15 @@ enum Command {
     },
     /// Print the version.
     Version,
+}
+
+#[derive(Subcommand)]
+enum AuditCommand {
+    /// Check that nothing changed the audit log outside Weilo.
+    Verify {
+        #[arg(long)]
+        home: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -73,6 +87,23 @@ async fn run(command: Command) -> anyhow::Result<()> {
             println!("Or open: {}", reply["url"].as_str().unwrap_or_default());
             println!("It works once, for 10 minutes.");
             Ok(())
+        }
+        Command::Audit {
+            audit: AuditCommand::Verify { home },
+        } => {
+            let home = Home::resolve(home)?;
+            let reply = admin::request(&home.admin_socket(), "audit verify").await?;
+            if let Some(error) = reply["error"].as_str() {
+                anyhow::bail!("{error}");
+            }
+            if reply["intact"].as_bool() == Some(true) {
+                let rows = reply["rows"].as_i64().unwrap_or(0);
+                println!("The audit log is intact ({rows} entries).");
+                Ok(())
+            } else {
+                let seq = reply["broken_at"].as_i64().unwrap_or(0);
+                anyhow::bail!("{}", weilo_host::audit::broken_line(seq))
+            }
         }
         // Logs would mix with the protocol on stdout, so the engine stays quiet.
         Command::Engine {

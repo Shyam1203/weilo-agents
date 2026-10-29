@@ -13,10 +13,11 @@ import {
   type SidebarSection,
 } from "../../lib/sidebar";
 import { pendingNeedsYou, problemLines, useApp } from "../../lib/store";
+import { jumpItems, searchJump, type JumpItem } from "../../lib/jump";
 import { Avatar } from "../../ui/Avatar";
 import { Badge, EmptyState } from "../../ui/bits";
 import { Button } from "../../ui/Button";
-import { ChevronDownIcon, InboxIcon, MoreIcon, PlusIcon, SearchIcon } from "../../ui/glyphs";
+import { ArrowRightIcon, ChevronDownIcon, CodeIcon, InboxIcon, MoreIcon, PlusIcon, SearchIcon, SidebarIcon } from "../../ui/glyphs";
 import { IconButton } from "../../ui/IconButton";
 import { Link } from "../../ui/Link";
 import { Menu, MenuItem } from "../../ui/Menu";
@@ -47,7 +48,7 @@ function selectedId(route: Route, snapAgents: Array<{ id: string }>): string | n
   }
 }
 
-export function Sidebar({ route, floating }: { route: Route; floating?: boolean }) {
+export function Sidebar({ route, floating, focusSearch }: { route: Route; floating?: boolean; focusSearch?: boolean }) {
   const snap = useApp((s) => s.snapshot)!;
   const needs = useApp((s) => pendingNeedsYou(s).length);
   const [query, setQuery] = useState("");
@@ -55,7 +56,14 @@ export function Sidebar({ route, floating }: { route: Route; floating?: boolean 
   const search = useRef<HTMLInputElement>(null);
 
   const problems = useApp(problemLines);
-  const sections = useMemo(() => buildSections(snap, query, problems), [snap, query, problems]);
+  const sections = useMemo(() => buildSections(snap, "", problems), [snap, problems]);
+  const everything = useMemo(() => jumpItems(snap, problems), [snap, problems]);
+  const results = useMemo(() => searchJump(everything, query), [everything, query]);
+  const [active, setActive] = useState(0);
+  useEffect(() => setActive(0), [query]);
+  useEffect(() => {
+    if (focusSearch) search.current?.focus();
+  }, [focusSearch]);
   const hiddenLive = useMemo(() => hiddenHasLiveWork(snap), [snap]);
   const selected = selectedId(route, snap.agents);
   const main = snap.agents[0];
@@ -76,7 +84,19 @@ export function Sidebar({ route, floating }: { route: Route; floating?: boolean 
 
   const toggle = (key: SectionKey) => void savePrefs(withSection(snap.prefs, key, { open: !snap.prefs[key].open }));
   const hide = (key: SectionKey) => void savePrefs(withSection(snap.prefs, key, { shown: false }));
-  const firstMatch = sections.flatMap((s) => s.rows)[0];
+  const run = (item: JumpItem) => {
+    setQuery("");
+    search.current?.blur();
+    const a = item.action;
+    if (a.type === "go") {
+      navigate(a.href);
+      if (item.kind !== "page") focusComposerSoon();
+    } else if (a.type === "new") {
+      setDialog(a.what === "agent" ? "agents" : a.what === "channel" ? "channels" : "sessions");
+    } else {
+      void savePrefs(withSection(snap.prefs, a.key, { shown: a.shown }));
+    }
+  };
 
   return (
     <aside
@@ -96,17 +116,28 @@ export function Sidebar({ route, floating }: { route: Route; floating?: boolean 
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Escape") setQuery("");
-              if (e.key === "Enter" && firstMatch) {
+              if (e.key === "Escape") {
+                if (query) setQuery("");
+                else e.currentTarget.blur();
+              }
+              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                if (results.length === 0) return;
                 e.preventDefault();
-                e.currentTarget.blur();
-                setQuery("");
-                navigate(firstMatch.href);
-                focusComposerSoon();
+                const step = e.key === "ArrowDown" ? 1 : -1;
+                setActive((i) => (i + step + results.length) % results.length);
+              }
+              if (e.key === "Enter" && results[active]) {
+                e.preventDefault();
+                run(results[active]!);
               }
             }}
             placeholder="Search or jump to…"
-            aria-label="Search the sidebar"
+            aria-label="Search or jump to"
+            role="combobox"
+            aria-expanded={searching}
+            aria-controls="jump-list"
+            aria-autocomplete="list"
+            aria-activedescendant={searching && results[active] ? `jump-${results[active]!.id}` : undefined}
             className="min-w-0 flex-1 border-0 bg-transparent text-body-sm text-text outline-none [&::-webkit-search-cancel-button]:hidden"
           />
           {!touch && (
@@ -115,6 +146,9 @@ export function Sidebar({ route, floating }: { route: Route; floating?: boolean 
         </label>
       </div>
 
+      {searching ? (
+        <JumpList query={query.trim()} items={results} active={active} onHover={setActive} onRun={run} />
+      ) : (
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 py-3 text-body-sm">
         <div className="flex flex-col gap-0.5">
           <Link
@@ -158,20 +192,17 @@ export function Sidebar({ route, floating }: { route: Route; floating?: boolean 
           <Section
             key={sec.key}
             section={sec}
-            open={searching || sec.prefs.open}
+            open={sec.prefs.open}
             onToggle={() => toggle(sec.key)}
             onAdd={ADD_LABEL[sec.key] ? () => setDialog(sec.key) : undefined}
             mainName={main?.name ?? "Ava"}
             onHide={() => hide(sec.key)}
             selected={selected}
-            searching={searching}
           />
         ))}
 
-        {searching && !firstMatch && (
-          <p className="m-0 px-2 text-text-secondary">Nothing matches “{query.trim()}”.</p>
-        )}
       </div>
+      )}
 
       <CustomizeSidebar prefs={snap.prefs} hiddenLive={hiddenLive} />
 
@@ -189,7 +220,6 @@ function Section({
   onAdd,
   onHide,
   selected,
-  searching,
   mainName,
 }: {
   section: SidebarSection;
@@ -199,12 +229,10 @@ function Section({
   mainName: string;
   onHide(): void;
   selected: string | null;
-  searching: boolean;
 }) {
   const [menu, setMenu] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const closeMenu = useCallback(() => setMenu(false), []);
-  if (searching && section.rows.length === 0) return null;
   const label = open ? "" : collapsedLabel(section.rows);
   const listId = `sidebar-${section.key}`;
   return (
@@ -215,8 +243,7 @@ function Section({
           aria-expanded={open}
           aria-controls={listId}
           onClick={onToggle}
-          disabled={searching}
-          className="flex h-7 min-w-0 flex-1 items-center gap-1 border-0 bg-transparent p-0 text-left text-caption font-medium text-text-tertiary disabled:cursor-default"
+          className="flex h-7 min-w-0 flex-1 items-center gap-1 border-0 bg-transparent p-0 text-left text-caption font-medium text-text-tertiary"
         >
           <ChevronDownIcon size={12} className={cx("shrink-0 transition-transform duration-[120ms]", !open && "-rotate-90")} />
           <span className="flex-1">{section.title}</span>
@@ -281,5 +308,64 @@ function Section({
         </div>
       )}
     </section>
+  );
+}
+
+const KIND_WORD: Record<JumpItem["kind"], string> = {
+  agent: "Agent",
+  channel: "Channel",
+  session: "Session",
+  page: "Page",
+  action: "Action",
+};
+
+/** What Ctrl+K found: places to go, then things to do. ↑ ↓ move, Enter opens. */
+function JumpList({
+  query,
+  items,
+  active,
+  onHover,
+  onRun,
+}: {
+  query: string;
+  items: JumpItem[];
+  active: number;
+  onHover(i: number): void;
+  onRun(item: JumpItem): void;
+}) {
+  const snap = useApp((s) => s.snapshot)!;
+  if (items.length === 0) {
+    return <p className="m-0 px-4 py-3 text-body-sm text-text-secondary">Nothing matches “{query}”.</p>;
+  }
+  return (
+    <ul id="jump-list" role="listbox" aria-label="Jump to" className="m-0 flex min-h-0 flex-1 list-none flex-col gap-0.5 overflow-y-auto px-2 py-3 text-body-sm">
+      {items.map((item, i) => {
+        const first = i === 0 || items[i - 1]!.group !== item.group;
+        const agent = item.kind === "agent" ? snap.agents.find((a) => a.id === item.id) : undefined;
+        return (
+          <li key={item.id} role="presentation" className="flex flex-col">
+            {first && <span className={cx("flex h-7 items-center px-2 text-caption font-medium text-text-tertiary", i > 0 && "mt-2")}>{item.group}</span>}
+            <div
+              id={`jump-${item.id}`}
+              role="option"
+              aria-selected={i === active}
+              onMouseEnter={() => onHover(i)}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => onRun(item)}
+              className={cx("flex min-h-9 cursor-pointer items-center gap-2 rounded-md px-2 py-1", i === active ? "bg-accent-subtle text-accent-text" : "text-text")}
+            >
+              <span className="flex w-6 shrink-0 justify-center text-text-tertiary">
+                {agent ? <Avatar name={agent.name} color={agent.color} size={20} /> : item.kind === "channel" ? "#" : item.kind === "session" ? <CodeIcon size={14} /> : item.action.type === "new" ? <PlusIcon size={14} /> : item.action.type === "section" ? <SidebarIcon size={14} /> : <ArrowRightIcon size={14} />}
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="ellipsis">{item.label}</span>
+                {item.sub && <span className="ellipsis text-caption text-text-tertiary">{item.sub}</span>}
+              </span>
+              <span className="sr-only">{KIND_WORD[item.kind]}</span>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

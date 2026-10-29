@@ -27,6 +27,7 @@ use crate::home::{Home, write_private};
 use crate::keep_awake::which;
 pub use card::permission_card;
 pub use manifest::Manifest;
+pub use runner::STILL_WORKING;
 
 /// Whether an engine can be used now, and if not, what's missing.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -676,6 +677,14 @@ pub enum Cmd {
     },
     /// The agent's engine or model changed: start a new engine process next time.
     Restart,
+    /// Bring a session's changes back into its folder (`worktree::merge_back`). The
+    /// runner does it between turns, so no turn starts or runs meanwhile.
+    BringBack {
+        folder: PathBuf,
+        worktree: PathBuf,
+        title: String,
+        reply: tokio::sync::oneshot::Sender<Result<String, String>>,
+    },
 }
 
 /// The live runners, by thread.
@@ -698,6 +707,25 @@ impl Runners {
         let tx = runner::spawn(app.clone(), thread_id);
         let _ = tx.send(cmd);
         map.insert(thread_id, tx);
+    }
+
+    /// Called by a runner with nothing to do: removes it, unless a command reached it
+    /// meanwhile (`send` holds the same lock, so none can slip in between). True when
+    /// the runner should end.
+    pub(crate) fn retire(&self, thread_id: Uuid, cmds: &mpsc::UnboundedReceiver<Cmd>) -> bool {
+        let mut map = self.map.lock().expect("runners lock");
+        if !cmds.is_empty() {
+            return false;
+        }
+        // While this runner's receiver lives, the entry is its own: `send` replaces an
+        // entry only once its receiver is gone.
+        map.remove(&thread_id);
+        true
+    }
+
+    /// How many threads have a runner now.
+    pub fn count(&self) -> usize {
+        self.map.lock().expect("runners lock").len()
     }
 
     /// Sends only if the thread already has a runner. Returns whether it did.

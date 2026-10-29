@@ -216,6 +216,7 @@ fn spawn_up(home: &std::path::Path, dir: &std::path::Path, env: &[(String, Strin
     cmd.args(["up", "--port", "0", "--home"])
         .arg(home)
         .env("WEILO_JOB_POLL_MS", "200")
+        .env("WEILO_WORKSPACES", dir.join("agents"))
         .env("RUST_LOG", "weilo_host=debug,warn")
         .stdout(Stdio::null())
         .stderr(log);
@@ -415,44 +416,70 @@ pub async fn setup_with_echo(c: &mut Client) -> Uuid {
 }
 
 impl Host {
-    /// A connection to this host's database as the owner (peer auth: tests run as the
-    /// same OS user as the host).
-    pub async fn db(&self) -> sqlx::PgConnection {
+    /// Where this host's Postgres keeps its data (`HOME/db`, or under
+    /// `/var/lib/weilo-agents` when the home isn't reachable for the Postgres user).
+    pub fn pg_root(&self) -> PathBuf {
+        if self.home.join("db").exists() {
+            return self.home.clone();
+        }
+        let hash = {
+            use sha2::Digest;
+            hex::encode(&sha2::Sha256::digest(self.home.as_os_str().as_encoded_bytes())[..8])
+        };
+        PathBuf::from("/var/lib/weilo-agents").join(hash)
+    }
+
+    /// A connection to this host's database as `role` (peer auth: tests run as the same
+    /// OS user as the host).
+    pub async fn connect_as(&self, role: &str) -> Result<sqlx::PgConnection, sqlx::Error> {
         use sqlx::Connection;
         let pg: serde_json::Value =
             serde_json::from_slice(&std::fs::read(self.home.join("secrets/pg.json")).unwrap())
                 .unwrap();
-        let mut socket = self.home.join("run");
-        if !socket.exists() {
-            let hash = {
-                use sha2::Digest;
-                hex::encode(&sha2::Sha256::digest(self.home.as_os_str().as_encoded_bytes())[..8])
-            };
-            socket = PathBuf::from("/var/lib/weilo-agents")
-                .join(hash)
-                .join("run");
-        }
         let opts = sqlx::postgres::PgConnectOptions::new()
-            .socket(socket)
+            .socket(self.pg_root().join("run"))
             .port(pg["port"].as_u64().unwrap() as u16)
-            .username("weilo_owner")
+            .username(role)
             .database("weilo");
-        sqlx::PgConnection::connect_with(&opts).await.unwrap()
+        sqlx::PgConnection::connect_with(&opts).await
+    }
+
+    /// A connection as the owner. While Weilo runs only its app role may sign in, so,
+    /// as anything running as this user could, the test widens the sign-in rules for a
+    /// moment, signs in, and narrows them again.
+    pub async fn db(&self) -> sqlx::PgConnection {
+        let ident = self.pg_root().join("db/pg_ident.conf");
+        let narrow = std::fs::read_to_string(&ident).unwrap();
+        let user = narrow
+            .lines()
+            .find(|l| l.starts_with("weilo "))
+            .and_then(|l| l.split_whitespace().nth(1))
+            .expect("a sign-in rule")
+            .to_string();
+        let reload = || {
+            // SAFETY: asking the test host's Postgres to read its rules again.
+            unsafe {
+                libc::kill(self.postgres_pid().expect("postgres runs"), libc::SIGHUP);
+            }
+        };
+        std::fs::write(&ident, format!("{narrow}weilo {user} weilo_owner\n")).unwrap();
+        reload();
+        let until = Instant::now() + WAIT;
+        let conn = loop {
+            match self.connect_as("weilo_owner").await {
+                Ok(conn) => break conn,
+                Err(e) => assert!(Instant::now() < until, "owner can't sign in: {e}"),
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        };
+        std::fs::write(&ident, narrow).unwrap();
+        reload();
+        conn
     }
 
     /// Postgres' pid, from `postmaster.pid`.
     pub fn postgres_pid(&self) -> Option<i32> {
-        let mut file = self.home.join("db/postmaster.pid");
-        if !file.exists() {
-            let hash = {
-                use sha2::Digest;
-                hex::encode(&sha2::Sha256::digest(self.home.as_os_str().as_encoded_bytes())[..8])
-            };
-            file = PathBuf::from("/var/lib/weilo-agents")
-                .join(hash)
-                .join("db/postmaster.pid");
-        }
-        std::fs::read_to_string(file)
+        std::fs::read_to_string(self.pg_root().join("db/postmaster.pid"))
             .ok()?
             .lines()
             .next()?

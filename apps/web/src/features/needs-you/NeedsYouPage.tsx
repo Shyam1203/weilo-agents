@@ -4,11 +4,13 @@ import { cx, listWords, shortName, timeOf, whenLabel } from "../../lib/format";
 import { actionable, approveKey, groupNeedsYou, isHeadsUp, isSmall, yesAction, type NeedsYouGroup } from "../../lib/needsYou";
 import { navigate, threadPath } from "../../lib/router";
 import { SECTION_TITLES, withSection, type SectionKey } from "../../lib/sidebar";
-import { problemNeedsYou, useApp } from "../../lib/store";
+import { hostAway, problemNeedsYou, useApp } from "../../lib/store";
 import type { NeedsYouItem } from "../../proto/NeedsYouItem";
 import type { Snapshot } from "../../proto/Snapshot";
 import { Avatar, SessionMark } from "../../ui/Avatar";
-import { EmptyState, TextWithCode, TopBar } from "../../ui/bits";
+import { Disclosure, EmptyState, TextWithCode, TopBar } from "../../ui/bits";
+import { problemKind } from "../../lib/engines";
+import { ProblemButton } from "../thread/Problem";
 import { Button } from "../../ui/Button";
 import { CheckIcon, CodeIcon, XCircleIcon } from "../../ui/glyphs";
 import { Link } from "../../ui/Link";
@@ -232,7 +234,13 @@ function AskRow({ item, snap, selected, onFocus, ref, phone }: RowProps & { phon
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <Source item={item} snap={snap} />
           <div className={cx("text-title-sm font-semibold", selected && "text-accent-text")}>{item.card.title}</div>
-          {item.card.details && <DetailLine text={item.card.details} />}
+          {item.card.details && (
+            <Disclosure label={isSessionItem(snap, item) ? "Show the command" : "Details"}>
+              <pre className="m-0 max-w-full overflow-x-auto rounded-sm border border-border bg-surface px-2 py-1.5 font-mono text-caption whitespace-pre-wrap text-text">
+                {item.card.details}
+              </pre>
+            </Disclosure>
+          )}
           <RiskLine risk={item.card.risk} text={item.card.risk_line} />
         </div>
       </div>
@@ -266,37 +274,9 @@ function AskRow({ item, snap, selected, onFocus, ref, phone }: RowProps & { phon
   );
 }
 
-/** The command or detail behind a yes, on one line, so nothing is approved blind. "Show all" opens the rest. */
-function DetailLine({ text }: { text: string }) {
-  const [all, setAll] = useState(false);
-  const first = text.split("\n")[0]!;
-  const more = text.length > first.length || first.length > 60;
-  if (all) {
-    return (
-      <div className="flex flex-col items-start gap-1">
-        <pre className="m-0 max-w-full overflow-x-auto rounded-sm bg-surface-muted px-1.5 py-1 font-mono text-caption whitespace-pre-wrap text-text-secondary">
-          {text}
-        </pre>
-        <button type="button" onClick={() => setAll(false)} className="border-0 bg-transparent p-0 text-caption font-medium text-accent-text hover:underline">
-          Show less
-        </button>
-      </div>
-    );
-  }
-  return (
-    <div className="flex min-w-0 items-center gap-2">
-      <code className="ellipsis min-w-0 rounded-sm bg-surface-muted px-1.5 font-mono text-caption text-text-secondary">{first}</code>
-      {more && (
-        <button
-          type="button"
-          onClick={() => setAll(true)}
-          className="shrink-0 border-0 bg-transparent p-0 text-caption font-medium text-accent-text hover:underline"
-        >
-          Show all
-        </button>
-      )}
-    </div>
-  );
+/** Items from a coding session say "Show the command"; the rest say "Details". */
+function isSessionItem(snap: Snapshot, item: NeedsYouItem): boolean {
+  return snap.threads.find((t) => t.id === item.thread_id)?.kind === "session";
 }
 
 function PastRow({ item, snap, selected, onFocus, ref, expired, phone }: RowProps & { expired: boolean; phone?: boolean }) {
@@ -306,6 +286,9 @@ function PastRow({ item, snap, selected, onFocus, ref, expired, phone }: RowProp
     if (!(await send(item.thread_id, askAgainText(item.card.title)))) return;
     showNotice(name ? `Asked ${name} to ask you again.` : "Asked again.");
   };
+  // A problem from a chat: its own button (Add a key, Try again…), and the title opens the chat.
+  const own = item.card.kind === "problem" ? item.card.actions.find((a) => a.decision === null) : undefined;
+  const fix = own && problemKind(own.label) ? own : undefined;
   return (
     <div
       ref={ref}
@@ -318,11 +301,19 @@ function PastRow({ item, snap, selected, onFocus, ref, expired, phone }: RowProp
     >
       <span className={cx("flex min-w-0 flex-1", phone ? "flex-col" : "items-baseline gap-3")}>
         <span className={cx("min-w-0", phone ? "break-words" : "ellipsis flex-1")}>
-          <TextWithCode text={item.card.title} />
+          {fix ? (
+            <Link href={pathFor(snap, item)} tabIndex={-1} className="text-text">
+              {item.card.title}
+            </Link>
+          ) : (
+            <TextWithCode text={item.card.title} />
+          )}
         </span>
         <span className="shrink-0 text-caption text-text-tertiary">{whenLabel(item.created_at)}</span>
       </span>
-      {expired ? (
+      {fix ? (
+        <ProblemButton threadId={item.thread_id} agentId={agent?.id ?? null} action={fix.label} size={phone ? "phone" : "md"} />
+      ) : expired ? (
         <Button size={phone ? "phone" : "md"} onClick={() => void ask()}>
           {name ? `Ask ${name} again` : "Ask again"}
         </Button>
@@ -341,6 +332,7 @@ function DoneRow({ item, snap, selected, onFocus, ref, last, phone }: RowProps &
     !last && "shadow-line",
     selected && "bg-accent-subtle [&_.text-text-tertiary]:text-text-secondary",
   );
+  const away = useApp(hostAway);
   if (isHeadsUp(item)) {
     const thread = snap.threads.find((t) => t.id === item.thread_id);
     const [lead, ...name] = item.card.title.split(": ");
@@ -356,7 +348,7 @@ function DoneRow({ item, snap, selected, onFocus, ref, last, phone }: RowProps &
             <Link href={pathFor(snap, item)}>{lead}</Link>
           )}
         </Lines>
-        {thread && thread.state !== "idle" && (
+        {thread && thread.state !== "idle" && !away && (
           <Button size="sm" variant="tertiary" onClick={() => void stop(thread.id)}>
             Stop
           </Button>

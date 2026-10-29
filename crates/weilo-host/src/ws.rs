@@ -22,7 +22,7 @@ use std::time::Duration;
 
 use axum::extract::State;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use futures::{SinkExt, StreamExt};
 use tokio::sync::{Semaphore, broadcast, mpsc, oneshot};
 use uuid::Uuid;
@@ -42,10 +42,26 @@ pub const MAX_CALLS: usize = 32;
 /// Events read from the database at a time for a backlog.
 const BACKLOG_PAGE: i64 = 500;
 /// How long a new socket has to say hello.
-const HELLO_WAIT: Duration = Duration::from_secs(10);
+const HELLO_WAIT: Duration = Duration::from_secs(5);
+/// The largest frame (or message) a device may send. Calls are small.
+const MAX_MESSAGE: usize = 1024 * 1024;
 
 pub async fn upgrade(State(app): State<Arc<App>>, ws: WebSocketUpgrade) -> Response {
-    ws.on_upgrade(move |socket| Session::run(app, socket))
+    // Every open socket holds one place; when they're all taken, new ones are refused.
+    let Ok(place) = app.sockets.clone().try_acquire_owned() else {
+        tracing::warn!("too many open sockets; refused one");
+        return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            "Too many connections. Try again soon.",
+        )
+            .into_response();
+    };
+    ws.max_message_size(MAX_MESSAGE)
+        .max_frame_size(MAX_MESSAGE)
+        .on_upgrade(move |socket| async move {
+            Session::run(app, socket).await;
+            drop(place);
+        })
 }
 
 struct Session {

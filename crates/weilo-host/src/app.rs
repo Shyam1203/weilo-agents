@@ -78,6 +78,12 @@ pub struct Settings {
     pub job_poll: Duration,
     /// Frames waiting for one socket before it counts as fallen behind.
     pub ws_queue: usize,
+    /// Sockets open at once, across all devices.
+    pub max_sockets: usize,
+    /// Engine processes running at once, across all threads.
+    pub max_engines: usize,
+    /// A thread's runner with nothing to do ends after this.
+    pub runner_idle: Duration,
 }
 
 impl Settings {
@@ -99,6 +105,9 @@ impl Settings {
             stop_grace: Duration::from_secs(secs("WEILO_STOP_GRACE_SECS", 5)),
             job_poll: Duration::from_millis(secs("WEILO_JOB_POLL_MS", 1000)),
             ws_queue: secs("WEILO_WS_QUEUE", 1024) as usize,
+            max_sockets: secs("WEILO_MAX_SOCKETS", 128).max(1) as usize,
+            max_engines: secs("WEILO_MAX_ENGINES", 8).max(1) as usize,
+            runner_idle: Duration::from_secs(secs("WEILO_RUNNER_IDLE_SECS", 900)),
         }
     }
 }
@@ -120,6 +129,14 @@ pub struct App {
     pub shutdown: tokio_util::sync::CancellationToken,
     /// False while Postgres is down and being restarted; new turns wait for it.
     pub db_up: tokio::sync::watch::Sender<bool>,
+    /// One place per open socket (`Settings::max_sockets`).
+    pub sockets: Arc<tokio::sync::Semaphore>,
+    /// One slot per running engine process (`Settings::max_engines`).
+    pub engine_slots: Arc<tokio::sync::Semaphore>,
+    /// Signalled when a thread waits for an engine slot: idle engines give theirs up.
+    pub slot_wanted: tokio::sync::Notify,
+    /// Sessions whose changes are being brought back right now.
+    pub bringing_back: Mutex<std::collections::HashSet<Uuid>>,
     port: AtomicU16,
     /// The newest seq published per thread, so deltas can name it without a query.
     seqs: Mutex<HashMap<Uuid, i64>>,
@@ -136,6 +153,8 @@ pub struct AppParts {
 
 impl App {
     pub fn new(p: AppParts) -> Arc<Self> {
+        let sockets = Arc::new(tokio::sync::Semaphore::new(p.settings.max_sockets));
+        let engine_slots = Arc::new(tokio::sync::Semaphore::new(p.settings.max_engines));
         Arc::new(Self {
             home: p.home,
             db: p.db,
@@ -151,6 +170,10 @@ impl App {
             call_locks: CallLocks::default(),
             shutdown: Default::default(),
             db_up: tokio::sync::watch::Sender::new(true),
+            sockets,
+            engine_slots,
+            slot_wanted: tokio::sync::Notify::new(),
+            bringing_back: Mutex::default(),
             port: AtomicU16::new(0),
             seqs: Mutex::new(HashMap::new()),
         })

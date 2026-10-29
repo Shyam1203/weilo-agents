@@ -76,7 +76,7 @@ function StackCard({ item, n, total }: { item: NeedsYouItem; n: number; total: n
         {confirming ? (
           <>
             <Button size="phone" variant="tertiary" className="flex-1" onClick={() => setConfirming(false)}>
-              Back
+              Cancel
             </Button>
             <Button
               size="phone"

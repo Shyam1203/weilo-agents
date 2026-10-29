@@ -156,7 +156,7 @@ function Item({
     case "filed":
       return <Filed channelId={item.channelId} threadId={threadId} canMove={kind === "chat"} />;
     case "problem":
-      return <Problem threadId={threadId} agentId={agentId} message={item.message} action={item.action} />;
+      return <Problem threadId={threadId} agentId={agentId} message={item.message} action={item.action} resolved={item.resolved} />;
     case "note":
       return <p className="m-0 text-body-sm text-text-secondary">{item.text}</p>;
   }
@@ -176,7 +176,7 @@ const STATUS_WORD = { done: "done", failed: "didn't work", running: "in progress
  * look-ups that failed along the way, are one click away under Show details.
  */
 function Steps({ steps }: { steps: StepItem[] }) {
-  const { shown, details, folded } = useMemo(() => showSteps(steps), [steps]);
+  const { shown, details, failedLine } = useMemo(() => showSteps(steps), [steps]);
   return (
     <div className="flex flex-col gap-2">
       {shown.length > 0 && (
@@ -195,7 +195,13 @@ function Steps({ steps }: { steps: StepItem[] }) {
           <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-sm font-medium hover:text-text-secondary [&::-webkit-details-marker]:hidden">
             <ChevronDownIcon size={12} className="shrink-0 -rotate-90 transition-transform duration-[120ms] group-open:rotate-0" />
             Show details
-            {folded > 0 && <span className="font-normal">· {folded === 1 ? "1 look-up didn't work" : `${folded} look-ups didn't work`}</span>}
+            {failedLine && (
+              <span className="flex items-center gap-1 font-normal text-text-secondary">
+                <span aria-hidden="true">·</span>
+                <XCircleIcon size={12} className="shrink-0 text-warning" />
+                {failedLine}
+              </span>
+            )}
           </summary>
           <ul className="m-0 mt-2 flex list-none flex-col gap-1 p-0">
             {details.map((s) => (

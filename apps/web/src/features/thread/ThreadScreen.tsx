@@ -8,6 +8,7 @@ import { ConnectionBanner } from "../shell/Toast";
 import { Composer, type ComposerProps } from "./Composer";
 import { MessageList, type MessageListProps } from "./MessageList";
 import { SidePanel } from "./SidePanel";
+import type { SessionChanges } from "../../proto/SessionChanges";
 import { useFollow, useStickToBottom, useVariant } from "./useThread";
 
 /** Below this width the side panel floats over the conversation instead of squeezing it. */
@@ -22,6 +23,10 @@ export interface ThreadScreenProps {
   composer: Omit<ComposerProps, "threadId" | "phone">;
   panelOpen?: boolean;
   onPanelClose?: () => void;
+  /** A session's changes, for its side panel. */
+  changes?: SessionChanges | null;
+  /** Under the messages (a channel chat's sessions that need you). */
+  after?: ReactNode;
   /** Above the messages on phones (the Needs you cards on home). */
   top?: ReactNode;
 }
@@ -31,7 +36,7 @@ export interface ThreadScreenProps {
  * The header stays mounted when the thread changes (so focus stays on a tab);
  * everything below it starts fresh for each thread.
  */
-export function ThreadScreen({ header, threadId, list, composer, panelOpen, onPanelClose, top, children }: ThreadScreenProps) {
+export function ThreadScreen({ header, threadId, list, composer, panelOpen, onPanelClose, top, changes, after, children }: ThreadScreenProps) {
   const phone = useVariant() === "phone";
   const wide = useMedia(`(min-width: ${PANEL_INLINE_MIN_WIDTH}px)`);
   const scroll = useRef<HTMLDivElement>(null);
@@ -71,6 +76,7 @@ export function ThreadScreen({ header, threadId, list, composer, panelOpen, onPa
             {top && <div aria-hidden="true" className="pointer-events-none sticky top-0 z-[1] -mb-4 h-4 bg-linear-to-b from-bg to-transparent" />}
             <div className={cx(column, phone ? "py-3" : "py-6")}>
               <MessageList threadId={threadId} {...list} />
+              {after}
             </div>
           </div>
           <div className={cx(column, "shrink-0", phone ? "py-2" : "pb-6")}>
@@ -83,6 +89,7 @@ export function ThreadScreen({ header, threadId, list, composer, panelOpen, onPa
         <SidePanel
           key={threadId}
           thread={thread}
+          changes={changes}
           agentName={composer.agentName ?? "Ava"}
           floating={floating}
           onClose={onPanelClose}

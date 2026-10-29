@@ -95,6 +95,8 @@
   --warning-bg: #fff7ed;
   --danger: #dc2626;
   --danger-bg: #fef2f2;
+  /* Behind dialogs. */
+  --scrim: rgba(12, 10, 9, 0.5);
   --badge: #b45309;
   --on-badge: #ffffff;
   --violet-bg: #eeebfb;
@@ -137,6 +139,7 @@
     --warning-bg: #3a2506;
     --danger: #f87171;
     --danger-bg: #3b0d0d;
+  --scrim: rgba(0, 0, 0, 0.72);
     --badge: #fbbf24;
     --on-badge: #0c0a09;
     --violet-bg: #2a2350;
@@ -176,6 +179,7 @@
   --warning-bg: #3a2506;
   --danger: #f87171;
   --danger-bg: #3b0d0d;
+  --scrim: rgba(0, 0, 0, 0.72);
   --badge: #fbbf24;
   --on-badge: #0c0a09;
   --violet-bg: #2a2350;

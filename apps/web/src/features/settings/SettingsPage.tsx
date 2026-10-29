@@ -16,7 +16,6 @@ import { ErrorLine, TextWithCode } from "../../ui/bits";
 import { EngineHelpDialog } from "../engines/EngineHelpDialog";
 import { useEngineList } from "../engines/EnginePicker";
 import { KeyDialog } from "../engines/KeyDialog";
-import { NewSessionDialog } from "../shell/dialogs";
 import { PageFrame } from "../shell/PageFrame";
 
 function Group({ title, children }: { title: string; children: ReactNode }) {
@@ -34,7 +33,6 @@ export function SettingsPage({ phone }: { phone?: boolean }) {
   const hostName = useApp((s) => s.hostName);
   const keepAwake = useApp((s) => s.snapshot!.setup.keep_awake);
   const theme = useTheme();
-  const [session, setSession] = useState(false);
 
   return (
     <PageFrame title={phone ? "You" : "Settings"} phone={phone}>
@@ -83,15 +81,6 @@ export function SettingsPage({ phone }: { phone?: boolean }) {
         </p>
       </Group>
 
-      <Group title="Sessions">
-        <div className="flex flex-wrap items-center gap-3 text-body-sm text-text-secondary">
-          <span className="min-w-0 flex-1">Start a piece of work in a folder on this computer.</span>
-          <Button size={phone ? "phone" : "md"} onClick={() => setSession(true)}>
-            Start a session
-          </Button>
-        </div>
-        <NewSessionDialog open={session} onClose={() => setSession(false)} />
-      </Group>
     </PageFrame>
   );
 }
@@ -253,9 +242,9 @@ function DeviceRow({ device: d, phone }: { device: DeviceInfo; phone?: boolean }
           </p>
           <div className="flex gap-2">
             <Button size={size} variant="tertiary" onClick={() => setConfirming(false)} disabled={busy}>
-              Back
+              Cancel
             </Button>
-            <Button size={size} variant="primary" onClick={() => void remove()} disabled={busy} autoFocus>
+            <Button size={size} variant="danger-solid" onClick={() => void remove()} disabled={busy} autoFocus>
               {busy ? "Removing…" : "Remove"}
             </Button>
           </div>

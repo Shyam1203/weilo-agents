@@ -11,7 +11,7 @@ use weilo_host::events::{self, AppendError, Source};
 use weilo_host::home::Home;
 use weilo_host::ids::new_id;
 use weilo_host::jobs;
-use weilo_host::pg::{ADMIN_ROLE, DATABASE, OWNER_ROLE, Postgres};
+use weilo_host::pg::{ADMIN_ROLE, APP_ROLE, DATABASE, OWNER_ROLE, Postgres};
 use weilo_proto::{EventBody, SendWhen};
 
 #[tokio::test]
@@ -26,6 +26,84 @@ async fn fencing_audit_and_grants() {
     let result = checks(&pg).await;
     pg.stop().await;
     result.unwrap();
+}
+
+/// While Weilo runs only the app's role may sign in; a restart opens setup again (and
+/// migrates), raises the epoch and moves the threads to it, which fences the old one.
+#[tokio::test]
+async fn lock_down_restart_and_epochs() {
+    if !common::postgres_available() {
+        return;
+    }
+    let (_dir, home) = common::temp_home();
+    let home = Home::new(&home);
+    let mut pg = Postgres::start(&home).await.expect("postgres starts");
+    let first = db::open(&pg).await.unwrap();
+    let thread = new_id();
+    sqlx::query(
+        "INSERT INTO threads (id, space_id, kind, owner_host, owner_epoch, title)
+         VALUES ($1, $2, 'chat', $3, $4, 'Test')",
+    )
+    .bind(thread)
+    .bind(first.space_id)
+    .bind(first.fence.host)
+    .bind(first.fence.epoch)
+    .execute(&first.pool)
+    .await
+    .unwrap();
+    first.pool.close().await;
+
+    pg.lock_down().await.unwrap();
+    assert!(
+        PgConnection::connect_with(&pg.options(OWNER_ROLE, DATABASE))
+            .await
+            .is_err(),
+        "the owner must not sign in while Weilo runs"
+    );
+    assert!(
+        PgConnection::connect_with(&pg.options(ADMIN_ROLE, "postgres"))
+            .await
+            .is_err()
+    );
+    let app = PgConnection::connect_with(&pg.options(APP_ROLE, DATABASE))
+        .await
+        .expect("the app signs in");
+    app.close().await.unwrap();
+    pg.stop().await;
+
+    let mut pg = Postgres::start(&home).await.expect("postgres starts again");
+    let second = db::open(&pg).await.expect("migrations run again");
+    assert_eq!(second.fence.host, first.fence.host);
+    assert_eq!(second.fence.epoch, first.fence.epoch + 1);
+    let owner_epoch: i64 = sqlx::query_scalar("SELECT owner_epoch FROM threads WHERE id = $1")
+        .bind(thread)
+        .fetch_one(&second.pool)
+        .await
+        .unwrap();
+    assert_eq!(owner_epoch, second.fence.epoch);
+    let body = EventBody::UserMessage {
+        text: "hi".into(),
+        when: SendWhen::Now,
+    };
+    let mut tx = second.pool.begin().await.unwrap();
+    let old = events::append(&mut tx, first.fence, thread, &body, Source::User, false).await;
+    assert!(matches!(old, Err(AppendError::Fenced)), "{old:?}");
+    drop(tx);
+    let mut tx = second.pool.begin().await.unwrap();
+    events::append(&mut tx, second.fence, thread, &body, Source::User, false)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    // The event log is append-only for the app.
+    for sql in ["UPDATE events SET kind = 'x'", "DELETE FROM events"] {
+        assert!(
+            sqlx::query(sql).execute(&second.pool).await.is_err(),
+            "{sql}"
+        );
+    }
+    pg.lock_down().await.unwrap();
+    second.pool.close().await;
+    pg.stop().await;
 }
 
 async fn checks(pg: &Postgres) -> anyhow::Result<()> {

@@ -1,4 +1,6 @@
-//! The host's home folder (`~/.weilo-agents` by default) and the paths inside it.
+//! The host's home folder (`~/.weilo-agents` by default) and the paths inside it, and
+//! where chat agents work (`~/Weilo/agents` by default, outside the home folder, so an
+//! agent's own folder is never next to Weilo's secrets and database).
 
 use std::fs;
 use std::io;
@@ -10,11 +12,15 @@ use sha2::{Digest, Sha256};
 #[derive(Debug, Clone)]
 pub struct Home {
     root: PathBuf,
+    /// Where chat agents' folders live (`WEILO_WORKSPACES`, default `~/Weilo/agents`).
+    workspaces: PathBuf,
 }
 
 impl Home {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        let root = root.into();
+        let workspaces = default_workspaces(&root);
+        Self { root, workspaces }
     }
 
     /// `--home`, then `WEILO_HOME`, then `~/.weilo-agents`.
@@ -51,8 +57,13 @@ impl Home {
     pub fn engine_keys(&self, engine: &str) -> PathBuf {
         self.secrets().join(format!("keys-{engine}.json"))
     }
+    /// A chat agent's own folder, where its engine works. It is outside the home
+    /// folder (see `default_workspaces`).
     pub fn workspace(&self, agent_slug: &str) -> PathBuf {
-        self.root.join("workspace").join(agent_slug)
+        self.workspaces.join(agent_slug)
+    }
+    pub fn workspaces(&self) -> &Path {
+        &self.workspaces
     }
     /// A Unix socket path must be short (about 100 bytes), so the admin socket lives in
     /// `$XDG_RUNTIME_DIR` or `/tmp/weilo-<uid>` (0700), named after this home.
@@ -83,6 +94,24 @@ impl Home {
             ensure_private_dir(&dir)?;
         }
         Ok(())
+    }
+}
+
+/// `WEILO_WORKSPACES`, else `~/Weilo/agents`. When either would land inside the home
+/// folder (or no home folder is known), a folder beside the home is used instead:
+/// `<home>-agents`.
+fn default_workspaces(root: &Path) -> PathBuf {
+    let chosen = std::env::var_os("WEILO_WORKSPACES")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .or_else(|| dirs::home_dir().map(|h| h.join("Weilo").join("agents")));
+    match chosen {
+        Some(dir) if !dir.starts_with(root) => dir,
+        _ => {
+            let mut name = root.file_name().unwrap_or_default().to_os_string();
+            name.push("-agents");
+            root.with_file_name(name)
+        }
     }
 }
 
@@ -200,6 +229,14 @@ mod tests {
         assert!(try_lock(&path).unwrap().is_none());
         drop(first);
         assert!(try_lock(&path).unwrap().is_some());
+    }
+
+    #[test]
+    fn agent_folders_are_outside_the_home_folder() {
+        let home = Home::new("/tmp/some/.weilo-agents");
+        let ws = home.workspace("ava");
+        assert!(!ws.starts_with(home.root()), "{}", ws.display());
+        assert!(ws.ends_with("ava"));
     }
 
     #[test]

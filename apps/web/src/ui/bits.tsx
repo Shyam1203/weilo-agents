@@ -1,10 +1,21 @@
 import type { ReactNode } from "react";
 import type { WorkState } from "../proto/WorkState";
 import { cx } from "../lib/format";
-import { AlertIcon } from "./glyphs";
+import { AlertIcon, ChevronDownIcon } from "./glyphs";
 
-/** "Needs you" on accent-subtle, "Working" on surface-muted. Nothing when idle. */
-export function StatusPill({ state }: { state: WorkState }) {
+/**
+ * "Needs you" on accent-subtle, "Working" on surface-muted. Nothing when idle, unless the
+ * last reply ended in a problem nobody fixed yet: then that, in the warning colour.
+ */
+export function StatusPill({ state, problem }: { state: WorkState; problem?: string | null }) {
+  if (state === "idle" && problem) {
+    return (
+      <span className="flex h-6 shrink-0 items-center gap-1.5 rounded-sm bg-warning-bg px-2 text-caption font-medium whitespace-nowrap text-warning">
+        <span aria-hidden="true" className="size-1.5 rounded-full bg-warning" />
+        {problem}
+      </span>
+    );
+  }
   if (state === "idle") return null;
   const needs = state === "needs_you";
   return (
@@ -91,6 +102,19 @@ export function ErrorLine({ children, id, className }: { children: ReactNode; id
       <AlertIcon className="mt-0.5 shrink-0" />
       <span className="min-w-0">{children}</span>
     </p>
+  );
+}
+
+/** Details one click away (§11.0 rule 3): "Show the command", "Details". */
+export function Disclosure({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
+  return (
+    <details className={cx("group text-caption text-text-secondary", className)}>
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-sm font-medium hover:text-text [&::-webkit-details-marker]:hidden">
+        <ChevronDownIcon size={12} className="shrink-0 -rotate-90 transition-transform duration-[120ms] group-open:rotate-0" />
+        {label}
+      </summary>
+      <div className="mt-1.5">{children}</div>
+    </details>
   );
 }
 

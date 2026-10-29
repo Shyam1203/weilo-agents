@@ -2,7 +2,7 @@
 //! to the running host. Only the same OS user (or root) may connect.
 //!
 //! One request line, one JSON reply line: `pair` mints a pairing code, `status` gives
-//! the port and pid.
+//! the port and pid, `audit verify` checks the audit log's chain.
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -53,6 +53,13 @@ async fn serve(app: &App, stream: UnixStream) -> Result<()> {
             json!({ "code": code, "url": url })
         }
         "status" => json!({ "port": app.port(), "pid": std::process::id() }),
+        "audit verify" => match crate::audit::verify(&app.db, app.space_id).await {
+            Ok(crate::audit::Verdict::Intact { rows }) => json!({ "intact": true, "rows": rows }),
+            Ok(crate::audit::Verdict::BrokenAt { seq }) => {
+                json!({ "intact": false, "broken_at": seq })
+            }
+            Err(e) => json!({ "error": format!("couldn't read the audit log: {e}") }),
+        },
         other => json!({ "error": format!("unknown request: {other}") }),
     };
     write.write_all(format!("{reply}\n").as_bytes()).await?;

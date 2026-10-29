@@ -21,6 +21,20 @@ use crate::ids::new_id;
 pub const EXPIRE_APPROVAL: &str = "approvals.expire";
 pub const PRUNE: &str = "maintenance.prune";
 
+/// Tries for a job that must not give up (an approval's expiry): with the backoff capped
+/// at about 17 minutes, decades of tries.
+const KEEP_TRYING: i32 = 1_000_000;
+/// How often waiting approvals past their time are closed, whatever their jobs did.
+const SWEEP_EVERY: Duration = Duration::from_secs(60);
+
+fn max_attempts(queue: &str) -> i32 {
+    if queue == EXPIRE_APPROVAL {
+        KEEP_TRYING
+    } else {
+        5
+    }
+}
+
 /// Adds a job, or moves an existing one with the same key to the new time.
 pub async fn enqueue(
     conn: &mut PgConnection,
@@ -31,11 +45,12 @@ pub async fn enqueue(
     payload: Value,
 ) -> sqlx::Result<()> {
     sqlx::query(
-        "INSERT INTO jobs (id, space_id, queue, job_key, run_at, payload)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        "INSERT INTO jobs (id, space_id, queue, job_key, run_at, payload, max_attempts)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (job_key) DO UPDATE
          SET run_at = EXCLUDED.run_at, payload = EXCLUDED.payload, attempts = 0, last_error = NULL,
-             finished_at = NULL, locked_by = NULL, locked_until = NULL",
+             finished_at = NULL, locked_by = NULL, locked_until = NULL,
+             max_attempts = EXCLUDED.max_attempts",
     )
     .bind(new_id())
     .bind(space_id)
@@ -43,6 +58,7 @@ pub async fn enqueue(
     .bind(job_key)
     .bind(run_at)
     .bind(payload)
+    .bind(max_attempts(queue))
     .execute(conn)
     .await?;
     Ok(())
@@ -58,7 +74,14 @@ struct Job {
 pub fn spawn_worker(app: Arc<App>) -> tokio::task::JoinHandle<()> {
     let worker = format!("host-{}", new_id());
     tokio::spawn(async move {
+        let mut swept = tokio::time::Instant::now();
         loop {
+            if swept.elapsed() >= SWEEP_EVERY {
+                swept = tokio::time::Instant::now();
+                if let Err(e) = sweep_expired(&app).await {
+                    tracing::warn!("couldn't close expired approvals: {e:#}");
+                }
+            }
             match claim(&app, &worker).await {
                 Ok(Some(job)) => finish(&app, &worker, &job, run(&app, &job).await).await,
                 Ok(None) => tokio::time::sleep(app.settings.job_poll).await,
@@ -108,6 +131,23 @@ async fn run(app: &Arc<App>, job: &Job) -> Result<()> {
         }
         other => anyhow::bail!("no handler for queue {other}"),
     }
+}
+
+/// Closes approvals still waiting past their time, in case their expiry job is late or
+/// gone. Each one is tried on its own; one that fails is tried again next sweep.
+pub async fn sweep_expired(app: &Arc<App>) -> Result<()> {
+    let due: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM approvals WHERE space_id = $1 AND state = 'pending' AND expires_at <= now()",
+    )
+    .bind(app.space_id)
+    .fetch_all(&app.db)
+    .await?;
+    for id in due {
+        if let Err(e) = approvals::expire(app, id).await {
+            tracing::warn!("couldn't expire approval {id}: {e:#}");
+        }
+    }
+    Ok(())
 }
 
 /// Runs the prune at `at` (and from then on, once a day).

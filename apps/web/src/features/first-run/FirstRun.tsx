@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { checkEngine, closeFirstRun, finishSetup, loadEngines } from "../../lib/app";
-import { alreadySays, canPick, engineLine, needKind, problemKind, statusLine } from "../../lib/engines";
+import { alreadySays, canPick, engineHow, engineLine, needKind, problemKind, statusLine } from "../../lib/engines";
 import { cx, engineTitle } from "../../lib/format";
 import { useApp } from "../../lib/store";
 import { useDesktop } from "../../lib/useMedia";
@@ -8,8 +8,8 @@ import type { EngineCheck } from "../../proto/EngineCheck";
 import type { EngineInfo } from "../../proto/EngineInfo";
 import { Button } from "../../ui/Button";
 import { Card } from "../../ui/Card";
-import { ErrorLine, TextWithCode } from "../../ui/bits";
-import { CheckIcon, ChevronDownIcon, SpinnerIcon } from "../../ui/glyphs";
+import { Disclosure, ErrorLine, TextWithCode } from "../../ui/bits";
+import { ChevronDownIcon, SpinnerIcon } from "../../ui/glyphs";
 import { helpText } from "../engines/EngineHelpDialog";
 import { useEngineList } from "../engines/EnginePicker";
 import { KeyFields, useKeyForm } from "../engines/KeyDialog";
@@ -68,14 +68,20 @@ function EngineStep({ found, onPick }: { found: string[]; onPick(id: string): vo
   const rest = (engines ?? []).filter((e) => e.id !== (best ?? "pi"));
   const size = desktop ? "lg" : "phone";
 
-  // Step 1 checks the chosen AI once and shows what it found before moving on.
+  // Step 1 checks the chosen AI once. When it's ready, straight on to step 2; only a
+  // problem stays on screen, with what to do.
   const run = async (id: string) => {
     setPicked(id);
     setResult(null);
     setFailed(null);
     setChecking(true);
     try {
-      setResult(await checkEngine(id));
+      const c = await checkEngine(id);
+      if (c.ready) {
+        onPick(id);
+        return;
+      }
+      setResult(c);
     } catch (e) {
       setFailed(e instanceof Error ? e.message : "That check didn't work. Try again.");
     } finally {
@@ -92,7 +98,6 @@ function EngineStep({ found, onPick }: { found: string[]; onPick(id: string): vo
           checking={checking}
           result={result}
           failed={failed}
-          onContinue={() => onPick(picked)}
           onRetry={() => void run(picked)}
           onBack={() => {
             setPicked(null);
@@ -184,6 +189,11 @@ function OtherApp({ engine: e, last, onUse }: { engine: EngineInfo; last: boolea
         <span className="text-caption text-text-secondary" aria-live="polite">
           {checking ? "Checking…" : <TextWithCode text={line ?? engineLine(e)} />}
         </span>
+        {!checking && !line && engineHow(e) && (
+          <Disclosure label="Details" className="mt-0.5">
+            <TextWithCode text={engineHow(e)!} />
+          </Disclosure>
+        )}
       </span>
       {ok ? (
         <Button size={desktop ? "md" : "phone"} onClick={onUse}>
@@ -251,13 +261,12 @@ function BuiltIn({ engines, size, onUse }: { engines: EngineInfo[] | null; size:
   );
 }
 
-/** What checking the chosen AI found: ready (Continue), or the plain problem and what to do. */
+/** Checking the chosen AI, and when it isn't ready, the plain problem and what to do. */
 function CheckCard({
   engineId,
   checking,
   result,
   failed,
-  onContinue,
   onRetry,
   onBack,
 }: {
@@ -265,7 +274,6 @@ function CheckCard({
   checking: boolean;
   result: EngineCheck | null;
   failed: string | null;
-  onContinue(): void;
   onRetry(): void;
   onBack(): void;
 }) {
@@ -308,17 +316,6 @@ function CheckCard({
           <ErrorLine>{failed}</ErrorLine>
           <Button variant="primary" size={size} onClick={onRetry}>
             Try again
-          </Button>
-        </>
-      )}
-      {result && !checking && result.ready && (
-        <>
-          <p role="status" className="m-0 flex items-center gap-2 text-body-sm text-text">
-            <CheckIcon className="shrink-0 text-success" />
-            {result.message}
-          </p>
-          <Button variant="primary" size={size} onClick={onContinue} autoFocus>
-            Continue
           </Button>
         </>
       )}

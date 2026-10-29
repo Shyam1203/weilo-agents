@@ -26,7 +26,8 @@ export type AgentItem =
   | { type: "steps"; key: string; steps: StepItem[] }
   | { type: "card"; key: string; card: Card; decided: Decided | null }
   | { type: "filed"; key: string; channelId: string }
-  | { type: "problem"; key: string; message: string; action: string | null }
+  /** `resolved`: a later reply or a message sent again dealt with it, so it has no button. */
+  | { type: "problem"; key: string; message: string; action: string | null; resolved: boolean }
   | { type: "note"; key: string; text: string };
 
 export type Block =
@@ -58,6 +59,10 @@ export function buildBlocks(events: Event[], defaultAgentId: string | null = nul
   // One "Stopped." per reply: a later sign of the same stop doesn't draw a second line.
   let saidStopped = false;
   let notes = 0;
+  const problems: Array<Extract<AgentItem, { type: "problem" }>> = [];
+  const resolveProblems = () => {
+    for (const p of problems) p.resolved = true;
+  };
 
   const settle = () => {
     for (const st of stepIndex.values()) if (st.status === "running") st.status = "stopped";
@@ -93,9 +98,11 @@ export function buildBlocks(events: Event[], defaultAgentId: string | null = nul
     switch (body.kind) {
       case "user_message":
         saidStopped = false;
+        resolveProblems();
         blocks.push({ type: "user", key: `u${e.seq}`, text: body.text, at: e.at, when: body.when });
         break;
       case "agent_message": {
+        resolveProblems();
         const last = blocks[blocks.length - 1];
         const id = body.agent_id ?? defaultAgentId;
         // A new message from the agent starts a new turn unless the turn so far holds no text.
@@ -145,7 +152,11 @@ export function buildBlocks(events: Event[], defaultAgentId: string | null = nul
       case "problem":
         // A problem ends the reply: nothing in it is still going.
         settle();
-        agentBlock(e, null).items.push({ type: "problem", key: `p${e.seq}`, message: body.message, action: body.action });
+        {
+          const item = { type: "problem" as const, key: `p${e.seq}`, message: body.message, action: body.action, resolved: false };
+          problems.push(item);
+          agentBlock(e, null).items.push(item);
+        }
         break;
       case "approval_decided":
         if (body.via === "stopped" && !saidStopped) stopPending = true;

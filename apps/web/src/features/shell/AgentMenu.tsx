@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { stopAgent } from "../../lib/app";
 import { shortName } from "../../lib/format";
-import { useApp } from "../../lib/store";
+import { hostAway, useApp } from "../../lib/store";
 import type { AgentSummary } from "../../proto/AgentSummary";
 import { MoreIcon } from "../../ui/glyphs";
 import { IconButton } from "../../ui/IconButton";
@@ -15,6 +15,7 @@ import { ChangeAiDialog, RemoveAgentDialog } from "./dialogs";
 export function useAgentActions(agent: AgentSummary | undefined, close: () => void) {
   const [dialog, setDialog] = useState<"ai" | "remove" | null>(null);
   const isMain = useApp((s) => s.snapshot?.agents[0]?.id === agent?.id);
+  const away = useApp(hostAway);
   if (!agent) return { items: null, dialogs: null };
   const name = shortName(agent.name);
   const pick = (d: "ai" | "remove") => () => {
@@ -23,7 +24,7 @@ export function useAgentActions(agent: AgentSummary | undefined, close: () => vo
   };
   const items = (
     <>
-      {agent.state === "working" && (
+      {agent.state === "working" && !away && (
         <MenuItem
           onSelect={() => {
             close();

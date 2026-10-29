@@ -75,7 +75,7 @@ export function Dialog({
       onClick={(e) => {
         if (e.target === ref.current) onClose();
       }}
-      className="m-auto w-[min(400px,calc(100vw-32px))] rounded-lg border border-border bg-surface p-0 text-text shadow-e3 backdrop:bg-[rgba(12,10,9,0.5)]"
+      className="m-auto w-[min(400px,calc(100vw-32px))] rounded-lg border border-border bg-surface p-0 text-text shadow-e3 backdrop:bg-[var(--scrim)]"
     >
       {open && (
         <form onSubmit={submit} className="flex flex-col gap-4 p-4">

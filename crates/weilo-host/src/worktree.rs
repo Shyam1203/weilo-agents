@@ -108,6 +108,8 @@ pub async fn merge_back(folder: &Path, worktree: &Path, title: &str) -> Result<S
             .await
             .map_err(|_| "Couldn't save the session's changes.")?;
     }
+    // Untracked files only matter when the merge would write over them; git says so,
+    // and that is reported below.
     let dirty = git(&repo, &["status", "--porcelain", "--untracked-files=no"])
         .await
         .map_err(|_| "Couldn't read the original folder.")?;
@@ -133,14 +135,45 @@ pub async fn merge_back(folder: &Path, worktree: &Path, title: &str) -> Result<S
         &["merge", "--no-ff", "--no-edit", "--no-verify", &branch],
     ]
     .concat();
-    if git(&repo, &args).await.is_err() {
-        let _ = git(&repo, &["merge", "--abort"]).await;
+    let merged = run_git(&repo, &args, None).await?;
+    if merged.ok {
+        return Ok(format!("Brought the session's changes into {place}."));
+    }
+    if let Some(files) = in_the_way(&merged.stderr) {
+        // Git stopped before it changed anything; there is no merge to undo.
+        let (what, them) = if files.len() == 1 {
+            (format!("A file in {place} is in the way"), "it")
+        } else {
+            (format!("Some files in {place} are in the way"), "them")
+        };
+        return Err(format!(
+            "{what}: {}. Move {them}, then try again.",
+            files.join(", ")
+        ));
+    }
+    let _ = git(&repo, &["merge", "--abort"]).await;
+    if merged.stdout.contains("CONFLICT") {
         return Err(
             "These changes clash with changes in the original folder, so nothing was changed."
                 .into(),
         );
     }
-    Ok(format!("Brought the session's changes into {place}."))
+    tracing::warn!("bring back failed: {}", merged.stderr);
+    Err("Couldn't bring the changes back, so nothing was changed. Try again.".into())
+}
+
+/// Files git won't write over because they aren't saved in the repo ("untracked working
+/// tree files would be overwritten by merge"), as git listed them.
+fn in_the_way(stderr: &str) -> Option<Vec<String>> {
+    let mut lines = stderr.lines();
+    lines.find(|l| l.contains("untracked working tree files would be"))?;
+    let files: Vec<String> = lines
+        .take_while(|l| l.starts_with('\t') || l.starts_with("    "))
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .take(5)
+        .collect();
+    (!files.is_empty()).then_some(files)
 }
 
 /// The most diff text sent; the rest is cut.
@@ -190,9 +223,15 @@ pub async fn changes(
     let untracked = git_raw(&dir, &["ls-files", "--others", "--exclude-standard", "-z"])
         .await
         .map_err(read_err)?;
-    let mut diff = git_raw(&dir, &["diff", "--no-renames", &base])
+    // Read only as much of the diff as is sent; git is ended past that.
+    let whole = run_git(&dir, &["diff", "--no-renames", &base], Some(MAX_DIFF + 1))
         .await
         .map_err(read_err)?;
+    if !whole.ok {
+        return Err("Couldn't read the session's changes.".into());
+    }
+    let diff_cut = whole.cut;
+    let mut diff = whole.stdout;
 
     let mut counts = std::collections::HashMap::new();
     for entry in numstat.split('\0').filter(|e| !e.is_empty()) {
@@ -244,7 +283,7 @@ pub async fn changes(
         });
     }
     files.sort_by(|a, b| a.path.cmp(&b.path));
-    let truncated = cut(&mut diff, MAX_DIFF) || left_out;
+    let truncated = cut(&mut diff, MAX_DIFF) || left_out || diff_cut;
     Ok(SessionChanges {
         files,
         diff: Some(diff),
@@ -346,47 +385,104 @@ async fn identity(repo: &Path) -> Vec<String> {
         .to_vec()
 }
 
-/// Runs git without a terminal to prompt on, killed after `GIT_TIMEOUT`.
-async fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
-    let run = Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(args)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .stdin(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .output();
-    let out = tokio::time::timeout(GIT_TIMEOUT, run)
-        .await
-        .map_err(|_| "git took too long".to_string())?
-        .map_err(|e| e.to_string())?;
-    if out.status.success() {
-        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
-    } else {
-        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
-    }
+/// What one git command gave back.
+struct GitOut {
+    ok: bool,
+    stdout: String,
+    stderr: String,
+    /// The output was longer than asked for and was cut there (git was then ended).
+    cut: bool,
 }
 
-/// Like `git`, with the output untrimmed.
-async fn git_raw(dir: &Path, args: &[&str]) -> Result<String, String> {
-    let run = Command::new("git")
+/// Runs git without a terminal to prompt on, in a process group of its own, so that on
+/// `GIT_TIMEOUT` the whole group ends (hooks and helpers too), not only git. With `cap`,
+/// at most that many bytes of output are read, then git is ended.
+async fn run_git(dir: &Path, args: &[&str], cap: Option<usize>) -> Result<GitOut, String> {
+    use tokio::io::AsyncReadExt;
+    let mut child = Command::new("git")
         .arg("-C")
         .arg(dir)
         .args(["-c", "core.quotepath=false"])
         .args(args)
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .process_group(0)
         .kill_on_drop(true)
-        .output();
-    let out = tokio::time::timeout(GIT_TIMEOUT, run)
-        .await
-        .map_err(|_| "git took too long".to_string())?
+        .spawn()
         .map_err(|e| e.to_string())?;
-    if out.status.success() {
-        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-    } else {
-        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+    let pgid = child.id().map(|id| id as i32);
+    let end_group = || {
+        if let Some(pgid) = pgid {
+            // SAFETY: kill(2) on the process group git leads.
+            unsafe {
+                libc::kill(-pgid, libc::SIGKILL);
+            }
+        }
+    };
+    let mut stdout = child.stdout.take().expect("piped");
+    let mut stderr = child.stderr.take().expect("piped");
+    let limit = cap.unwrap_or(usize::MAX);
+    let work = async {
+        // Read beside stdout, so neither pipe fills while the other is read.
+        let errors = tokio::spawn(async move {
+            let mut buf = Vec::new();
+            let _ = (&mut stderr).take(64 * 1024).read_to_end(&mut buf).await;
+            buf
+        });
+        let mut out = Vec::new();
+        let mut chunk = vec![0u8; 64 * 1024];
+        let mut cut = false;
+        loop {
+            let n = stdout.read(&mut chunk).await.map_err(|e| e.to_string())?;
+            if n == 0 {
+                break;
+            }
+            let room = limit - out.len();
+            if n > room {
+                out.extend_from_slice(&chunk[..room]);
+                cut = true;
+                break;
+            }
+            out.extend_from_slice(&chunk[..n]);
+        }
+        if cut {
+            end_group();
+        }
+        drop(stdout);
+        let status = child.wait().await.map_err(|e| e.to_string())?;
+        let err = errors.await.unwrap_or_default();
+        Ok::<_, String>(GitOut {
+            ok: status.success() || cut,
+            stdout: String::from_utf8_lossy(&out).into_owned(),
+            stderr: String::from_utf8_lossy(&err).trim().to_string(),
+            cut,
+        })
+    };
+    match tokio::time::timeout(GIT_TIMEOUT, work).await {
+        Ok(out) => out,
+        Err(_) => {
+            end_group();
+            Err("git took too long".into())
+        }
     }
+}
+
+/// Runs git (see `run_git`); its output, trimmed.
+async fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
+    let out = run_git(dir, args, None).await?;
+    if out.ok {
+        Ok(out.stdout.trim().to_string())
+    } else {
+        Err(out.stderr)
+    }
+}
+
+/// Like `git`, with the output untrimmed.
+async fn git_raw(dir: &Path, args: &[&str]) -> Result<String, String> {
+    let out = run_git(dir, args, None).await?;
+    if out.ok { Ok(out.stdout) } else { Err(out.stderr) }
 }
 
 async fn repo_root(folder: &Path) -> Option<PathBuf> {
@@ -411,4 +507,69 @@ async fn add_worktree(repo: &Path, path: &Path, branch: &str) -> Result<(), Stri
     git(repo, &["worktree", "add", "-b", branch, &path])
         .await
         .map(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sh_git(dir: &Path, args: &[&str]) {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["-c", "user.email=t@t", "-c", "user.name=t"])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}");
+    }
+
+    #[test]
+    fn files_in_the_way_are_read_from_git() {
+        let err = "error: The following untracked working tree files would be overwritten by merge:\n\tcart.txt\n\tlib/a.rs\nPlease move or remove them before you merge.\nAborting";
+        assert_eq!(
+            in_the_way(err),
+            Some(vec!["cart.txt".to_string(), "lib/a.rs".to_string()])
+        );
+        assert_eq!(in_the_way("CONFLICT (content): Merge conflict in a"), None);
+    }
+
+    #[tokio::test]
+    async fn long_output_is_cut_at_the_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        sh_git(dir.path(), &["init", "-q"]);
+        std::fs::write(dir.path().join("big.txt"), "line\n".repeat(100_000)).unwrap();
+        sh_git(dir.path(), &["add", "big.txt"]);
+        let out = run_git(dir.path(), &["diff", "--cached"], Some(1000))
+            .await
+            .unwrap();
+        assert!(out.cut && out.ok);
+        assert_eq!(out.stdout.len(), 1000);
+        let whole = run_git(dir.path(), &["diff", "--cached"], None).await.unwrap();
+        assert!(!whole.cut && whole.stdout.len() > 500_000);
+    }
+
+    #[tokio::test]
+    async fn a_file_in_the_way_is_named() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().join("shop");
+        std::fs::create_dir(&repo).unwrap();
+        sh_git(&repo, &["init", "-q"]);
+        sh_git(&repo, &["commit", "-q", "--allow-empty", "-m", "start"]);
+        let Prepared::Worktree { path, .. } = prepare(&repo, "fix").await else {
+            panic!("no worktree")
+        };
+        std::fs::write(path.join("cart.txt"), "from the session\n").unwrap();
+        std::fs::write(repo.join("cart.txt"), "mine\n").unwrap();
+        let err = merge_back(&repo, &path, "Fix").await.unwrap_err();
+        assert_eq!(
+            err,
+            "A file in shop is in the way: cart.txt. Move it, then try again."
+        );
+        // Nothing changed; once it is moved, it works.
+        assert_eq!(std::fs::read_to_string(repo.join("cart.txt")).unwrap(), "mine\n");
+        std::fs::remove_file(repo.join("cart.txt")).unwrap();
+        let said = merge_back(&repo, &path, "Fix").await.unwrap();
+        assert_eq!(said, "Brought the session's changes into shop.");
+    }
 }

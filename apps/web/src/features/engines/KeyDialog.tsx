@@ -88,7 +88,7 @@ export function KeyFields({ form, autoFocus }: { form: KeyForm; autoFocus?: bool
             <>
               <span className="min-w-0 flex-1">Remove the saved {chosen.title} key?</span>
               <Button size="sm" variant="tertiary" onClick={() => setRemoving(false)} disabled={form.busy}>
-                Back
+                Cancel
               </Button>
               <Button
                 size="sm"

@@ -100,6 +100,7 @@ export const MoreIcon = glyph(
   { strokeWidth: 2 },
 );
 export const BackIcon = glyph(<path d="M15 6l-6 6 6 6" />);
+export const ArrowRightIcon = glyph(<path d="M5 12h14M13 6l6 6-6 6" />);
 export const SendIcon = glyph(<path d="M12 19V5M6 11l6-6 6 6" />, { strokeWidth: 2 });
 export const XCircleIcon = glyph(
   <>

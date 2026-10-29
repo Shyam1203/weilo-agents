@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { mergeSession, sessionChanges } from "../../lib/app";
-import { diffTone, fileChangeWord, filesChangedLine, lineCounts, type DiffTone } from "../../lib/changes";
-import { engineTitle, projectName, shortName, timeOf } from "../../lib/format";
-import { plainStep } from "../../lib/steps";
+import { fileChangeWord, filesChangedLine, lineCounts, parseDiff, type DiffFile, type DiffLine } from "../../lib/changes";
+import { engineTitle, projectName, shortName } from "../../lib/format";
 import { useApp } from "../../lib/store";
-import { allSteps } from "../../lib/timeline";
+import type { ChangedFile } from "../../proto/ChangedFile";
 import type { SessionChanges } from "../../proto/SessionChanges";
 import type { ThreadSummary } from "../../proto/ThreadSummary";
 import { EmptyState, ErrorLine, TextWithCode } from "../../ui/bits";
@@ -13,8 +12,6 @@ import { cx } from "../../lib/format";
 import { ChevronDownIcon, CloseIcon } from "../../ui/glyphs";
 import { IconButton } from "../../ui/IconButton";
 import { Tabs } from "../../ui/Tabs";
-import { StepIcon } from "./MessageList";
-import { useEvents } from "./useThread";
 
 type AgentTab = "screen" | "files" | "todo";
 type SessionTab = "changes" | "terminal" | "files";
@@ -25,11 +22,14 @@ type SessionTab = "changes" | "terminal" | "files";
  */
 export function SidePanel({
   thread,
+  changes,
   agentName,
   floating,
   onClose,
 }: {
   thread: ThreadSummary;
+  /** A session's changes, asked for by its page. */
+  changes?: SessionChanges | null;
   agentName: string;
   floating?: boolean;
   onClose?: () => void;
@@ -44,7 +44,7 @@ export function SidePanel({
       )}
     >
       {thread.kind === "session" ? (
-        <SessionPanel thread={thread} onClose={close} />
+        <SessionPanel thread={thread} changes={changes ?? null} onClose={close} />
       ) : (
         <AgentPanel name={shortName(agentName)} onClose={close} />
       )}
@@ -94,12 +94,9 @@ function AgentPanel({ name, onClose }: { name: string; onClose?: () => void }) {
   );
 }
 
-function SessionPanel({ thread, onClose }: { thread: ThreadSummary; onClose?: () => void }) {
+function SessionPanel({ thread, changes, onClose }: { thread: ThreadSummary; changes: SessionChanges | null; onClose?: () => void }) {
   const [tab, setTab] = useState<SessionTab>("changes");
-  const events = useEvents(thread.id);
-  const steps = useMemo(() => allSteps(events), [events]);
   const engines = useApp((s) => s.engines);
-  const changes = useSessionChanges(thread.id, events.length);
   const files = changes?.files ?? [];
   const items: Array<{ id: SessionTab; label: string }> = [
     { id: "changes", label: "Changes" },
@@ -109,27 +106,15 @@ function SessionPanel({ thread, onClose }: { thread: ThreadSummary; onClose?: ()
   return (
     <>
       <PanelTabs items={items} value={tab} onChange={(v) => setTab(v)} onClose={onClose} />
-      <div id="side-panel" role="tabpanel" aria-labelledby={`side-tab-${tab}`} className="flex flex-col gap-3 overflow-y-auto p-4">
+      <div id="side-panel" role="tabpanel" aria-labelledby={`side-tab-${tab}`} className="flex min-h-0 flex-col gap-3 overflow-y-auto p-4">
         {tab === "changes" && (
           <>
-            {steps.length === 0 && files.length === 0 ? (
+            {changes && files.length > 0 ? (
+              <ChangedFiles changes={changes} />
+            ) : (
               <EmptyState title="No changes yet." line="They show here as the session works." />
-            ) : steps.length === 0 ? null : (
-              <>
-                <div className="pt-2 text-caption font-medium text-text-tertiary">What happened</div>
-                <ol className="m-0 flex list-none flex-col gap-2 p-0 text-body-sm">
-                  {steps.map((s) => (
-                    <li key={s.id} className="flex gap-2">
-                      <span className="w-10 shrink-0 pt-0.5 text-caption text-text-tertiary">{timeOf(s.at)}</span>
-                      <StepIcon status={s.status} />
-                      <StepLine title={s.title} />
-                    </li>
-                  ))}
-                </ol>
-              </>
             )}
-            {changes && files.length > 0 && <ChangedFiles changes={changes} />}
-            {thread.worktree && <BringBack thread={thread} />}
+            {thread.worktree && files.length > 0 && <CopyBack thread={thread} />}
             <SessionDetails thread={thread} engineName={thread.engine ? engineTitle(thread.engine, engines ?? undefined) : null} />
           </>
         )}
@@ -145,9 +130,10 @@ function SessionPanel({ thread, onClose }: { thread: ThreadSummary; onClose?: ()
  * What the session changed so far, asked again whenever its chat moves on. Out-of-date
  * answers are dropped; if the host can't say, nothing is shown.
  */
-function useSessionChanges(threadId: string, version: number): SessionChanges | null {
+export function useSessionChanges(threadId: string | null, version: number): SessionChanges | null {
   const [changes, setChanges] = useState<{ id: string; data: SessionChanges } | null>(null);
   useEffect(() => {
+    if (!threadId) return;
     let live = true;
     const timer = setTimeout(() => {
       sessionChanges(threadId)
@@ -162,42 +148,129 @@ function useSessionChanges(threadId: string, version: number): SessionChanges | 
   return changes?.id === threadId ? changes.data : null;
 }
 
-/** The changed files, then the changes themselves behind "Show the changes". */
+/** "2 files +13 −1", then each file's changed lines, like the mock. */
 function ChangedFiles({ changes }: { changes: SessionChanges }) {
+  const parsed = useMemo(() => parseDiff(changes.diff), [changes.diff]);
+  const blocks = useMemo(() => {
+    const out: Array<{ file: ChangedFile | null; diff: DiffFile | null }> = changes.files.map((f) => ({
+      file: f,
+      diff: parsed.find((d) => d.path === f.path) ?? null,
+    }));
+    for (const d of parsed) if (!changes.files.some((f) => f.path === d.path)) out.push({ file: null, diff: d });
+    return out;
+  }, [changes.files, parsed]);
+  const added = changes.files.reduce((n, f) => n + f.added, 0);
+  const removed = changes.files.reduce((n, f) => n + f.removed, 0);
   return (
-    <section aria-label="Changed files" className="flex flex-col gap-2 border-t border-border pt-3">
-      <div className="text-caption font-medium text-text-tertiary">{filesChangedLine(changes.files)}</div>
-      <FileList files={changes.files} />
-      {changes.diff && (
-        <details className="group text-caption">
-          <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-sm font-medium text-text-secondary hover:text-text [&::-webkit-details-marker]:hidden">
-            <ChevronDownIcon size={12} className="shrink-0 -rotate-90 transition-transform duration-[120ms] group-open:rotate-0" />
-            Show the changes
-          </summary>
-          <pre
-            tabIndex={0}
-            aria-label="The changes"
-            className="m-0 mt-2 max-h-[360px] overflow-auto rounded-md border border-border bg-surface py-2 font-mono text-caption leading-5"
-          >
-            {changes.diff.split("\n").map((line, i) => (
-              <span key={i} className={cx("block px-3 whitespace-pre", DIFF_TONE[diffTone(line)])}>
-                {line || " "}
-              </span>
-            ))}
-          </pre>
-          {changes.truncated && <p className="m-0 mt-1 text-text-tertiary">Only the first part is shown.</p>}
-        </details>
-      )}
+    <section aria-label="Changed files" className="flex flex-col gap-3">
+      <div className="flex items-baseline gap-2 text-caption text-text-secondary">
+        <span>{filesChangedLine(changes.files)}</span>
+        <Counts added={added} removed={removed} />
+      </div>
+      {blocks.map(({ file, diff }) => (
+        <FileDiff
+          key={file?.path ?? diff!.path}
+          path={file?.path ?? diff!.path}
+          word={file ? fileChangeWord(file.status) : null}
+          added={file?.added ?? diff!.added}
+          removed={file?.removed ?? diff!.removed}
+          diff={diff}
+        />
+      ))}
+      {changes.truncated && <p className="m-0 text-caption text-text-tertiary">Only the first part is shown.</p>}
     </section>
   );
 }
 
-const DIFF_TONE: Record<DiffTone, string> = {
+function Counts({ added, removed }: { added: number; removed: number }) {
+  return (
+    <span className="shrink-0 font-mono text-caption">
+      {added > 0 && <span className="text-success">+{added}</span>}
+      {added > 0 && removed > 0 && " "}
+      {removed > 0 && <span className="text-danger">−{removed}</span>}
+    </span>
+  );
+}
+
+/** Long files show their first lines; the rest is one click away. */
+const FIRST_LINES = 40;
+
+/** One file: its name and +N −M, then its changed parts with line numbers. Long lines wrap. */
+function FileDiff({
+  path,
+  word,
+  added,
+  removed,
+  diff,
+}: {
+  path: string;
+  word: string | null;
+  added: number;
+  removed: number;
+  diff: DiffFile | null;
+}) {
+  const [all, setAll] = useState(false);
+  const total = diff?.hunks.reduce((n, h) => n + h.lines.length, 0) ?? 0;
+  let budget = all ? Infinity : FIRST_LINES;
+  const name = path.split("/").pop() ?? path;
+  return (
+    <div className="overflow-hidden rounded-md border border-border bg-surface">
+      <div className="flex min-h-9 items-center gap-2 bg-surface-muted px-3 py-1.5" title={path}>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="ellipsis font-mono text-caption text-text">{name}</span>
+          {name !== path && <span className="ellipsis text-caption text-text-tertiary">{path.slice(0, path.length - name.length - 1)}</span>}
+        </span>
+        {word && added + removed === 0 && <span className="shrink-0 text-caption text-text-tertiary">{word}</span>}
+        <Counts added={added} removed={removed} />
+      </div>
+      {diff?.binary && <p className="m-0 border-t border-border px-3 py-2 text-caption text-text-tertiary">This file can't be shown as text.</p>}
+      {diff && diff.hunks.length > 0 && (
+        <div className="border-t border-border py-1 font-mono text-caption leading-5" aria-label={`Changes in ${name}`} role="group">
+          {diff.hunks.map((h, hi) => {
+            if (budget <= 0) return null;
+            const lines = h.lines.slice(0, budget);
+            budget -= lines.length;
+            return (
+              <div key={hi}>
+                {hi > 0 && (
+                  <div aria-hidden="true" className="px-3 text-text-tertiary">
+                    ⋯
+                  </div>
+                )}
+                {lines.map((l, li) => (
+                  <div key={li} className={cx("flex", LINE_TONE[l.kind])}>
+                    <span aria-hidden="true" className="w-10 shrink-0 pr-2 text-right text-text-tertiary select-none">
+                      {l.no}
+                    </span>
+                    <span aria-hidden="true" className="w-3 shrink-0 select-none">
+                      {l.kind === "add" ? "+" : l.kind === "remove" ? "−" : ""}
+                    </span>
+                    <span className="sr-only">{l.kind === "add" ? "Added: " : l.kind === "remove" ? "Removed: " : ""}</span>
+                    <span className="min-w-0 flex-1 pr-3 whitespace-pre-wrap [overflow-wrap:anywhere]">{l.text || " "}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+          {!all && total > FIRST_LINES && (
+            <button
+              type="button"
+              onClick={() => setAll(true)}
+              className="mx-3 my-1 border-0 bg-transparent p-0 font-sans text-caption font-medium text-accent-text hover:underline"
+            >
+              Show all {total} lines
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const LINE_TONE: Record<DiffLine["kind"], string> = {
   add: "bg-success-bg text-text",
   remove: "bg-danger-bg text-text",
-  file: "text-text-tertiary",
-  hunk: "text-accent-text",
-  plain: "text-text-secondary",
+  context: "text-text-secondary",
 };
 
 function FileList({ files }: { files: SessionChanges["files"] }) {
@@ -245,22 +318,11 @@ function SessionDetails({ thread, engineName }: { thread: ThreadSummary; engineN
   );
 }
 
-/** A step in plain words, with the file or command it touched beneath. */
-function StepLine({ title }: { title: string }) {
-  const p = plainStep(title);
-  return (
-    <span className="flex min-w-0 flex-col">
-      <span>{p.label}</span>
-      {p.detail && <span className="ellipsis font-mono text-caption text-text-tertiary">{p.detail}</span>}
-    </span>
-  );
-}
-
 /**
- * The session works in its own copy of the project. "Bring changes back" copies its changes
- * into the project folder, after a confirm line, and shows what happened.
+ * The session works in its own copy of the project. "Copy the changes into shop" copies
+ * them into the project folder, after a confirm line, and shows what happened.
  */
-function BringBack({ thread }: { thread: ThreadSummary }) {
+function CopyBack({ thread }: { thread: ThreadSummary }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
@@ -278,27 +340,26 @@ function BringBack({ thread }: { thread: ThreadSummary }) {
     }
   };
   return (
-    <div className="flex flex-col gap-2 border-t border-border pt-3">
+    <div className="flex flex-col gap-2">
       {confirming ? (
         <div className="flex flex-col gap-2" role="group" aria-label="Confirm">
           <p className="m-0 text-body-sm">
-            <b className="font-semibold">Bring changes back?</b>{" "}
-            <span className="text-text-secondary">This copies the session's changes into {project}.</span>
+            <b className="font-semibold">Copy the changes into {project}?</b>{" "}
+            <span className="text-text-secondary">They go into your {project} folder.</span>
           </p>
           <div className="flex gap-2">
             <Button variant="tertiary" onClick={() => setConfirming(false)} disabled={busy}>
-              Back
+              Cancel
             </Button>
             <Button variant="primary" onClick={() => void run()} disabled={busy} autoFocus>
-              {busy ? "Bringing back…" : "Bring back"}
+              {busy ? "Copying…" : "Copy the changes"}
             </Button>
           </div>
         </div>
       ) : (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={() => setConfirming(true)}>Bring changes back</Button>
-          <span className="text-caption text-text-tertiary">Into {project}</span>
-        </div>
+        <Button className="w-full" onClick={() => setConfirming(true)}>
+          Copy the changes into {project}
+        </Button>
       )}
       {result &&
         (result.ok ? (

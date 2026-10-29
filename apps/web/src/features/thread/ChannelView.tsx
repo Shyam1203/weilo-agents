@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { create, showError, stop } from "../../lib/app";
-import { shortName, slugText } from "../../lib/format";
+import { cx, shortName, slugText } from "../../lib/format";
 import { navigate, paths, threadPath } from "../../lib/router";
 import { useApp } from "../../lib/store";
 import type { AgentSummary } from "../../proto/AgentSummary";
@@ -15,7 +15,8 @@ import { Menu, MenuItem } from "../../ui/Menu";
 import { Tabs } from "../../ui/Tabs";
 import { PanelToggle, ThreadScreen } from "./ThreadScreen";
 import { BackButton } from "../mobile/TabBar";
-import { useThreadState, useVariant } from "./useThread";
+import { focusComposerSoon, useThreadState, useVariant } from "./useThread";
+import { Button } from "../../ui/Button";
 
 const OVERVIEW = "overview";
 
@@ -41,6 +42,32 @@ export function defaultTab(list: ThreadSummary[], leadId?: string | null): strin
   return (lead ?? newestFirst[0])?.id ?? OVERVIEW;
 }
 
+/** Overview order: what needs you, then what is working, then the most recent. */
+export function overviewOrder<T extends Pick<ThreadSummary, "state" | "updated_at">>(items: T[]): T[] {
+  const rank = (t: T) => (t.state === "needs_you" ? 0 : t.state === "working" ? 1 : 2);
+  return [...items].sort((a, b) => rank(a) - rank(b) || b.updated_at.localeCompare(a.updated_at));
+}
+
+/**
+ * Sessions an agent started from this channel that are waiting on you: shown under its
+ * chat here, so the person sees them where the work was asked for.
+ */
+export function waitingSessions(channelId: string, agentId: string | null | undefined, threads: ThreadSummary[]): ThreadSummary[] {
+  if (!agentId) return [];
+  return threads.filter((t) => t.kind === "session" && t.channel_id === channelId && t.started_by === agentId && t.state === "needs_you");
+}
+
+/** A new chat in a channel with an agent, opened with its message box ready. */
+async function startChat(channelId: string, agent: AgentSummary) {
+  try {
+    const v = await create({ method: "create_thread", params: { channel_id: channelId, agent_id: agent.id, title: null } }, "thread");
+    navigate(paths.channel(channelId, v.data.id));
+    focusComposerSoon();
+  } catch (e) {
+    showError(e);
+  }
+}
+
 export function ChannelView({ channel, threadId }: { channel: ChannelSummary; threadId: string | null }) {
   const snap = useApp((s) => s.snapshot)!;
   const [panel, setPanel] = useState(false);
@@ -53,11 +80,13 @@ export function ChannelView({ channel, threadId }: { channel: ChannelSummary; th
   const ownerName = owner ? shortName(owner.name) : "Ava";
   const state = useThreadState(thread?.id ?? "");
   const slug = slugText(channel.slug);
+  const waiting = useMemo(() => waitingSessions(channel.id, thread?.agent_id, snap.threads), [channel.id, thread?.agent_id, snap.threads]);
 
   // One header for every tab, so arrow keys keep focus in the tab list.
   return (
     <ThreadScreen
       threadId={thread?.id ?? null}
+      after={waiting.length > 0 ? <WaitingSessions sessions={waiting} /> : undefined}
       panelOpen={panel}
       onPanelClose={() => setPanel(false)}
       header={
@@ -83,7 +112,7 @@ export function ChannelView({ channel, threadId }: { channel: ChannelSummary; th
         onStop: () => thread && void stop(thread.id),
       }}
     >
-      <ChannelOverview channelId={channel.id} />
+      <ChannelOverview channelId={channel.id} lead={members[0] ?? snap.agents[0]} />
     </ThreadScreen>
   );
 }
@@ -116,12 +145,7 @@ function ChannelHeader({
   ];
   const newThread = async (agent: AgentSummary) => {
     setMenu(false);
-    try {
-      const v = await create({ method: "create_thread", params: { channel_id: channel.id, agent_id: agent.id, title: null } }, "thread");
-      navigate(paths.channel(channel.id, v.data.id));
-    } catch (e) {
-      showError(e);
-    }
+    await startChat(channel.id, agent);
   };
   const slug = slugText(channel.slug);
   const lead = members[0];
@@ -185,16 +209,57 @@ function ChannelHeader({
   );
 }
 
-/** What is open in a channel: its chats and sessions. */
-function ChannelOverview({ channelId }: { channelId: string }) {
-  const snap = useApp((s) => s.snapshot)!;
-  const items = snap.threads
-    .filter((t) => t.channel_id === channelId && t.kind !== "agent")
-    .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+/** "Fix checkout · Session · needs you [Open]", under the chat it came from. */
+function WaitingSessions({ sessions }: { sessions: ThreadSummary[] }) {
+  const phone = useVariant() === "phone";
   return (
-    <div className="flex w-full max-w-[768px] flex-col gap-2 p-6 max-md:p-4">
+    <div className={cx("flex flex-col gap-2", phone ? "mt-3" : "mt-3 pl-11")}>
+      {sessions.map((t) => (
+        <div key={t.id} className="flex min-h-14 items-center gap-3 rounded-lg border border-border bg-surface px-4 py-2 shadow-e1">
+          <SessionMark size={32} />
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="ellipsis font-medium">{t.title}</span>
+            <span className="ellipsis text-caption text-warning">Session · needs you</span>
+          </span>
+          <Link href={paths.session(t.id)} className="shrink-0 rounded-sm px-1 text-body-sm font-medium" aria-label={`Open ${t.title}`}>
+            Open
+          </Link>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** What is open in a channel: its chats and sessions, what needs you first. */
+function ChannelOverview({ channelId, lead }: { channelId: string; lead: AgentSummary | undefined }) {
+  const snap = useApp((s) => s.snapshot)!;
+  const [busy, setBusy] = useState(false);
+  const items = overviewOrder(snap.threads.filter((t) => t.channel_id === channelId && t.kind !== "agent"));
+  const leadName = lead ? shortName(lead.name) : null;
+  return (
+    <div className="mx-auto flex w-full max-w-[768px] flex-col gap-2 p-6 max-md:p-4">
       <h2 className="m-0 flex h-7 items-center text-caption font-medium text-text-tertiary">Chats and sessions</h2>
-      {items.length === 0 && <EmptyState title="Nothing here yet." line="Start a chat with the + above." />}
+      {items.length === 0 && (
+        <EmptyState
+          title="Nothing here yet."
+          line={leadName ? `Start a chat with ${leadName}.` : undefined}
+          action={
+            lead && (
+              <Button
+                variant="primary"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  await startChat(channelId, lead);
+                  setBusy(false);
+                }}
+              >
+                Start a chat
+              </Button>
+            )
+          }
+        />
+      )}
       {items.map((t) => {
         const agent = snap.agents.find((a) => a.id === t.agent_id);
         return (

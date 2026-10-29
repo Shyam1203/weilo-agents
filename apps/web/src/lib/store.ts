@@ -390,6 +390,11 @@ export function mainAgent(s: AppState): AgentSummary | undefined {
   return s.snapshot?.agents[0];
 }
 
+/** The Weilo computer can't be reached or isn't ready: Stop can't do anything, so it isn't offered. */
+export function hostAway(s: AppState): boolean {
+  return s.conn === "reconnecting" || s.paused !== null;
+}
+
 export function pendingNeedsYou(s: AppState): NeedsYouItem[] {
   return s.snapshot?.needs_you.filter((n) => n.state === "pending" && n.card.kind !== "heads_up") ?? [];
 }
@@ -506,6 +511,16 @@ export const STATUS_TONE_CLASS: Record<StatusTone, string> = {
   quiet: "text-text-tertiary",
 };
 
+/**
+ * A problem as a Needs you title that names who it's about: "Mia needs an API key",
+ * "Fix checkout can't open its folder". An unknown problem keeps its own words.
+ */
+export function problemTitle(who: string | null, p: Pick<OpenProblem, "action" | "message">): string {
+  const line = problemLine(p);
+  if (!who || line === "Didn't work") return p.message;
+  return `${who} ${line[0]!.toLowerCase()}${line.slice(1)}`;
+}
+
 /** Open problems by thread: the sidebar's line for each. */
 export function problemLines(s: AppState): Record<string, string> {
   const out: Record<string, string> = {};
@@ -538,12 +553,13 @@ export function problemNeedsYou(s: AppState): NeedsYouItem[] {
         card: {
           kind: "problem",
           approval_id: null,
-          title: p.message,
-          body: null,
+          title: problemTitle(whoOf(snap, t), p),
+          body: p.message,
           details: null,
           risk: "read",
           risk_line: "",
-          actions: [],
+          // The problem's own button (Add a key, Try again…), as in the chat.
+          actions: p.action ? [{ id: "problem", label: p.action, primary: true, decision: null }] : [],
           fallback_text: p.message,
         },
         created_at: p.at,
@@ -555,6 +571,13 @@ export function problemNeedsYou(s: AppState): NeedsYouItem[] {
     out.push(item);
   }
   return out;
+}
+
+/** Who a chat's problem is about: its agent, or the session by name. */
+function whoOf(snap: Snapshot, t: ThreadSummary): string | null {
+  if (t.kind === "session") return t.title;
+  const agent = snap.agents.find((a) => a.id === t.agent_id) ?? snap.agents.find((a) => a.main_thread_id === t.id);
+  return agent ? agent.name.split(" · ")[0]!.trim() : null;
 }
 
 function sourceOf(snap: Snapshot, t: ThreadSummary): string {

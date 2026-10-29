@@ -282,35 +282,69 @@ async fn session_problem(app: &App, thread_id: Uuid) -> CallResult<Option<CallEr
     })
 }
 
-/// Brings a session's changes back into its folder (see `worktree::merge_back`).
-pub async fn merge_session(app: &App, device: Uuid, thread_id: Uuid) -> CallResult<String> {
-    let row: Option<(Option<String>, Option<String>, String, String)> = sqlx::query_as(
-        "SELECT folder, worktree, title, state FROM threads
+/// Marks a session as being brought back while it lives.
+struct BringingBack<'a> {
+    app: &'a App,
+    thread_id: Uuid,
+}
+
+impl Drop for BringingBack<'_> {
+    fn drop(&mut self) {
+        let mut set = self.app.bringing_back.lock().expect("bring back lock");
+        set.remove(&self.thread_id);
+    }
+}
+
+/// Brings a session's changes back into its folder (see `worktree::merge_back`). The
+/// thread's runner does the merge between turns, so a message sent meanwhile waits for
+/// it; a second Bring back at the same time is told one is under way.
+pub async fn merge_session(
+    app: &Arc<App>,
+    device: Uuid,
+    thread_id: Uuid,
+) -> CallResult<String> {
+    let row: Option<(Option<String>, Option<String>, String)> = sqlx::query_as(
+        "SELECT folder, worktree, title FROM threads
          WHERE id = $1 AND space_id = $2 AND kind = 'session'",
     )
     .bind(thread_id)
     .bind(app.space_id)
     .fetch_optional(&app.db)
     .await?;
-    let Some((Some(folder), worktree, title, state)) = row else {
+    let Some((Some(folder), worktree, title)) = row else {
         return Err(CallError::not_found("That session is gone."));
     };
-    if state != "idle" {
-        return Err(CallError::conflict(
-            "The session is still working. Wait for it to finish, then try again.",
-        ));
-    }
     let Some(worktree) = worktree else {
         return Err(CallError::invalid(
             "This session works in the folder itself, so its changes are already there.",
         ));
     };
-    let result = worktree::merge_back(
-        std::path::Path::new(&folder),
-        std::path::Path::new(&worktree),
-        &title,
-    )
-    .await;
+    let first = app
+        .bringing_back
+        .lock()
+        .expect("bring back lock")
+        .insert(thread_id);
+    if !first {
+        return Err(CallError::conflict("Already bringing these changes back."));
+    }
+    let _marked = BringingBack {
+        app: app.as_ref(),
+        thread_id,
+    };
+    let (reply, answer) = tokio::sync::oneshot::channel();
+    let cmd = Cmd::BringBack {
+        folder: PathBuf::from(&folder),
+        worktree: PathBuf::from(&worktree),
+        title,
+        reply,
+    };
+    app.runners.send(app, thread_id, cmd);
+    let result = answer
+        .await
+        .unwrap_or_else(|_| Err("Couldn't bring the changes back. Try again.".into()));
+    if result.as_ref().err().map(String::as_str) == Some(crate::engines::STILL_WORKING) {
+        return Err(CallError::conflict(crate::engines::STILL_WORKING));
+    }
     let mut tx = app.db.begin().await?;
     let entry = audit::Entry {
         actor: "device",

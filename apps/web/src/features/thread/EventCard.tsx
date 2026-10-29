@@ -168,7 +168,7 @@ function CardFooter({
         </span>
         <div className="flex gap-2">
           <Button size={size} variant="tertiary" onClick={onBack} disabled={busy} className={cx(phone && "flex-1")}>
-            Back
+            Cancel
           </Button>
           <Button
             size={size}

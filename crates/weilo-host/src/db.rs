@@ -1,4 +1,7 @@
 //! Connection pools, migrations and the rows every host needs (its id, epoch and space).
+//!
+//! Each `weilo up` raises the host's epoch and moves its threads to it, so a host process
+//! from an earlier start that is somehow still running can't append to them any more.
 
 use anyhow::{Context, Result};
 use serde_json::json;
@@ -27,8 +30,14 @@ pub struct Db {
 /// Migrates as the owner, then opens the app's pool.
 pub async fn open(pg: &Postgres) -> Result<Db> {
     migrate(pg).await?;
+    // How long a query waits for Postgres while it restarts (a test knob).
+    let wait = std::env::var("WEILO_DB_WAIT_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(30);
     let pool = PgPoolOptions::new()
         .max_connections(10)
+        .acquire_timeout(std::time::Duration::from_secs(wait))
         .connect_with(pg.options(APP_ROLE, DATABASE))
         .await
         .context("couldn't connect as weilo_app")?;
@@ -53,13 +62,14 @@ pub async fn migrate(pg: &Postgres) -> Result<()> {
     Ok(())
 }
 
-/// What `weilo_app` may do. The audit log is insert-only for it.
+/// What `weilo_app` may do. The audit log and the event log are insert-only for it.
 fn grants_sql() -> String {
     format!(
         "GRANT USAGE ON SCHEMA public TO {APP_ROLE};
          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {APP_ROLE};
          REVOKE ALL ON _sqlx_migrations FROM {APP_ROLE};
          REVOKE UPDATE, DELETE, TRUNCATE ON audit FROM {APP_ROLE};
+         REVOKE UPDATE, DELETE, TRUNCATE ON events FROM {APP_ROLE};
          REVOKE DELETE, TRUNCATE ON audit_head FROM {APP_ROLE};"
     )
 }
@@ -89,12 +99,27 @@ pub async fn set_setting<'e>(
     Ok(())
 }
 
+/// The host's id, with its epoch raised by one for this start. Its threads move to the
+/// new epoch in the same transaction, which fences out any writer still holding the old one.
 async fn host_identity(pool: &PgPool) -> Result<Fence> {
-    if let Some(v) = get_setting(pool, "host").await? {
-        let host = serde_json::from_value(v["id"].clone())?;
-        let epoch = v["epoch"].as_i64().unwrap_or(1);
+    let mut tx = pool.begin().await?;
+    let current: Option<serde_json::Value> =
+        sqlx::query_scalar("SELECT value FROM settings WHERE key = 'host' FOR UPDATE")
+            .fetch_optional(&mut *tx)
+            .await?;
+    if let Some(v) = current {
+        let host: Uuid = serde_json::from_value(v["id"].clone())?;
+        let epoch = v["epoch"].as_i64().unwrap_or(1) + 1;
+        set_setting(&mut *tx, "host", &json!({ "id": host, "epoch": epoch })).await?;
+        sqlx::query("UPDATE threads SET owner_epoch = $2 WHERE owner_host = $1")
+            .bind(host)
+            .bind(epoch)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
         return Ok(Fence { host, epoch });
     }
+    drop(tx);
     let fence = Fence {
         host: new_id(),
         epoch: 1,

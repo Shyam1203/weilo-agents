@@ -8,7 +8,13 @@
 //! `/var/lib/weilo-agents/<hash of home>` instead.
 //!
 //! Sign-in uses peer auth over the Unix socket: only the OS user running the host may
-//! log in, as any of the three roles, and no password is kept on disk.
+//! log in, and no password is kept on disk. While Weilo starts (roles, database,
+//! migrations) that user may log in as any of the three roles; once it is running,
+//! `lock_down` narrows the rules to `weilo_app` alone and reloads them, so the owner and
+//! admin roles can't be used until the next start.
+//!
+//! A cluster only runs with the Postgres major version that made it (`PG_VERSION` in
+//! its folder), so the binaries are picked to match it; a new cluster needs 16 or newer.
 //!
 //! When Postgres stops by itself, `supervise` starts it again with a growing pause and
 //! tells the app, which pauses turns meanwhile.
@@ -65,6 +71,8 @@ pub struct Postgres {
     child: Option<Child>,
     pub layout: Layout,
     pub secrets: PgSecrets,
+    /// After `lock_down`: only `weilo_app` may sign in, and restarts keep it so.
+    locked: bool,
 }
 
 impl Postgres {
@@ -86,6 +94,7 @@ impl Postgres {
             child: None,
             layout,
             secrets,
+            locked: false,
         };
         pg.launch().await?;
         pg.bootstrap().await?;
@@ -94,7 +103,7 @@ impl Postgres {
 
     /// Writes the sign-in rules, clears a stale pid file and starts the server.
     async fn launch(&mut self) -> Result<()> {
-        write_auth_files(&self.layout)?;
+        write_auth_files(&self.layout, !self.locked)?;
         clear_stale_pid(&self.layout).await?;
         self.child = Some(spawn_postgres(&self.layout, self.secrets.port)?);
         if let Err(e) = self.wait_ready().await {
@@ -102,6 +111,32 @@ impl Postgres {
             return Err(e);
         }
         Ok(())
+    }
+
+    /// Narrows sign-in to `weilo_app` only and makes the running Postgres read the new
+    /// rules. Call once the roles exist and migrations are done; the next `start`
+    /// opens them again for its own setup.
+    pub async fn lock_down(&mut self) -> Result<()> {
+        write_auth_files(&self.layout, false)?;
+        self.locked = true;
+        let pid = self
+            .child
+            .as_ref()
+            .and_then(Child::id)
+            .context("Postgres isn't running")?;
+        signal(pid, libc::SIGHUP);
+        // The reload is quick but not instant: wait until the owner is turned away.
+        let opts = self.options(OWNER_ROLE, DATABASE);
+        for _ in 0..100 {
+            match PgConnection::connect_with(&opts).await {
+                Ok(conn) => {
+                    conn.close().await.ok();
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                Err(_) => return Ok(()),
+            }
+        }
+        bail!("Postgres didn't take the new sign-in rules")
     }
 
     pub fn options(&self, role: &str, database: &str) -> PgConnectOptions {
@@ -156,7 +191,11 @@ impl Postgres {
     }
 
     async fn wait_ready(&mut self) -> Result<()> {
-        let opts = self.options(ADMIN_ROLE, "postgres");
+        let opts = if self.locked {
+            self.options(APP_ROLE, DATABASE)
+        } else {
+            self.options(ADMIN_ROLE, "postgres")
+        };
         for _ in 0..300 {
             if let Some(child) = self.child.as_mut()
                 && let Some(status) = child.try_wait()?
@@ -248,22 +287,117 @@ fn signal(pid: u32, sig: i32) {
     }
 }
 
-/// `WEILO_PG_BIN`, then `pg_config --bindir`, then the newest Debian or Homebrew install.
+/// The oldest Postgres a new cluster may be made with.
+pub const MIN_MAJOR: u32 = 16;
+
+/// Postgres binaries for a new cluster (see `find_bin_dir_for`).
 pub fn find_bin_dir() -> Result<PathBuf> {
-    if let Some(dir) = std::env::var_os("WEILO_PG_BIN") {
-        return Ok(PathBuf::from(dir));
+    find_bin_dir_for(None)
+}
+
+/// The Postgres `bin` folder to use. For an existing cluster (`data_dir` holds
+/// `PG_VERSION`), only the same major version will do; for a new one, the newest
+/// install that is at least `MIN_MAJOR`. Looks at `WEILO_PG_BIN`, then
+/// `pg_config --bindir`, then Debian's `/usr/lib/postgresql/N/bin` and Homebrew's
+/// `postgresql@N`.
+pub fn find_bin_dir_for(data_dir: Option<&Path>) -> Result<PathBuf> {
+    let want = data_dir.and_then(cluster_major);
+    if let Some(dir) = std::env::var_os("WEILO_PG_BIN").map(PathBuf::from) {
+        return match (want, bin_major(&dir)) {
+            (Some(want), Some(have)) if want != have => bail!(
+                "WEILO_PG_BIN is Postgres {have}, but your Weilo data was made with Postgres {want}. {}",
+                install_hint(want)
+            ),
+            _ => Ok(dir),
+        };
     }
-    if let Ok(out) = std::process::Command::new("pg_config")
-        .arg("--bindir")
+    let mut found = Vec::new();
+    if let Some(found_by_config) = pg_config_bin() {
+        found.push(found_by_config);
+    }
+    found.extend(installed_bins());
+    choose_bin(&found, want).map_err(|e| anyhow!("{e}"))
+}
+
+/// Picks from `found` (in order of preference): the exact major an existing cluster
+/// needs, else the newest at least `MIN_MAJOR`. The error is said plainly.
+pub fn choose_bin(found: &[(u32, PathBuf)], want: Option<u32>) -> Result<PathBuf, String> {
+    let usable = |(major, dir): &(u32, PathBuf)| dir.join("initdb").exists().then_some(*major);
+    if let Some(want) = want {
+        return found
+            .iter()
+            .find(|f| usable(f) == Some(want))
+            .map(|(_, dir)| dir.clone())
+            .ok_or_else(|| {
+                format!(
+                    "Your Weilo data was made with Postgres {want}, which isn't on this computer. {}",
+                    install_hint(want)
+                )
+            });
+    }
+    let best = found
+        .iter()
+        .filter_map(|f| usable(f).filter(|m| *m >= MIN_MAJOR))
+        .max();
+    match best {
+        Some(best) => Ok(found
+            .iter()
+            .find(|f| usable(f) == Some(best))
+            .map(|(_, dir)| dir.clone())
+            .expect("found above")),
+        None => Err(missing_postgres().to_string()),
+    }
+}
+
+/// The major version an existing cluster was made with (`PG_VERSION`).
+pub fn cluster_major(data_dir: &Path) -> Option<u32> {
+    fs::read_to_string(data_dir.join("PG_VERSION"))
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}
+
+/// `pg_config --bindir`, with its major version.
+fn pg_config_bin() -> Option<(u32, PathBuf)> {
+    let run = |arg: &str| {
+        std::process::Command::new("pg_config")
+            .arg(arg)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+    };
+    let dir = PathBuf::from(run("--bindir")?);
+    // "PostgreSQL 16.4 (Ubuntu 16.4-1)"
+    let major = parse_major(run("--version")?.strip_prefix("PostgreSQL ")?)?;
+    Some((major, dir))
+}
+
+/// The major version of the `postgres` in `dir`, from `postgres --version`.
+fn bin_major(dir: &Path) -> Option<u32> {
+    let out = std::process::Command::new(dir.join("postgres"))
+        .arg("--version")
         .output()
-        && out.status.success()
-    {
-        let dir = PathBuf::from(String::from_utf8_lossy(&out.stdout).trim());
-        if dir.join("initdb").exists() {
-            return Ok(dir);
-        }
-    }
-    // Debian and Ubuntu: /usr/lib/postgresql/16/bin. Homebrew: /opt/homebrew/opt/postgresql@16/bin.
+        .ok()?;
+    // "postgres (PostgreSQL) 16.4"
+    let text = String::from_utf8_lossy(&out.stdout);
+    parse_major(text.rsplit(' ').next()?)
+}
+
+/// "16.4", "16beta1" or "9.6.2" → its major (9 for 9.6; old enough either way).
+fn parse_major(version: &str) -> Option<u32> {
+    let digits: String = version
+        .trim()
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect();
+    digits.parse().ok()
+}
+
+/// Debian and Ubuntu (`/usr/lib/postgresql/16/bin`) and Homebrew
+/// (`/opt/homebrew/opt/postgresql@16/bin`, `/usr/local/opt/postgresql@16/bin`).
+fn installed_bins() -> Vec<(u32, PathBuf)> {
     let debian = fs::read_dir("/usr/lib/postgresql")
         .into_iter()
         .flatten()
@@ -286,23 +420,24 @@ pub fn find_bin_dir() -> Result<PathBuf> {
                 .ok()?;
             Some((major, e.path().join("bin")))
         });
-    let mut found: Vec<(u32, PathBuf)> = debian
-        .chain(brew)
-        .filter(|(_, bin)| bin.join("initdb").exists())
-        .collect();
-    found.sort();
-    found
-        .pop()
-        .map(|(_, p)| p)
-        .ok_or_else(|| anyhow!("{}", missing_postgres()))
+    debian.chain(brew).collect()
+}
+
+/// How to install Postgres `major`, in this computer's words.
+fn install_hint(major: u32) -> String {
+    if cfg!(target_os = "macos") {
+        format!("Install it from Terminal: brew install postgresql@{major}")
+    } else {
+        format!("Install it from Terminal: sudo apt install postgresql-{major}")
+    }
 }
 
 /// What to do when Postgres isn't on this computer, in this computer's words.
 pub fn missing_postgres() -> &'static str {
     if cfg!(target_os = "macos") {
-        "Weilo needs Postgres. Install it from Terminal: brew install postgresql@16"
+        "Weilo needs Postgres 16 or newer. Install it from Terminal: brew install postgresql@16"
     } else {
-        "Weilo needs Postgres. Install it from Terminal: sudo apt install postgresql"
+        "Weilo needs Postgres 16 or newer. Install it from Terminal: sudo apt install postgresql-16"
     }
 }
 
@@ -348,7 +483,6 @@ fn lookup_user(name: &str) -> Option<RunAs> {
 }
 
 pub fn layout(home: &Home, run_as: Option<RunAs>) -> Result<Layout> {
-    let bin_dir = find_bin_dir()?;
     let data_root = match &run_as {
         Some(_) if !others_can_pass(home.root()) => {
             let hash =
@@ -368,9 +502,10 @@ pub fn layout(home: &Home, run_as: Option<RunAs>) -> Result<Layout> {
         let hash = hex::encode(&Sha256::digest(home.root().as_os_str().as_encoded_bytes())[..6]);
         socket_dir = std::env::temp_dir().join(format!("weilo-pg-{hash}"));
     }
+    let data_dir = data_root.join("db");
     Ok(Layout {
-        bin_dir,
-        data_dir: data_root.join("db"),
+        bin_dir: find_bin_dir_for(Some(&data_dir))?,
+        data_dir,
         socket_dir,
         log_file: home.logs().join("postgres.log"),
         run_as,
@@ -392,8 +527,9 @@ fn host_user() -> Result<String> {
     }
 }
 
-/// Lets only the host's OS user in, over the Unix socket, as any of Weilo's roles.
-fn write_auth_files(layout: &Layout) -> Result<()> {
+/// Lets only the host's OS user in, over the Unix socket: as any of Weilo's roles while
+/// it sets up (`full`), else as `weilo_app` only.
+fn write_auth_files(layout: &Layout, full: bool) -> Result<()> {
     let user = &layout.host_user;
     if user.is_empty()
         || user
@@ -403,10 +539,14 @@ fn write_auth_files(layout: &Layout) -> Result<()> {
         bail!("This computer's user name can't be used with Postgres.");
     }
     let hba = "# Written by Weilo on every start.\nlocal all all peer map=weilo\n";
-    let ident = format!(
-        "# Written by Weilo on every start.\n\
-         weilo {user} {ADMIN_ROLE}\nweilo {user} {OWNER_ROLE}\nweilo {user} {APP_ROLE}\n"
-    );
+    let ident = if full {
+        format!(
+            "# Written by Weilo on every start, and narrowed once it is running.\n\
+             weilo {user} {ADMIN_ROLE}\nweilo {user} {OWNER_ROLE}\nweilo {user} {APP_ROLE}\n"
+        )
+    } else {
+        format!("# Written by Weilo while it runs: the app's role only.\nweilo {user} {APP_ROLE}\n")
+    };
     for (name, text) in [("pg_hba.conf", hba), ("pg_ident.conf", ident.as_str())] {
         let path = layout.data_dir.join(name);
         write_private(&path, text.as_bytes())?;
@@ -651,12 +791,82 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let layout = layout_in(dir.path());
         fs::create_dir_all(&layout.data_dir).unwrap();
-        write_auth_files(&layout).unwrap();
+        write_auth_files(&layout, true).unwrap();
         let hba = fs::read_to_string(layout.data_dir.join("pg_hba.conf")).unwrap();
         assert!(hba.contains("local all all peer map=weilo"));
         assert!(!hba.contains("host "));
         let ident = fs::read_to_string(layout.data_dir.join("pg_ident.conf")).unwrap();
         assert!(ident.contains("weilo me weilo_app"));
         assert_eq!(ident.lines().filter(|l| l.starts_with("weilo ")).count(), 3);
+        // While running: the app's role only.
+        write_auth_files(&layout, false).unwrap();
+        let ident = fs::read_to_string(layout.data_dir.join("pg_ident.conf")).unwrap();
+        let rules: Vec<&str> = ident.lines().filter(|l| l.starts_with("weilo ")).collect();
+        assert_eq!(rules, ["weilo me weilo_app"]);
+    }
+
+    /// Fake installs: a `bin` folder with an `initdb` in it for each major.
+    fn installs(dir: &Path, majors: &[u32]) -> Vec<(u32, PathBuf)> {
+        majors
+            .iter()
+            .map(|m| {
+                let bin = dir.join(m.to_string()).join("bin");
+                fs::create_dir_all(&bin).unwrap();
+                fs::write(bin.join("initdb"), "").unwrap();
+                (*m, bin)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_existing_cluster_gets_its_own_version_even_when_a_newer_one_is_here() {
+        let dir = tempfile::tempdir().unwrap();
+        let found = installs(dir.path(), &[16, 17]);
+        assert_eq!(choose_bin(&found, Some(16)).unwrap(), found[0].1);
+        assert_eq!(choose_bin(&found, Some(17)).unwrap(), found[1].1);
+    }
+
+    #[test]
+    fn a_missing_version_is_named() {
+        let dir = tempfile::tempdir().unwrap();
+        let found = installs(dir.path(), &[17]);
+        let err = choose_bin(&found, Some(16)).unwrap_err();
+        assert!(err.contains("Postgres 16"), "{err}");
+        assert!(err.contains("postgresql") && err.contains("16"), "{err}");
+    }
+
+    #[test]
+    fn a_new_cluster_takes_the_newest_from_16() {
+        let dir = tempfile::tempdir().unwrap();
+        let found = installs(dir.path(), &[14, 17, 16]);
+        assert_eq!(choose_bin(&found, None).unwrap(), found[1].1);
+        // Only older ones: not enough.
+        let old = installs(dir.path(), &[13, 15]);
+        let err = choose_bin(&old, None).unwrap_err();
+        assert!(err.contains("16 or newer"), "{err}");
+        // An entry without initdb doesn't count.
+        let empty = vec![(18, dir.path().join("nothing"))];
+        assert!(choose_bin(&empty, None).is_err());
+    }
+
+    #[test]
+    fn the_first_match_wins_among_the_same_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = installs(&dir.path().join("a"), &[16]);
+        let b = installs(&dir.path().join("b"), &[16]);
+        let found = [a[0].clone(), b[0].clone()];
+        assert_eq!(choose_bin(&found, Some(16)).unwrap(), a[0].1);
+        assert_eq!(choose_bin(&found, None).unwrap(), a[0].1);
+    }
+
+    #[test]
+    fn versions_are_read_from_their_text() {
+        assert_eq!(parse_major("16.4 (Ubuntu 16.4-1.pgdg24.04+1)"), Some(16));
+        assert_eq!(parse_major("17beta1"), Some(17));
+        assert_eq!(parse_major("9.6.2"), Some(9));
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(cluster_major(dir.path()), None);
+        fs::write(dir.path().join("PG_VERSION"), "16\n").unwrap();
+        assert_eq!(cluster_major(dir.path()), Some(16));
     }
 }

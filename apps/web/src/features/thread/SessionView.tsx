@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { setComposerDraft, stop } from "../../lib/app";
 import { channelLabel, dollars, projectName, shortName, startedByName } from "../../lib/format";
 import { navigate, paths } from "../../lib/router";
-import { useApp } from "../../lib/store";
+import { hostAway, problemLines, useApp } from "../../lib/store";
 import { totalCost } from "../../lib/timeline";
 import type { ThreadSummary } from "../../proto/ThreadSummary";
 import { SessionMark } from "../../ui/Avatar";
@@ -13,6 +13,7 @@ import { PANEL_INLINE_MIN_WIDTH, PanelToggle, ThreadScreen } from "./ThreadScree
 import { useMedia } from "../../lib/useMedia";
 import { BackButton } from "../mobile/TabBar";
 import { useEvents, useThreadState, useVariant } from "./useThread";
+import { useSessionChanges } from "./SidePanel";
 import { shortcut, useTouchOnly } from "../../lib/platform";
 
 /** Sessions whose panel already opened by itself (this page load). */
@@ -24,10 +25,13 @@ export function SessionView({ thread }: { thread: ThreadSummary }) {
   const phone = useVariant() === "phone";
   const inline = useMedia(`(min-width: ${PANEL_INLINE_MIN_WIDTH}px)`);
   const state = useThreadState(thread.id);
+  const problem = useApp((s) => problemLines(s)[thread.id] ?? null);
+  const away = useApp(hostAway);
   const snap = useApp((s) => s.snapshot)!;
   const events = useEvents(thread.id);
   const cost = useMemo(() => totalCost(events), [events]);
-  const hasChanges = useMemo(() => events.some((e) => e.body.kind === "step"), [events]);
+  const changes = useSessionChanges(phone ? null : thread.id, events.length);
+  const hasChanges = (changes?.files.length ?? 0) > 0;
 
   // The panel opens by itself once a session has changes to show (§11.0 rule 4): once per
   // session, and only where it doesn't cover the conversation. Closing it is respected.
@@ -67,6 +71,7 @@ export function SessionView({ thread }: { thread: ThreadSummary }) {
   return (
     <ThreadScreen
       threadId={thread.id}
+      changes={changes}
       panelOpen={panel}
       onPanelClose={() => setPanel(false)}
       header={
@@ -85,15 +90,17 @@ export function SessionView({ thread }: { thread: ThreadSummary }) {
               {where && ` · ${where}`}
             </span>
           </div>
-          <StatusPill state={state} />
+          <StatusPill state={state} problem={problem} />
           {watcherName && !phone && (
             <Button title={`Ask ${watcherName} about this session`} onClick={askAva}>
               Ask {watcherName}
             </Button>
           )}
-          <Button onClick={() => void stop(thread.id)} disabled={state === "idle"} title={touch ? undefined : shortcut(".")}>
-            Stop
-          </Button>
+          {!away && (
+            <Button onClick={() => void stop(thread.id)} disabled={state === "idle"} title={touch ? undefined : shortcut(".")}>
+              Stop
+            </Button>
+          )}
           {!phone && <PanelToggle open={panel} onToggle={() => setPanel((v) => !v)} />}
         </TopBar>
       }
@@ -108,7 +115,7 @@ export function SessionView({ thread }: { thread: ThreadSummary }) {
         working: state === "working",
         agentName: null,
         onStop: () => void stop(thread.id),
-        hint: sessionHint(touch ? null : shortcut("."), cost > 0n ? `${dollars(cost)} so far` : null),
+        hint: sessionHint(touch || away ? null : shortcut("."), cost > 0n ? `${dollars(cost)} so far` : null),
       }}
     />
   );

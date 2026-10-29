@@ -97,6 +97,14 @@ pub async fn verify(pool: &PgPool, space_id: Uuid) -> sqlx::Result<Verdict> {
     })
 }
 
+/// What a break in the chain means, plainly.
+pub fn broken_line(seq: i64) -> String {
+    format!(
+        "Weilo's activity record was changed outside Weilo, from entry {seq} on. \
+         Something on this computer edited its data."
+    )
+}
+
 fn row_hash(prev: &[u8], seq: i64, at: DateTime<Utc>, e: &Entry<'_>) -> Vec<u8> {
     let doc = json!({
         "seq": seq,
