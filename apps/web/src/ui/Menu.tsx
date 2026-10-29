@@ -57,6 +57,8 @@ export interface MenuProps {
   className?: string;
   align?: "start" | "end";
   prefer?: "below" | "above";
+  /** At least as wide as its button (a list of choices under a box). */
+  matchWidth?: boolean;
   children: ReactNode;
 }
 
@@ -66,9 +68,10 @@ export interface MenuProps {
  * Escape or a click outside closes it, and focus goes back to the button. Choosing an item
  * puts focus back on the button first, so a dialog it opens can return focus there.
  */
-export function Menu({ open, onClose, anchor, label, className, align = "end", prefer = "below", children }: MenuProps) {
+export function Menu({ open, onClose, anchor, label, className, align = "end", prefer = "below", matchWidth, children }: MenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<MenuPlacement | null>(null);
+  const [minWidth, setMinWidth] = useState<number | undefined>(undefined);
 
   useLayoutEffect(() => {
     if (!open) {
@@ -80,6 +83,10 @@ export function Menu({ open, onClose, anchor, label, className, align = "end", p
       const m = ref.current;
       if (!a || !m) return;
       const r = a.getBoundingClientRect();
+      if (matchWidth) {
+        m.style.minWidth = `${r.width}px`;
+        setMinWidth(r.width);
+      }
       setPos(
         placeMenu(r, { width: m.offsetWidth, height: m.offsetHeight }, { width: window.innerWidth, height: window.innerHeight }, { align, prefer }),
       );
@@ -91,7 +98,7 @@ export function Menu({ open, onClose, anchor, label, className, align = "end", p
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [open, anchor, align, prefer]);
+  }, [open, anchor, align, prefer, matchWidth]);
 
   useEffect(() => {
     if (!open) return;
@@ -131,7 +138,7 @@ export function Menu({ open, onClose, anchor, label, className, align = "end", p
       role="menu"
       aria-label={label}
       data-side={pos?.side}
-      style={{ top: pos?.top ?? 0, left: pos?.left ?? 0, visibility: pos ? "visible" : "hidden" }}
+      style={{ top: pos?.top ?? 0, left: pos?.left ?? 0, minWidth, visibility: pos ? "visible" : "hidden" }}
       className={cx(
         "fixed z-50 flex flex-col gap-0.5 rounded-lg border border-border bg-surface p-2 text-body-sm text-text shadow-e2",
         className,

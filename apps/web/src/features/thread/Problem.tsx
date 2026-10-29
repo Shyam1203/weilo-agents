@@ -47,7 +47,7 @@ export function Problem({
           </Disclosure>
         )}
       </span>
-      {!resolved && <ProblemButton threadId={threadId} agentId={agentId} action={action} engine={engine} size="sm" />}
+      {!resolved && <ProblemButton threadId={threadId} agentId={agentId} action={action} engine={engine} message={message} size="sm" />}
     </div>
   );
 }
@@ -62,6 +62,7 @@ export function ProblemButton({
   agentId,
   action,
   engine: problemEngine = null,
+  message = null,
   size = "sm",
   className,
 }: {
@@ -70,6 +71,8 @@ export function ProblemButton({
   action: string | null;
   /** The AI app the problem is about; else the chat's. */
   engine?: string | null;
+  /** The problem's words: they say whose key didn't work. */
+  message?: string | null;
   size?: ButtonSize;
   className?: string;
 }) {
@@ -97,7 +100,15 @@ export function ProblemButton({
       <Button size={size} className={className} onClick={() => void onClick()} disabled={busy || (kind === "retry" && paused)}>
         {action}
       </Button>
-      {engine && kind === "key" && <KeyDialog open={open} onClose={() => setOpen(false)} engineId={engine} />}
+      {engine && kind === "key" && (
+        <KeyDialog
+          open={open}
+          onClose={() => setOpen(false)}
+          engineId={engine}
+          change={/^change/i.test(action?.trim() ?? "")}
+          problem={message}
+        />
+      )}
       {engine && (kind === "sign_in" || kind === "install") && (
         <EngineHelpDialog open={open} onClose={() => setOpen(false)} engineId={engine} kind={kind} />
       )}

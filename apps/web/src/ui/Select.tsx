@@ -39,7 +39,7 @@ export function Select({
         <span className="ellipsis flex-1">{chosen?.label ?? ""}</span>
         <ChevronDownIcon size={12} className="shrink-0 text-text-secondary" />
       </button>
-      <Menu open={open} onClose={close} anchor={button} label={label} align="start" className="max-h-72 min-w-56 overflow-y-auto">
+      <Menu open={open} onClose={close} anchor={button} label={label} align="start" matchWidth className="max-h-72 overflow-y-auto">
         {options.map((o) => (
           <MenuItem
             key={o.id}

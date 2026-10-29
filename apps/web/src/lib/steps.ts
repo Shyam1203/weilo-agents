@@ -139,8 +139,8 @@ function withObject(p: PlainStep): PlainStep {
 }
 
 export interface ShownSteps {
-  /** Steps shown as plain lines. */
-  shown: Array<StepItem & { label: string }>;
+  /** Steps shown as plain lines. `saysFailed`: the label already says it didn't work ("Couldn't change app.ts"). */
+  shown: Array<StepItem & { label: string; saysFailed?: boolean }>;
   /** Every step's original title, for Show details. Empty when there is nothing more to see. */
   details: Array<StepItem & { label: string; detail: string | null }>;
   /** How many failed look-ups were folded away. */
@@ -180,11 +180,17 @@ export function showSteps(steps: StepItem[]): ShownSteps {
   for (const s of steps) {
     const p = plainStep(s.title);
     details.push({ ...s, label: p.label, detail: p.detail });
-    if (p.label !== s.title) extra = true;
+    // Details are worth opening only for what the lines leave out: a file, a command, an address.
+    if (p.detail) extra = true;
     if (s.status === "failed" && p.quiet) {
       folded += 1;
       failed.push(p.kind);
       extra = true;
+      continue;
+    }
+    if (s.status === "failed" && p.kind === "Changed a file") {
+      const name = p.detail ? fileName(p.detail) : null;
+      shown.push({ ...s, label: name ? `Couldn't change ${name}` : "Couldn't change a file", saysFailed: true });
       continue;
     }
     shown.push({ ...s, label: p.label });

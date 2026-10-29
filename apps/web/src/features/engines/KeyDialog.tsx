@@ -10,9 +10,24 @@ import { Dialog, inputClass } from "../../ui/Dialog";
 import { CheckIcon } from "../../ui/glyphs";
 import { useEngineList } from "./EnginePicker";
 
-/** The provider to start on: one without a key yet, else the first. */
-export function firstProvider(providers: KeyProvider[]): string {
-  return (providers.find((p) => !p.has_key) ?? providers[0])?.id ?? "";
+/**
+ * The provider to start on. Adding a key: one without a key yet, else the first. Changing
+ * one: `prefer` (the key that was turned down), else the one with a saved key.
+ */
+export function firstProvider(providers: KeyProvider[], prefer?: string | null, change = false): string {
+  const hit =
+    providers.find((p) => p.id === prefer) ??
+    (change ? providers.find((p) => p.has_key) : undefined) ??
+    providers.find((p) => !p.has_key) ??
+    providers[0];
+  return hit?.id ?? "";
+}
+
+/** Which provider's key a problem says didn't work ("your Anthropic key didn't work"), by id. */
+export function failingProvider(message: string | null | undefined, providers: KeyProvider[]): string | null {
+  if (!message) return null;
+  const m = message.toLowerCase();
+  return providers.find((p) => m.includes(`${p.title.toLowerCase()} key`))?.id ?? null;
 }
 
 /** What a provider chip says. A saved key is only ever "Saved", never shown. */
@@ -21,13 +36,13 @@ export function providerLabel(p: KeyProvider): string {
 }
 
 /** State for pasting a key. The key lives only in this form and is cleared once saved. */
-export function useKeyForm(engine: EngineInfo | undefined) {
+export function useKeyForm(engine: EngineInfo | undefined, prefer?: string | null, change = false) {
   const providers = engine?.key_providers ?? [];
   const [provider, setProvider] = useState("");
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const chosen = providers.find((p) => p.id === provider) ?? providers.find((p) => p.id === firstProvider(providers));
+  const chosen = providers.find((p) => p.id === provider) ?? providers.find((p) => p.id === firstProvider(providers, prefer, change));
   const save = async (): Promise<boolean> => {
     if (!engine || !chosen || !key.trim()) return false;
     setBusy(true);
@@ -55,7 +70,12 @@ export function useKeyForm(engine: EngineInfo | undefined) {
       setBusy(false);
     }
   };
-  return { providers, chosen, setProvider, key, setKey, busy, error, save, remove, reset: () => setKey("") };
+  return { providers, chosen, setProvider, key, setKey, busy, error, save, remove, reset: () => {
+      setKey("");
+      // Next time it opens on the provider that fits then.
+      setProvider("");
+    },
+  };
 }
 
 export type KeyForm = ReturnType<typeof useKeyForm>;
@@ -149,16 +169,22 @@ export function KeyDialog({
   onClose,
   engineId,
   onSaved,
+  change = false,
+  problem,
 }: {
   open: boolean;
   onClose(): void;
   engineId: string;
+  /** Replacing a key that was turned down ("Change key"), not adding one. */
+  change?: boolean;
+  /** The problem's words, which name the provider whose key didn't work. */
+  problem?: string | null;
   /** After a key is saved (the dialog then checks the engine and says how it went). */
   onSaved?: () => void;
 }) {
   const engines = useEngineList(open);
   const engine = engines?.find((e) => e.id === engineId);
-  const form = useKeyForm(engine);
+  const form = useKeyForm(engine, failingProvider(problem, engine?.key_providers ?? []), change);
   const title = engineTitle(engineId, engines ?? undefined);
   // What the check after saving found, when the key didn't work.
   const [failed, setFailed] = useState<string | null>(null);
@@ -175,7 +201,7 @@ export function KeyDialog({
     <Dialog
       open={open}
       onClose={close}
-      title="Add a key"
+      title={change ? "Change key" : "Add a key"}
       description={`For ${title}. Weilo keeps it on this computer.`}
       submitLabel={checking ? "Checking…" : "Save key"}
       busy={form.busy || checking}

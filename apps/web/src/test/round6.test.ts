@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { doneLine } from "../features/needs-you/NeedsYouPage";
+import { failingProvider, firstProvider } from "../features/engines/KeyDialog";
+import { doneLine, doneOutcome } from "../features/needs-you/NeedsYouPage";
+import { showSteps } from "../lib/steps";
 import { jumpItems, searchJump } from "../lib/jump";
 import { buildRows, collapsedLabel } from "../lib/sidebar";
 import { decidedAt, outcomeWords } from "../lib/timeline";
@@ -74,5 +76,54 @@ describe("Ctrl+K matches the start of words", () => {
 
   it("still finds something inside a word when nothing starts with it", () => {
     expect(searchJump(items, "aunch").map((i) => i.label)).toContain("shop-launch");
+  });
+});
+
+describe("Change key opens on the key that didn't work", () => {
+  const providers = [
+    { id: "openai", title: "OpenAI", has_key: false },
+    { id: "anthropic", title: "Anthropic", has_key: true },
+  ];
+
+  it("reads the provider from the problem", () => {
+    expect(failingProvider("Ava didn't answer: your Anthropic key didn't work.", providers)).toBe("anthropic");
+    expect(failingProvider("Codex stopped responding.", providers)).toBeNull();
+  });
+
+  it("starts on it, else on the saved key when changing, else on one without a key", () => {
+    expect(firstProvider(providers, "anthropic", true)).toBe("anthropic");
+    expect(firstProvider(providers, null, true)).toBe("anthropic");
+    expect(firstProvider(providers)).toBe("openai");
+  });
+});
+
+describe("Done today says how each item ended", () => {
+  const ev = (via: string, decision: Record<string, unknown> = { kind: "deny" }) =>
+    [{ seq: 1n, at: "2026-10-28T08:02:00", thread_id: "t1", source: "host", body: { kind: "approval_decided", approval_id: "a1", decision, via } }] as unknown as Event[];
+  const closed = item({ approval_id: "a1", state: "denied" });
+
+  it("tells a no apart from a stop, a restart and no answer", () => {
+    expect(doneOutcome(closed, ev("app"))).toEqual({ text: "You said no · 8:02", yes: false });
+    expect(doneOutcome(closed, ev("stopped")).text).toBe("Stopped · 8:02");
+    expect(doneOutcome(closed, ev("interrupted")).text).toBe("Closed when Weilo restarted · 8:02");
+    expect(doneOutcome({ ...closed, state: "expired" }, undefined).text).toBe("No answer in time");
+    expect(doneOutcome({ ...closed, state: "allowed" }, ev("app", { kind: "allow_always", scope: "folder" }))).toEqual({
+      text: "You always allow this in this folder · 8:02",
+      yes: true,
+    });
+  });
+});
+
+describe("failed steps say what didn't happen", () => {
+  const step = (title: string, status: "done" | "failed") => ({ id: title, title, status, at: "" });
+
+  it("says Couldn't change the file", () => {
+    const out = showSteps([step("Edit src/app.ts", "failed")]);
+    expect(out.shown[0]).toMatchObject({ label: "Couldn't change app.ts", saysFailed: true });
+  });
+
+  it("offers Details only when they add a file, command or address", () => {
+    expect(showSteps([step("ToolSearch", "done"), step("Read the checkout code", "done")]).details).toEqual([]);
+    expect(showSteps([step("Read src/theme.css", "done")]).details).toHaveLength(1);
   });
 });

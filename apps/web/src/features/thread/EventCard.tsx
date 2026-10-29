@@ -71,8 +71,10 @@ export function EventCard({ card, decided, threadId, detailsLabel = "Show detail
   // Closed because the session or agent was stopped (by the host, or here before it says so).
   const stoppedHere = useApp((s) => !!card.approval_id && !!s.stoppedCards[card.approval_id]);
   const outcome = decided
-    ? decided.via === "stopped" || decided.via === "interrupted"
+    ? decided.via === "stopped"
       ? { text: "Stopped", at: decided.at, yes: false }
+      : decided.via === "interrupted"
+        ? { text: "Closed when Weilo restarted", at: decided.at, yes: false }
       : { text: outcomeWords(decided.decision, card.kind, card.actions), at: decided.at, yes: decided.decision.kind !== "deny" }
     : stoppedHere
       ? { text: "Stopped", at: null, yes: false }
@@ -81,7 +83,7 @@ export function EventCard({ card, decided, threadId, detailsLabel = "Show detail
       : itemState === "denied"
         ? { text: outcomeWords({ kind: "deny" }, card.kind), at: null, yes: false }
         : itemState === "expired"
-          ? { text: "Expired before you answered", at: null, yes: false }
+          ? { text: "No answer in time", at: null, yes: false }
           : null;
 
   const [titleText, ...meta] = draft ? card.title.split(" · ") : [card.title];

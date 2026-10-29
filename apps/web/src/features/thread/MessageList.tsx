@@ -233,7 +233,9 @@ function Steps({ steps }: { steps: StepItem[] }) {
               <StepIcon status={s.status} />
               <span className="min-w-0">{s.label}</span>
               {/* An icon alone doesn't say what happened: a step that ended early says so. */}
-              {s.status === "stopped" || s.status === "failed" ? (
+              {s.saysFailed ? (
+                <span className="sr-only">(didn't work)</span>
+              ) : s.status === "stopped" || s.status === "failed" ? (
                 <span className="shrink-0 text-text-tertiary">· {s.status === "stopped" ? "Not finished" : "Didn't work"}</span>
               ) : (
                 <span className="sr-only">({STATUS_WORD[s.status]})</span>

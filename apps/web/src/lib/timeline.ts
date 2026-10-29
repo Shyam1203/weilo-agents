@@ -249,11 +249,11 @@ export function outcomeWords(decision: Decision, cardKind: string, actions: Card
 }
 
 /** When an approval was answered, from its thread's events (the host doesn't list it with the item). */
-export function decidedAt(events: Event[] | undefined, approvalId: string): { at: string; decision: Decision } | null {
+export function decidedAt(events: Event[] | undefined, approvalId: string): { at: string; decision: Decision; via: string } | null {
   if (!events) return null;
   for (let i = events.length - 1; i >= 0; i--) {
     const b = events[i]!.body;
-    if (b.kind === "approval_decided" && b.approval_id === approvalId) return { at: events[i]!.at, decision: b.decision };
+    if (b.kind === "approval_decided" && b.approval_id === approvalId) return { at: events[i]!.at, decision: b.decision, via: b.via };
   }
   return null;
 }

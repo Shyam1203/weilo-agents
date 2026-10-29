@@ -399,7 +399,13 @@ function PastRow({ item, snap, selected, onFocus, ref, expired, phone }: RowProp
         <span className="shrink-0 text-caption text-text-tertiary">{whenLabel(item.created_at)}</span>
       </span>
       {fix ? (
-        <ProblemButton threadId={item.thread_id} agentId={agent?.id ?? null} action={fix.label} size={phone ? "phone" : "md"} />
+        <ProblemButton
+          threadId={item.thread_id}
+          agentId={agent?.id ?? null}
+          action={fix.label}
+          message={item.card.body}
+          size={phone ? "phone" : "md"}
+        />
       ) : expired ? (
         <Button size={phone ? "phone" : "md"} onClick={() => void ask()}>
           {name ? `Ask ${name} again` : "Ask again"}
@@ -444,12 +450,12 @@ function DoneRow({ item, snap, selected, onFocus, ref, last, phone }: RowProps &
       </div>
     );
   }
-  const allowed = item.state === "allowed";
   const events = useApp((s) => s.feeds[item.thread_id]?.events);
+  const done = doneOutcome(item, events);
   return (
     <Link ref={ref} href={pathFor(snap, item)} onFocus={onFocus} className={cx(line, "hover:bg-surface-muted hover:no-underline")}>
-      {allowed ? <CheckIcon className="shrink-0 text-success" /> : <XCircleIcon className="shrink-0 text-text-secondary" />}
-      <Lines phone={phone} meta={doneLine(item, events)}>
+      {done.yes ? <CheckIcon className="shrink-0 text-success" /> : <XCircleIcon className="shrink-0 text-text-secondary" />}
+      <Lines phone={phone} meta={done.text}>
         {item.card.title}
       </Lines>
     </Link>
@@ -457,17 +463,29 @@ function DoneRow({ item, snap, selected, onFocus, ref, last, phone }: RowProps &
 }
 
 /**
- * "You allowed it · 9:30": the same words as the card in the chat, and the time it was
- * answered. The host doesn't list that time with the item, so it comes from the chat's own
- * events when they are here (or `decided_at`, once the host sends it); otherwise no time
- * rather than the time it was asked.
+ * How a finished item ended, in the same words as the card in the chat: "You allowed it",
+ * "You said no", "You always allow this for Ava", or that nobody answered: "Stopped",
+ * "Closed when Weilo restarted", "No answer in time". `yes` picks the tick.
+ *
+ * The host doesn't list how or when it closed with the item, so that comes from the chat's
+ * own events when they are here (or `decided_at` / `decided_via`, once the host sends them).
+ * Without them: no time, rather than the time it was asked.
  */
-export function doneLine(item: NeedsYouItem, events: Event[] | undefined): string {
+export function doneOutcome(item: NeedsYouItem, events: Event[] | undefined): { text: string; yes: boolean } {
   const found = decidedAt(events, item.approval_id);
+  const extra = item as NeedsYouItem & { decided_at?: string | null; decided_via?: string | null };
+  const via = extra.decided_via ?? found?.via ?? null;
+  const at = extra.decided_at ?? found?.at ?? null;
+  const when = at ? ` · ${timeOf(at)}` : "";
+  if (item.state === "expired") return { text: `No answer in time${when}`, yes: false };
+  if (via === "stopped") return { text: `Stopped${when}`, yes: false };
+  if (via === "interrupted") return { text: `Closed when Weilo restarted${when}`, yes: false };
   const decision = found?.decision ?? (item.state === "allowed" ? { kind: "allow" as const } : { kind: "deny" as const });
-  const words = outcomeWords(decision, item.card.kind, item.card.actions);
-  const at = (item as NeedsYouItem & { decided_at?: string | null }).decided_at ?? found?.at ?? null;
-  return at ? `${words} · ${timeOf(at)}` : words;
+  return { text: `${outcomeWords(decision, item.card.kind, item.card.actions)}${when}`, yes: decision.kind !== "deny" };
+}
+
+export function doneLine(item: NeedsYouItem, events: Event[] | undefined): string {
+  return doneOutcome(item, events).text;
 }
 
 /** A row's title and its time: one line on desktop, two on phones. */

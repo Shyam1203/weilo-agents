@@ -111,7 +111,8 @@ export function SessionView({ thread }: { thread: ThreadSummary }) {
         </TopBar>
       }
       list={{
-        agentId: thread.agent_id,
+        // Replies are said by the agent looking after the session (the one that started it, else the main one), not "This session".
+        agentId: thread.agent_id ?? snap.agents.find((a) => a.id === thread.started_by || a.name === thread.started_by)?.id ?? watcher?.id ?? null,
         kind: "session",
         empty: <EmptyState title="This session hasn't started yet." line="Tell it what to do below." />,
       }}
@@ -122,7 +123,7 @@ export function SessionView({ thread }: { thread: ThreadSummary }) {
         working: state === "working",
         agentName: null,
         onStop: () => void stop(thread.id),
-        hint: sessionHint(touch || away ? null : shortcut("."), cost > 0n ? `${dollars(cost)} so far` : null),
+        hint: sessionHint(touch || phone || away ? null : shortcut("."), cost > 0n ? `${dollars(cost)} so far` : null),
       }}
     />
   );
