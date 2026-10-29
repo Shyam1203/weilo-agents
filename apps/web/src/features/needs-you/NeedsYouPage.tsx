@@ -219,11 +219,13 @@ function Source({ item, snap }: { item: NeedsYouItem; snap: Snapshot }) {
 function AskRow({ item, snap, selected, onFocus, ref, phone }: RowProps & { phone?: boolean }) {
   const small = isSmall(item.card.risk);
   const yes = small ? yesAction(item.card.actions) : undefined;
-  // The same choices as the card in the chat: Not now, and for small items Always allow (under ⋯).
+  // The same choices as the card in the chat: Not now, and Always allow (under ⋯) wherever it offers one.
   const no = item.card.actions.find((a) => a.decision?.kind === "deny");
-  const always = small ? item.card.actions.find((a) => a.decision?.kind === "allow_always") : undefined;
+  const always = item.card.actions.find((a) => a.decision?.kind === "allow_always");
   const [busy, setBusy] = useState(false);
   const [menu, setMenu] = useState(false);
+  // A yes for good on something that isn't small asks once more, like the chat card.
+  const [confirming, setConfirming] = useState<CardAction | null>(null);
   const more = useRef<HTMLButtonElement>(null);
   const closeMenu = useCallback(() => setMenu(false), []);
   const open = () => navigate(pathFor(snap, item));
@@ -236,9 +238,14 @@ function AskRow({ item, snap, selected, onFocus, ref, phone }: RowProps & { phon
       sayNoLater(item.approval_id, a.decision, item.card.kind === "draft");
       return;
     }
+    if (!small && !confirming) {
+      setConfirming(a);
+      return;
+    }
     setBusy(true);
     await decide(item.approval_id, a.decision);
     setBusy(false);
+    setConfirming(null);
   };
   const size = phone ? "phone" : "md";
   const off = busy || away !== null;
@@ -270,6 +277,20 @@ function AskRow({ item, snap, selected, onFocus, ref, phone }: RowProps & { phon
           {away && <span className="text-caption text-text-secondary">{away} You can answer when it's back.</span>}
         </div>
       </div>
+      {confirming ? (
+        <div role="group" aria-label="Confirm" className={cx("flex shrink-0 items-center gap-2", phone && "flex-wrap")}>
+          <span className={cx("text-body-sm", phone && "basis-full")}>
+            <b className="font-semibold">{confirming.label}?</b>{" "}
+            <span className="text-text-secondary">{item.card.risk_line}.</span>
+          </span>
+          <Button size={size} variant="tertiary" className={cx(phone && "flex-1")} disabled={busy} onClick={() => setConfirming(null)}>
+            Cancel
+          </Button>
+          <Button size={size} variant="primary" className={cx(phone && "flex-1")} disabled={off} autoFocus onClick={() => void act(confirming)}>
+            {confirming.label}
+          </Button>
+        </div>
+      ) : (
       <div className={cx("flex shrink-0 items-center gap-2", phone && "flex-wrap")}>
         {no && (
           <Button size={size} variant="tertiary" className={cx(phone && "flex-1")} disabled={off} title={away ?? undefined} onClick={() => void act(no)}>
@@ -317,6 +338,7 @@ function AskRow({ item, snap, selected, onFocus, ref, phone }: RowProps & { phon
           </div>
         )}
       </div>
+      )}
     </article>
   );
 }

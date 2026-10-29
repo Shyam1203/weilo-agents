@@ -3,6 +3,7 @@ import { mergeSession, sessionChanges } from "../../lib/app";
 import { fileChangeWord, filesChangedLine, lineCounts, parseDiff, type DiffFile, type DiffLine } from "../../lib/changes";
 import { engineTitle, projectName, shortName } from "../../lib/format";
 import { useApp } from "../../lib/store";
+import { useEvents } from "./useThread";
 import type { ChangedFile } from "../../proto/ChangedFile";
 import type { SessionChanges } from "../../proto/SessionChanges";
 import type { ThreadSummary } from "../../proto/ThreadSummary";
@@ -98,6 +99,9 @@ function SessionPanel({ thread, changes, onClose }: { thread: ThreadSummary; cha
   const [tab, setTab] = useState<SessionTab>("changes");
   const engines = useApp((s) => s.engines);
   const files = changes?.files ?? [];
+  // After "Copy the changes" the session's copy matches the project again, so there's nothing new.
+  const copied = useEvents(thread.id).some((e) => e.body.kind === "step" && e.body.step_id.startsWith("bring-back-") && e.body.status !== "failed");
+  const project = projectName(thread.folder) ?? "your project";
   const items: Array<{ id: SessionTab; label: string }> = [
     { id: "changes", label: "Changes" },
     { id: "terminal", label: "Terminal" },
@@ -111,6 +115,8 @@ function SessionPanel({ thread, changes, onClose }: { thread: ThreadSummary; cha
           <>
             {changes && files.length > 0 ? (
               <ChangedFiles changes={changes} />
+            ) : copied ? (
+              <EmptyState title={`Changes copied into ${project}.`} line="New changes show here as the session works." />
             ) : (
               <EmptyState title="No changes yet." line="They show here as the session works." />
             )}
@@ -120,7 +126,13 @@ function SessionPanel({ thread, changes, onClose }: { thread: ThreadSummary; cha
         )}
         {tab === "terminal" && <EmptyState title="Nothing ran yet." line="Commands the session runs show here." />}
         {tab === "files" &&
-          (files.length > 0 ? <FileList files={files} /> : <EmptyState title="No files changed yet." line="Changed files show here." />)}
+          (files.length > 0 ? (
+            <FileList files={files} />
+          ) : copied ? (
+            <EmptyState title={`Changes copied into ${project}.`} line="New changes show here as the session works." />
+          ) : (
+            <EmptyState title="No files changed yet." line="Changed files show here." />
+          ))}
       </div>
     </>
   );

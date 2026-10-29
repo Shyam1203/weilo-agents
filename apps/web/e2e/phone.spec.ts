@@ -31,3 +31,21 @@ test("phone home shows the chat and the tab bar, with no sideways scroll", async
   await expect(tabs.getByRole("link", { name: "Channels" })).toHaveAttribute("aria-current", "page");
   await expectNoSideScroll(page);
 });
+
+test("phone: a long chat opens at the newest message", async ({ page }) => {
+  // The long chat from the desktop tests, if they ran first; else a few messages here.
+  await page.goto("/");
+  const box = page.getByRole("textbox", { name: "Message Ava" });
+  for (let i = 1; i <= 6; i++) {
+    await box.fill(`Phone line ${i}\nsecond line\nthird line`);
+    // Sent once the box empties (a click while the last reply finishes can be too early).
+    await expect(async () => {
+      if ((await box.inputValue()) !== "") await page.getByRole("button", { name: /^(Send|Tell now)$/ }).click();
+      await expect(box).toHaveValue("", { timeout: 1000 });
+    }).toPass();
+    await expect(page.getByText(`You said: Phone line ${i}`)).toBeVisible();
+  }
+  await page.reload();
+  await expect(page.getByText("You said: Phone line 6")).toBeInViewport();
+  await expect(page.getByRole("button", { name: "Jump to newest" })).toHaveCount(0);
+});

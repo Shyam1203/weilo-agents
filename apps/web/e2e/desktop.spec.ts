@@ -173,3 +173,32 @@ test("Settings lists this device, and won't remove the only one", async ({ page 
   await expect(devices.getByRole("alert")).toContainText("only paired device");
   await expect(devices.getByText("This device")).toBeVisible();
 });
+
+test("a long chat opens at the newest message, and Jump to newest comes back down", async ({ page }) => {
+  await page.goto("/");
+  const box = page.getByRole("textbox", { name: "Message Ava" });
+  for (let i = 1; i <= 15; i++) {
+    await box.fill(`Line ${i} of a long chat\nwith a second line\nand a third line`);
+    await box.press("Enter");
+    await expect(page.getByText(`You said: Line ${i} of a long chat`)).toBeVisible();
+  }
+  const last = page.getByText("You said: Line 15 of a long chat");
+
+  // Opens at the bottom after a reload: the newest reply is in view, above the message box.
+  await page.reload();
+  await expect(last).toBeInViewport();
+  const lastBox = await last.boundingBox();
+  const boxTop = (await box.boundingBox())!.y;
+  expect(lastBox!.y + lastBox!.height).toBeLessThanOrEqual(boxTop);
+  await expect(page.getByRole("button", { name: "Jump to newest" })).toHaveCount(0);
+
+  // Scrolling up by hand shows Jump to newest; it goes back down.
+  await page.mouse.move(700, 300);
+  await page.mouse.wheel(0, -3000);
+  const jump = page.getByRole("button", { name: "Jump to newest" });
+  await expect(jump).toBeVisible();
+  await expect(last).not.toBeInViewport();
+  await jump.click();
+  await expect(last).toBeInViewport();
+  await expect(jump).toHaveCount(0);
+});
