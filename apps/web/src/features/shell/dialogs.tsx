@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from "react";
-import { archiveAgent, changeAgentEngine, create } from "../../lib/app";
+import { archiveAgent, changeAgentEngine, create, loadEngines } from "../../lib/app";
 import { canPick, preferredEngine, statusLine } from "../../lib/engines";
 import { engineTitle, lowerYour, projectName, shortName, slugPreview } from "../../lib/format";
 import { navigate, paths, useRoute } from "../../lib/router";
@@ -32,12 +32,31 @@ function useSubmit(onClose: () => void) {
   return { busy, error, run, reset: () => setError(null) };
 }
 
-/** Preselects an engine once the list arrives: the current one, else the best ready one. */
+/**
+ * Each time the dialog opens, asks the host again which AIs are ready, then preselects one:
+ * the current one (Change AI), else the AI chosen in setup if it's ready, else a ready one.
+ */
 function useDefaultEngine(open: boolean, value: string, set: (v: string) => void, current?: string | null) {
   const engines = useEngineList(open);
+  const chosen = useApp((s) => s.snapshot?.agents[0]?.engine ?? null);
+  const [fresh, setFresh] = useState(false);
   useEffect(() => {
-    if (open && !value && engines?.length) set(preferredEngine(engines, current));
-  }, [open, engines, value, set, current]);
+    if (!open) {
+      setFresh(false);
+      return;
+    }
+    let live = true;
+    set("");
+    loadEngines()
+      .catch(() => {})
+      .finally(() => live && setFresh(true));
+    return () => {
+      live = false;
+    };
+  }, [open, set]);
+  useEffect(() => {
+    if (open && fresh && !value && engines?.length) set(preferredEngine(engines, current, chosen));
+  }, [open, fresh, engines, value, set, current, chosen]);
   return engines;
 }
 

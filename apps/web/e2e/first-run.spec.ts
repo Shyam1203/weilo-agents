@@ -13,14 +13,17 @@ test("pair this browser with a code and finish first run", async ({ page }) => {
   await page.getByLabel("Code").fill(pairingCode());
   await page.getByRole("button", { name: "Pair" }).click();
 
-  // Step 1: pick the AI. Echo is under "Other AI apps".
+  // Step 1: pick the AI. Echo is the only AI app on this computer, so it's the one we found.
   await expect(page.getByText("Step 1 of 2")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Connect your AI" })).toBeVisible();
-  await page.getByRole("button", { name: "Other AI apps" }).click();
-  await page.getByRole("listitem").filter({ hasText: "Echo" }).getByRole("button", { name: "Use" }).click();
+  await expect(page.getByText("We found Echo, signed in. Use it?")).toBeVisible();
+  await page.getByRole("button", { name: "Use it" }).click();
 
   // Weilo checks the chosen AI once; when it's ready, first run goes straight on.
   // Step 2 (the last): keep awake.
+  await expect(page.getByText("Step 2 of 2")).toBeVisible();
+  // A reload keeps step 2.
+  await page.reload();
   await expect(page.getByText("Step 2 of 2")).toBeVisible();
   await page.getByRole("button", { name: "Not now" }).click();
 

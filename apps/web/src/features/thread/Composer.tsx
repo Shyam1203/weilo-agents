@@ -26,7 +26,11 @@ export interface ComposerProps {
 }
 
 /** The message box: a textarea on its own row, send on a toolbar row beneath it. */
-export function Composer({ threadId, placeholder, label, working, agentName, onStop, hint, phone }: ComposerProps) {
+export function Composer({ threadId, placeholder, label, working: stateWorking, agentName, onStop, hint, phone }: ComposerProps) {
+  // "After this job" only while there is a job: a thread that says it's working but has
+  // nothing in it yet (a session still starting) takes its first message as a plain Send.
+  const hasJob = useApp((s) => (s.feeds[threadId]?.events ?? []).some((e) => e.body.kind === "user_message" || e.body.kind === "step" || e.body.kind === "agent_message"));
+  const working = stateWorking && hasJob;
   const [text, setText] = useState("");
   const [menu, setMenu] = useState(false);
   const closeMenu = useCallback(() => setMenu(false), []);

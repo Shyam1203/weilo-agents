@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { decide, savePrefs, send, showNotice, stop } from "../../lib/app";
 import { cx, listWords, shortName, timeOf, whenLabel } from "../../lib/format";
 import { actionable, approveKey, groupNeedsYou, isHeadsUp, isSmall, yesAction, type NeedsYouGroup } from "../../lib/needsYou";
@@ -12,7 +12,10 @@ import { Disclosure, EmptyState, TextWithCode, TopBar } from "../../ui/bits";
 import { problemKind } from "../../lib/engines";
 import { ProblemButton } from "../thread/Problem";
 import { Button } from "../../ui/Button";
-import { CheckIcon, CodeIcon, XCircleIcon } from "../../ui/glyphs";
+import { CheckIcon, CodeIcon, MoreIcon, XCircleIcon } from "../../ui/glyphs";
+import { IconButton } from "../../ui/IconButton";
+import { Menu, MenuItem } from "../../ui/Menu";
+import type { CardAction } from "../../proto/CardAction";
 import { Link } from "../../ui/Link";
 import { RiskLine } from "../../ui/RiskLine";
 import { ConnectionBanner } from "../shell/Toast";
@@ -215,8 +218,21 @@ function Source({ item, snap }: { item: NeedsYouItem; snap: Snapshot }) {
 function AskRow({ item, snap, selected, onFocus, ref, phone }: RowProps & { phone?: boolean }) {
   const small = isSmall(item.card.risk);
   const yes = small ? yesAction(item.card.actions) : undefined;
+  // The same choices as the card in the chat: Not now, and for small items Always allow (under ⋯).
+  const no = item.card.actions.find((a) => a.decision?.kind === "deny");
+  const always = small ? item.card.actions.find((a) => a.decision?.kind === "allow_always") : undefined;
   const [busy, setBusy] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const more = useRef<HTMLButtonElement>(null);
+  const closeMenu = useCallback(() => setMenu(false), []);
   const open = () => navigate(pathFor(snap, item));
+  const act = async (a: CardAction) => {
+    if (!a.decision) return;
+    setBusy(true);
+    await decide(item.approval_id, a.decision);
+    setBusy(false);
+  };
+  const size = phone ? "phone" : "md";
   return (
     <article
       ref={ref}
@@ -244,30 +260,49 @@ function AskRow({ item, snap, selected, onFocus, ref, phone }: RowProps & { phon
           <RiskLine risk={item.card.risk} text={item.card.risk_line} />
         </div>
       </div>
-      <div className="flex shrink-0 gap-2">
+      <div className={cx("flex shrink-0 items-center gap-2", phone && "flex-wrap")}>
+        {no && (
+          <Button size={size} variant="tertiary" className={cx(phone && "flex-1")} disabled={busy} onClick={() => void act(no)}>
+            {no.label}
+          </Button>
+        )}
         {yes?.decision ? (
           <>
-            <Button size={phone ? "phone" : "md"} className={cx(phone && "flex-1")} onClick={open}>
+            <Button size={size} className={cx(phone && "flex-1")} onClick={open}>
               Open
             </Button>
-            <Button
-              size={phone ? "phone" : "md"}
-              variant="primary"
-              className={cx(phone && "flex-1")}
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true);
-                await decide(item.approval_id, yes.decision!);
-                setBusy(false);
-              }}
-            >
+            <Button size={size} variant="primary" className={cx(phone && "flex-1")} disabled={busy} onClick={() => void act(yes)}>
               {yes.label}
             </Button>
           </>
         ) : (
-          <Button size={phone ? "phone" : "md"} variant="primary" className={cx(phone && "flex-1")} onClick={open}>
+          <Button size={size} variant="primary" className={cx(phone && "flex-1")} onClick={open}>
             Open
           </Button>
+        )}
+        {always && (
+          <div className="relative">
+            <IconButton
+              ref={more}
+              label="More choices"
+              size={phone ? 44 : 32}
+              aria-haspopup="menu"
+              aria-expanded={menu}
+              onClick={() => setMenu((v) => !v)}
+            >
+              <MoreIcon />
+            </IconButton>
+            <Menu open={menu} onClose={closeMenu} anchor={more} label="More choices" align="end" className="w-60">
+              <MenuItem
+                onSelect={() => {
+                  setMenu(false);
+                  void act(always);
+                }}
+              >
+                {always.label}
+              </MenuItem>
+            </Menu>
+          </div>
         )}
       </div>
     </article>

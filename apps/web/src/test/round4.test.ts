@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { parseDiff } from "../lib/changes";
+import { canPick, foundEngine, keyCompanies, loadSetupEngine, saveSetupEngine, setupEngineHolds } from "../lib/engines";
 import { jumpItems, searchJump } from "../lib/jump";
 import { failedLine, showSteps } from "../lib/steps";
 import { agentStatus, hostAway, initialState, problemTitle } from "../lib/store";
 import { buildBlocks, type AgentItem } from "../lib/timeline";
 import { overviewOrder, waitingSessions } from "../features/thread/ChannelView";
+import type { EngineInfo } from "../proto/EngineInfo";
 import type { Event } from "../proto/Event";
 import type { EventBody } from "../proto/EventBody";
 import { agent, snapshot, thread } from "./fixtures";
@@ -208,5 +210,58 @@ describe("channels", () => {
     ];
     expect(waitingSessions("c1", "ava", threads).map((t) => t.id)).toEqual(["s1"]);
     expect(waitingSessions("c1", null, threads)).toEqual([]);
+  });
+});
+
+describe("setup wording and progress", () => {
+  const eng = (over: Partial<EngineInfo>): EngineInfo =>
+    ({ id: "x", title: "X", description: "", installed: true, default: false, binds_approvals: true, ...over }) as EngineInfo;
+  const list = [
+    eng({ id: "claude-code", title: "Claude Code", installed: false, ready: false, status: "Not on this computer." }),
+    eng({ id: "codex", title: "Codex", installed: false, ready: false, needs: "sign_in" }),
+    eng({ id: "gemini", title: "Gemini CLI", installed: true, ready: false, needs: "sign_in" }),
+    eng({
+      id: "pi",
+      title: "Weilo's built-in AI",
+      installed: false,
+      ready: false,
+      needs: "key",
+      key_providers: [
+        { id: "anthropic", title: "Anthropic", has_key: false },
+        { id: "openai", title: "OpenAI", has_key: false },
+        { id: "google", title: "Google", has_key: false },
+      ],
+    }),
+  ];
+  it("says 'found' only for an AI app that's on this computer, never the built-in AI", () => {
+    expect(foundEngine(["pi", "claude-code"], list)).toBeNull();
+    expect(foundEngine(["claude-code", "gemini"], list)?.id).toBe("gemini");
+    expect(foundEngine(["gemini"], null)).toBeNull();
+  });
+  it("never offers Use for an app that isn't on this computer", () => {
+    expect(canPick(list[0]!)).toBe(false);
+    expect(canPick(list[1]!)).toBe(false);
+    expect(canPick(eng({ id: "codex", installed: false, needs: "key" }))).toBe(false);
+    expect(canPick(list[3]!)).toBe(true);
+  });
+  it("names the key companies in plain words", () => {
+    expect(keyCompanies(list[3])).toBe("Anthropic, OpenAI or Google");
+    expect(keyCompanies(undefined)).toBeNull();
+  });
+  it("remembers the step-1 choice and drops it when that AI stops working", () => {
+    const mem = new Map<string, string>();
+    const st = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) };
+    expect(loadSetupEngine(st)).toBeNull();
+    saveSetupEngine("codex", st);
+    expect(loadSetupEngine(st)).toBe("codex");
+    saveSetupEngine(null, st);
+    expect(loadSetupEngine(st)).toBeNull();
+    const broken = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); }, removeItem: () => {} };
+    expect(loadSetupEngine(broken)).toBeNull();
+    expect(() => saveSetupEngine("x", broken)).not.toThrow();
+    expect(setupEngineHolds("gemini", null)).toBeNull();
+    expect(setupEngineHolds("gemini", list)).toBe(false);
+    expect(setupEngineHolds("codex", [eng({ id: "codex", ready: true })])).toBe(true);
+    expect(setupEngineHolds("gone", list)).toBe(false);
   });
 });

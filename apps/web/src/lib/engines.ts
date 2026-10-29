@@ -3,14 +3,38 @@ import type { EngineNeed } from "../proto/EngineNeed";
 
 /**
  * Whether an engine can be picked now. Ready engines can; so can ones that only need a
- * sign-in or a key (the person adds those next). Engines that aren't on this computer
- * can't, and say why in their status line. Older hosts send no `ready`: installed means yes.
+ * sign-in (when they're on this computer) or a key (the person adds those next; a key-only
+ * engine like Weilo's built-in AI downloads on first use). Engines that aren't on this
+ * computer can't, and say why in their status line. Older hosts send no `ready`: installed means yes.
  */
 export function canPick(e: EngineInfo): boolean {
   if (e.ready) return true;
   if (e.needs === "install" || e.needs === "node") return false;
-  if (e.needs) return true;
+  // Only the built-in AI is fetched on first use; any other app has to be on this computer.
+  if (e.needs === "key") return e.installed || e.id === "pi";
+  if (e.needs) return e.installed;
   return e.ready === undefined ? e.installed : false;
+}
+
+/**
+ * The AI app first run offers as "We found …": one the host found that is really on this
+ * computer and can be used. Weilo's built-in AI is never "found"; it has its own card.
+ */
+export function foundEngine(found: string[], engines: EngineInfo[] | null): EngineInfo | null {
+  if (!engines) return null;
+  for (const id of found) {
+    if (id === "pi") continue;
+    const e = engines.find((x) => x.id === id);
+    if (e && e.installed && canPick(e)) return e;
+  }
+  return null;
+}
+
+/** "Anthropic, OpenAI or Google": the companies whose key an engine takes. */
+export function keyCompanies(e: EngineInfo | undefined): string | null {
+  const names = (e?.key_providers ?? []).map((k) => k.title);
+  if (names.length === 0) return null;
+  return names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`;
 }
 
 /** One plain line about an engine: the host's status, else what we can tell ourselves. */
@@ -25,11 +49,16 @@ export function pickOrder(engines: EngineInfo[]): EngineInfo[] {
   return [...engines.filter(canPick), ...engines.filter((e) => !canPick(e))];
 }
 
-/** The engine to preselect: the current one if pickable, else the default, else the first pickable. */
-export function preferredEngine(engines: EngineInfo[], current?: string | null): string {
+/**
+ * The engine to preselect. Change AI keeps the agent's `current` one. Otherwise only a ready
+ * engine is preselected: the one chosen in setup (`chosen`, the main agent's), else the
+ * default, else any. Only when none is ready does it fall back to one that needs a sign-in or key.
+ */
+export function preferredEngine(engines: EngineInfo[], current?: string | null, chosen?: string | null): string {
   const ok = engines.filter(canPick);
   return (
     (current && ok.find((e) => e.id === current)?.id) ||
+    (chosen && ok.find((e) => e.id === chosen && e.ready)?.id) ||
     ok.find((e) => e.default && e.ready)?.id ||
     ok.find((e) => e.ready)?.id ||
     ok.find((e) => e.default)?.id ||
@@ -129,4 +158,36 @@ export function engineLine(e: EngineInfo): string {
 export function engineHow(e: EngineInfo): string | null {
   if (canPick(e) || !e.how?.trim()) return null;
   return alreadySays(statusLine(e), e.how) ? null : e.how.trim();
+}
+
+// Setup step 1's choice, kept in this browser so a reload doesn't send people back to step 1.
+// The host only learns the choice when setup finishes.
+const SETUP_KEY = "weilo.setupEngine";
+
+/** The AI chosen in setup step 1 on this device, or null (also when storage is blocked). */
+export function loadSetupEngine(storage?: Pick<Storage, "getItem">): string | null {
+  try {
+    const v = (storage ?? globalThis.localStorage)?.getItem(SETUP_KEY);
+    return v && v.trim() ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveSetupEngine(id: string | null, storage?: Pick<Storage, "setItem" | "removeItem">): void {
+  try {
+    const st = storage ?? globalThis.localStorage;
+    if (id) st?.setItem(SETUP_KEY, id);
+    else st?.removeItem(SETUP_KEY);
+  } catch {
+    // Private windows: setup still works, it just starts at step 1 after a reload.
+  }
+}
+
+/** Whether a remembered setup choice still holds: null while engines load, then ready-or-not. */
+export function setupEngineHolds(id: string, engines: EngineInfo[] | null): boolean | null {
+  if (!engines) return null;
+  const e = engines.find((x) => x.id === id);
+  if (!e) return false;
+  return e.ready === true || (e.ready === undefined && e.installed && !e.needs);
 }

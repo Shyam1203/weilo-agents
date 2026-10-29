@@ -158,6 +158,17 @@ describe("engines", () => {
     expect(preferredEngine(list, "pi")).toBe("pi");
     expect(preferredEngine(list, "gemini")).toBe("claude-code");
   });
+  it("defaults new work to the AI chosen in setup, but never to one that isn't ready", () => {
+    const list = [
+      pi({ id: "claude-code", default: true, ready: false, needs: "key" }),
+      pi({ id: "codex", ready: true, needs: undefined }),
+      pi({ id: "echo", ready: true, needs: undefined }),
+    ];
+    expect(preferredEngine(list, null, "echo")).toBe("echo");
+    // The setup choice stopped working (its key was rejected): a ready one instead.
+    expect(preferredEngine(list, null, "claude-code")).toBe("codex");
+    expect(preferredEngine([pi({ id: "claude-code", ready: false, needs: "key" })], null, "claude-code")).toBe("claude-code");
+  });
 });
 
 describe("key dialog", () => {

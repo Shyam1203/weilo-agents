@@ -1,6 +1,19 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { checkEngine, closeFirstRun, finishSetup, loadEngines } from "../../lib/app";
-import { alreadySays, canPick, engineHow, engineLine, needKind, problemKind, statusLine } from "../../lib/engines";
+import {
+  alreadySays,
+  canPick,
+  engineHow,
+  engineLine,
+  foundEngine,
+  keyCompanies,
+  loadSetupEngine,
+  needKind,
+  problemKind,
+  saveSetupEngine,
+  setupEngineHolds,
+  statusLine,
+} from "../../lib/engines";
 import { cx, engineTitle } from "../../lib/format";
 import { useApp } from "../../lib/store";
 import { useDesktop } from "../../lib/useMedia";
@@ -22,10 +35,19 @@ type Step = "engine" | "awake";
  */
 export function FirstRun() {
   const setup = useApp((s) => s.snapshot!.setup);
-  const [step, setStep] = useState<Step>("engine");
-  const [engine, setEngine] = useState<string | null>(null);
+  const engines = useApp((s) => s.engines);
+  // A reload keeps step 2 when the AI chosen in step 1 still works.
+  const [engine, setEngine] = useState<string | null>(() => loadSetupEngine());
+  const step: Step = engine ? "awake" : "engine";
   const desktop = useDesktop();
   const n = step === "engine" ? 1 : 2;
+
+  useEffect(() => {
+    if (engine && setupEngineHolds(engine, engines) === false) {
+      saveSetupEngine(null);
+      setEngine(null);
+    }
+  }, [engine, engines]);
 
   return (
     <div className="flex h-full justify-center overflow-y-auto bg-bg">
@@ -35,12 +57,24 @@ export function FirstRun() {
           <EngineStep
             found={setup.found_engines}
             onPick={(id) => {
+              saveSetupEngine(id);
               setEngine(id);
-              setStep("awake");
             }}
           />
         )}
-        {step === "awake" && engine && <AwakeStep engine={engine} onDone={closeFirstRun} />}
+        {step === "awake" && engine && (
+          <AwakeStep
+            engine={engine}
+            onDone={() => {
+              saveSetupEngine(null);
+              closeFirstRun();
+            }}
+            onBack={() => {
+              saveSetupEngine(null);
+              setEngine(null);
+            }}
+          />
+        )}
       </main>
     </div>
   );
@@ -63,8 +97,9 @@ function EngineStep({ found, onPick }: { found: string[]; onPick(id: string): vo
   const [result, setResult] = useState<EngineCheck | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const desktop = useDesktop();
-  const best = found[0] ?? null;
-  const bestInfo = engines?.find((e) => e.id === (best ?? "pi"));
+  // "We found" only for an AI app that's on this computer; otherwise the built-in AI with a key.
+  const bestInfo = foundEngine(found, engines);
+  const best = bestInfo?.id ?? null;
   const rest = (engines ?? []).filter((e) => e.id !== (best ?? "pi"));
   const size = desktop ? "lg" : "phone";
 
@@ -221,7 +256,11 @@ function BuiltIn({ engines, size, onUse }: { engines: EngineInfo[] | null; size:
       <div className="flex flex-col gap-1">
         <div className="text-title-sm font-semibold">Use Weilo's built-in AI</div>
         <div className="text-body-sm text-text-secondary">
-          {saved && !changing ? "A key is saved. You're set." : "It works with your own API key."}
+          {saved && !changing
+            ? "A key is saved. You're set."
+            : keyCompanies(pi)
+              ? `Paste an API key from ${keyCompanies(pi)}.`
+              : "It works with your own API key."}
         </div>
       </div>
       {showForm ? (
@@ -357,7 +396,7 @@ function CheckCard({
   );
 }
 
-function AwakeStep({ engine, onDone }: { engine: string; onDone(): void }) {
+function AwakeStep({ engine, onDone, onBack }: { engine: string; onDone(): void; onBack(): void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const desktop = useDesktop();
@@ -386,6 +425,9 @@ function AwakeStep({ engine, onDone }: { engine: string; onDone(): void }) {
         </Button>
       </div>
       {error && <ErrorLine>{error}</ErrorLine>}
+      <Button variant="tertiary" size="sm" className="w-fit" disabled={busy} onClick={onBack}>
+        Choose another AI
+      </Button>
     </>
   );
 }
