@@ -163,6 +163,19 @@ pub async fn run(app: &Arc<App>, m: &Manifest) -> EngineCheck {
         action: Some(e.action.into()),
         auth_methods,
     };
+    // Not on this computer: say so, and download nothing.
+    if readiness.needs == Some(EngineNeed::Install) {
+        let message = match &readiness.how {
+            Some(how) => format!("{} isn't on this computer. {how}", m.title),
+            None => format!("{} isn't on this computer.", m.title),
+        };
+        let e = Explained {
+            needs: EngineNeed::Install,
+            message,
+            action: "Install",
+        };
+        return not_ready(e, vec![]);
+    }
     if let Err(e) = app.engines.install(m).await {
         return not_ready(explain(m, &Failure::other(e), key.as_deref()), vec![]);
     }

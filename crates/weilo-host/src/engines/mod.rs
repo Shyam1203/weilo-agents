@@ -632,10 +632,11 @@ pub fn readiness(m: &Manifest, p: Probe<'_>) -> Readiness {
             how: Some(format!("Add an API key from {}.", or_list(&names))),
         };
     };
-    // Signing in needs the engine's own program. Without it, a key is the one way here
-    // (Weilo downloads the engine itself), so that is all that is said.
+    // Signing in needs the engine's own program. Without it, and with nothing of the
+    // engine downloaded yet, the engine isn't on this computer, and only that is said.
+    // Once Weilo has downloaded it, a key is the one way, and only that is said.
     if !p.sign_in_cli {
-        if names.is_empty() {
+        if names.is_empty() || !p.installed {
             let get = s.get.clone();
             return Readiness {
                 needs: Some(EngineNeed::Install),
@@ -928,10 +929,26 @@ mod tests {
     #[test]
     fn codex_without_its_program_offers_a_key() {
         let dir = tempfile::tempdir().unwrap();
+        // Neither its program nor Weilo's download is here: it isn't on this computer,
+        // and nothing about signing in or keys is said.
+        for name in ["codex", "claude-code"] {
+            let mut p = probe(dir.path(), false);
+            p.sign_in_cli = false;
+            let r = readiness(&manifest(name), p);
+            assert_eq!(r.needs, Some(EngineNeed::Install), "{name}");
+            assert_eq!(r.status, "Not on this computer.");
+            assert!(
+                r.how
+                    .as_deref()
+                    .unwrap()
+                    .starts_with("Install it from Terminal")
+            );
+        }
         let mut p = probe(dir.path(), false);
         p.sign_in_cli = false;
+        p.installed = true;
         let r = readiness(&manifest("codex"), p);
-        // Weilo downloads the engine itself; without the program to sign in with, a key
+        // Weilo has downloaded the engine; without the program to sign in with, a key
         // is the one way, and that is all that is said.
         assert_eq!(r.needs, Some(EngineNeed::Key));
         assert_eq!(r.status, "Needs an API key.");

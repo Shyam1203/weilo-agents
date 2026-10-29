@@ -14,6 +14,8 @@ On macOS or Linux:
 curl -fsSL https://github.com/Shyam1203/weilo-agents/releases/latest/download/install.sh | sh
 ```
 
+This works from version 0.2.0 on. Until 0.2.0 is released, build it from source (see Develop).
+
 Weilo keeps its data in Postgres 16 or newer. The installer tells you how to add it if it's missing
 (`brew install postgresql@16` on a Mac, `sudo apt install postgresql-16` on Debian or Ubuntu).
 Weilo starts and stops its own copy, so there is nothing to set up. Weilo's built-in AI
