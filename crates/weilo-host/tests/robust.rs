@@ -1257,9 +1257,10 @@ async fn a_session_starts_on_its_task_and_new_chats_take_a_name() {
     };
     c.sub(t.id, 0).await;
     // "What should it do?" is the first message: the person sees it, and the engine gets it.
+    // A plain first message, not one waiting "after this job" (nothing ran before it).
     c.next(|f| {
         matches!(f, ServerFrame::Ev { event, .. }
-            if matches!(&event.body, EventBody::UserMessage { text, .. } if text == "Make the cart total add up"))
+            if matches!(&event.body, EventBody::UserMessage { text, when: SendWhen::Now } if text == "Make the cart total add up"))
     })
     .await;
     c.next(|f| agent_text(f) == Some("You said: Make the cart total add up"))

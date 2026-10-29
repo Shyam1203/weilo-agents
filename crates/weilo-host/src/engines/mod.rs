@@ -60,11 +60,14 @@ pub struct Registry {
     /// Engines being downloaded right now.
     downloading: Mutex<std::collections::HashSet<String>>,
     /// What the provider said of a key (by engine and provider), when it wasn't "yes".
-    key_states: Mutex<HashMap<(String, String), KeyState>>,
+    /// Kept in `secrets/key-states.json`, with a fingerprint of the key each is about:
+    /// a key that failed stays failed across restarts, until it is changed.
+    key_states: Mutex<HashMap<(String, String), (KeyState, String)>>,
 }
 
 /// A key the provider hasn't taken.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 enum KeyState {
     /// The provider couldn't be asked yet.
     Unchecked,
@@ -92,12 +95,17 @@ impl Registry {
             install_timeout: Duration::from_secs(secs),
             keys_lock: Mutex::default(),
             downloading: Mutex::default(),
-            key_states: Mutex::default(),
+            key_states: Mutex::new(load_key_states(home)),
         }
     }
 
     pub fn get(&self, name: &str) -> Option<&Manifest> {
         self.manifests.get(name)
+    }
+
+    /// Every engine Weilo knows, hidden ones included.
+    pub fn manifests(&self) -> impl Iterator<Item = &Manifest> {
+        self.manifests.values()
     }
 
     /// Engines people can pick (hidden ones, like echo, still run when named).
@@ -176,9 +184,13 @@ impl Registry {
 
     /// The state of the key the engine uses (the first in use), when it isn't "taken".
     fn key_state(&self, m: &Manifest) -> Option<KeyState> {
-        let (spec, _) = self.keys_in_use(m).into_iter().next()?;
+        let (spec, value) = self.keys_in_use(m).into_iter().next()?;
         let states = self.key_states.lock().expect("key states lock");
-        states.get(&(m.name.clone(), spec.id)).copied()
+        // Only about this very key: a new one starts with a clean slate.
+        states
+            .get(&(m.name.clone(), spec.id))
+            .filter(|(_, print)| *print == fingerprint(&value))
+            .map(|(state, _)| *state)
     }
 
     /// The engine's keys in use that the provider couldn't be asked about yet, by
@@ -188,8 +200,9 @@ impl Registry {
         let states = self.key_states.lock().expect("key states lock");
         in_use
             .into_iter()
-            .filter(|(spec, _)| {
-                states.get(&(m.name.clone(), spec.id.clone())) == Some(&KeyState::Unchecked)
+            .filter(|(spec, value)| {
+                states.get(&(m.name.clone(), spec.id.clone()))
+                    == Some(&(KeyState::Unchecked, fingerprint(value)))
             })
             .map(|(spec, value)| (spec.id, value))
             .collect()
@@ -198,18 +211,26 @@ impl Registry {
     /// Notes what the provider said of a key: `Some(true)` taken, `Some(false)` turned
     /// down, `None` couldn't ask.
     pub fn mark_key(&self, m: &Manifest, provider: &str, answer: Option<bool>) {
+        let value = self
+            .keys_in_use(m)
+            .into_iter()
+            .find(|(spec, _)| spec.id == provider)
+            .map(|(_, v)| v);
         let mut states = self.key_states.lock().expect("key states lock");
         let entry = (m.name.clone(), provider.to_string());
-        match answer {
-            Some(true) => {
+        match (answer, value) {
+            (Some(true), _) | (_, None) => {
                 states.remove(&entry);
             }
-            Some(false) => {
-                states.insert(entry, KeyState::Rejected);
+            (Some(false), Some(v)) => {
+                states.insert(entry, (KeyState::Rejected, fingerprint(&v)));
             }
-            None => {
-                states.insert(entry, KeyState::Unchecked);
+            (None, Some(v)) => {
+                states.insert(entry, (KeyState::Unchecked, fingerprint(&v)));
             }
+        }
+        if let Err(e) = save_key_states(&self.home, &states) {
+            tracing::warn!("couldn't save what providers said of keys: {e}");
         }
     }
 
@@ -429,6 +450,47 @@ impl Registry {
     }
 }
 
+/// A short fingerprint of a key, so its state is kept without the key itself.
+fn fingerprint(key: &str) -> String {
+    use sha2::Digest;
+    let hash = sha2::Sha256::digest(key.as_bytes());
+    hash.iter().take(12).map(|b| format!("{b:02x}")).collect()
+}
+
+/// `engine/provider` → state and key fingerprint.
+type SavedKeyStates = BTreeMap<String, (KeyState, String)>;
+
+fn key_states_file(home: &Home) -> PathBuf {
+    home.secrets().join("key-states.json")
+}
+
+fn load_key_states(home: &Home) -> HashMap<(String, String), (KeyState, String)> {
+    let saved: SavedKeyStates = std::fs::read(key_states_file(home))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default();
+    saved
+        .into_iter()
+        .filter_map(|(k, v)| {
+            let (engine, provider) = k.split_once('/')?;
+            Some(((engine.to_string(), provider.to_string()), v))
+        })
+        .collect()
+}
+
+fn save_key_states(
+    home: &Home,
+    states: &HashMap<(String, String), (KeyState, String)>,
+) -> std::io::Result<()> {
+    let saved: SavedKeyStates = states
+        .iter()
+        .map(|((e, p), v)| (format!("{e}/{p}"), v.clone()))
+        .collect();
+    let bytes = serde_json::to_vec(&saved).map_err(std::io::Error::other)?;
+    crate::home::ensure_private_dir(&home.secrets())?;
+    write_private(&key_states_file(home), &bytes)
+}
+
 /// Marks an engine as downloading while it lives. Dropped before npm is done (the
 /// download was stopped), it also removes the half-made folder.
 struct Downloading<'a> {
@@ -555,10 +617,55 @@ pub fn spec_for(
             tracing::warn!("couldn't write {}'s settings: {e}", m.name);
         }
     }
-    manifest::launch_spec(m, &vars).map_err(|e| acp::Failure {
+    let mut spec = manifest::launch_spec(m, &vars).map_err(|e| acp::Failure {
         text: e,
         ..Default::default()
-    })
+    })?;
+    if let Some(own) = &m.launch.own_home {
+        own_home(own, &vars, &mut spec).map_err(|e| acp::Failure {
+            text: format!("couldn't make {}'s own folder: {e}", m.title),
+            ..Default::default()
+        })?;
+    }
+    Ok(spec)
+}
+
+/// Gives the adapter its own home folder, and the program it starts a small launcher
+/// that puts the person's home back first.
+fn own_home(
+    own: &manifest::OwnHome,
+    vars: &manifest::Vars,
+    spec: &mut manifest::LaunchSpec,
+) -> std::io::Result<()> {
+    let missing = || std::io::Error::other("a path in launch.ownHome can't be filled in");
+    let home = PathBuf::from(manifest::expand(&own.home, vars).ok_or_else(missing)?);
+    let program = manifest::expand(&own.program, vars).ok_or_else(missing)?;
+    std::fs::create_dir_all(&home)?;
+    let Some(real_home) = std::env::var_os("HOME").or_else(|| dirs::home_dir().map(Into::into))
+    else {
+        return Ok(());
+    };
+    let quote = |s: &str| format!("'{}'", s.replace('\'', "'\\''"));
+    let launcher = vars.engine_home.join("launch-with-home");
+    let script = format!(
+        "#!/bin/sh\nHOME={} exec {} \"$@\"\n",
+        quote(&real_home.to_string_lossy()),
+        quote(&program)
+    );
+    if std::fs::read_to_string(&launcher).ok().as_deref() != Some(script.as_str()) {
+        use std::os::unix::fs::PermissionsExt;
+        let staging = launcher.with_extension("new");
+        std::fs::write(&staging, &script)?;
+        std::fs::set_permissions(&staging, std::fs::Permissions::from_mode(0o700))?;
+        std::fs::rename(&staging, &launcher)?;
+    }
+    spec.env
+        .insert("HOME".into(), home.to_string_lossy().into_owned());
+    spec.env.insert(
+        own.program_env.clone(),
+        launcher.to_string_lossy().into_owned(),
+    );
+    Ok(())
 }
 
 /// Puts the manifest's `settings` in the engine's settings file. What Weilo wrote last
@@ -999,6 +1106,33 @@ mod tests {
             .map(|d| d.flatten().count())
             .unwrap_or(0);
         assert_eq!(leftovers, 0, "the half-made folder is removed");
+    }
+
+    #[test]
+    fn a_key_that_failed_stays_failed_until_it_is_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = Home::new(dir.path());
+        let reg = Registry::load(&home);
+        let pi = reg.get("pi").unwrap().clone();
+        reg.save_key(&pi, "anthropic", "sk-first").unwrap();
+        reg.mark_key(&pi, "anthropic", Some(false));
+        assert_eq!(reg.readiness(&pi).status, "The key didn't work.");
+        // Weilo restarts: still failed.
+        let reg = Registry::load(&home);
+        assert_eq!(reg.readiness(&pi).needs, Some(EngineNeed::Key));
+        assert_eq!(reg.readiness(&pi).status, "The key didn't work.");
+        let saved = std::fs::read_to_string(key_states_file(&home)).unwrap();
+        assert!(!saved.contains("sk-first"), "the key itself isn't kept there");
+        // A new key starts clean; one that couldn't be checked says so after a restart.
+        reg.save_key(&pi, "anthropic", "sk-second").unwrap();
+        assert!(reg.readiness(&pi).ready());
+        reg.mark_key(&pi, "anthropic", None);
+        let reg = Registry::load(&home);
+        assert_eq!(
+            reg.readiness(&pi).status,
+            "Has an API key. Weilo couldn't check it yet."
+        );
+        assert_eq!(reg.unchecked_keys(&pi).len(), 1);
     }
 
     #[test]

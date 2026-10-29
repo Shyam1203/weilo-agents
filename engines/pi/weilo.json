@@ -6,6 +6,13 @@
   "description": "Works with an API key from Anthropic, OpenAI or Google. Built in.",
   "install": { "npm": ["pi-acp@0.0.34", "@earendil-works/pi-coding-agent@1.4.0"] },
   "command": ["{install}/node_modules/.bin/pi-acp"],
+  "launch": {
+    "ownHome": {
+      "home": "{engine_home}/adapter-home",
+      "program": "{install}/node_modules/.bin/pi",
+      "programEnv": "PI_ACP_PI_COMMAND"
+    }
+  },
   "env": { "PATH": "{install}/node_modules/.bin:{PATH}", "PI_CODING_AGENT_DIR": "{engine_home}" },
   "passEnv": ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"],
   "keys": [

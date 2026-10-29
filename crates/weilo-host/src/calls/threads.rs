@@ -180,7 +180,8 @@ pub async fn start_session(
     if let Some(task) = task
         && !missing
     {
-        send(app, thread.id, task.to_string(), SendWhen::AfterJob).await?;
+        // The session's first message: nothing ran before it, so it goes as a plain one.
+        send(app, thread.id, task.to_string(), SendWhen::Now).await?;
     }
     read::thread(app, thread.id).await
 }

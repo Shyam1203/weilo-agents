@@ -110,12 +110,29 @@ pub struct SignIn {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Launch {
     /// Flags never passed, whatever the command says.
     #[serde(default)]
     pub deny: Vec<String>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
+    /// Runs the engine's adapter with its own home folder, for adapters that keep files
+    /// under `~` whatever they are told; the program it starts gets the person's home
+    /// back (so its tools find their git and ssh settings).
+    #[serde(default)]
+    pub own_home: Option<OwnHome>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnHome {
+    /// The adapter's home (`{engine_home}` allowed).
+    pub home: String,
+    /// The program the adapter starts (`{install}` allowed)…
+    pub program: String,
+    /// …and the variable the adapter reads that program's path from.
+    pub program_env: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

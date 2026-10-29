@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, type ReactNode } from "react";
 import { cx } from "../../lib/format";
 import { store, useApp } from "../../lib/store";
 import { useMedia } from "../../lib/useMedia";
-import { PanelIcon } from "../../ui/glyphs";
+import { ChevronDownIcon, PanelIcon } from "../../ui/glyphs";
 import { IconButton } from "../../ui/IconButton";
 import { ConnectionBanner } from "../shell/Toast";
 import { Composer, type ComposerProps } from "./Composer";
@@ -44,7 +44,7 @@ export function ThreadScreen({ header, threadId, list, composer, panelOpen, onPa
   const scroll = useRef<HTMLDivElement>(null);
   const thread = useApp((s) => s.snapshot?.threads.find((t) => t.id === threadId));
   useFollow(threadId);
-  useStickToBottom(scroll, threadId ?? "");
+  const { atBottom, jump } = useStickToBottom(scroll, threadId ?? "");
   const floating = !wide;
   const showPanel = !!panelOpen && !!thread && !phone;
 
@@ -88,7 +88,17 @@ export function ThreadScreen({ header, threadId, list, composer, panelOpen, onPa
               <MessageList threadId={threadId} {...list} tail={after} />
             </div>
           </div>
-          <div className={cx(column, "shrink-0", phone ? "py-2" : "pb-6")}>
+          <div className={cx(column, "relative shrink-0", phone ? "py-2" : "pb-6")}>
+            {!atBottom && (
+              <button
+                type="button"
+                onClick={jump}
+                className="absolute -top-12 left-1/2 z-[2] flex h-9 -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-body-sm font-medium text-text shadow-e2"
+              >
+                <ChevronDownIcon size={12} />
+                Jump to newest
+              </button>
+            )}
             <Composer threadId={threadId} phone={phone} {...composer} />
           </div>
         </Fragment>

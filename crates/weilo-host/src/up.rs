@@ -95,6 +95,10 @@ async fn serve_app(home: &Home, app: &Arc<App>, port: u16, web: Option<PathBuf>)
         tracing::warn!("couldn't tidy up after the last run: {e:#}");
     }
     check_audit(&app).await;
+    // Keys whose provider couldn't be asked last time are asked again now.
+    for m in app.engines.manifests() {
+        crate::engines::check::recheck_keys(&app, m);
+    }
     if let Err(e) = jobs::schedule_prune(&app, chrono::Utc::now()).await {
         tracing::warn!("couldn't schedule the daily tidy-up: {e}");
     }
