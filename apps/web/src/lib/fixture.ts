@@ -120,7 +120,7 @@ function seedThreads(): ThreadSeed[] {
       events: [
         [at(7, 30), "agent", { kind: "agent_message", agent_id: ID.mia, text: "Today's post is ready. It goes out at 6 pm." }],
         [at(7, 40), "user", { kind: "user_message", when: "now", text: "Make a version for Instagram too." }],
-        [at(7, 40), "host", { kind: "problem", message: "Weilo's built-in AI needs an API key to work.", action: "Add a key" }],
+        [at(7, 40), "host", { kind: "problem", message: "Weilo's built-in AI needs an API key to work.", action: "Add a key", code: "needs_key", engine: "pi" }],
       ],
     },
     {
@@ -178,7 +178,7 @@ function seedThreads(): ThreadSeed[] {
         [at(9, 24), "engine", { kind: "step", step_id: "d1b", title: "`npm run build`", status: "done" }],
         [at(9, 26), "engine", { kind: "step", step_id: "d1c", title: "Edit src/theme.css", status: "running" }],
         // Codex went quiet; the reply ended there. Try again sent the message again, and work goes on.
-        [at(9, 27), "host", { kind: "problem", message: "Codex stopped responding, so this reply stopped.", action: "Try again" }],
+        [at(9, 27), "host", { kind: "problem", message: "Codex stopped responding, so this reply stopped.", action: "Try again", code: "not_responding", engine: "codex" }],
         [at(9, 27), "host", { kind: "state", state: "idle", live_line: "" }],
         [at(9, 28), "user", { kind: "user_message", when: "now", text: "Add a dark mode to the store." }],
         [at(9, 28), "host", { kind: "state", state: "working", live_line: "Changing the colours" }],

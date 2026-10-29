@@ -18,6 +18,26 @@ pub struct Explained {
     pub action: &'static str,
 }
 
+impl Explained {
+    /// The kind of problem, for `EventBody::Problem::code`.
+    pub fn code(&self) -> &'static str {
+        problem_code(Some(self.needs), Some(self.action))
+    }
+}
+
+/// What kind of problem an engine need is, for `EventBody::Problem::code`: `key_rejected`
+/// (a key it was given didn't work), `needs_key`, `not_signed_in`, `not_installed` or
+/// `engine_error`.
+pub fn problem_code(needs: Option<EngineNeed>, action: Option<&str>) -> &'static str {
+    match needs {
+        Some(EngineNeed::Key) if action == Some("Change key") => "key_rejected",
+        Some(EngineNeed::Key) => "needs_key",
+        Some(EngineNeed::SignIn) => "not_signed_in",
+        Some(EngineNeed::Install | EngineNeed::Node) => "not_installed",
+        Some(EngineNeed::Error) | None => "engine_error",
+    }
+}
+
 /// The longest engine message shown; the whole text is in the engine's log.
 const MAX_SHOWN: usize = 300;
 

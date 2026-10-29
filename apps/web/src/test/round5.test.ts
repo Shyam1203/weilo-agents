@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { channelLine } from "../features/shell/Pages";
 import { jumpItems, searchJump, startJump } from "../lib/jump";
-import { plainProblem, problemTitle, awayLine, initialState, applySnapshot, setNeedsYou, store, type AppState } from "../lib/store";
+import { openProblem, plainProblem, problemLine, problemTitle, awayLine, initialState, applySnapshot, setNeedsYou, store, type AppState } from "../lib/store";
 import { doLater, flushUndo, hasPending, undoPending } from "../lib/undo";
 import { agent, item, snapshot, thread } from "./fixtures";
 
@@ -76,6 +76,53 @@ describe("problems name the agent, not the AI app", () => {
     expect(problemTitle("Fix checkout", { action: "Try again", message: "Claude Code stopped responding." }, "Ava")).toBe(
       "Ava's AI stopped responding.",
     );
+  });
+});
+
+describe("problems by the host's code", () => {
+  it("words the sidebar line by code, and old events by their words", () => {
+    expect(problemLine({ code: "key_rejected", action: "Change key", message: "Codex didn't answer: your OpenAI key didn't work." })).toBe(
+      "Needs a new API key",
+    );
+    expect(problemLine({ code: "not_signed_in", action: "Sign in", message: "x" })).toBe("Needs you to sign in");
+    expect(problemLine({ code: "needs_key", action: null, message: "x" })).toBe("Needs an API key");
+    expect(problemLine({ code: "not_installed", action: "Install", message: "x" })).toBe("Needs an app installed");
+    expect(problemLine({ code: "folder_missing", action: null, message: "x" })).toBe("Can't open its folder");
+    // A known failure code wins over words that look like a key problem.
+    expect(problemLine({ code: "engine_error", action: "Try again", message: "Codex hit a problem: bad API key header" })).toBe("Didn't work");
+    // No code (older events) or one this app doesn't know: the button and words decide.
+    expect(problemLine({ action: "Add a key", message: "x" })).toBe("Needs an API key");
+    expect(problemLine({ code: "something_new", action: "Sign in", message: "x" })).toBe("Needs you to sign in");
+  });
+
+  it("names the agent even when the app's name isn't known", () => {
+    expect(plainProblem("Frobnicator stopped responding, so this reply stopped.", "Ava", [], "not_responding")).toEqual({
+      line: "Ava's AI stopped responding, so this reply stopped.",
+      named: true,
+    });
+    expect(plainProblem("The engine stopped unexpectedly.", "Ava", [], "stopped")).toEqual({
+      line: "Ava's AI stopped unexpectedly.",
+      named: false,
+    });
+    expect(plainProblem("Weilo restarted while this was working, so it stopped.", "Ava", [], "restarted").line).toBe(
+      "Weilo restarted while this was working, so it stopped.",
+    );
+    expect(problemTitle("Mia", { code: "key_rejected", action: "Change key", message: "Codex didn't answer: your OpenAI key didn't work." })).toBe(
+      "Mia needs a new API key",
+    );
+  });
+
+  it("keeps the code and app from the event", () => {
+    const p = openProblem([
+      {
+        seq: 3n,
+        at: "2026-10-28T07:40:00Z",
+        thread_id: "t",
+        source: "host",
+        body: { kind: "problem", message: "Codex stopped responding.", action: "Try again", code: "not_responding", engine: "codex" },
+      } as never,
+    ]);
+    expect(p).toMatchObject({ code: "not_responding", engine: "codex" });
   });
 });
 

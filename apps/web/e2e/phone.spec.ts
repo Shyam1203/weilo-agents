@@ -33,16 +33,18 @@ test("phone home shows the chat and the tab bar, with no sideways scroll", async
 });
 
 test("phone: a long chat opens at the newest message", async ({ page }) => {
-  // The long chat from the desktop tests, if they ran first; else a few messages here.
   await page.goto("/");
   const box = page.getByRole("textbox", { name: "Message Ava" });
+  const run = Date.now();
   for (let i = 1; i <= 6; i++) {
-    await box.fill(`Phone line ${i}\nsecond line\nthird line`);
-    await page.getByRole("button", { name: "Send" }).click();
+    await box.fill(`Phone line ${run}-${i}\nsecond line\nthird line`);
+    // Exact: while Ava finishes the last reply the button says "Tell now", and a loose
+    // "Send" would match "More ways to send" instead.
+    await page.getByRole("button", { name: "Send", exact: true }).click();
     await expect(box).toHaveValue("");
-    await expect(page.getByText(`You said: Phone line ${i}`)).toBeVisible();
+    await expect(page.getByText(`You said: Phone line ${run}-${i}`)).toBeVisible();
   }
   await page.reload();
-  await expect(page.getByText("You said: Phone line 6")).toBeInViewport();
+  await expect(page.getByText(`You said: Phone line ${run}-6`)).toBeInViewport();
   await expect(page.getByRole("button", { name: "Jump to newest" })).toHaveCount(0);
 });

@@ -95,7 +95,7 @@ test("an approval shows up in Needs you and can be allowed", async ({ page }) =>
   const card = page.getByRole("article", { name: "Run the shop's checks" });
   await expect(card).toBeVisible();
   await expect(card.getByText("Runs a command")).toBeVisible();
-  await card.getByRole("button", { name: "Allow" }).click();
+  await card.getByRole("button", { name: "Allow", exact: true }).click();
 
   await expect(card).toBeHidden();
   await expect(page.getByRole("heading", { name: "Done today" })).toBeVisible();

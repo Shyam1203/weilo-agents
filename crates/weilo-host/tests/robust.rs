@@ -16,10 +16,23 @@ use weilo_proto::{
 fn problem(f: &ServerFrame) -> Option<(&str, Option<&str>)> {
     match f {
         ServerFrame::Ev { event, .. } => match &event.body {
-            EventBody::Problem { message, action } => Some((message, action.as_deref())),
+            EventBody::Problem {
+                message, action, ..
+            } => Some((message, action.as_deref())),
             _ => None,
         },
         _ => None,
+    }
+}
+
+/// A problem's code and engine.
+fn problem_kind(f: &ServerFrame) -> (Option<&str>, Option<&str>) {
+    match f {
+        ServerFrame::Ev { event, .. } => match &event.body {
+            EventBody::Problem { code, engine, .. } => (code.as_deref(), engine.as_deref()),
+            _ => (None, None),
+        },
+        _ => (None, None),
     }
 }
 
@@ -123,6 +136,7 @@ async fn a_silent_engine_is_called_stuck() {
             Some("Try again")
         ))
     );
+    assert_eq!(problem_kind(&f), (Some("not_responding"), Some("echo")));
     c.next(|f| is_state(f, WorkState::Idle)).await;
     // The next message works.
     send(&mut c, thread, "hello").await;
@@ -472,6 +486,7 @@ async fn a_crash_closes_waiting_approvals_and_stops_work() {
             Some("Try again")
         ))
     );
+    assert_eq!(problem_kind(&f), (Some("restarted"), None));
     let CallValue::Snapshot(snap) = c.ok(Call::Snapshot).await else {
         panic!()
     };
@@ -580,6 +595,7 @@ async fn session_folders_are_checked_and_changes_come_back() {
         problem(&f).unwrap().0,
         "This folder isn't a git repo, so changes go straight into it."
     );
+    assert_eq!(problem_kind(&f).0, Some("not_git"));
 
     // A git repo gets a worktree on its own branch, and the changes can come back.
     let repo = host.dir().join("shop");
@@ -931,6 +947,7 @@ async fn a_saved_key_reaches_the_engine() {
         problem(&f),
         Some(("Keyed needs an API key to work.", Some("Add a key")))
     );
+    assert_eq!(problem_kind(&f).0, Some("needs_key"));
     c.next(|f| is_state(f, WorkState::Idle)).await;
     // The key is saved, and Try again uses it.
     c.ok(set_key("k1")).await;

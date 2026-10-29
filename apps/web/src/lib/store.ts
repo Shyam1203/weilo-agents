@@ -478,6 +478,10 @@ export interface OpenProblem {
   at: string;
   message: string;
   action: string | null;
+  /** What kind of problem, from the host ("not_responding", "key_rejected"…); older events have none. */
+  code?: string | null;
+  /** The AI app it is about, by id. */
+  engine?: string | null;
 }
 
 /**
@@ -490,7 +494,7 @@ export function openProblem(events: Event[]): OpenProblem | null {
     const b = e.body;
     // A reply since, or a message sent again (Try again), means it was dealt with.
     if (b.kind === "agent_message" || b.kind === "user_message") return null;
-    if (b.kind === "problem") return { seq: e.seq, at: e.at, message: b.message, action: b.action };
+    if (b.kind === "problem") return { seq: e.seq, at: e.at, message: b.message, action: b.action, code: b.code ?? null, engine: b.engine ?? null };
   }
   return null;
 }
@@ -501,8 +505,36 @@ function cachedProblem(events: Event[]): OpenProblem | null {
   return problemCache.get(events)!;
 }
 
-/** What a chat's sidebar line says while a problem is open. */
-export function problemLine(p: Pick<OpenProblem, "action" | "message">): string {
+// Problems that need something from the person, by the host's code.
+const CODE_LINES: Record<string, string> = {
+  needs_key: "Needs an API key",
+  key_rejected: "Needs a new API key",
+  not_signed_in: "Needs you to sign in",
+  not_installed: "Needs an app installed",
+  folder_missing: "Can't open its folder",
+};
+
+// Codes for things that went wrong where no one needs to set anything up.
+const DIDNT_WORK_CODES = new Set([
+  "not_responding",
+  "didnt_answer",
+  "stopped",
+  "refused",
+  "engine_error",
+  "couldnt_ask",
+  "restarted",
+  "fresh_start",
+  "not_git",
+  "no_copy",
+]);
+
+/** What a chat's sidebar line says while a problem is open. By the host's code; older events by their button and words. */
+export function problemLine(p: Pick<OpenProblem, "action" | "message" | "code">): string {
+  if (p.code) {
+    const line = CODE_LINES[p.code];
+    if (line) return line;
+    if (DIDNT_WORK_CODES.has(p.code)) return "Didn't work";
+  }
   switch (p.action?.trim().toLowerCase()) {
     case "add a key":
       return "Needs an API key";
@@ -547,12 +579,12 @@ export const STATUS_TONE_CLASS: Record<StatusTone, string> = {
  */
 export function problemTitle(
   who: string | null,
-  p: Pick<OpenProblem, "action" | "message">,
+  p: Pick<OpenProblem, "action" | "message" | "code">,
   owner: string | null = who,
   titles: string[] = [],
 ): string {
   const line = problemLine(p);
-  if (!who || line === "Didn't work") return plainProblem(p.message, owner, titles).line;
+  if (!who || line === "Didn't work") return plainProblem(p.message, owner, titles, p.code).line;
   return `${who} ${line[0]!.toLowerCase()}${line.slice(1)}`;
 }
 
@@ -564,15 +596,39 @@ const KNOWN_ENGINE_TITLES = ["Claude Code", "Codex", "Gemini CLI", "Gemini", "We
  * responding…" reads "Ava's AI stopped responding…". `named` is true when the app's
  * name was taken out, so the original can go under Details.
  */
-export function plainProblem(message: string, owner: string | null, titles: string[] = []): { line: string; named: boolean } {
+export function plainProblem(
+  message: string,
+  owner: string | null,
+  titles: string[] = [],
+  code?: string | null,
+): { line: string; named: boolean } {
+  const ai = `${owner ? `${owner}'s` : "Your"} AI`;
   const all = [...new Set([...titles, ...KNOWN_ENGINE_TITLES])].filter(Boolean).sort((a, b) => b.length - a.length);
   for (const t of all) {
     if (message.startsWith(`${t} `) || message.startsWith(`${t}'s `) || message.startsWith(`${t},`)) {
-      return { line: `${owner ? `${owner}'s` : "Your"} AI${message.slice(t.length)}`, named: true };
+      return { line: `${ai}${message.slice(t.length)}`, named: true };
     }
   }
+  // "The engine stopped unexpectedly." names no app: say it about the agent, nothing to hide.
+  if (code && ENGINE_CODES.has(code) && message.startsWith("The engine ")) {
+    return { line: `${ai}${message.slice("The engine".length)}`, named: false };
+  }
+  // An app name we don't know yet: the code still says what happened.
+  const said = code ? CODE_SAYS[code] : undefined;
+  if (said) return { line: `${ai} ${said}`, named: true };
   return { line: message, named: false };
 }
+
+// Codes for problems that come from the AI app.
+const ENGINE_CODES = new Set(["not_responding", "didnt_answer", "stopped", "refused", "engine_error"]);
+
+// What happened, by code, when the message names an app we can't place.
+const CODE_SAYS: Record<string, string> = {
+  not_responding: "stopped responding, so this reply stopped.",
+  didnt_answer: "didn't answer.",
+  stopped: "stopped unexpectedly.",
+};
+
 
 /** Whose AI a thread uses, by the agent's short name: a session's is the agent that started it. */
 export function aiOwner(snap: Snapshot | null, threadId: string, agentId?: string | null): string | null {

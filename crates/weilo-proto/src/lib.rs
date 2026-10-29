@@ -634,10 +634,21 @@ pub enum EventBody {
     },
     /// Something went wrong or needs attention. `action` is a button label: `Try again`
     /// (send the last message again), `Sign in`, `Add a key`, `Install`,
-    /// `Choose another folder`.
+    /// `Choose another folder`. `code` says what kind of problem it is, so the app can word
+    /// it without reading `message` (older events have none): `not_responding`,
+    /// `didnt_answer`, `stopped`, `refused`, `engine_error`, `key_rejected`, `needs_key`,
+    /// `not_signed_in`, `not_installed`, `fresh_start`, `couldnt_ask`, `restarted`,
+    /// `folder_missing`, `not_git`, `no_copy`. `engine` is the id of the AI app it is
+    /// about, when it is about one.
     Problem {
         message: String,
         action: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        code: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        engine: Option<String>,
     },
     Usage {
         tokens_in: i64,

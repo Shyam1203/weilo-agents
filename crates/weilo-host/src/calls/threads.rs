@@ -203,18 +203,24 @@ fn off_limits(app: &App, folder: &std::path::Path) -> Option<&'static str> {
 }
 
 fn problem_for(p: &Prepared) -> Option<EventBody> {
-    let message = match p {
-        Prepared::Missing => "This folder doesn't exist.",
-        Prepared::Plain => "This folder isn't a git repo, so changes go straight into it.",
-        Prepared::Failed { .. } => {
-            "Couldn't make a separate copy of the repo, so this session works in the folder itself."
-        }
+    let (code, message) = match p {
+        Prepared::Missing => ("folder_missing", "This folder doesn't exist."),
+        Prepared::Plain => (
+            "not_git",
+            "This folder isn't a git repo, so changes go straight into it.",
+        ),
+        Prepared::Failed { .. } => (
+            "no_copy",
+            "Couldn't make a separate copy of the repo, so this session works in the folder itself.",
+        ),
         _ => return None,
     };
     let action = matches!(p, Prepared::Missing).then(|| "Choose another folder".to_string());
     Some(EventBody::Problem {
         message: message.into(),
         action,
+        code: Some(code.into()),
+        engine: None,
     })
 }
 

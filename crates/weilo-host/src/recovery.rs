@@ -61,6 +61,8 @@ async fn settle(app: &Arc<App>, thread_id: Uuid) -> Result<()> {
     let problem = EventBody::Problem {
         message: INTERRUPTED.into(),
         action: Some("Try again".into()),
+        code: Some("restarted".into()),
+        engine: None,
     };
     app.append(thread_id, problem, Source::Host).await?;
     let idle = EventBody::State {

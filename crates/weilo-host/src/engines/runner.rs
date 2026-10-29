@@ -448,8 +448,12 @@ impl Runner {
                     self.slot = None;
                 }
                 if had && self.turn.is_some() {
-                    self.problem("The engine stopped unexpectedly.", Some("Try again"))
-                        .await;
+                    self.problem(
+                        "stopped",
+                        "The engine stopped unexpectedly.",
+                        Some("Try again"),
+                    )
+                    .await;
                     self.end_turn(Ok(StopReason::Cancelled)).await;
                 }
             }
@@ -570,7 +574,8 @@ impl Runner {
 
     async fn start_failed(&mut self, e: (Explained, String)) {
         tracing::warn!("engine start failed for {}: {}", self.thread_id, e.1);
-        self.problem(&e.0.message, Some(e.0.action)).await;
+        self.problem(e.0.code(), &e.0.message, Some(e.0.action))
+            .await;
         self.now_queue.clear();
         self.after_queue.clear();
         self.set_state(WorkState::Idle, "").await;
@@ -687,7 +692,7 @@ impl Runner {
                 "{} started a fresh conversation; earlier messages aren't in its memory.",
                 ctx.agent_name
             );
-            self.problem(&message, None).await;
+            self.problem("fresh_start", &message, None).await;
         }
         self.conn = Some(conn);
         Ok(())
@@ -908,7 +913,8 @@ impl Runner {
     ) {
         let _ = responder.respond(selected(request, &Decision::Deny));
         let message = format!("Weilo couldn't ask you about this, so it wasn't allowed: {title}");
-        self.problem(&message, Some("Try again")).await;
+        self.problem("couldnt_ask", &message, Some("Try again"))
+            .await;
     }
 
     async fn decided(&mut self, approval_id: Uuid, decision: Decision) {
@@ -987,6 +993,7 @@ impl Runner {
             .unwrap_or_else(|| "The engine".into());
         tracing::warn!("engine of {} stopped responding", self.thread_id);
         self.problem(
+            "not_responding",
             &format!("{title} stopped responding, so this reply stopped."),
             Some("Try again"),
         )
@@ -1014,7 +1021,8 @@ impl Runner {
             .and_then(|c| self.app.engines.get(&c.engine).cloned());
         match (result, manifest) {
             (Ok(StopReason::Refusal), _) => {
-                self.problem("The engine refused this request.", None).await;
+                self.problem("refused", "The engine refused this request.", None)
+                    .await;
             }
             (Ok(_), Some(m)) if asks_to_sign_in(&turn.said) => {
                 let f = Failure {
@@ -1023,7 +1031,7 @@ impl Runner {
                 };
                 self.key_turned_down(&m);
                 let e = explain(&m, &f, self.app.engines.key_in_use(&m).as_deref());
-                self.problem(&e.message, Some(e.action)).await;
+                self.problem(e.code(), &e.message, Some(e.action)).await;
                 // A new key or sign-in only reaches a new engine process.
                 self.drop_conn();
             }
@@ -1039,13 +1047,14 @@ impl Runner {
                         if e.needs == EngineNeed::Key {
                             self.key_turned_down(&m);
                         }
-                        self.problem(&e.message, Some(e.action)).await;
+                        self.problem(e.code(), &e.message, Some(e.action)).await;
                         if matches!(e.needs, EngineNeed::SignIn | EngineNeed::Key) {
                             self.drop_conn();
                         }
                     }
                     None => {
                         self.problem(
+                            "engine_error",
                             "The engine hit an error and stopped this reply.",
                             Some("Try again"),
                         )
@@ -1081,20 +1090,27 @@ impl Runner {
         ));
         if !looks_like_auth(&found) {
             let message = format!("{name} didn't answer.");
-            return self.problem(&message, Some("Try again")).await;
+            return self
+                .problem("didnt_answer", &message, Some("Try again"))
+                .await;
         }
         self.key_turned_down(m);
-        let (message, action) = match self.app.engines.key_in_use(m) {
+        let (code, message, action) = match self.app.engines.key_in_use(m) {
             Some(provider) => (
+                "key_rejected",
                 format!("{name} didn't answer: your {provider} key didn't work."),
                 "Change key",
             ),
             None => {
                 let e = needs_sign_in(m);
-                (format!("{name} didn't answer. {}", e.message), e.action)
+                (
+                    e.code(),
+                    format!("{name} didn't answer. {}", e.message),
+                    e.action,
+                )
             }
         };
-        self.problem(&message, Some(action)).await;
+        self.problem(code, &message, Some(action)).await;
         // A new key only reaches a new engine process.
         self.drop_conn();
     }
@@ -1108,12 +1124,20 @@ impl Runner {
         }
     }
 
-    async fn problem(&mut self, message: &str, action: Option<&str>) {
+    /// `code` is the kind of problem (`EventBody::Problem::code`); the engine is this
+    /// thread's.
+    async fn problem(&mut self, code: &str, message: &str, action: Option<&str>) {
         self.flush_text().await;
+        let engine = load_ctx(&self.app, self.thread_id)
+            .await
+            .ok()
+            .map(|c| c.engine);
         self.append(
             EventBody::Problem {
                 message: message.into(),
                 action: action.map(Into::into),
+                code: Some(code.into()),
+                engine,
             },
             Source::Host,
         )

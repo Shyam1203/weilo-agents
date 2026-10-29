@@ -18,18 +18,24 @@ export function Problem({
   agentId,
   message,
   action,
+  code = null,
+  engine = null,
   resolved,
 }: {
   threadId: string;
   agentId: string | null;
   message: string;
   action: string | null;
+  /** The host's kind of problem ("not_responding"…), when it sent one. */
+  code?: string | null;
+  /** The AI app it is about, by id. */
+  engine?: string | null;
   resolved?: boolean;
 }) {
   // Said about the agent; the AI app's own words stay under Details.
   const owner = useApp((s) => aiOwner(s.snapshot, threadId, agentId));
   const titles = useApp(engineTitles);
-  const plain = plainProblem(message, owner, titles);
+  const plain = plainProblem(message, owner, titles, code);
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md bg-surface-muted px-3 py-2 text-body-sm text-text-secondary" role="note">
       <AlertIcon className="shrink-0" />
@@ -41,7 +47,7 @@ export function Problem({
           </Disclosure>
         )}
       </span>
-      {!resolved && <ProblemButton threadId={threadId} agentId={agentId} action={action} size="sm" />}
+      {!resolved && <ProblemButton threadId={threadId} agentId={agentId} action={action} engine={engine} size="sm" />}
     </div>
   );
 }
@@ -55,17 +61,21 @@ export function ProblemButton({
   threadId,
   agentId,
   action,
+  engine: problemEngine = null,
   size = "sm",
   className,
 }: {
   threadId: string;
   agentId: string | null;
   action: string | null;
+  /** The AI app the problem is about; else the chat's. */
+  engine?: string | null;
   size?: ButtonSize;
   className?: string;
 }) {
   const kind = problemKind(action);
-  const engine = useApp((s) => engineOfThread(s, threadId, agentId));
+  const threadEngine = useApp((s) => engineOfThread(s, threadId, agentId));
+  const engine = problemEngine ?? threadEngine;
   const paused = useApp((s) => s.paused !== null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);

@@ -74,6 +74,11 @@ pub async fn finish(
             let problem = EventBody::Problem {
                 message: tried.message.clone(),
                 action: tried.action.clone(),
+                code: Some(
+                    crate::engines::check::problem_code(tried.needs, tried.action.as_deref())
+                        .into(),
+                ),
+                engine: Some(tried.engine.clone()),
             };
             if let Err(e) = app.append(thread, problem, Source::Host).await {
                 tracing::warn!("couldn't note the engine problem: {e:#}");

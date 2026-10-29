@@ -178,7 +178,17 @@ function Item({
     case "filed":
       return null; // shown once at the end of the list
     case "problem":
-      return <Problem threadId={threadId} agentId={agentId} message={item.message} action={item.action} resolved={item.resolved} />;
+      return (
+        <Problem
+          threadId={threadId}
+          agentId={agentId}
+          message={item.message}
+          action={item.action}
+          code={item.code}
+          engine={item.engine}
+          resolved={item.resolved}
+        />
+      );
     case "note":
       return <p className="m-0 text-body-sm text-text-secondary">{item.text}</p>;
   }
