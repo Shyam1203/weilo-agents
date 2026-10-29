@@ -38,11 +38,8 @@ test("phone: a long chat opens at the newest message", async ({ page }) => {
   const box = page.getByRole("textbox", { name: "Message Ava" });
   for (let i = 1; i <= 6; i++) {
     await box.fill(`Phone line ${i}\nsecond line\nthird line`);
-    // Sent once the box empties (a click while the last reply finishes can be too early).
-    await expect(async () => {
-      if ((await box.inputValue()) !== "") await page.getByRole("button", { name: /^(Send|Tell now)$/ }).click();
-      await expect(box).toHaveValue("", { timeout: 1000 });
-    }).toPass();
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect(box).toHaveValue("");
     await expect(page.getByText(`You said: Phone line ${i}`)).toBeVisible();
   }
   await page.reload();
