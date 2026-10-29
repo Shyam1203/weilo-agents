@@ -40,7 +40,8 @@ and a #general channel are made for you.
 
 Your data stays in `~/.weilo-agents`. Set `WEILO_HOME` to keep it somewhere else. When Weilo runs
 as root and Postgres can't reach that folder, the database goes to `/var/lib/weilo-agents` instead,
-and `weilo up` says where.
+and `weilo up` says where. Your chat agents work in their own folders in `~/Weilo/agents` (set
+`WEILO_WORKSPACES` to change that).
 
 ## What leaves your computer
 

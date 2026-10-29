@@ -32,6 +32,7 @@ enum Command {
     },
     /// Print a one-time code to connect a browser.
     Pair {
+        /// Where the running Weilo keeps its data (default ~/.weilo-agents, or WEILO_HOME).
         #[arg(long)]
         home: Option<PathBuf>,
     },
@@ -53,6 +54,7 @@ enum Command {
 enum AuditCommand {
     /// Check that nothing changed the audit log outside Weilo.
     Verify {
+        /// Where the running Weilo keeps its data (default ~/.weilo-agents, or WEILO_HOME).
         #[arg(long)]
         home: Option<PathBuf>,
     },

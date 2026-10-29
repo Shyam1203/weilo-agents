@@ -1431,6 +1431,18 @@ async fn keys_are_checked_and_silent_replies_are_said() {
         ))
     );
     c.next(|f| is_state(f, WorkState::Idle)).await;
+    // ("keyed" is hidden from the engine list: its state is read where it is kept.)
+    let states = || std::fs::read_to_string(host.home.join("secrets/key-states.json")).unwrap();
+    assert!(
+        states().contains(r#""keyed/anthropic":["rejected""#),
+        "{}",
+        states()
+    );
+    // The same key then gets a real answer from the model: it works after all.
+    send(&mut c, thread, "hello").await;
+    c.next(|f| agent_text(f) == Some("You said: hello")).await;
+    c.next(|f| is_state(f, WorkState::Idle)).await;
+    assert!(!states().contains("keyed/anthropic"), "{}", states());
 }
 
 #[tokio::test]
@@ -1946,80 +1958,69 @@ fn postgres_backends(postmaster: i32) -> Vec<i32> {
 
 #[tokio::test]
 async fn a_message_waiting_through_a_database_blip_still_runs() {
-    // Engines stop after 1 s idle, so each message starts one again.
-    let Some(host) = Host::start_with(&[
-        ("WEILO_DB_WAIT_SECS", "1"),
-        ("WEILO_ENGINE_IDLE_SECS", "1"),
-    ])
-    .await
-    else {
+    let Some(host) = Host::start_with(&[("WEILO_DB_WAIT_SECS", "1")]).await else {
         return;
     };
     let token = host.pair().await;
     let mut c = Client::connect(&host, Some(&token)).await.unwrap();
     let thread = setup_with_echo(&mut c).await;
-    let postmaster = host.postgres_pid().expect("postgres pid");
-    // Postgres keeps resetting its connections (it never stops, so Weilo isn't told
-    // it's down) while messages are sent and their engine starts.
-    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let blips = {
-        let stop = stop.clone();
-        tokio::spawn(async move {
-            while !stop.load(std::sync::atomic::Ordering::SeqCst) {
-                for pid in postgres_backends(postmaster) {
-                    let app = std::fs::read_to_string(format!("/proc/{pid}/cmdline"))
-                        .is_ok_and(|c| c.contains("weilo_app"));
-                    if app {
-                        // SAFETY: killing one of the test host's Postgres server processes.
-                        unsafe {
-                            libc::kill(pid, libc::SIGKILL);
-                        }
-                    }
-                }
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
-        })
+    let CallValue::Snapshot(snap) = c.ok(Call::Snapshot).await else {
+        panic!()
     };
-    let met = |log: &str| log.contains("waits to start") || log.contains("couldn't note");
-    let mut sent = Vec::new();
-    for n in 0..6 {
-        if n >= 2 && met(&host.log()) {
-            break;
+    let agent_id = snap.agents[0].id;
+    c.sub(thread, 0).await;
+    send(&mut c, thread, "slow").await;
+    c.next(|f| is_state(f, WorkState::Working)).await;
+    // The next message waits for this turn; a new model means it needs a new engine
+    // process, which reads the thread from the database as it starts.
+    send(&mut c, thread, "hello again").await;
+    c.ok(Call::UpdateAgent {
+        agent_id,
+        name: None,
+        model: Some("another-model".into()),
+        instructions: None,
+        engine: None,
+    })
+    .await;
+    // Before the turn ends, the database stops answering: its connections are cut and
+    // Postgres is paused, so new ones hang. Postgres itself never exits, so Weilo isn't
+    // told it's down.
+    let postmaster = host.postgres_pid().expect("postgres pid");
+    // SAFETY: pausing and killing the test host's own Postgres processes.
+    unsafe {
+        libc::kill(postmaster, libc::SIGSTOP);
+        for pid in postgres_backends(postmaster) {
+            libc::kill(pid, libc::SIGKILL);
         }
-        let text = format!("hello {n}");
-        let started = std::time::Instant::now();
-        loop {
-            let call = Call::Send {
-                thread_id: thread,
-                text: text.clone(),
-                when: SendWhen::Now,
-            };
-            match c.call(call).await {
-                CallResult::Done { .. } => break,
-                other => assert!(started.elapsed() < common::WAIT, "{other:?}"),
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-        sent.push(text);
-        // Long enough for the reply and for the engine to stop again.
-        tokio::time::sleep(Duration::from_millis(2500)).await;
     }
-    stop.store(true, std::sync::atomic::Ordering::SeqCst);
-    blips.await.unwrap();
-    assert_eq!(host.postgres_pid(), Some(postmaster), "Postgres itself stayed up");
-    assert!(
-        met(&host.log()),
-        "no start met the blips, so this didn't test anything:\n{}",
+    // The turn ends (about 3 s) and the next message tries to start meanwhile.
+    let paused = std::time::Instant::now();
+    while !host.log().contains("waits to start") {
+        if paused.elapsed() > Duration::from_secs(15) {
+            // SAFETY: as above.
+            unsafe { libc::kill(postmaster, libc::SIGCONT) };
+            panic!("the message never tried to start:\n{}", host.log());
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    // SAFETY: as above.
+    unsafe { libc::kill(postmaster, libc::SIGCONT) };
+    // Once the database answers again, the message runs; nothing said it failed.
+    let mut d = loop {
+        if let Ok(d) = Client::connect(&host, Some(&token)).await {
+            break d;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    };
+    d.sub(thread, 0).await;
+    let f = d
+        .next(|f| agent_text(f) == Some("You said: hello again") || problem(f).is_some())
+        .await;
+    assert_eq!(
+        agent_text(&f),
+        Some("You said: hello again"),
+        "{f:?}\n{}",
         host.log()
     );
-    // Every message got its reply, and nothing was said to have failed.
-    let mut d = Client::connect(&host, Some(&token)).await.unwrap();
-    d.sub(thread, 0).await;
-    for text in sent {
-        let want = format!("You said: {text}");
-        let f = d
-            .next(|f| agent_text(f) == Some(want.as_str()) || problem(f).is_some())
-            .await;
-        assert_eq!(agent_text(&f), Some(want.as_str()), "{f:?}\n{}", host.log());
-    }
 }

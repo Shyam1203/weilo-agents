@@ -100,9 +100,15 @@ pub async fn decide(
     } else {
         "allowed"
     };
+    // "always" when the answer also made an Always allow rule; "app" for a one-off answer.
+    let via = if let Decision::AllowAlways { .. } = &decision {
+        "always"
+    } else {
+        "app"
+    };
     let mut tx = app.db.begin().await?;
     let row = sqlx::query(
-        "UPDATE approvals SET state = $2, decided_by_device = $3, decided_via = 'app',
+        "UPDATE approvals SET state = $2, decided_by_device = $3, decided_via = $4,
                 decided_at = now()
          WHERE id = $1 AND state = 'pending' AND expires_at > now()
          RETURNING thread_id, agent_id, tool, scope",
@@ -110,6 +116,7 @@ pub async fn decide(
     .bind(approval_id)
     .bind(state)
     .bind(device_id)
+    .bind(via)
     .fetch_optional(&mut *tx)
     .await?;
     let Some(row) = row else {
@@ -265,6 +272,7 @@ pub async fn always_allowed(app: &App, agent_id: Option<Uuid>, tool: &str, scope
 pub async fn needs_you(app: &App) -> sqlx::Result<Vec<NeedsYouItem>> {
     let rows = sqlx::query(
         "SELECT a.id, a.thread_id, a.card, a.created_at, a.expires_at, a.state,
+                a.decided_at, a.decided_via,
                 t.kind, t.title, t.started_by, c.slug, ag.name
          FROM approvals a
          JOIN threads t ON t.id = a.thread_id
@@ -291,6 +299,14 @@ fn needs_you_item(r: sqlx::postgres::PgRow) -> sqlx::Result<NeedsYouItem> {
         "expired" => ApprovalState::Expired,
         _ => ApprovalState::Pending,
     };
+    let decided_at: Option<DateTime<Utc>> = r.get("decided_at");
+    let decided_via: Option<String> = r.get("decided_via");
+    // The app's words for it: a person's answer is "you" (or "always"), the rest say
+    // what closed it.
+    let decided_via = decided_via.map(|via| match via.as_str() {
+        "app" => "you".to_owned(),
+        _ => via,
+    });
     Ok(NeedsYouItem {
         approval_id: r.get("id"),
         thread_id: r.get("thread_id"),
@@ -299,6 +315,8 @@ fn needs_you_item(r: sqlx::postgres::PgRow) -> sqlx::Result<NeedsYouItem> {
         created_at: created_at.to_rfc3339(),
         expires_at: expires_at.to_rfc3339(),
         state,
+        decided_at: decided_at.map(|t| t.to_rfc3339()),
+        decided_via,
     })
 }
 

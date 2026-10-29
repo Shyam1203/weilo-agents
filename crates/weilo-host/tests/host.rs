@@ -184,6 +184,10 @@ async fn approval_allow_then_conflict() {
         (items[0].state, items[0].source.as_str()),
         (ApprovalState::Pending, "Ava")
     );
+    assert_eq!(
+        (&items[0].decided_at, &items[0].decided_via),
+        (&None, &None)
+    );
     let approval_id = items[0].approval_id;
     assert_eq!(card.approval_id, Some(approval_id));
 
@@ -212,6 +216,12 @@ async fn approval_allow_then_conflict() {
         (items[0].approval_id, items[0].state),
         (approval_id, ApprovalState::Allowed)
     );
+    assert_eq!(items[0].decided_via.as_deref(), Some("you"));
+    let at = items[0]
+        .decided_at
+        .as_deref()
+        .expect("when it was answered");
+    assert!(chrono::DateTime::parse_from_rfc3339(at).is_ok(), "{at}");
 }
 
 #[tokio::test]
@@ -234,6 +244,8 @@ async fn unanswered_approval_expires_as_not_allowed() {
         panic!()
     };
     assert_eq!(items[0].state, ApprovalState::Expired);
+    assert_eq!(items[0].decided_via.as_deref(), Some("expired"));
+    assert!(items[0].decided_at.is_some());
 }
 
 #[tokio::test]

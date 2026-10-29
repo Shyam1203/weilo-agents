@@ -45,6 +45,10 @@ impl Home {
     pub fn engines(&self) -> PathBuf {
         self.root.join("engines")
     }
+    /// npm's cache and logs for engine downloads, kept here rather than in `~/.npm`.
+    pub fn npm_cache(&self) -> PathBuf {
+        self.root.join("cache").join("npm")
+    }
     pub fn engine_install(&self, engine: &str) -> PathBuf {
         self.engines().join(engine)
     }

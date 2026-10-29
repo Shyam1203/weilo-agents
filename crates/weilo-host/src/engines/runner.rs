@@ -84,6 +84,7 @@ pub fn spawn(app: Arc<App>, thread_id: Uuid) -> mpsc::UnboundedSender<Cmd> {
             outbox: VecDeque::new(),
             retry_at: None,
             start_again_at: None,
+            started_key: None,
             dropped: false,
             state: (WorkState::Idle, String::new()),
             agent_id: None,
@@ -197,6 +198,9 @@ struct Runner {
     retry_at: Option<Instant>,
     /// When to try starting the next message again (the database was out of reach).
     start_again_at: Option<Instant>,
+    /// The key (provider id and value) the engine process was started with, if any:
+    /// what a turn shows about a key is about this one.
+    started_key: Option<(String, String)>,
     /// The outbox overflowed and lost events while Postgres was away.
     dropped: bool,
     /// The state this runner last said, said again after an outage.
@@ -222,6 +226,33 @@ enum Out {
     },
     /// Closes a card nobody answered: Stop was pressed, or the turn ended.
     Close { approval_id: Uuid, stopped: bool },
+}
+
+impl Drop for Runner {
+    /// However the runner ends (a panic included), the cards it was waiting on are no
+    /// longer live, so the job sweep closes any still open.
+    fn drop(&mut self) {
+        let mine: Vec<Uuid> = self
+            .pending
+            .keys()
+            .copied()
+            .chain(self.outbox.iter().filter_map(|o| match o {
+                Out::Close { approval_id, .. } => Some(*approval_id),
+                Out::Event { .. } => None,
+            }))
+            .collect();
+        if mine.is_empty() {
+            return;
+        }
+        let mut live = self
+            .app
+            .live_approvals
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        for id in mine {
+            live.remove(&id);
+        }
+    }
 }
 
 struct WaitingSlot {
@@ -678,6 +709,13 @@ impl Runner {
             .with_context(|| format!("no engine named {}", ctx.engine))
             .map_err(internal)?;
         super::check::recheck_keys(&self.app, &manifest);
+        self.started_key = self
+            .app
+            .engines
+            .keys_in_use(&manifest)
+            .into_iter()
+            .next()
+            .map(|(spec, value)| (spec.id, value));
         let key = self.app.engines.key_in_use(&manifest);
         let explained = |f: Failure| (explain(&manifest, &f, key.as_deref()), f.text.clone());
         let spec = spec_for(&self.app, &manifest, ctx.model.clone()).map_err(explained)?;
@@ -712,7 +750,10 @@ impl Runner {
             }
             // The engine is running: keep it. Only picking this conversation up after a
             // restart is lost.
-            tracing::warn!("couldn't note {}'s engine conversation: {e}", self.thread_id);
+            tracing::warn!(
+                "couldn't note {}'s engine conversation: {e}",
+                self.thread_id
+            );
         }
         self.fresh = conn.started == Started::New;
         if conn.started == Started::New && resume.is_some() {
@@ -861,6 +902,12 @@ impl Runner {
         self.flush_text().await;
         let known = self.tools.get(request.tool_call.tool_call_id.0.as_ref());
         let tool = tool_info(&request, known);
+        if !*self.app.db_up.borrow() {
+            // Postgres is restarting: nobody can be asked now, and waiting on it here
+            // would hold Stop up.
+            let title = tool.title.clone();
+            return self.couldnt_ask(&title, &request, responder).await;
+        }
         let ctx = match load_ctx(&self.app, self.thread_id).await {
             Ok(ctx) => ctx,
             Err(e) => {
@@ -1066,6 +1113,10 @@ impl Runner {
             (Ok(StopReason::EndTurn), Some(m)) if turn.said.trim().is_empty() && !turn.acted => {
                 self.no_answer(&m, &turn).await;
             }
+            (Ok(StopReason::EndTurn), Some(m)) if !turn.said.trim().is_empty() => {
+                // The model answered, so the key the engine started with works.
+                self.key_worked(&m);
+            }
             (Ok(_), _) => {}
             (Err(f), m) => {
                 tracing::warn!("turn failed in {}: {f}", self.thread_id);
@@ -1145,9 +1196,28 @@ impl Runner {
 
     /// The engine's provider turned its key down: readiness says so from now on (until a
     /// new key is saved or a check finds it works).
+    /// Only about the key the engine process started with: a key changed since then
+    /// isn't judged by it.
     fn key_turned_down(&self, m: &Manifest) {
-        if let Some((spec, _)) = self.app.engines.keys_in_use(m).into_iter().next() {
-            self.app.engines.mark_key(m, &spec.id, Some(false));
+        self.judge_key(m, false);
+    }
+
+    /// The model answered with the key the engine process started with: a key marked
+    /// as not working (or not checked) is marked good again.
+    fn key_worked(&self, m: &Manifest) {
+        self.judge_key(m, true);
+    }
+
+    fn judge_key(&self, m: &Manifest, worked: bool) {
+        let Some((provider, value)) = &self.started_key else {
+            return;
+        };
+        if m.keys.iter().all(|k| &k.id != provider) {
+            return;
+        }
+        let before = self.app.engines.readiness(m).status;
+        self.app.engines.mark_key(m, provider, value, Some(worked));
+        if self.app.engines.readiness(m).status != before {
             self.app.hub.changed(weilo_proto::Changed::Engines);
         }
     }

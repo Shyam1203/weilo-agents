@@ -6,4 +6,12 @@ export type NeedsYouItem = { approval_id: string, thread_id: string,
 /**
  * "#shop-launch · Ava" or "Fix checkout · session started by Ava".
  */
-source: string, card: Card, created_at: string, expires_at: string, state: ApprovalState, };
+source: string, card: Card, created_at: string, expires_at: string, state: ApprovalState, 
+/**
+ * When it was answered or closed (RFC 3339). Missing while it waits.
+ */
+decided_at?: string, 
+/**
+ * How it was closed: "you", "always", "stopped", "interrupted" or "expired".
+ */
+decided_via?: string, };

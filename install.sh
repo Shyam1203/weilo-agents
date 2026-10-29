@@ -37,6 +37,13 @@ else
   esac
 fi
 version="${tag#v}"
+# Releases before 0.2.0 don't have the files this installer looks for.
+case "$version" in
+  0.0.* | 0.1.* | 0.1)
+    say "Weilo 0.2.0 isn't released yet. Build it from source for now: https://github.com/$repo#develop" >&2
+    exit 1
+    ;;
+esac
 name="weilo-$version-$target"
 base="https://github.com/$repo/releases/download/$tag"
 

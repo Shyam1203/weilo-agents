@@ -733,7 +733,10 @@ async fn end_leftovers(data_dir: &Path) {
             return;
         }
         if started.elapsed() > Duration::from_secs(3) && !killed {
-            tracing::warn!("ending {} server processes left by the last Postgres", left.len());
+            tracing::warn!(
+                "ending {} server processes left by the last Postgres",
+                left.len()
+            );
             for pid in &left {
                 signal(*pid as u32, libc::SIGKILL);
             }

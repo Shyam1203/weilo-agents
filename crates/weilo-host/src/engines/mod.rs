@@ -63,6 +63,8 @@ pub struct Registry {
     /// Kept in `secrets/key-states.json`, with a fingerprint of the key each is about:
     /// a key that failed stays failed across restarts, until it is changed.
     key_states: Mutex<HashMap<(String, String), (KeyState, String)>>,
+    /// Keys (engine, provider) being asked about again right now: one ask at a time.
+    rechecking: Mutex<std::collections::HashSet<(String, String)>>,
 }
 
 /// A key the provider hasn't taken.
@@ -96,6 +98,7 @@ impl Registry {
             keys_lock: Mutex::default(),
             downloading: Mutex::default(),
             key_states: Mutex::new(load_key_states(home)),
+            rechecking: Mutex::default(),
         }
     }
 
@@ -208,26 +211,50 @@ impl Registry {
             .collect()
     }
 
-    /// Notes what the provider said of a key: `Some(true)` taken, `Some(false)` turned
-    /// down, `None` couldn't ask.
-    pub fn mark_key(&self, m: &Manifest, provider: &str, answer: Option<bool>) {
-        let value = self
+    /// Claims the right to ask about an engine's key again; `None` while another ask
+    /// about it is still out. The claim ends when the returned guard is dropped.
+    pub fn claim_recheck(&self, m: &Manifest, provider: &str) -> Option<Recheck<'_>> {
+        let key = (m.name.clone(), provider.to_string());
+        let fresh = self
+            .rechecking
+            .lock()
+            .expect("rechecking lock")
+            .insert(key.clone());
+        fresh.then_some(Recheck { reg: self, key })
+    }
+
+    /// Notes what the provider said of the key `checked`: `Some(true)` taken,
+    /// `Some(false)` turned down, `None` couldn't ask. A verdict on a key that is no
+    /// longer the one in use (it was changed meanwhile) is ignored.
+    pub fn mark_key(&self, m: &Manifest, provider: &str, checked: &str, answer: Option<bool>) {
+        let current = self
             .keys_in_use(m)
             .into_iter()
             .find(|(spec, _)| spec.id == provider)
             .map(|(_, v)| v);
         let mut states = self.key_states.lock().expect("key states lock");
         let entry = (m.name.clone(), provider.to_string());
-        match (answer, value) {
-            (Some(true), _) | (_, None) => {
+        let before = states.get(&entry).cloned();
+        match current {
+            // No key now: nothing to say about it.
+            None => {
                 states.remove(&entry);
             }
-            (Some(false), Some(v)) => {
-                states.insert(entry, (KeyState::Rejected, fingerprint(&v)));
-            }
-            (None, Some(v)) => {
-                states.insert(entry, (KeyState::Unchecked, fingerprint(&v)));
-            }
+            Some(v) if fingerprint(&v) != fingerprint(checked) => return,
+            Some(v) => match answer {
+                Some(true) => {
+                    states.remove(&entry);
+                }
+                Some(false) => {
+                    states.insert(entry.clone(), (KeyState::Rejected, fingerprint(&v)));
+                }
+                None => {
+                    states.insert(entry.clone(), (KeyState::Unchecked, fingerprint(&v)));
+                }
+            },
+        }
+        if states.get(&entry) == before.as_ref() {
+            return;
         }
         if let Err(e) = save_key_states(&self.home, &states) {
             tracing::warn!("couldn't save what providers said of keys: {e}");
@@ -425,11 +452,17 @@ impl Registry {
             }
             None => "install",
         };
+        let cache = self.home.npm_cache();
+        std::fs::create_dir_all(&cache).map_err(|e| e.to_string())?;
         let run = tokio::process::Command::new(npm)
             .args([verb, "--ignore-scripts", "--no-audit", "--no-fund"])
             .current_dir(dir)
             .env_clear()
             .envs(base_env())
+            // npm's cache and logs stay in Weilo's folder, not the person's `~/.npm`.
+            .env("npm_config_cache", &cache)
+            .env("npm_config_logs_dir", cache.join("_logs"))
+            .env("npm_config_update_notifier", "false")
             .stdin(std::process::Stdio::null())
             .kill_on_drop(true)
             .output();
@@ -491,6 +524,22 @@ fn save_key_states(
     write_private(&key_states_file(home), &bytes)
 }
 
+/// An ask about a key in progress (see `Registry::claim_recheck`).
+pub struct Recheck<'a> {
+    reg: &'a Registry,
+    key: (String, String),
+}
+
+impl Drop for Recheck<'_> {
+    fn drop(&mut self) {
+        self.reg
+            .rechecking
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.key);
+    }
+}
+
 /// Marks an engine as downloading while it lives. Dropped before npm is done (the
 /// download was stopped), it also removes the half-made folder.
 struct Downloading<'a> {
@@ -528,7 +577,21 @@ impl Drop for Downloading<'_> {
             .unwrap_or_else(|e| e.into_inner())
             .remove(&self.name);
         if let Some(staging) = self.staging.take() {
-            let _ = std::fs::remove_dir_all(staging);
+            // Off the async threads, and a few times: npm, just told to stop, may still
+            // be writing into it for a moment.
+            let clear = move || {
+                for _ in 0..50 {
+                    let _ = std::fs::remove_dir_all(&staging);
+                    if !staging.exists() {
+                        return;
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            };
+            match tokio::runtime::Handle::try_current() {
+                Ok(rt) => drop(rt.spawn_blocking(clear)),
+                Err(_) => clear(),
+            }
         }
     }
 }
@@ -643,6 +706,8 @@ fn own_home(
     std::fs::create_dir_all(&home)?;
     let Some(real_home) = std::env::var_os("HOME").or_else(|| dirs::home_dir().map(Into::into))
     else {
+        // Without a home to give back, the adapter keeps the one it has.
+        tracing::warn!("no home folder is set, so the engine's adapter keeps its files in it");
         return Ok(());
     };
     let quote = |s: &str| format!("'{}'", s.replace('\'', "'\\''"));
@@ -653,11 +718,23 @@ fn own_home(
         quote(&program)
     );
     if std::fs::read_to_string(&launcher).ok().as_deref() != Some(script.as_str()) {
-        use std::os::unix::fs::PermissionsExt;
-        let staging = launcher.with_extension("new");
-        std::fs::write(&staging, &script)?;
-        std::fs::set_permissions(&staging, std::fs::Permissions::from_mode(0o700))?;
-        std::fs::rename(&staging, &launcher)?;
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        // A name of its own and the final mode from the start, so two engines starting
+        // at once can't mix their bytes, and nobody else can ever change it.
+        let staging = launcher.with_extension(format!("tmp-{}", crate::auth::new_token()));
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o700)
+            .open(&staging)?;
+        f.write_all(script.as_bytes())?;
+        f.sync_all()?;
+        drop(f);
+        if let Err(e) = std::fs::rename(&staging, &launcher) {
+            let _ = std::fs::remove_file(&staging);
+            return Err(e);
+        }
     }
     spec.env
         .insert("HOME".into(), home.to_string_lossy().into_owned());
@@ -1102,10 +1179,18 @@ mod tests {
         assert!(!reg.is_downloading(&pi));
         assert!(!reg.is_installed(&pi));
         let parent = reg.install_dir("pi").parent().unwrap().to_path_buf();
-        let leftovers = std::fs::read_dir(&parent)
-            .map(|d| d.flatten().count())
-            .unwrap_or(0);
-        assert_eq!(leftovers, 0, "the half-made folder is removed");
+        let leftovers = || {
+            std::fs::read_dir(&parent)
+                .map(|d| d.flatten().count())
+                .unwrap_or(0)
+        };
+        for _ in 0..100 {
+            if leftovers() == 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(leftovers(), 0, "the half-made folder is removed");
     }
 
     #[test]
@@ -1115,7 +1200,7 @@ mod tests {
         let reg = Registry::load(&home);
         let pi = reg.get("pi").unwrap().clone();
         reg.save_key(&pi, "anthropic", "sk-first").unwrap();
-        reg.mark_key(&pi, "anthropic", Some(false));
+        reg.mark_key(&pi, "anthropic", "sk-first", Some(false));
         assert_eq!(reg.readiness(&pi).status, "The key didn't work.");
         // Weilo restarts: still failed.
         let reg = Registry::load(&home);
@@ -1129,7 +1214,7 @@ mod tests {
         // A new key starts clean; one that couldn't be checked says so after a restart.
         reg.save_key(&pi, "anthropic", "sk-second").unwrap();
         assert!(reg.readiness(&pi).ready());
-        reg.mark_key(&pi, "anthropic", None);
+        reg.mark_key(&pi, "anthropic", "sk-second", None);
         let reg = Registry::load(&home);
         assert_eq!(
             reg.readiness(&pi).status,

@@ -448,6 +448,14 @@ pub struct NeedsYouItem {
     pub created_at: String,
     pub expires_at: String,
     pub state: ApprovalState,
+    /// When it was answered or closed (RFC 3339). Missing while it waits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub decided_at: Option<String>,
+    /// How it was closed: "you", "always", "stopped", "interrupted" or "expired".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub decided_via: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

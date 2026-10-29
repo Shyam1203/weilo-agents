@@ -48,7 +48,7 @@ pub async fn set_key(
     app.engines
         .save_key(m, provider, key)
         .map_err(CallError::invalid)?;
-    app.engines.mark_key(m, provider, answer);
+    app.engines.mark_key(m, provider, trimmed, answer);
     if !trimmed.is_empty() && app.engines.needs_download(m) {
         let (app, m) = (app.clone(), m.clone());
         tokio::spawn(async move {

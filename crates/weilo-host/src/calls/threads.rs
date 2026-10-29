@@ -139,11 +139,17 @@ pub async fn start_session(
         Some(id) => Some(agent_name(app, id).await?),
         None => None,
     };
+    // A name it was given; else what it's asked to do, in a few words; else the
+    // folder's name. Two sessions never share one ("shop", "shop 2").
+    let task_name = s.task.as_deref().map(task_title).filter(|t| !t.is_empty());
     let title = s
         .title
+        .clone()
         .map(|t| t.trim().to_string())
         .filter(|t| !t.is_empty())
+        .or(task_name)
         .unwrap_or_else(|| folder_name(&folder));
+    let title = free_session_title(app, title).await?;
     let prepared = worktree::prepare(&folder, &slugify(&title)).await;
     let worktree = match &prepared {
         Prepared::Worktree { path, .. } => Some(path.display().to_string()),
@@ -261,6 +267,34 @@ pub async fn send(app: &Arc<App>, thread_id: Uuid, text: String, when: SendWhen)
     app.runners
         .send(app, thread_id, Cmd::Message { text, when });
     Ok(())
+}
+
+/// A session's name from its task: its first five words, without a closing stop.
+fn task_title(task: &str) -> String {
+    let words: Vec<&str> = task.split_whitespace().take(5).collect();
+    let name = words.join(" ");
+    let name = name.trim_end_matches(['.', ',', ':', ';', '!', '?']);
+    chat_title(name)
+}
+
+/// `title`, or `title 2`, `title 3`… when another session already has it.
+async fn free_session_title(app: &App, title: String) -> CallResult<String> {
+    let taken: Vec<String> = sqlx::query_scalar(
+        "SELECT title FROM threads WHERE space_id = $1 AND kind = 'session'
+           AND (title = $2 OR title LIKE $2 || ' %')",
+    )
+    .bind(app.space_id)
+    .bind(&title)
+    .fetch_all(&app.db)
+    .await?;
+    if !taken.contains(&title) {
+        return Ok(title);
+    }
+    let free = (2..)
+        .map(|n| format!("{title} {n}"))
+        .find(|t| !taken.contains(t))
+        .expect("a free name");
+    Ok(free)
 }
 
 /// The first line of a message, cut to a short title.

@@ -204,7 +204,7 @@ pub async fn run(app: &Arc<App>, m: &Manifest) -> EngineCheck {
     for (spec, value) in app.engines.keys_in_use(m) {
         let answer = try_key(&spec.id, &value).await;
         if answer.is_some() {
-            app.engines.mark_key(m, &spec.id, answer);
+            app.engines.mark_key(m, &spec.id, &value, answer);
         }
         if answer == Some(false) {
             return not_ready(
@@ -266,8 +266,12 @@ pub fn recheck_keys(app: &Arc<App>, m: &Manifest) {
     tokio::spawn(async move {
         let mut changed = false;
         for (provider, value) in unchecked {
+            // One ask per key at a time, however many engines start.
+            let Some(_claim) = app.engines.claim_recheck(&m, &provider) else {
+                continue;
+            };
             if let Some(answer) = try_key(&provider, &value).await {
-                app.engines.mark_key(&m, &provider, Some(answer));
+                app.engines.mark_key(&m, &provider, &value, Some(answer));
                 changed = true;
             }
         }
