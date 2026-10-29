@@ -349,21 +349,23 @@ impl Registry {
             return Ok(());
         }
         let npm = which("npm").ok_or(NO_NPM)?;
+        self.install_with(&npm, m, pkgs).await
+    }
+
+    /// The download itself, with this npm. Held under the engine's install lock.
+    async fn install_with(&self, npm: &Path, m: &Manifest, pkgs: &[String]) -> Result<(), String> {
         let dir = self.install_dir(&m.name);
         let parent = dir.parent().ok_or("no folder for engines")?.to_path_buf();
         std::fs::create_dir_all(&parent).map_err(|e| e.to_string())?;
         remove_leftovers(&parent, &m.name);
         let staging = parent.join(format!(".install-{}-{}", m.name, crate::auth::new_token()));
         std::fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
-        self.downloading
-            .lock()
-            .expect("downloading lock")
-            .insert(m.name.clone());
-        let result = self.npm(&npm, m, pkgs, &staging).await;
-        self.downloading
-            .lock()
-            .expect("downloading lock")
-            .remove(&m.name);
+        // Cleared however this ends: done, failed, or stopped part way (Stop, or the
+        // task running it was ended), when the staging folder is removed too.
+        let mut downloading = Downloading::new(&self.downloading, &m.name, staging.clone());
+        let result = self.npm(npm, m, pkgs, &staging).await;
+        downloading.done();
+        drop(downloading);
         let result = result.and_then(|()| put_in_place(&staging, &dir, &parent, &m.name));
         if result.is_err() {
             let _ = std::fs::remove_dir_all(&staging);
@@ -409,6 +411,44 @@ impl Registry {
                 .last()
                 .unwrap_or("npm install failed")
                 .to_string())
+        }
+    }
+}
+
+/// Marks an engine as downloading while it lives. Dropped before npm is done (the
+/// download was stopped), it also removes the half-made folder.
+struct Downloading<'a> {
+    set: &'a Mutex<std::collections::HashSet<String>>,
+    name: String,
+    staging: Option<PathBuf>,
+}
+
+impl<'a> Downloading<'a> {
+    fn new(set: &'a Mutex<std::collections::HashSet<String>>, name: &str, staging: PathBuf) -> Self {
+        set.lock()
+            .expect("downloading lock")
+            .insert(name.to_string());
+        Self {
+            set,
+            name: name.to_string(),
+            staging: Some(staging),
+        }
+    }
+
+    /// npm finished: the folder is the caller's now.
+    fn done(&mut self) {
+        self.staging = None;
+    }
+}
+
+impl Drop for Downloading<'_> {
+    fn drop(&mut self) {
+        self.set
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.name);
+        if let Some(staging) = self.staging.take() {
+            let _ = std::fs::remove_dir_all(staging);
         }
     }
 }
@@ -908,6 +948,39 @@ mod tests {
         let r = readiness(&manifest("gemini"), p);
         assert_eq!(r.needs, Some(EngineNeed::Install));
         assert_eq!(r.status, "Not on this computer.");
+    }
+
+    #[tokio::test]
+    async fn a_stopped_download_is_no_longer_downloading() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let npm = dir.path().join("npm");
+        std::fs::write(&npm, "#!/bin/sh\nsleep 30\n").unwrap();
+        std::fs::set_permissions(&npm, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let reg = Arc::new(Registry::load(&Home::new(&dir.path().join("home"))));
+        let pi = reg.get("pi").unwrap().clone();
+        let pkgs = pi.install.as_ref().unwrap().npm.clone();
+        let task = {
+            let (reg, pi, npm) = (reg.clone(), pi.clone(), npm.clone());
+            tokio::spawn(async move { reg.install_with(&npm, &pi, &pkgs).await })
+        };
+        for _ in 0..100 {
+            if reg.is_downloading(&pi) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(reg.is_downloading(&pi));
+        // Stop ends the task part way, as `Installing` does when dropped.
+        task.abort();
+        let _ = task.await;
+        assert!(!reg.is_downloading(&pi));
+        assert!(!reg.is_installed(&pi));
+        let parent = reg.install_dir("pi").parent().unwrap().to_path_buf();
+        let leftovers = std::fs::read_dir(&parent)
+            .map(|d| d.flatten().count())
+            .unwrap_or(0);
+        assert_eq!(leftovers, 0, "the half-made folder is removed");
     }
 
     #[test]

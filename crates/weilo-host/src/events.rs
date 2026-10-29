@@ -54,6 +54,35 @@ pub async fn append(
     source: Source,
     tainted: bool,
 ) -> Result<Event, AppendError> {
+    append_named(tx, fence, thread_id, body, source, tainted, None)
+        .await
+        .map(|e| e.expect("an unnamed event is always written"))
+}
+
+/// Like `append`, for an event named by its writer (`event_id`): `None` when an event
+/// of that name is already in the thread, so trying again never writes it twice. The
+/// check comes before `last_seq` moves, so seqs stay gap-free.
+pub async fn append_named(
+    tx: &mut PgConnection,
+    fence: Fence,
+    thread_id: Uuid,
+    body: &EventBody,
+    source: Source,
+    tainted: bool,
+    event_id: Option<Uuid>,
+) -> Result<Option<Event>, AppendError> {
+    if let Some(id) = event_id {
+        let written: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM events WHERE thread_id = $1 AND event_id = $2)",
+        )
+        .bind(thread_id)
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if written {
+            return Ok(None);
+        }
+    }
     let row = sqlx::query(
         "UPDATE threads SET last_seq = last_seq + 1, updated_at = now(),
                 tainted = tainted OR $4
@@ -71,8 +100,8 @@ pub async fn append(
     let space_id: Uuid = row.get("space_id");
     let json = serde_json::to_value(body).map_err(|e| sqlx::Error::Encode(Box::new(e)))?;
     let at: DateTime<Utc> = sqlx::query_scalar(
-        "INSERT INTO events (thread_id, seq, space_id, source, tainted, kind, body)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING created_at",
+        "INSERT INTO events (thread_id, seq, space_id, source, tainted, kind, body, event_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING created_at",
     )
     .bind(thread_id)
     .bind(seq)
@@ -81,15 +110,16 @@ pub async fn append(
     .bind(tainted)
     .bind(kind_of(body))
     .bind(&json)
+    .bind(event_id)
     .fetch_one(&mut *tx)
     .await?;
-    Ok(Event {
+    Ok(Some(Event {
         seq,
         at: at.to_rfc3339(),
         source: source.as_str().into(),
         tainted,
         body: body.clone(),
-    })
+    }))
 }
 
 /// Events with `from < seq <= to`, in order.

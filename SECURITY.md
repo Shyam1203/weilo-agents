@@ -36,9 +36,11 @@ model is part of the product. In short:
 **What this does not protect against.** There is no sandbox around agents in this release. They
 run as your user, with your files and the sign-ins you already have for Claude Code, Codex or
 Gemini. Anything that runs as your user, an agent included, can do what you can: run `weilo pair`
-to pair a device, read Weilo's files, or change Weilo's data (the audit check would show it). An
-agent only asks first when its engine asks; it can do other things without asking. The questions
-in Needs you are a safety net, not a wall. A cloud version comes later.
+to pair a device, read Weilo's files, or change Weilo's data, including adding an "Always allow"
+rule or answering a question for you. The audit check only shows when past entries of the audit
+log were edited; it can't show new changes made this way. An agent only asks first when its
+engine asks; it can do other things without asking. The questions in Needs you are a safety net,
+not a wall. A cloud version comes later.
 
 ## Reporting a vulnerability
 

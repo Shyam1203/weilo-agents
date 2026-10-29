@@ -24,7 +24,8 @@ pub const PRUNE: &str = "maintenance.prune";
 /// Tries for a job that must not give up (an approval's expiry): with the backoff capped
 /// at about 17 minutes, decades of tries.
 const KEEP_TRYING: i32 = 1_000_000;
-/// How often waiting approvals past their time are closed, whatever their jobs did.
+/// How often waiting approvals past their time, or with nothing waiting on them, are
+/// closed, whatever their jobs did.
 const SWEEP_EVERY: Duration = Duration::from_secs(60);
 
 fn max_attempts(queue: &str) -> i32 {
@@ -145,6 +146,31 @@ pub async fn sweep_expired(app: &Arc<App>) -> Result<()> {
     for id in due {
         if let Err(e) = approvals::expire(app, id).await {
             tracing::warn!("couldn't expire approval {id}: {e:#}");
+        }
+    }
+    close_orphans(app).await
+}
+
+/// Closes, as interrupted, approvals still waiting that no engine in this process
+/// waits on (their runner ended, or couldn't write the closing while Postgres was
+/// away): an answer to them would reach nobody. At startup, recovery has already
+/// closed those left by the last run, the same way. A runner marks its approval live
+/// before saving it, so one being opened is never taken for an orphan.
+pub async fn close_orphans(app: &Arc<App>) -> Result<()> {
+    let waiting: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM approvals WHERE space_id = $1 AND state = 'pending'",
+    )
+    .bind(app.space_id)
+    .fetch_all(&app.db)
+    .await?;
+    let orphans: Vec<Uuid> = {
+        let live = app.live_approvals.lock().expect("live approvals lock");
+        waiting.into_iter().filter(|id| !live.contains(id)).collect()
+    };
+    for id in orphans {
+        tracing::info!("closing approval {id}: nothing waits on it");
+        if let Err(e) = approvals::close_interrupted(app, id).await {
+            tracing::warn!("couldn't close approval {id}: {e:#}");
         }
     }
     Ok(())

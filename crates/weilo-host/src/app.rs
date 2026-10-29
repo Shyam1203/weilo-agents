@@ -137,6 +137,12 @@ pub struct App {
     pub slot_wanted: tokio::sync::Notify,
     /// Sessions whose changes are being brought back right now.
     pub bringing_back: Mutex<std::collections::HashSet<Uuid>>,
+    /// Threads waiting for an engine slot right now; an idle engine gives its slot up
+    /// only while some do.
+    pub slot_waiters: std::sync::atomic::AtomicUsize,
+    /// Approvals an engine is waiting on in this process. A pending approval not in
+    /// here has no one to tell its answer to, and the job sweep closes it.
+    pub live_approvals: Mutex<std::collections::HashSet<Uuid>>,
     port: AtomicU16,
     /// The newest seq published per thread, so deltas can name it without a query.
     seqs: Mutex<HashMap<Uuid, i64>>,
@@ -174,6 +180,8 @@ impl App {
             engine_slots,
             slot_wanted: tokio::sync::Notify::new(),
             bringing_back: Mutex::default(),
+            slot_waiters: std::sync::atomic::AtomicUsize::new(0),
+            live_approvals: Mutex::default(),
             port: AtomicU16::new(0),
             seqs: Mutex::new(HashMap::new()),
         })
@@ -195,6 +203,26 @@ impl App {
         Ok(event)
     }
 
+    /// Appends an event its writer named, once: tried again after a lost reply, it
+    /// isn't written twice (`None` then).
+    pub async fn append_once(
+        &self,
+        thread_id: Uuid,
+        event_id: Uuid,
+        body: &EventBody,
+        source: Source,
+    ) -> Result<Option<Event>> {
+        let mut tx = self.db.begin().await?;
+        let event =
+            events::append_named(&mut tx, self.fence, thread_id, body, source, false, Some(event_id))
+                .await?;
+        tx.commit().await?;
+        if let Some(event) = &event {
+            self.committed(thread_id, vec![event.clone()]).await;
+        }
+        Ok(event)
+    }
+
     /// Call after a transaction with appends commits.
     pub async fn committed(&self, thread_id: Uuid, evs: Vec<Event>) {
         if let Some(last) = evs.last() {
@@ -211,6 +239,11 @@ impl App {
         if let Err(e) = projector::run(self, thread_id).await {
             tracing::error!("projector failed for {thread_id}: {e:#}");
         }
+    }
+
+    /// Forgets a thread's cached seq (its runner ended); it is read again when needed.
+    pub fn forget_seq(&self, thread_id: Uuid) {
+        self.seqs.lock().expect("seqs lock").remove(&thread_id);
     }
 
     /// The newest durable seq of a thread.

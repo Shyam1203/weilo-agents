@@ -12,7 +12,11 @@
 //! What the runner writes to the thread goes through an outbox, in order. When Postgres
 //! is unreachable the outbox keeps it (the reply text included) and tries again until
 //! the database is back, then says the runner's current state once more, so the thread
-//! never stays "working" after its turn ended.
+//! never stays "working" after its turn ended. Closing a card that waited goes through
+//! the outbox too, in its place. Each event is named before it is first tried, so one
+//! whose commit went through but whose reply was lost isn't written twice. While
+//! Postgres is known to be down nothing is tried (so Stop is taken at once); the outbox
+//! is written as soon as it is back.
 //!
 //! Bring back runs here too, between turns: no turn can start while it merges.
 //!
@@ -187,7 +191,7 @@ struct Runner {
     /// The engine's log, once it has started.
     log: Option<PathBuf>,
     /// Events not yet written, in order (Postgres was unreachable).
-    outbox: VecDeque<(EventBody, Source)>,
+    outbox: VecDeque<Out>,
     /// When to try the outbox again.
     retry_at: Option<Instant>,
     /// The outbox overflowed and lost events while Postgres was away.
@@ -204,10 +208,42 @@ struct Runner {
     waiting_slot: Option<WaitingSlot>,
 }
 
+/// Something the runner writes, in order.
+#[derive(Clone)]
+enum Out {
+    /// An event, named so that trying it again never writes it twice.
+    Event {
+        id: Uuid,
+        body: EventBody,
+        source: Source,
+    },
+    /// Closes a card nobody answered: Stop was pressed, or the turn ended.
+    Close { approval_id: Uuid, stopped: bool },
+}
+
 struct WaitingSlot {
     id: u64,
     text: String,
     task: tokio::task::JoinHandle<()>,
+}
+
+/// Counts a thread among those waiting for a slot while it lives.
+struct SlotWaiter(Arc<App>);
+
+impl SlotWaiter {
+    fn new(app: &Arc<App>) -> Self {
+        app.slot_waiters
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Self(app.clone())
+    }
+}
+
+impl Drop for SlotWaiter {
+    fn drop(&mut self) {
+        self.0
+            .slot_waiters
+            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 impl Drop for WaitingSlot {
@@ -225,6 +261,7 @@ impl Runner {
         let mut db_up = self.app.db_up.subscribe();
         let app = self.app.clone();
         loop {
+            let db_ok = *self.app.db_up.borrow();
             let idle = self.turn.is_none() && self.conn.is_some();
             let idle_at = idle.then(|| Instant::now() + self.app.settings.engine_idle);
             let retire_at = self
@@ -246,17 +283,24 @@ impl Runner {
                         }
                     }
                 }
-                _ = sleep_until(self.retry_at) => self.drain().await,
+                // While Postgres is known to be down, nothing is tried: it is written
+                // when Postgres is back (above).
+                _ = sleep_until(self.retry_at), if db_ok => self.drain().await,
                 _ = sleep_until(idle_at) => {
                     tracing::info!("stopping the idle engine of {}", self.thread_id);
                     self.drop_conn();
                 }
                 _ = app.slot_wanted.notified(), if idle => {
-                    tracing::info!("the idle engine of {} gives its place up", self.thread_id);
-                    self.drop_conn();
+                    // Only while a thread still waits: a call left over from a wait
+                    // that already got its slot is let go.
+                    if app.slot_waiters.load(std::sync::atomic::Ordering::SeqCst) > 0 {
+                        tracing::info!("the idle engine of {} gives its place up", self.thread_id);
+                        self.drop_conn();
+                    }
                 }
                 _ = sleep_until(retire_at) => {
                     if self.app.runners.retire(self.thread_id, &cmds) {
+                        self.app.forget_seq(self.thread_id);
                         tracing::debug!("runner of {} ends: nothing to do", self.thread_id);
                         break;
                     }
@@ -489,8 +533,11 @@ impl Runner {
         let id = self.slots;
         let (app, tx) = (self.app.clone(), self.engine_tx.clone());
         let task = tokio::spawn(async move {
+            let _waiting = SlotWaiter::new(&app);
             loop {
-                app.slot_wanted.notify_waiters();
+                // One idle engine at a time gives its slot up: the one that has waited
+                // longest for something to do.
+                app.slot_wanted.notify_one();
                 let wait = app.engine_slots.clone().acquire_owned();
                 if let Ok(Ok(permit)) = tokio::time::timeout(RETRY_WRITE, wait).await {
                     let msg = EngineMsg::Slot { id, permit };
@@ -800,6 +847,18 @@ impl Runner {
         let approval_id = crate::ids::new_id();
         let always = key.is_some().then_some(always);
         let card = permission_card(&ctx.agent_name, approval_id, &tool, always);
+        // What came before the card is written first, so the thread reads in order.
+        self.drain().await;
+        if !self.outbox.is_empty() {
+            tracing::warn!("couldn't write {} before a card", self.thread_id);
+            return self.couldnt_ask(&card.title, &request, responder).await;
+        }
+        // Live before it is saved, so the sweep never takes it for one nobody waits on.
+        self.app
+            .live_approvals
+            .lock()
+            .expect("live approvals lock")
+            .insert(approval_id);
         let opened = approvals::open(
             &self.app,
             approvals::NewApproval {
@@ -814,8 +873,12 @@ impl Runner {
         .await;
         if let Err(e) = opened {
             tracing::error!("couldn't save an approval: {e:#}");
-            let _ = responder.respond(selected(&request, &Decision::Deny));
-            return;
+            self.app
+                .live_approvals
+                .lock()
+                .expect("live approvals lock")
+                .remove(&approval_id);
+            return self.couldnt_ask(&card.title, &request, responder).await;
         }
         self.pending.insert(
             approval_id,
@@ -827,10 +890,28 @@ impl Runner {
         self.set_state(WorkState::NeedsYou, &card.title).await;
     }
 
+    /// The card couldn't be saved, so nobody could be asked: the engine is told no, and
+    /// the person is told why.
+    async fn couldnt_ask(
+        &mut self,
+        title: &str,
+        request: &RequestPermissionRequest,
+        responder: Responder<RequestPermissionResponse>,
+    ) {
+        let _ = responder.respond(selected(request, &Decision::Deny));
+        let message = format!("Weilo couldn't ask you about this, so it wasn't allowed: {title}");
+        self.problem(&message, Some("Try again")).await;
+    }
+
     async fn decided(&mut self, approval_id: Uuid, decision: Decision) {
         let Some(p) = self.pending.remove(&approval_id) else {
             return;
         };
+        self.app
+            .live_approvals
+            .lock()
+            .expect("live approvals lock")
+            .remove(&approval_id);
         let response = selected(&p.request, &decision);
         p.answer(response);
         if let Some(turn) = self.turn.as_mut() {
@@ -873,17 +954,20 @@ impl Runner {
     /// Closes the cards still waiting: as stopped (Stop was pressed) or interrupted (the
     /// turn ended without an answer, say because the engine died).
     async fn close_pending(&mut self, stopped: bool) {
-        for (approval_id, p) in std::mem::take(&mut self.pending) {
-            p.answer(cancelled());
-            let closed = if stopped {
-                approvals::close_stopped(&self.app, approval_id).await
-            } else {
-                approvals::close_interrupted(&self.app, approval_id).await
-            };
-            if let Err(e) = closed {
-                tracing::warn!("couldn't close approval {approval_id}: {e:#}");
-            }
+        let pending = std::mem::take(&mut self.pending);
+        if pending.is_empty() {
+            return;
         }
+        for (approval_id, p) in pending {
+            p.answer(cancelled());
+            // In line with the events around it; kept and tried again while Postgres
+            // is away, so the card never waits on an engine that isn't listening.
+            self.outbox.push_back(Out::Close {
+                approval_id,
+                stopped,
+            });
+        }
+        self.write_soon().await;
     }
 
     /// The engine went quiet: cancel the turn and say so.
@@ -1043,14 +1127,51 @@ impl Runner {
 
     /// Writes an event after any still waiting in the outbox.
     async fn append(&mut self, body: EventBody, source: Source) {
-        self.outbox.push_back((body, source));
+        let id = crate::ids::new_id();
+        self.outbox.push_back(Out::Event { id, body, source });
         if self.outbox.len() > OUTBOX_MAX {
-            self.outbox.pop_front();
-            self.dropped = true;
+            // The oldest event goes; a card's closing never does.
+            if let Some(at) = self.outbox.iter().position(|o| matches!(o, Out::Event { .. })) {
+                self.outbox.remove(at);
+                self.dropped = true;
+            }
         }
-        if self.retry_at.is_none() {
+        self.write_soon().await;
+    }
+
+    /// Writes the outbox now, unless it waits for a retry or Postgres is known to be
+    /// down (then it is written when Postgres is back).
+    async fn write_soon(&mut self) {
+        if self.retry_at.is_none() && *self.app.db_up.borrow() {
             self.drain().await;
         }
+    }
+
+    /// Writes one thing from the outbox.
+    async fn write(&self, out: &Out) -> anyhow::Result<()> {
+        match out {
+            Out::Event { id, body, source } => {
+                self.app
+                    .append_once(self.thread_id, *id, body, *source)
+                    .await?;
+            }
+            Out::Close {
+                approval_id,
+                stopped,
+            } => {
+                if *stopped {
+                    approvals::close_stopped(&self.app, *approval_id).await?;
+                } else {
+                    approvals::close_interrupted(&self.app, *approval_id).await?;
+                }
+                self.app
+                    .live_approvals
+                    .lock()
+                    .expect("live approvals lock")
+                    .remove(approval_id);
+            }
+        }
+        Ok(())
     }
 
     /// Writes the outbox in order. A write that fails because Postgres can't be reached
@@ -1058,9 +1179,9 @@ impl Runner {
     /// other failure is logged and that event dropped. After an outage, the current
     /// state is said again.
     async fn drain(&mut self) {
-        let recovering = self.retry_at.take().is_some();
-        while let Some((body, source)) = self.outbox.front().cloned() {
-            match self.app.append(self.thread_id, body, source).await {
+        let recovering = self.retry_at.take().is_some() || self.dropped;
+        while let Some(out) = self.outbox.front().cloned() {
+            match self.write(&out).await {
                 Ok(_) => {
                     self.outbox.pop_front();
                 }
@@ -1075,7 +1196,15 @@ impl Runner {
                     return;
                 }
                 Err(e) => {
-                    tracing::error!("append to {} failed: {e:#}", self.thread_id);
+                    tracing::error!("write to {} failed: {e:#}", self.thread_id);
+                    if let Out::Close { approval_id, .. } = out {
+                        // Left to the sweep, which closes cards nobody waits on.
+                        self.app
+                            .live_approvals
+                            .lock()
+                            .expect("live approvals lock")
+                            .remove(&approval_id);
+                    }
                     self.outbox.pop_front();
                 }
             }
