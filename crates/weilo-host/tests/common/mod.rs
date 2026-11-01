@@ -85,11 +85,11 @@ impl Host {
 
     /// Runs another `weilo up` on the same home and waits for it to exit.
     pub fn second_up(&self) -> std::process::Output {
-        Command::new(env!("CARGO_BIN_EXE_weilo"))
-            .args(["up", "--port", "0", "--home"])
-            .arg(&self.home)
-            .output()
-            .unwrap()
+        run_weilo(|cmd| {
+            cmd.args(["up", "--port", "0", "--home"])
+                .arg(&self.home)
+                .output()
+        })
     }
 
     /// Kills the host at once (no clean stop), then starts it again on the same home.
@@ -167,11 +167,7 @@ impl Host {
 
     /// A pairing code from `weilo pair`.
     pub fn pairing_code(&self) -> String {
-        let out = Command::new(env!("CARGO_BIN_EXE_weilo"))
-            .args(["pair", "--home"])
-            .arg(&self.home)
-            .output()
-            .unwrap();
+        let out = run_weilo(|cmd| cmd.args(["pair", "--home"]).arg(&self.home).output());
         assert!(
             out.status.success(),
             "{}",
@@ -212,18 +208,37 @@ fn spawn_up(home: &std::path::Path, dir: &std::path::Path, env: &[(String, Strin
         .append(true)
         .open(dir.join("host.log"))
         .unwrap();
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_weilo"));
-    cmd.args(["up", "--port", "0", "--home"])
-        .arg(home)
-        .env("WEILO_JOB_POLL_MS", "200")
-        .env("WEILO_WORKSPACES", dir.join("agents"))
-        .env("RUST_LOG", "weilo_host=debug,warn")
-        .stdout(Stdio::null())
-        .stderr(log);
-    for (k, v) in env {
-        cmd.env(k, v);
+    run_weilo(|cmd| {
+        cmd.args(["up", "--port", "0", "--home"])
+            .arg(home)
+            .env("WEILO_JOB_POLL_MS", "200")
+            .env("WEILO_WORKSPACES", dir.join("agents"))
+            .env("RUST_LOG", "weilo_host=debug,warn")
+            .stdout(Stdio::null())
+            .stderr(log.try_clone()?);
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
+        cmd.spawn()
+    })
+}
+
+/// Runs `weilo` the way `start` says. Another cargo run sharing this target folder
+/// replaces the file (removes it, then links the new one), so for a moment it may be
+/// missing: then it is tried again shortly. Any other error fails the test.
+fn run_weilo<T>(start: impl Fn(&mut Command) -> std::io::Result<T>) -> T {
+    let mut tries = 0;
+    loop {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_weilo"));
+        match start(&mut cmd) {
+            Ok(done) => return done,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound && tries < 50 => {
+                tries += 1;
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Err(e) => panic!("couldn't run weilo: {e}"),
+        }
     }
-    cmd.spawn().expect("start weilo up")
 }
 
 impl Drop for Host {
@@ -327,8 +342,7 @@ impl Client {
             let Ok(frame) = tokio::time::timeout(left, self.read()).await else {
                 panic!("timed out waiting for a frame; saw {:#?}", self.seen);
             };
-            let frame = frame
-                .expect("socket closed");
+            let frame = frame.expect("socket closed");
             if want(&frame) {
                 return frame;
             }

@@ -107,7 +107,16 @@ impl Session {
                                 break;
                             }
                         }
-                        None => break,
+                        None => {
+                            // The session can end between the two checks above (it runs
+                            // on another thread). Its close frame is handed over before
+                            // the queue closes, so it is here now: send it, or the
+                            // device sees the connection drop with no reason.
+                            if let Ok(close) = close_rx.try_recv() {
+                                let _ = tokio::time::timeout(WRITE_WAIT, sink.send(close)).await;
+                            }
+                            break;
+                        }
                     },
                 }
             }
