@@ -1040,7 +1040,7 @@ impl Runner {
         self.close_pending(true).await;
     }
 
-    /// Closes the cards still waiting: as stopped (Stop was pressed) or interrupted (the
+    /// Closes the cards still waiting: as stopped (Stop was pressed) or engine_stopped (the
     /// turn ended without an answer, say because the engine died).
     async fn close_pending(&mut self, stopped: bool) {
         let pending = std::mem::take(&mut self.pending);
@@ -1305,7 +1305,7 @@ impl Runner {
                 if *stopped {
                     approvals::close_stopped(&self.app, *approval_id).await?;
                 } else {
-                    approvals::close_interrupted(&self.app, *approval_id).await?;
+                    approvals::close_engine_stopped(&self.app, *approval_id).await?;
                 }
                 self.app
                     .live_approvals

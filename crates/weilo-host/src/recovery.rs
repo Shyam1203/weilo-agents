@@ -1,5 +1,5 @@
 //! What `weilo up` tidies before it serves: the projector catches up on every thread,
-//! approvals left waiting by the last run are closed as "interrupted", and threads that
+//! approvals left waiting by the last run are closed as "restarted", and threads that
 //! were working go back to Idle with a problem the person can retry.
 
 use std::sync::Arc;
@@ -37,7 +37,7 @@ pub async fn run(app: &Arc<App>) -> Result<()> {
             .fetch_all(&app.db)
             .await?;
     for approval_id in waiting {
-        if let Err(e) = approvals::close_interrupted(app, approval_id).await {
+        if let Err(e) = approvals::close_restarted(app, approval_id).await {
             tracing::warn!("couldn't close approval {approval_id}: {e:#}");
         }
     }

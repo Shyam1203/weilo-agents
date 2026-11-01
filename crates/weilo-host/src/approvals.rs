@@ -126,7 +126,7 @@ pub async fn decide(
     let body = EventBody::ApprovalDecided {
         approval_id,
         decision: decision.clone(),
-        via: "app".into(),
+        via: via.into(),
     };
     let ev = events::append(&mut tx, app.fence, thread_id, &body, Source::User, false).await?;
     if let Decision::AllowAlways { .. } = &decision {
@@ -143,7 +143,7 @@ pub async fn decide(
         .execute(&mut *tx)
         .await?;
     }
-    let detail = json!({ "approval_id": approval_id, "decision": decision, "via": "app" });
+    let detail = json!({ "approval_id": approval_id, "decision": decision, "via": via });
     let entry = audit::Entry {
         actor: "device",
         device_id: Some(device_id),
@@ -199,9 +199,15 @@ pub async fn close_stopped(app: &Arc<App>, approval_id: Uuid) -> Result<()> {
     close(app, approval_id, "denied", "stopped", "true").await
 }
 
-/// Weilo stopped while the approval waited: the engine that asked is gone.
-pub async fn close_interrupted(app: &Arc<App>, approval_id: Uuid) -> Result<()> {
-    close(app, approval_id, "denied", "interrupted", "true").await
+/// Weilo stopped while the approval waited: closed as it starts again.
+pub async fn close_restarted(app: &Arc<App>, approval_id: Uuid) -> Result<()> {
+    close(app, approval_id, "denied", "restarted", "true").await
+}
+
+/// The engine that asked is gone while Weilo runs: it stopped, its turn ended without
+/// an answer, or nothing waits on the approval any more.
+pub async fn close_engine_stopped(app: &Arc<App>, approval_id: Uuid) -> Result<()> {
+    close(app, approval_id, "denied", "engine_stopped", "true").await
 }
 
 async fn close(

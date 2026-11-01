@@ -452,7 +452,9 @@ pub struct NeedsYouItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub decided_at: Option<String>,
-    /// How it was closed: "you", "always", "stopped", "interrupted" or "expired".
+    /// How it was closed: "you", "always", "stopped", "restarted" (Weilo stopped while
+    /// it waited), "engine_stopped" (the engine that asked is gone) or "expired". Older
+    /// ones may say "interrupted".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub decided_via: Option<String>,
@@ -631,6 +633,9 @@ pub enum EventBody {
     ApprovalDecided {
         approval_id: Id,
         decision: Decision,
+        /// "app" (a person's one-off answer), "always" (Always allow), "stopped",
+        /// "restarted" (Weilo stopped while it waited), "engine_stopped" (the engine
+        /// that asked is gone) or "expired". Older events may say "interrupted".
         via: String,
     },
     State {

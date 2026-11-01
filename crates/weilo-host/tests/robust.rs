@@ -476,7 +476,7 @@ async fn a_crash_closes_waiting_approvals_and_stops_work() {
     };
     assert_eq!(items[0].state, ApprovalState::Denied);
     c.sub(thread, 0).await;
-    c.next(|f| matches!(f, ServerFrame::Ev { event, .. } if matches!(&event.body, EventBody::ApprovalDecided { via, .. } if via == "interrupted")))
+    c.next(|f| matches!(f, ServerFrame::Ev { event, .. } if matches!(&event.body, EventBody::ApprovalDecided { via, .. } if via == "restarted")))
         .await;
     let f = c.next(|f| problem(f).is_some()).await;
     assert_eq!(
@@ -869,7 +869,7 @@ async fn an_engine_that_dies_closes_its_waiting_cards() {
     c.next(|f| is_state(f, WorkState::NeedsYou)).await;
     // SAFETY: killing the engine's group, as a crash of the engine would.
     unsafe { libc::kill(-pgid, libc::SIGKILL) };
-    c.next(|f| matches!(f, ServerFrame::Ev { event, .. } if matches!(&event.body, EventBody::ApprovalDecided { via, .. } if via == "interrupted")))
+    c.next(|f| matches!(f, ServerFrame::Ev { event, .. } if matches!(&event.body, EventBody::ApprovalDecided { via, .. } if via == "engine_stopped")))
         .await;
     c.next(|f| is_state(f, WorkState::Idle)).await;
     let CallValue::NeedsYou(items) = c.ok(Call::NeedsYou).await else {
@@ -1902,7 +1902,7 @@ async fn a_card_left_while_postgres_is_down_is_closed_when_it_is_back() {
         host.postgres_pid().is_some_and(pid_alive)
     })
     .await;
-    // Closed as interrupted once Postgres is back, long before the sweep would.
+    // Closed as engine_stopped once Postgres is back, long before the sweep would.
     let started = std::time::Instant::now();
     loop {
         let row: Option<(String, Option<String>)> = match host.connect_as("weilo_app").await {
@@ -1917,7 +1917,7 @@ async fn a_card_left_while_postgres_is_down_is_closed_when_it_is_back() {
             && state != "pending"
         {
             assert_eq!(state, "denied");
-            assert_eq!(via.as_deref(), Some("interrupted"));
+            assert_eq!(via.as_deref(), Some("engine_stopped"));
             break;
         }
         assert!(

@@ -227,12 +227,13 @@ impl Registry {
     /// `Some(false)` turned down, `None` couldn't ask. A verdict on a key that is no
     /// longer the one in use (it was changed meanwhile) is ignored.
     pub fn mark_key(&self, m: &Manifest, provider: &str, checked: &str, answer: Option<bool>) {
+        // The key in use is read under the lock, so two verdicts can't cross over.
+        let mut states = self.key_states.lock().expect("key states lock");
         let current = self
             .keys_in_use(m)
             .into_iter()
             .find(|(spec, _)| spec.id == provider)
             .map(|(_, v)| v);
-        let mut states = self.key_states.lock().expect("key states lock");
         let entry = (m.name.clone(), provider.to_string());
         let before = states.get(&entry).cloned();
         match current {
@@ -243,7 +244,11 @@ impl Registry {
             Some(v) if fingerprint(&v) != fingerprint(checked) => return,
             Some(v) => match answer {
                 Some(true) => {
-                    states.remove(&entry);
+                    // Only what was said of this very key is taken back.
+                    let print = fingerprint(checked);
+                    if states.get(&entry).is_some_and(|(_, p)| *p == print) {
+                        states.remove(&entry);
+                    }
                 }
                 Some(false) => {
                     states.insert(entry.clone(), (KeyState::Rejected, fingerprint(&v)));
@@ -728,10 +733,15 @@ fn own_home(
             .create_new(true)
             .mode(0o700)
             .open(&staging)?;
-        f.write_all(script.as_bytes())?;
-        f.sync_all()?;
-        drop(f);
-        if let Err(e) = std::fs::rename(&staging, &launcher) {
+        let written = f
+            .write_all(script.as_bytes())
+            .and_then(|()| f.sync_all())
+            .and_then(|()| {
+                drop(f);
+                std::fs::rename(&staging, &launcher)
+            });
+        if let Err(e) = written {
+            // Whichever step failed, the half-made file doesn't stay behind.
             let _ = std::fs::remove_file(&staging);
             return Err(e);
         }

@@ -168,6 +168,8 @@ impl Postgres {
     /// when it goes down and when it is back.
     pub async fn supervise(mut self, stop: tokio_util::sync::CancellationToken, up: impl Fn(bool)) {
         let mut pause = Duration::from_millis(250);
+        // Quick tries in a row while the last run's shared memory is still held.
+        let mut quick = 0;
         loop {
             let status = tokio::select! {
                 status = self.exited() => status,
@@ -186,9 +188,12 @@ impl Postgres {
                     Err(e) => {
                         tracing::warn!("Postgres didn't start again: {e:#}");
                         // Server processes of the last run still holding its shared
-                        // memory go away by themselves soon: try again shortly.
-                        // Anything else waits longer each time.
-                        pause = if format!("{e:#}").contains("shared memory block") {
+                        // memory go away by themselves soon: try again shortly, for a
+                        // while (about 5 s). Anything else, or that for longer, waits
+                        // longer each time.
+                        let held = format!("{e:#}").contains("shared memory block");
+                        quick = if held { quick + 1 } else { QUICK_TRIES };
+                        pause = if quick < QUICK_TRIES {
                             Duration::from_millis(250)
                         } else {
                             (pause * 2).min(Duration::from_secs(30))
@@ -198,6 +203,7 @@ impl Postgres {
             }
             tracing::info!("Postgres is back");
             pause = Duration::from_millis(250);
+            quick = 0;
             up(true);
         }
         self.stop().await;
@@ -293,10 +299,23 @@ impl Drop for Postgres {
     }
 }
 
+/// How many times in a row a start held up by the last run's shared memory is tried
+/// again quickly before waiting longer each time.
+const QUICK_TRIES: u32 = 20;
+
+/// Sends `sig` to one process: the Postgres this host started, or one found to be a
+/// Postgres of this home folder's data. Never 0 or a negative number, which would reach
+/// a whole process group.
 fn signal(pid: u32, sig: i32) {
-    // SAFETY: kill(2) with a pid we spawned.
+    let Ok(pid) = i32::try_from(pid) else {
+        return;
+    };
+    if pid <= 0 {
+        return;
+    }
+    // SAFETY: kill(2) only sends a signal, to the single process `pid`.
     unsafe {
-        libc::kill(pid as i32, sig);
+        libc::kill(pid, sig);
     }
 }
 

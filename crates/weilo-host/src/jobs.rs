@@ -151,7 +151,7 @@ pub async fn sweep_expired(app: &Arc<App>) -> Result<()> {
     close_orphans(app).await
 }
 
-/// Closes, as interrupted, approvals still waiting that no engine in this process
+/// Closes, as "engine_stopped", approvals still waiting that no engine in this process
 /// waits on (their runner ended, or couldn't write the closing while Postgres was
 /// away): an answer to them would reach nobody. At startup, recovery has already
 /// closed those left by the last run, the same way. A runner marks its approval live
@@ -171,7 +171,7 @@ pub async fn close_orphans(app: &Arc<App>) -> Result<()> {
     };
     for id in orphans {
         tracing::info!("closing approval {id}: nothing waits on it");
-        if let Err(e) = approvals::close_interrupted(app, id).await {
+        if let Err(e) = approvals::close_engine_stopped(app, id).await {
             tracing::warn!("couldn't close approval {id}: {e:#}");
         }
     }
