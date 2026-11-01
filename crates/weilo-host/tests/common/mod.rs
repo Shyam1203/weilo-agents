@@ -317,9 +317,10 @@ impl Client {
         let deadline = Instant::now() + WAIT;
         loop {
             let left = deadline.saturating_duration_since(Instant::now());
-            let frame = tokio::time::timeout(left, self.read())
-                .await
-                .expect("timed out waiting for a frame")
+            let Ok(frame) = tokio::time::timeout(left, self.read()).await else {
+                panic!("timed out waiting for a frame; saw {:#?}", self.seen);
+            };
+            let frame = frame
                 .expect("socket closed");
             if want(&frame) {
                 return frame;
