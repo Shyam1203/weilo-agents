@@ -2368,3 +2368,157 @@ async fn a_send_the_database_doesnt_answer_says_so_and_can_be_sent_again() {
         .count();
     assert_eq!(sent, 1);
 }
+
+/// Pauses the test host's Postgres and every one of its processes, as a stuck database
+/// would be; they all go on when this is dropped.
+struct Frozen(Vec<i32>);
+
+impl Frozen {
+    fn now(host: &Host) -> Self {
+        let postmaster = host.postgres_pid().expect("postgres pid");
+        let mut pids = vec![postmaster];
+        pids.extend(postgres_backends(postmaster));
+        for pid in &pids {
+            // SAFETY: pausing the test host's own Postgres processes.
+            unsafe { libc::kill(*pid, libc::SIGSTOP) };
+        }
+        Self(pids)
+    }
+}
+
+impl Drop for Frozen {
+    fn drop(&mut self) {
+        for pid in &self.0 {
+            // SAFETY: resuming the test host's own Postgres processes.
+            unsafe { libc::kill(*pid, libc::SIGCONT) };
+        }
+    }
+}
+
+/// How soon every device must hear that the database doesn't answer.
+const SAID_WITHIN: Duration = Duration::from_secs(8);
+
+async fn told_silent(c: &mut Client, host: &Host, since: std::time::Instant) {
+    let told = tokio::time::timeout(
+        SAID_WITHIN.saturating_sub(since.elapsed()),
+        c.try_next(|f| matches!(f, ServerFrame::Status { ok: false, .. })),
+    )
+    .await;
+    assert!(
+        matches!(&told, Ok(Ok(ServerFrame::Status { message: Some(m), .. })) if m == DB_SILENT),
+        "{told:?} after {:?}\n{}",
+        since.elapsed(),
+        host.log()
+    );
+}
+
+#[tokio::test]
+async fn a_frozen_database_is_said_at_once_and_devices_still_connect() {
+    let Some(host) = Host::start().await else {
+        return;
+    };
+    let token = host.pair().await;
+    let mut c = Client::connect(&host, Some(&token)).await.unwrap();
+    let thread = setup_with_echo(&mut c).await;
+    c.sub(thread, 0).await;
+    send(&mut c, thread, "hello").await;
+    c.next(|f| agent_text(f) == Some("You said: hello")).await;
+    c.next(|f| is_state(f, WorkState::Idle)).await;
+    // Nothing running: Postgres freezes, and the device hears so within seconds.
+    let frozen = Frozen::now(&host);
+    let since = std::time::Instant::now();
+    told_silent(&mut c, &host, since).await;
+    // A message sent meanwhile isn't lost: it is turned away at once, so the device
+    // keeps it.
+    let asked = std::time::Instant::now();
+    let r = c
+        .call(Call::Send {
+            thread_id: thread,
+            text: "still there?".into(),
+            when: SendWhen::Now,
+        })
+        .await;
+    assert!(failed_with(&r, "database_away").is_some(), "{r:?}");
+    assert!(
+        asked.elapsed() < Duration::from_secs(3),
+        "{:?}",
+        asked.elapsed()
+    );
+    // The page loaded again: it connects, and hears straight away what is wrong.
+    let reloaded = std::time::Instant::now();
+    // (`connect` waits for its Welcome.)
+    let mut d = Client::connect(&host, Some(&token)).await.unwrap();
+    let f = d.next(|f| matches!(f, ServerFrame::Status { .. })).await;
+    assert!(
+        matches!(&f, ServerFrame::Status { ok: false, message: Some(m) } if m == DB_SILENT),
+        "{f:?}"
+    );
+    assert!(
+        reloaded.elapsed() < Duration::from_secs(3),
+        "{:?}",
+        reloaded.elapsed()
+    );
+    let r = d.call(Call::Snapshot).await;
+    assert!(failed_with(&r, "database_away").is_some(), "{r:?}");
+    d.sub(thread, 0).await;
+    drop(frozen);
+    // Once it answers: all is well, the chat's history arrives, and sending works.
+    c.next(|f| matches!(f, ServerFrame::Status { ok: true, .. }))
+        .await;
+    d.next(|f| matches!(f, ServerFrame::Status { ok: true, .. }))
+        .await;
+    d.next(|f| agent_text(f) == Some("You said: hello")).await;
+    send(&mut c, thread, "still there?").await;
+    c.next(|f| agent_text(f) == Some("You said: still there?"))
+        .await;
+}
+
+#[tokio::test]
+async fn a_database_frozen_during_a_job_is_said_at_once() {
+    let Some(host) = Host::start().await else {
+        return;
+    };
+    let token = host.pair().await;
+    let mut c = Client::connect(&host, Some(&token)).await.unwrap();
+    let thread = setup_with_echo(&mut c).await;
+    c.sub(thread, 0).await;
+    send(&mut c, thread, "slow").await;
+    c.next(|f| is_state(f, WorkState::Working)).await;
+    let frozen = Frozen::now(&host);
+    let since = std::time::Instant::now();
+    told_silent(&mut c, &host, since).await;
+    drop(frozen);
+    c.next(|f| matches!(f, ServerFrame::Status { ok: true, .. }))
+        .await;
+    // The job's end is kept and written once the database answers.
+    c.next(|f| is_state(f, WorkState::Idle)).await;
+}
+
+#[tokio::test]
+async fn stop_is_kept_in_the_chat() {
+    let Some(host) = Host::start().await else {
+        return;
+    };
+    let token = host.pair().await;
+    let mut c = Client::connect(&host, Some(&token)).await.unwrap();
+    let thread = setup_with_echo(&mut c).await;
+    c.sub(thread, 0).await;
+    send(&mut c, thread, "slow").await;
+    c.next(|f| is_state(f, WorkState::Working)).await;
+    c.ok(Call::Stop { thread_id: thread }).await;
+    c.next(|f| is_state(f, WorkState::Idle)).await;
+    // Another device, opening the chat later, sees it was stopped.
+    let mut d = Client::connect(&host, Some(&token)).await.unwrap();
+    d.sub(thread, 0).await;
+    let f = d
+        .next(|f| matches!(f, ServerFrame::Ev { event, .. } if matches!(&event.body, EventBody::Step { step_id, .. } if step_id.starts_with("stopped-"))))
+        .await;
+    let ServerFrame::Ev { event, .. } = f else {
+        unreachable!()
+    };
+    let EventBody::Step { title, status, .. } = event.body else {
+        unreachable!()
+    };
+    assert_eq!(title, "Stopped.");
+    assert_eq!(status, weilo_proto::StepStatus::Done);
+}

@@ -246,9 +246,28 @@ impl Session {
         let Some(token) = token.filter(|t| !t.is_empty()) else {
             return Err(Close(CLOSE_NO_TOKEN, "Send this device's token."));
         };
-        let device = auth::device_for_token(&self.app.db, &token)
+        // A device checked earlier in this run still connects while the database
+        // doesn't answer: it hears so (`Status`) instead of waiting.
+        let hash = auth::token_hash(&token);
+        let cant_check = Close(1011, "Weilo can't check this device right now.");
+        let device = match self
+            .app
+            .bounded(auth::device_for_token(&self.app.db, &token))
             .await
-            .map_err(|_| Close(1011, "Weilo can't check this device right now."))?;
+        {
+            Ok(device) => {
+                self.app.note_device(hash, device);
+                device
+            }
+            Err(e) if crate::db::unreachable(&e) => {
+                tracing::info!("checked a device from memory: {e:#}");
+                Some(self.app.known_device(&hash).ok_or(cant_check)?)
+            }
+            Err(e) => {
+                tracing::warn!("couldn't check a device: {e:#}");
+                return Err(cant_check);
+            }
+        };
         let Some(device_id) = device else {
             return Err(Close(CLOSE_UNPAIRED, "Pair this device first."));
         };
@@ -273,7 +292,7 @@ impl Session {
         match self.in_space(thread_id).await {
             Ok(true) => {}
             Ok(false) => return Ok(()),
-            Err(e) if crate::db::unreachable_sql(&e) => {
+            Err(e) if crate::db::unreachable(&e) => {
                 // Checked, then read, once the database answers.
                 self.subs.insert(thread_id, last);
                 self.wait_for_db(thread_id, true);
@@ -286,12 +305,14 @@ impl Session {
         self.catch_up(thread_id, i64::MAX).await
     }
 
-    async fn in_space(&self, thread_id: Uuid) -> sqlx::Result<bool> {
-        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM threads WHERE id = $1 AND space_id = $2)")
-            .bind(thread_id)
-            .bind(self.app.space_id)
-            .fetch_one(&self.app.db)
-            .await
+    async fn in_space(&self, thread_id: Uuid) -> anyhow::Result<bool> {
+        let asked = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM threads WHERE id = $1 AND space_id = $2)",
+        )
+        .bind(thread_id)
+        .bind(self.app.space_id)
+        .fetch_one(&self.app.db);
+        self.app.bounded(asked).await
     }
 
     /// Reads a thread's backlog again a little later (`check`: and whether it is this
@@ -318,7 +339,7 @@ impl Session {
                         self.behind.remove(&thread_id);
                         continue;
                     }
-                    Err(e) if crate::db::unreachable_sql(&e) => {
+                    Err(e) if crate::db::unreachable(&e) => {
                         self.wait_for_db(thread_id, true);
                         return Ok(());
                     }
@@ -344,19 +365,19 @@ impl Session {
             let Some(&from) = self.subs.get(&thread_id) else {
                 return Ok(());
             };
-            let page =
-                match events::read_page(&self.app.db, thread_id, from, to, BACKLOG_PAGE).await {
-                    Ok(page) => page,
-                    Err(e) if crate::db::unreachable_sql(&e) => {
-                        tracing::info!("backlog for {thread_id} waits for the database: {e}");
-                        self.wait_for_db(thread_id, false);
-                        return Ok(());
-                    }
-                    Err(e) => {
-                        tracing::warn!("backlog for {thread_id}: {e}");
-                        return Err(BEHIND);
-                    }
-                };
+            let read = events::read_page(&self.app.db, thread_id, from, to, BACKLOG_PAGE);
+            let page = match self.app.bounded(read).await {
+                Ok(page) => page,
+                Err(e) if crate::db::unreachable(&e) => {
+                    tracing::info!("backlog for {thread_id} waits for the database: {e}");
+                    self.wait_for_db(thread_id, false);
+                    return Ok(());
+                }
+                Err(e) => {
+                    tracing::warn!("backlog for {thread_id}: {e}");
+                    return Err(BEHIND);
+                }
+            };
             let full = page.len() as i64 == BACKLOG_PAGE;
             for event in page {
                 if let Some(frame) = self.next_event(thread_id, event) {

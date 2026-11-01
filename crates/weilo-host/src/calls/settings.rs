@@ -68,6 +68,7 @@ pub async fn revoke_device(app: &App, caller: Uuid, device_id: Uuid) -> CallResu
     };
     audit::append(&mut tx, app.space_id, entry).await?;
     tx.commit().await?;
+    app.forget_device(device_id);
     app.hub.send(HubMsg::DeviceRevoked(device_id));
     app.hub.changed(Changed::Devices);
     Ok(())

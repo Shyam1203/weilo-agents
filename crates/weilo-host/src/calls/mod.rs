@@ -74,8 +74,10 @@ pub async fn handle(app: &Arc<App>, device_id: Uuid, call_id: Uuid, call: Call) 
 }
 
 async fn run_once(app: &Arc<App>, device_id: Uuid, call_id: Uuid, call: Call) -> CallResult {
+    let uses_db = !matches!(call, Call::ListEngines);
     if only_reads(&call) {
-        return finish(dispatch(app, device_id, call_id, call).await);
+        let read = dispatch(app, device_id, call_id, call);
+        return finish(while_answering(app, uses_db, read).await);
     }
     match app.bounded(begin(app, device_id, call_id)).await {
         Ok(Begun::Fresh) => {}
@@ -83,12 +85,13 @@ async fn run_once(app: &Arc<App>, device_id: Uuid, call_id: Uuid, call: Call) ->
         Ok(Begun::Unknown) => {
             return failed(CallError::new(
                 "unknown",
-                "Weilo restarted during this, so it may or may not have happened. Check, then try again.",
+                "Weilo was interrupted during this, so it may or may not have happened. Check, then try again.",
             ));
         }
         Err(e) => return failed(e.into()),
     }
-    let result = finish(dispatch(app, device_id, call_id, call).await);
+    let done = dispatch(app, device_id, call_id, call);
+    let result = finish(while_answering(app, uses_db, done).await);
     // Internal errors, and a database that didn't answer, may pass on a retry, so they
     // aren't kept.
     let retry = matches!(&result, CallResult::Failed { error }
@@ -100,6 +103,27 @@ async fn run_once(app: &Arc<App>, device_id: Uuid, call_id: Uuid, call: Call) ->
         tracing::error!("couldn't store call result: {e}");
     }
     result
+}
+
+/// Runs a call, unless the database is known not to answer, and gives up on it if the
+/// database stops answering meanwhile: the device hears so in seconds, and keeps what
+/// it was sending. A stored call given up part way answers `unknown` when tried again.
+async fn while_answering(
+    app: &App,
+    uses_db: bool,
+    call: impl std::future::Future<Output = Result<CallValue, CallError>>,
+) -> Result<CallValue, CallError> {
+    if !uses_db {
+        return call.await;
+    }
+    if app.db_silent_now() {
+        return Err(CallError::database_away());
+    }
+    let mut answers = app.db_answers.subscribe();
+    tokio::select! {
+        result = call => result,
+        _ = answers.wait_for(|answers| !answers) => Err(CallError::database_away()),
+    }
 }
 
 /// Calls that change nothing: safe to run twice, so not stored.

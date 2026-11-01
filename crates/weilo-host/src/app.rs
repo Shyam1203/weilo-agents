@@ -310,9 +310,8 @@ impl App {
         &self,
         call: impl std::future::Future<Output = Result<T, E>>,
     ) -> Result<T> {
-        let away = |why: &'static str| {
-            Err(anyhow::Error::new(sqlx::Error::PoolTimedOut).context(why))
-        };
+        let away =
+            |why: &'static str| Err(anyhow::Error::new(sqlx::Error::PoolTimedOut).context(why));
         if self.db_silent_now() {
             return away("the database isn't answering");
         }

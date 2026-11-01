@@ -57,6 +57,10 @@ const OUTBOX_MAX: usize = 10_000;
 const WAITING_FOR_SLOT: &str = "Waiting for another agent to finish";
 /// How the chat's line begins for a request an Always allow rule let through.
 const RULE_ALLOWED: &str = "Allowed by your rule: ";
+/// The line kept in a chat when the person pressed Stop: a finished step whose id
+/// starts with `STOPPED_STEP`.
+pub const STOPPED: &str = "Stopped.";
+pub const STOPPED_STEP: &str = "stopped-";
 /// The live line while a message waits for the database to answer.
 const WAITING_FOR_DB: &str = "Waiting for the database…";
 /// Said when a message waited too long for the database.
@@ -1187,11 +1191,13 @@ impl Runner {
             // Dropping it ends the half-started engine; its prompt is never sent.
             self.slot = None;
             self.generation += 1;
+            self.say_stopped().await;
             self.set_state(WorkState::Idle, "").await;
             return;
         }
         if self.waiting_slot.take().is_some() {
             // Dropping it stops the wait.
+            self.say_stopped().await;
             self.set_state(WorkState::Idle, "").await;
             return;
         }
@@ -1200,6 +1206,7 @@ impl Runner {
             // Dropping it stops the download.
             drop(inst);
             self.step(&step_id, &title, StepStatus::Failed).await;
+            self.say_stopped().await;
             self.set_state(WorkState::Idle, "").await;
             return;
         }
@@ -1207,6 +1214,7 @@ impl Runner {
             // Nothing runs, but the thread may still say Working (a message was
             // waiting to start): it is idle now.
             if self.state.0 != WorkState::Idle {
+                self.say_stopped().await;
                 self.set_state(WorkState::Idle, "").await;
             }
             return;
@@ -1218,7 +1226,19 @@ impl Runner {
         if let Some(conn) = &self.conn {
             conn.cancel();
         }
+        self.say_stopped().await;
         self.close_pending(true).await;
+    }
+
+    /// A quiet line in the chat, kept with it: the person stopped what was going on.
+    async fn say_stopped(&mut self) {
+        self.flush_text().await;
+        let body = EventBody::Step {
+            step_id: format!("{STOPPED_STEP}{}", crate::ids::new_id()),
+            title: STOPPED.into(),
+            status: StepStatus::Done,
+        };
+        self.append(body, Source::Host).await;
     }
 
     /// Closes the cards still waiting: as stopped (Stop was pressed) or engine_stopped (the
