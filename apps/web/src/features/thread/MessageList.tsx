@@ -242,6 +242,7 @@ function Item({
           action={item.action}
           code={item.code}
           engine={item.engine}
+          seq={item.seq}
           resolved={item.resolved}
         />
       );

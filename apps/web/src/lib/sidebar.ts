@@ -4,7 +4,7 @@ import type { Snapshot } from "../proto/Snapshot";
 import type { UiPrefs } from "../proto/UiPrefs";
 import type { WorkState } from "../proto/WorkState";
 import { paths } from "./router";
-import { slugText, startedByName } from "./format";
+import { slugText, startedByName, lowerFirst } from "./format";
 import { agentStatus } from "./store";
 
 export type SectionKey = keyof UiPrefs;
@@ -93,7 +93,7 @@ export function buildRows(snap: Snapshot, problems: Record<string, string> = {})
     .map((t) => {
       const by = startedByName(t.started_by, snap.agents);
       const problem = t.state === "idle" ? problems[t.id] : undefined;
-      const state = problem ? ` · ${problem.toLowerCase()}` : t.state === "idle" ? "" : ` · ${t.state === "needs_you" ? "needs you" : "working"}`;
+      const state = problem ? ` · ${lowerFirst(problem)}` : t.state === "idle" ? "" : ` · ${t.state === "needs_you" ? "needs you" : "working"}`;
       return {
         id: t.id,
         kind: "session",

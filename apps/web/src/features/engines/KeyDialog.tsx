@@ -7,7 +7,7 @@ import type { KeyProvider } from "../../proto/KeyProvider";
 import { Button } from "../../ui/Button";
 import { ChoiceChips } from "../../ui/ChoiceChips";
 import { Dialog, inputClass } from "../../ui/Dialog";
-import { CheckIcon } from "../../ui/glyphs";
+import { AlertIcon, CheckIcon } from "../../ui/glyphs";
 import { useEngineList } from "./EnginePicker";
 
 /**
@@ -50,6 +50,7 @@ export function useKeyForm(engine: EngineInfo | undefined, prefer?: string | nul
     try {
       await setEngineKey(engine.id, chosen.id, key.trim());
       setKey("");
+      if (chosen.id === failing) setFailing(null);
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : "That key wasn't saved. Try again.");
@@ -70,7 +71,10 @@ export function useKeyForm(engine: EngineInfo | undefined, prefer?: string | nul
       setBusy(false);
     }
   };
-  return { providers, chosen, setProvider, key, setKey, busy, error, save, remove, reset: () => {
+  // The provider whose saved key a problem says stopped working, until a new one is saved.
+  const [failing, setFailing] = useState<string | null>(prefer ?? null);
+  useEffect(() => setFailing(prefer ?? null), [prefer]);
+  return { providers, chosen, setProvider, key, setKey, busy, error, save, remove, failing, clearFailing: () => setFailing(null), reset: () => {
       setKey("");
       // Next time it opens on the provider that fits then.
       setProvider("");
@@ -88,6 +92,8 @@ export function KeyFields({ form, autoFocus }: { form: KeyForm; autoFocus?: bool
   useEffect(() => setRemoving(false), [chosen?.id]);
   if (!chosen) return <p className="m-0 text-body-sm text-text-secondary">This AI doesn't take a key.</p>;
   const link = KEY_LINKS[chosen.id];
+  // Opened from a key that failed: say so on that one, not "Saved".
+  const broken = form.failing === chosen.id;
   return (
     <div className="flex flex-col gap-3">
       {providers.length > 1 && (
@@ -103,7 +109,7 @@ export function KeyFields({ form, autoFocus }: { form: KeyForm; autoFocus?: bool
       )}
       {chosen.has_key && (
         <div className="flex min-h-7 flex-wrap items-center gap-2 text-body-sm text-text-secondary" role="status">
-          <CheckIcon className="shrink-0 text-success" />
+          {broken ? <AlertIcon className="shrink-0 text-warning" /> : <CheckIcon className="shrink-0 text-success" />}
           {removing ? (
             <>
               <span className="min-w-0 flex-1">Remove the saved {chosen.title} key?</span>
@@ -124,7 +130,7 @@ export function KeyFields({ form, autoFocus }: { form: KeyForm; autoFocus?: bool
             </>
           ) : (
             <>
-              <span className="min-w-0 flex-1">Saved.</span>
+              <span className={broken ? "min-w-0 flex-1 text-warning" : "min-w-0 flex-1"}>{broken ? "This key stopped working." : "Saved."}</span>
               <Button size="sm" variant="tertiary" onClick={() => setRemoving(true)}>
                 Remove
               </Button>

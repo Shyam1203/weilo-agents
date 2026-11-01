@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { retryLast } from "../../lib/app";
 import { problemKind } from "../../lib/engines";
-import { aiOwner, engineOfThread, engineTitles, plainProblem, useApp } from "../../lib/store";
+import { aiOwner, engineOfThread, engineTitles, keyFixedFor, plainProblem, useApp } from "../../lib/store";
 import { Disclosure, TextWithCode } from "../../ui/bits";
 import { Button, type ButtonSize } from "../../ui/Button";
-import { AlertIcon } from "../../ui/glyphs";
+import { AlertIcon, CheckIcon } from "../../ui/glyphs";
 import { EngineHelpDialog } from "../engines/EngineHelpDialog";
 import { KeyDialog } from "../engines/KeyDialog";
 import { NewSessionDialog } from "../shell/dialogs";
@@ -20,6 +20,7 @@ export function Problem({
   action,
   code = null,
   engine = null,
+  seq = null,
   resolved,
 }: {
   threadId: string;
@@ -30,12 +31,23 @@ export function Problem({
   code?: string | null;
   /** The AI app it is about, by id. */
   engine?: string | null;
+  /** Which event it is: a key saved since fixes a key problem. */
+  seq?: bigint | null;
   resolved?: boolean;
 }) {
+  const fixed = useApp((s) => !resolved && seq !== null && keyFixedFor(s, threadId, { seq }));
   // Said about the agent; the AI app's own words stay under Details.
   const owner = useApp((s) => aiOwner(s.snapshot, threadId, agentId));
   const titles = useApp(engineTitles);
   const plain = plainProblem(message, owner, titles, code);
+  if (fixed)
+    return (
+      <div className="flex flex-wrap items-center gap-2 rounded-md bg-surface-muted px-3 py-2 text-body-sm text-text-secondary" role="note">
+        <CheckIcon className="shrink-0 text-success" />
+        <span className="min-w-0 flex-1">Key updated. Try again</span>
+        <ProblemButton threadId={threadId} agentId={agentId} action="Try again" size="sm" />
+      </div>
+    );
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md bg-surface-muted px-3 py-2 text-body-sm text-text-secondary" role="note">
       <AlertIcon className="shrink-0" />

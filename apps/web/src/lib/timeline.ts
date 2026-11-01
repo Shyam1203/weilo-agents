@@ -36,7 +36,7 @@ export type AgentItem =
   | { type: "card"; key: string; card: Card; decided: Decided | null }
   | { type: "filed"; key: string; channelId: string }
   /** `resolved`: a later reply or a message sent again dealt with it, so it has no button. */
-  | { type: "problem"; key: string; message: string; action: string | null; code: string | null; engine: string | null; resolved: boolean }
+  | { type: "problem"; key: string; seq: bigint; message: string; action: string | null; code: string | null; engine: string | null; resolved: boolean }
   | { type: "note"; key: string; text: string };
 
 export type Block =
@@ -169,6 +169,7 @@ export function buildBlocks(events: Event[], defaultAgentId: string | null = nul
           const item = {
             type: "problem" as const,
             key: `p${e.seq}`,
+            seq: e.seq,
             message: body.message,
             action: body.action,
             code: body.code ?? null,

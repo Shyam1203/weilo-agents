@@ -128,3 +128,8 @@ export function lowerYour(name: string | null | undefined): string | null {
   if (!name) return null;
   return name.replace(/^Your\b/, "your");
 }
+
+/** "Needs a new API key" → "needs a new API key": only the first letter, so names keep their capitals. */
+export function lowerFirst(text: string): string {
+  return text ? text[0]!.toLowerCase() + text.slice(1) : text;
+}

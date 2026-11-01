@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { loadAllowRules, loadDevices, revokeAllowRuleLater, revokeDevice, savePrefs } from "../../lib/app";
-import { deviceLine, removeDeviceLine } from "../../lib/settings";
+import { deviceLine, removeDeviceLine, repeatedNames, sortDevices } from "../../lib/settings";
 import type { AllowRuleInfo } from "../../proto/AllowRuleInfo";
 import type { DeviceInfo } from "../../proto/DeviceInfo";
 import { SECTION_KEYS, SECTION_TITLES, withSection } from "../../lib/sidebar";
@@ -180,16 +180,17 @@ function Devices({ phone }: { phone?: boolean }) {
     loadDevices().catch(() => {});
   }, []);
   if (!devices) return <p className="m-0 text-body-sm text-text-secondary">Looking…</p>;
+  const twice = repeatedNames(devices);
   return (
     <div className="flex flex-col">
-      {devices.map((d) => (
-        <DeviceRow key={d.id} device={d} phone={phone} />
+      {sortDevices(devices).map((d) => (
+        <DeviceRow key={d.id} device={d} phone={phone} sameName={twice.has(d.name)} />
       ))}
     </div>
   );
 }
 
-function DeviceRow({ device: d, phone }: { device: DeviceInfo; phone?: boolean }) {
+function DeviceRow({ device: d, phone, sameName }: { device: DeviceInfo; phone?: boolean; sameName?: boolean }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -212,7 +213,7 @@ function DeviceRow({ device: d, phone }: { device: DeviceInfo; phone?: boolean }
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="ellipsis font-medium">{d.name}</span>
-          <span className="text-caption text-text-secondary">{deviceLine(d)}</span>
+          <span className="text-caption text-text-secondary">{deviceLine(d, new Date(), sameName)}</span>
         </span>
         {!confirming && (
           <Button size={size} onClick={() => setConfirming(true)}>

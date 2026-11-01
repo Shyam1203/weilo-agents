@@ -3,9 +3,12 @@ import { doneOutcome } from "../features/needs-you/NeedsYouPage";
 import { overviewLine } from "../features/thread/ChannelView";
 import { isDraftThread, takeComposerFocus, focusComposerSoon } from "../features/thread/useThread";
 import { jumpItems, searchJump } from "../lib/jump";
-import { addThreadLocally, agentStatus, applySnapshot, problemLine, decideLocally, initialState, store, undecideLocally, type AppState } from "../lib/store";
+import { addThreadLocally, agentStatus, applySnapshot, keyFixedFor, markKeyFixed, problemLine, problemLines, problemNeedsYou, setCheck, decideLocally, initialState, store, undecideLocally, type AppState } from "../lib/store";
 import { closedWords, continuesGroup, type Block } from "../lib/timeline";
 import { problemKind } from "../lib/engines";
+import { lowerFirst } from "../lib/format";
+import { deviceLine, repeatedNames, sortDevices } from "../lib/settings";
+import type { DeviceInfo } from "../proto/DeviceInfo";
 import { doLater, flushUndo, undoPending } from "../lib/undo";
 import { agent, item, snapshot, thread } from "./fixtures";
 
@@ -142,5 +145,59 @@ describe("the database not answering", () => {
     const s = agentStatus(agent({ state: "working", live_line: "Waiting for the database…" }), {});
     expect(s.line).toBe("Waiting for the database…");
     expect(s.problem).toBe(false);
+  });
+});
+
+describe("a key saved since a key problem clears it", () => {
+  const problemEvent = (at: string) =>
+    ({
+      seq: 5n,
+      at,
+      actor: "host",
+      body: { kind: "problem", message: "Your Anthropic key didn't work.", action: "Change key", code: "key_rejected", engine: "pi" },
+    }) as unknown as import("../proto/Event").Event;
+  const base = () => {
+    const s = applySnapshot(initialState, snapshot());
+    return { ...s, engines: [{ id: "pi", title: "Pi", description: "", installed: true, default: true, binds_approvals: false, ready: true }], feeds: { t1: { events: [problemEvent(T("09:00"))], streaming: null } } };
+  };
+  it("warns until a working key is saved after it", () => {
+    const s = base();
+    expect(problemLines(s)).toEqual({ t1: "Needs a new API key" });
+    const fixed = markKeyFixed(s, "pi");
+    expect(problemLines(fixed)).toEqual({});
+    expect(problemNeedsYou(fixed)).toEqual([]);
+    expect(keyFixedFor(fixed, "t1", { seq: 5n })).toBe(true);
+    // A new problem after the fix warns again.
+    expect(keyFixedFor(fixed, "t1", { seq: 9n })).toBe(false);
+  });
+  it("a key for another AI doesn't fix it", () => {
+    expect(problemLines(markKeyFixed(base(), "claude-code"))).toEqual({ t1: "Needs a new API key" });
+  });
+  it("a check that still fails keeps it open", () => {
+    const fixed = markKeyFixed(base(), "pi");
+    const failed = setCheck(fixed, { engine: "pi", ready: false, needs: null, message: "Key rejected", action: null, auth_methods: [] });
+    expect(problemLines(failed)).toEqual({ t1: "Needs a new API key" });
+  });
+  it("other problems aren't fixed by a key", () => {
+    const s = base();
+    const other = { ...s, feeds: { t1: { events: [{ ...s.feeds.t1.events[0]!, body: { kind: "problem", message: "It stopped.", action: "Try again", code: "not_responding", engine: "pi" } }] as typeof s.feeds.t1.events, streaming: null } } };
+    expect(problemLines(markKeyFixed(other, "pi"))).toEqual({ t1: "Didn't work" });
+  });
+  it("Problem lines keep API in capitals in the sidebar", () => {
+    expect(lowerFirst("Needs a new API key")).toBe("needs a new API key");
+  });
+});
+
+describe("devices", () => {
+  const dev = (o: Partial<DeviceInfo>): DeviceInfo => ({ id: "d", name: "Browser", paired_at: T("09:00"), last_seen_at: null, this_device: false, ...o });
+  it("this device first, then the most recently used", () => {
+    const list = [dev({ id: "a", last_seen_at: T("10:00") }), dev({ id: "b", this_device: true }), dev({ id: "c", last_seen_at: T("11:00") })];
+    expect(sortDevices(list).map((d) => d.id)).toEqual(["b", "c", "a"]);
+  });
+  it("devices with the same name say when they paired", () => {
+    const list = [dev({ id: "a", this_device: true }), dev({ id: "b", name: "Browser" }), dev({ id: "c", name: "iPhone" })];
+    expect([...repeatedNames(list)]).toEqual(["Browser"]);
+    expect(deviceLine(list[0]!, new Date(T("12:00")), true)).toMatch(/^This device · paired \S/);
+    expect(deviceLine(list[0]!, new Date(T("12:00")))).toBe("This device");
   });
 });

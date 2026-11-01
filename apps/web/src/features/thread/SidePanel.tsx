@@ -372,7 +372,7 @@ function CopyBack({ thread }: { thread: ThreadSummary }) {
         <div className="flex flex-col gap-2" role="group" aria-label="Confirm">
           <p className="m-0 text-body-sm">
             <b className="font-semibold">Copy the changes into {project}?</b>{" "}
-            <span className="text-text-secondary">They go into your {project} folder.</span>
+            <span className="text-text-secondary">Weilo adds them to {project} as a new commit.</span>
           </p>
           <div className="flex gap-2">
             <Button variant="tertiary" onClick={() => setConfirming(false)} disabled={busy}>

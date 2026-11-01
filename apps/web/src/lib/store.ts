@@ -86,6 +86,8 @@ export interface AppState {
   engines: EngineInfo[] | null;
   /** The newest check of each engine (first run, Check again). */
   checks: Record<string, EngineCheck>;
+  /** Key problems fixed since ("threadId:seq" → engine): a key was saved or a check passed. */
+  keyFixed: Record<string, string>;
   /** While the host says it isn't ok: its one plain line. Sending waits until it clears. */
   paused: string | null;
   feeds: Record<string, Feed>;
@@ -159,6 +161,7 @@ export const initialState: AppState = {
   snapshot: null,
   engines: null,
   checks: {},
+  keyFixed: {},
   paused: null,
   feeds: {},
   queued: {},
@@ -264,6 +267,11 @@ export function setHealth(s: AppState, ok: boolean, message: string | null): App
 }
 
 export function setCheck(s: AppState, check: EngineCheck): AppState {
+  if (check.ready) s = markKeyFixed(s, check.engine);
+  else if (Object.values(s.keyFixed).includes(check.engine)) {
+    // Checked and still not working: those problems are open again.
+    s = { ...s, keyFixed: Object.fromEntries(Object.entries(s.keyFixed).filter(([, e]) => e !== check.engine)) };
+  }
   return { ...s, checks: { ...s.checks, [check.engine]: check } };
 }
 
@@ -520,6 +528,33 @@ export function openProblem(events: Event[]): OpenProblem | null {
   return null;
 }
 
+// Problems a new key or a sign-in fixes.
+const KEY_CODES = new Set(["needs_key", "key_rejected", "not_signed_in"]);
+const KEY_ACTIONS = new Set(["add a key", "change key", "sign in"]);
+
+function isKeyProblem(p: Pick<OpenProblem, "code" | "action">): boolean {
+  return p.code ? KEY_CODES.has(p.code) : KEY_ACTIONS.has(p.action?.trim().toLowerCase() ?? "");
+}
+
+/**
+ * Notes that an engine works again (a key saved, a check passed): the key and sign-in
+ * problems open now on chats that use it count as fixed. Later problems don't, and
+ * no clock is compared (the host's and this browser's may differ).
+ */
+export function markKeyFixed(s: AppState, engine: string): AppState {
+  const add: Record<string, string> = {};
+  for (const [threadId, feed] of Object.entries(s.feeds)) {
+    const p = cachedProblem(feed.events);
+    if (p && isKeyProblem(p) && (p.engine ?? engineOfThread(s, threadId)) === engine) add[`${threadId}:${p.seq}`] = engine;
+  }
+  return Object.keys(add).length ? { ...s, keyFixed: { ...s.keyFixed, ...add } } : s;
+}
+
+/** A key or sign-in problem fixed since it happened. The chat still offers Try again; nothing else warns. */
+export function keyFixedFor(s: Pick<AppState, "keyFixed">, threadId: string, p: Pick<OpenProblem, "seq">): boolean {
+  return !!s.keyFixed[`${threadId}:${p.seq}`];
+}
+
 const problemCache = new WeakMap<Event[], OpenProblem | null>();
 function cachedProblem(events: Event[]): OpenProblem | null {
   if (!problemCache.has(events)) problemCache.set(events, openProblem(events));
@@ -669,7 +704,7 @@ export function problemLines(s: AppState): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [threadId, feed] of Object.entries(s.feeds)) {
     const p = cachedProblem(feed.events);
-    if (p) out[threadId] = problemLine(p);
+    if (p && !keyFixedFor(s, threadId, p)) out[threadId] = problemLine(p);
   }
   return out;
 }
@@ -685,7 +720,7 @@ export function problemNeedsYou(s: AppState): NeedsYouItem[] {
     const feed = s.feeds[t.id];
     if (!feed) continue;
     const p = cachedProblem(feed.events);
-    if (!p) continue;
+    if (!p || keyFixedFor(s, t.id, p)) continue;
     if (snap.needs_you.some((n) => n.thread_id === t.id && (n.card.kind === "failed" || n.card.kind === "problem"))) continue;
     let item = itemCache.get(feed.events);
     if (!item || item.thread_id !== t.id) {

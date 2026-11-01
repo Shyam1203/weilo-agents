@@ -3,6 +3,7 @@ import type { CallValue } from "../proto/CallValue";
 import type { Changed } from "../proto/Changed";
 import type { Decision } from "../proto/Decision";
 import type { EngineCheck } from "../proto/EngineCheck";
+import type { EngineInfo } from "../proto/EngineInfo";
 import type { SendWhen } from "../proto/SendWhen";
 import type { SessionChanges } from "../proto/SessionChanges";
 import type { UiPrefs } from "../proto/UiPrefs";
@@ -12,6 +13,7 @@ import {
   addQueued,
   addSending,
   addThreadLocally,
+  markKeyFixed,
   appendEvent,
   applySnapshot,
   decideLocally,
@@ -395,7 +397,23 @@ export async function checkEngine(engine: string): Promise<EngineCheck> {
 /** Saves an API key (an empty key removes it). The key is never kept in the app. */
 export async function setEngineKey(engine: string, provider: string, key: string): Promise<void> {
   const v = await call({ method: "set_engine_key", params: { engine, provider, key } });
-  if (v.type === "engines") store.set((s) => ({ ...s, engines: v.data }));
+  const engines = v.type === "engines" ? v.data : await listEngines();
+  if (!engines) return;
+  // A key that works: the chats it broke stop warning and offer Try again.
+  const ready = engines.find((e) => e.id === engine)?.ready === true;
+  store.set((s) => {
+    const next = { ...s, engines };
+    return ready && key.trim() ? markKeyFixed(next, engine) : next;
+  });
+}
+
+async function listEngines(): Promise<EngineInfo[] | null> {
+  try {
+    const v = await call({ method: "list_engines" });
+    return v.type === "engines" ? v.data : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Moves an agent to another engine. Its next reply starts a new conversation. */
