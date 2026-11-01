@@ -343,7 +343,7 @@ pub struct AllowRuleInfo {
 #[ts(export)]
 pub struct ApiError {
     /// Stable code for programs (`not_found`, `conflict`, `invalid`, `engine`, `busy`,
-    /// `unknown` (it may or may not have happened), `internal`).
+    /// `unknown` (it may or may not have happened), `database_away` (try again soon), `internal`).
     pub code: String,
     /// One plain line for people.
     pub message: String,
