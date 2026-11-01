@@ -4,7 +4,7 @@ import { cx, listWords, shortName, timeOf, whenLabel } from "../../lib/format";
 import { actionable, approveKey, groupNeedsYou, isHeadsUp, isSmall, yesAction, type NeedsYouGroup } from "../../lib/needsYou";
 import { navigate, threadPath } from "../../lib/router";
 import { SECTION_TITLES, withSection, type SectionKey } from "../../lib/sidebar";
-import { awayLine, hostAway, problemNeedsYou, store, useApp } from "../../lib/store";
+import { aiOwner, awayLine, hostAway, problemNeedsYou, store, useApp } from "../../lib/store";
 import type { NeedsYouItem } from "../../proto/NeedsYouItem";
 import type { Snapshot } from "../../proto/Snapshot";
 import { Avatar, SessionMark } from "../../ui/Avatar";
@@ -18,7 +18,7 @@ import { Menu, MenuItem } from "../../ui/Menu";
 import type { CardAction } from "../../proto/CardAction";
 import { Link } from "../../ui/Link";
 import { RiskLine } from "../../ui/RiskLine";
-import { decidedAt, outcomeWords } from "../../lib/timeline";
+import { closedWords, decidedAt, outcomeWords } from "../../lib/timeline";
 import type { Event } from "../../proto/Event";
 import { ConnectionBanner } from "../shell/Toast";
 import { useTouchOnly } from "../../lib/platform";
@@ -457,7 +457,7 @@ function DoneRow({ item, snap, selected, onFocus, ref, last, phone }: RowProps &
     );
   }
   const events = useApp((s) => s.feeds[item.thread_id]?.events);
-  const done = doneOutcome(item, events);
+  const done = doneOutcome(item, events, aiOwner(snap, item.thread_id));
   return (
     <Link ref={ref} href={pathFor(snap, item)} onFocus={onFocus} className={cx(line, "hover:bg-surface-muted hover:no-underline")}>
       {done.yes ? <CheckIcon className="shrink-0 text-success" /> : <XCircleIcon className="shrink-0 text-text-secondary" />}
@@ -471,20 +471,20 @@ function DoneRow({ item, snap, selected, onFocus, ref, last, phone }: RowProps &
 /**
  * How a finished item ended, in the same words as the card in the chat: "You allowed it",
  * "You said no", "You always allow this for Ava", or that nobody answered: "Stopped",
- * "Closed when Weilo restarted", "No answer in time". `yes` picks the tick.
+ * "Closed when Weilo restarted", "Closed when Ava's AI stopped", "No answer in time".
+ * `yes` picks the tick. `ai` is whose AI it was, for that line.
  *
  * The host doesn't list how or when it closed with the item, so that comes from the chat's
  * own events when they are here (or `decided_at` / `decided_via`, once the host sends them).
  * Without them: no time, rather than the time it was asked.
  */
-export function doneOutcome(item: NeedsYouItem, events: Event[] | undefined): { text: string; yes: boolean } {
+export function doneOutcome(item: NeedsYouItem, events: Event[] | undefined, ai?: string | null): { text: string; yes: boolean } {
   const found = decidedAt(events, item.approval_id);
   const via = item.decided_via ?? found?.via ?? null;
   const at = item.decided_at ?? found?.at ?? null;
   const when = at ? ` · ${timeOf(at)}` : "";
-  if (item.state === "expired" || via === "expired") return { text: `No answer in time${when}`, yes: false };
-  if (via === "stopped") return { text: `Stopped${when}`, yes: false };
-  if (via === "interrupted") return { text: `Closed when Weilo restarted${when}`, yes: false };
+  const closed = closedWords(item.state === "expired" ? "expired" : via, ai);
+  if (closed) return { text: `${closed}${when}`, yes: false };
   const always = item.card.actions.find((a) => a.decision?.kind === "allow_always")?.decision;
   const decision =
     found?.decision ??
@@ -494,8 +494,8 @@ export function doneOutcome(item: NeedsYouItem, events: Event[] | undefined): { 
   return { text: `${outcomeWords(decision, item.card.kind, item.card.actions)}${when}`, yes: decision.kind !== "deny" };
 }
 
-export function doneLine(item: NeedsYouItem, events: Event[] | undefined): string {
-  return doneOutcome(item, events).text;
+export function doneLine(item: NeedsYouItem, events: Event[] | undefined, ai?: string | null): string {
+  return doneOutcome(item, events, ai).text;
 }
 
 /** A row's title and its time: one line on desktop, two on phones. */

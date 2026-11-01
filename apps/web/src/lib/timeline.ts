@@ -248,6 +248,28 @@ export function outcomeWords(decision: Decision, cardKind: string, actions: Card
   }
 }
 
+/**
+ * Why an approval closed with nobody answering, in plain words, or null when someone
+ * answered (you, the app, an Always allow). `ai` is whose AI it was ("Ava").
+ * "interrupted" is the older word for a restart that some saved items still carry.
+ */
+export function closedWords(via: string | null | undefined, ai?: string | null): string | null {
+  switch (via) {
+    case "stopped":
+      return "Stopped";
+    case "restarted":
+      return "Closed when Weilo restarted";
+    case "engine_stopped":
+      return ai ? `Closed when ${ai}'s AI stopped` : "Closed when the AI stopped";
+    case "interrupted":
+      return "Closed";
+    case "expired":
+      return "No answer in time";
+    default:
+      return null;
+  }
+}
+
 /** When an approval was answered, from its thread's events (the host doesn't list it with the item). */
 export function decidedAt(events: Event[] | undefined, approvalId: string): { at: string; decision: Decision; via: string } | null {
   if (!events) return null;

@@ -3,8 +3,9 @@ import { doneOutcome } from "../features/needs-you/NeedsYouPage";
 import { overviewLine } from "../features/thread/ChannelView";
 import { isDraftThread, takeComposerFocus, focusComposerSoon } from "../features/thread/useThread";
 import { jumpItems, searchJump } from "../lib/jump";
-import { addThreadLocally, applySnapshot, decideLocally, initialState, store, undecideLocally, type AppState } from "../lib/store";
-import { continuesGroup, type Block } from "../lib/timeline";
+import { addThreadLocally, agentStatus, applySnapshot, problemLine, decideLocally, initialState, store, undecideLocally, type AppState } from "../lib/store";
+import { closedWords, continuesGroup, type Block } from "../lib/timeline";
+import { problemKind } from "../lib/engines";
 import { doLater, flushUndo, undoPending } from "../lib/undo";
 import { agent, item, snapshot, thread } from "./fixtures";
 
@@ -109,5 +110,37 @@ describe("a new chat is a draft until its first message", () => {
     const s1 = addThreadLocally(s0, thread({ id: "t9" }));
     expect(s1.snapshot!.threads.map((t) => t.id)).toEqual(["t9"]);
     expect(addThreadLocally(s1, thread({ id: "t9" }))).toBe(s1);
+  });
+});
+
+describe("how an approval closed, in plain words", () => {
+  it("maps every way the host closes one", () => {
+    expect(closedWords("stopped")).toBe("Stopped");
+    expect(closedWords("restarted")).toBe("Closed when Weilo restarted");
+    expect(closedWords("engine_stopped", "Ava")).toBe("Closed when Ava's AI stopped");
+    expect(closedWords("engine_stopped")).toBe("Closed when the AI stopped");
+    expect(closedWords("interrupted")).toBe("Closed");
+    expect(closedWords("expired")).toBe("No answer in time");
+    for (const v of ["you", "app", "always", undefined, null]) expect(closedWords(v)).toBeNull();
+  });
+  it("Done today rows use them, with the time", () => {
+    const row = (via: string) => doneOutcome(item({ state: "denied", decided_at: T("09:50"), decided_via: via }), [], "Ava");
+    expect(row("engine_stopped").text).toMatch(/^Closed when Ava's AI stopped · \d{1,2}:\d\d$/);
+    expect(row("restarted").text).toMatch(/^Closed when Weilo restarted · /);
+    expect(row("interrupted").text).toMatch(/^Closed · /);
+    expect(row("engine_stopped").yes).toBe(false);
+  });
+});
+
+describe("the database not answering", () => {
+  it("is a Didn't work problem with Try again", () => {
+    const p = { code: "database_away", message: "Weilo's database didn't answer, so this message didn't start.", action: "Try again" };
+    expect(problemLine(p)).toBe("Didn't work");
+    expect(problemKind(p.action)).toBe("retry");
+  });
+  it("its waiting line shows as a plain status", () => {
+    const s = agentStatus(agent({ state: "working", live_line: "Waiting for the database…" }), {});
+    expect(s.line).toBe("Waiting for the database…");
+    expect(s.problem).toBe(false);
   });
 });

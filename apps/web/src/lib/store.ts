@@ -544,6 +544,7 @@ const DIDNT_WORK_CODES = new Set([
   "engine_error",
   "couldnt_ask",
   "restarted",
+  "database_away",
 ]);
 
 /** What a chat's sidebar line says while a problem is open. By the host's code; older events by their button and words. */

@@ -2,8 +2,8 @@ import { useState } from "react";
 import { allowAlwaysLater, decide, sayNoLater, setComposerDraft } from "../../lib/app";
 import { cx, timeOf } from "../../lib/format";
 import { isSmall } from "../../lib/needsYou";
-import { awayLine, useApp } from "../../lib/store";
-import { outcomeWords, type Decided } from "../../lib/timeline";
+import { aiOwner, awayLine, useApp } from "../../lib/store";
+import { closedWords, outcomeWords, type Decided } from "../../lib/timeline";
 import type { Card as CardData } from "../../proto/Card";
 import type { CardAction } from "../../proto/CardAction";
 import { Button, type ButtonVariant } from "../../ui/Button";
@@ -39,9 +39,10 @@ export function EventCard({ card, decided, threadId, detailsLabel = "Show detail
   const itemState = useApp((s) =>
     card.approval_id ? s.snapshot?.needs_you.find((n) => n.approval_id === card.approval_id)?.state : undefined,
   );
-  const itemAlways = useApp((s) =>
-    card.approval_id ? s.snapshot?.needs_you.find((n) => n.approval_id === card.approval_id)?.decided_via === "always" : false,
+  const itemVia = useApp((s) =>
+    card.approval_id ? s.snapshot?.needs_you.find((n) => n.approval_id === card.approval_id)?.decided_via : undefined,
   );
+  const itemAlways = itemVia === "always";
   const [confirming, setConfirming] = useState<CardAction | null>(null);
   const [busy, setBusy] = useState(false);
   const draft = card.kind === "draft";
@@ -79,14 +80,17 @@ export function EventCard({ card, decided, threadId, detailsLabel = "Show detail
 
   // Closed because the session or agent was stopped (by the host, or here before it says so).
   const stoppedHere = useApp((s) => !!card.approval_id && !!s.stoppedCards[card.approval_id]);
+  const ai = useApp((s) => aiOwner(s.snapshot, threadId));
+  // How it closed: the chat's own event first, else what the Needs you item says.
+  const closed = closedWords(decided ? decided.via : itemVia, ai);
   const outcome = decided
-    ? decided.via === "stopped"
-      ? { text: "Stopped", at: decided.at, yes: false }
-      : decided.via === "interrupted"
-        ? { text: "Closed when Weilo restarted", at: decided.at, yes: false }
+    ? closed
+      ? { text: closed, at: decided.at, yes: false }
       : { text: outcomeWords(decided.decision, card.kind, card.actions), at: decided.at, yes: decided.decision.kind !== "deny" }
     : stoppedHere
       ? { text: "Stopped", at: null, yes: false }
+    : closed
+      ? { text: closed, at: null, yes: false }
     : itemState === "allowed"
       ? {
           text: outcomeWords(
