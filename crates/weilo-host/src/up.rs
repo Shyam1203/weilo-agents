@@ -95,6 +95,11 @@ async fn serve(
         engines: Registry::load(home),
         settings: Settings::from_env(),
     });
+    // Asked every few seconds whether it answers, on a connection of its own.
+    let check = tokio::spawn(db::check_answers(
+        app.clone(),
+        pg.options(crate::pg::APP_ROLE, crate::pg::DATABASE),
+    ));
     // Postgres is watched from here on; turns wait while it restarts.
     let pg_stop = CancellationToken::new();
     let weak = Arc::downgrade(&app);
@@ -104,6 +109,7 @@ async fn serve(
         }
     }));
     let result = serve_app(home, &app, listener, web).await;
+    check.abort();
     pg_stop.cancel();
     let _ = pg_task.await;
     result

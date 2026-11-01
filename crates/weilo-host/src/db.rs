@@ -5,7 +5,7 @@
 
 use anyhow::{Context, Result};
 use serde_json::json;
-use sqlx::postgres::{PgPool, PgPoolOptions};
+use sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions};
 use uuid::Uuid;
 
 use crate::ids::new_id;
@@ -36,6 +36,47 @@ pub fn unreachable_sql(e: &sqlx::Error) -> bool {
             c.starts_with("08") || c.starts_with("57P") || c == "53300" || c == "57014"
         }),
         _ => false,
+    }
+}
+
+/// Asks Postgres something small every few seconds, on a connection of its own, and
+/// tells the app whether it answers: a database that runs but is stuck (paused, a full
+/// disk) is said to every device within seconds, and calls stop waiting on it. While
+/// Postgres is known to be restarting, nothing is asked. Ends when the host stops.
+pub async fn check_answers(app: std::sync::Arc<crate::app::App>, options: PgConnectOptions) {
+    use sqlx::Connection;
+    let (every, wait) = (app.settings.db_check_every, app.settings.db_check_wait);
+    let mut conn: Option<sqlx::PgConnection> = None;
+    loop {
+        tokio::select! {
+            _ = tokio::time::sleep(every) => {}
+            _ = app.shutdown.cancelled() => return,
+        }
+        if !*app.db_up.borrow() {
+            conn = None;
+            continue;
+        }
+        let asked = tokio::time::timeout(wait, async {
+            if conn.is_none() {
+                conn = Some(sqlx::PgConnection::connect_with(&options).await?);
+            }
+            let c = conn.as_mut().expect("connected");
+            sqlx::query("SELECT 1").execute(c).await?;
+            Ok::<(), sqlx::Error>(())
+        })
+        .await;
+        let answers = matches!(asked, Ok(Ok(())));
+        if !answers {
+            // Its state is unknown: a new connection next time.
+            conn = None;
+            if *app.db_answers.borrow() && *app.db_up.borrow() {
+                tracing::warn!("the database doesn't answer: {asked:?}");
+            }
+        }
+        // Postgres may have gone down meanwhile: then that is what is said.
+        if *app.db_up.borrow() {
+            app.set_db_answers(answers);
+        }
     }
 }
 

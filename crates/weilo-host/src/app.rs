@@ -94,6 +94,10 @@ pub struct Settings {
     pub start_give_up: Duration,
     /// The longest one database call may take before it counts as unanswered.
     pub db_call_limit: Duration,
+    /// How often the database is asked whether it answers.
+    pub db_check_every: Duration,
+    /// How long that check waits for an answer.
+    pub db_check_wait: Duration,
 }
 
 impl Settings {
@@ -121,6 +125,8 @@ impl Settings {
             start_retry: Duration::from_millis(secs("WEILO_START_RETRY_MS", 2000)),
             start_give_up: Duration::from_secs(secs("WEILO_START_GIVE_UP_SECS", 120)),
             db_call_limit: Duration::from_secs(secs("WEILO_DB_CALL_LIMIT_SECS", 45)),
+            db_check_every: Duration::from_millis(secs("WEILO_DB_CHECK_MS", 2000)),
+            db_check_wait: Duration::from_millis(secs("WEILO_DB_CHECK_WAIT_MS", 3000)),
         }
     }
 }
@@ -162,6 +168,11 @@ pub struct App {
     /// id: a device's call). While any do, every device is told (that needs no
     /// database).
     db_silent: Mutex<std::collections::HashSet<Uuid>>,
+    /// What the regular check last found: false while Postgres runs but doesn't answer.
+    pub db_answers: tokio::sync::watch::Sender<bool>,
+    /// Devices whose tokens were checked in this run (by token hash), so a device can
+    /// still connect while the database doesn't answer.
+    known_devices: Mutex<HashMap<Vec<u8>, Uuid>>,
     /// The "not ready" line devices were last told (`None`: all is well).
     shown_status: Mutex<Option<String>>,
     port: AtomicU16,
@@ -206,6 +217,8 @@ impl App {
             live_approvals: Mutex::default(),
             db_silent: Mutex::default(),
             shown_status: Mutex::default(),
+            db_answers: tokio::sync::watch::Sender::new(true),
+            known_devices: Mutex::default(),
             port: AtomicU16::new(0),
             seqs: Mutex::new(HashMap::new()),
         })
@@ -287,19 +300,83 @@ impl App {
         }
     }
 
-    /// Gives up on a database call that takes longer than `Settings::db_call_limit`: one
-    /// stuck in Postgres (which `statement_timeout` can't end when the server itself is
-    /// stuck) would otherwise hold its caller, a runner and its Stop, up for good. It
-    /// then fails as the database being out of reach.
+    /// Gives up on a database call that takes longer than `Settings::db_call_limit`, or
+    /// as soon as the database is found not answering (`db_silent_now`; then it isn't
+    /// tried at all): one stuck in Postgres (which `statement_timeout` can't end when
+    /// the server itself is stuck) would otherwise hold its caller, a runner and its
+    /// Stop, or a device waiting for an answer, up for a long time. It then fails as
+    /// the database being out of reach.
     pub async fn bounded<T, E: Into<anyhow::Error>>(
         &self,
         call: impl std::future::Future<Output = Result<T, E>>,
     ) -> Result<T> {
-        match tokio::time::timeout(self.settings.db_call_limit, call).await {
-            Ok(result) => result.map_err(Into::into),
-            Err(_) => Err(anyhow::Error::new(sqlx::Error::PoolTimedOut)
-                .context("the database didn't answer in time")),
+        let away = |why: &'static str| {
+            Err(anyhow::Error::new(sqlx::Error::PoolTimedOut).context(why))
+        };
+        if self.db_silent_now() {
+            return away("the database isn't answering");
         }
+        let mut answers = self.db_answers.subscribe();
+        tokio::select! {
+            result = tokio::time::timeout(self.settings.db_call_limit, call) => match result {
+                Ok(result) => result.map_err(Into::into),
+                Err(_) => away("the database didn't answer in time"),
+            },
+            _ = answers.wait_for(|answers| !answers) => away("the database stopped answering"),
+        }
+    }
+
+    /// Postgres runs, but the check that asks it something every few seconds got no
+    /// answer: calls fail at once instead of waiting.
+    pub fn db_silent_now(&self) -> bool {
+        *self.db_up.borrow() && !*self.db_answers.borrow()
+    }
+
+    /// What the regular check found: the database answers, or not. Every device is told.
+    pub fn set_db_answers(&self, answers: bool) {
+        if self.db_answers.send_replace(answers) == answers {
+            return;
+        }
+        if answers {
+            // It answers: whatever found it silent before no longer counts. One that
+            // still does says so again.
+            self.db_silent
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clear();
+        }
+        self.publish_status();
+    }
+
+    /// The device of a token checked earlier in this run, for when the database can't
+    /// be asked.
+    pub fn known_device(&self, token_hash: &[u8]) -> Option<Uuid> {
+        self.known_devices
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(token_hash)
+            .copied()
+    }
+
+    /// Notes what the database said of a token (`None`: no such device).
+    pub fn note_device(&self, token_hash: Vec<u8>, device: Option<Uuid>) {
+        let mut known = self.known_devices.lock().unwrap_or_else(|e| e.into_inner());
+        match device {
+            Some(id) => {
+                known.insert(token_hash, id);
+            }
+            None => {
+                known.remove(&token_hash);
+            }
+        }
+    }
+
+    /// A device was removed: its token no longer counts, even unchecked.
+    pub fn forget_device(&self, device: Uuid) {
+        self.known_devices
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|_, id| *id != device);
     }
 
     /// Forgets a thread's cached seq (its runner ended); it is read again when needed.
@@ -325,6 +402,8 @@ impl App {
     pub fn set_db_up(&self, up: bool) {
         self.db_up.send_replace(up);
         if up {
+            // Freshly started, it answers; the regular check says otherwise if not.
+            self.db_answers.send_replace(true);
             // Back after a restart: it answers. A thread that still finds it silent
             // says so again.
             self.db_silent
@@ -374,11 +453,12 @@ impl App {
         if !*self.db_up.borrow() {
             return Some("Your Weilo computer is restarting its data. (a few seconds)".into());
         }
-        let silent = !self
-            .db_silent
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .is_empty();
+        let silent = !*self.db_answers.borrow()
+            || !self
+                .db_silent
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_empty();
         silent.then(|| DB_SILENT.to_string())
     }
 
