@@ -2200,3 +2200,81 @@ async fn a_database_that_never_answers_is_said_after_a_while() {
     c.next(|f| matches!(f, ServerFrame::Status { ok: true, .. }))
         .await;
 }
+
+#[tokio::test]
+async fn stop_ends_an_engine_that_is_still_starting() {
+    let Some(mut host) = Host::start().await else {
+        return;
+    };
+    // An engine that takes a long time to start, and says where it runs.
+    let pid_file = host.dir().join("slow.pid");
+    let script = host.dir().join("slow.sh");
+    std::fs::write(
+        &script,
+        format!(
+            "echo $$ > {}\nsleep 25\nexec \"$1\" engine echo\n",
+            pid_file.display()
+        ),
+    )
+    .unwrap();
+    host.add_engine(
+        "slow",
+        serde_json::json!({
+            "apiVersion": 1, "kind": "engine", "name": "slow", "title": "Slow",
+            "command": ["/bin/sh", script.display().to_string(), "{self}"],
+            "env": { "WEILO_ECHO_STATE": "{engine_home}" },
+            "hidden": true, "bindsApprovals": true
+        }),
+    );
+    host.restart_with(&[]).await;
+    let mut c = host.connect().await;
+    let thread = setup_with_echo(&mut c).await;
+    let CallValue::Snapshot(snap) = c.ok(Call::Snapshot).await else {
+        panic!()
+    };
+    c.ok(Call::UpdateAgent {
+        agent_id: snap.agents[0].id,
+        name: None,
+        model: None,
+        instructions: None,
+        engine: Some("slow".into()),
+    })
+    .await;
+    c.sub(thread, 0).await;
+    send(&mut c, thread, "hello").await;
+    c.next(|f| is_state(f, WorkState::Working)).await;
+    eventually("the engine to begin starting", || pid_file.exists()).await;
+    let pid: i32 = loop {
+        if let Ok(pid) = std::fs::read_to_string(&pid_file).unwrap().trim().parse() {
+            break pid;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    // Stop: the chat is idle at once, and the half-started engine is ended.
+    let pressed = std::time::Instant::now();
+    c.ok(Call::Stop { thread_id: thread }).await;
+    c.next(|f| is_state(f, WorkState::Idle)).await;
+    assert!(
+        pressed.elapsed() < Duration::from_secs(5),
+        "Stop took {:?}\n{}",
+        pressed.elapsed(),
+        host.log()
+    );
+    eventually("the starting engine to end", || !pid_alive(pid)).await;
+    let CallValue::Snapshot(snap) = c.ok(Call::Snapshot).await else {
+        panic!()
+    };
+    let t = snap
+        .threads
+        .iter()
+        .find(|t| t.id == thread)
+        .expect("thread");
+    assert_eq!(t.state, WorkState::Idle);
+    // The message that waited is never sent.
+    let late = tokio::time::timeout(
+        Duration::from_secs(2),
+        c.try_next(|f| is_state(f, WorkState::Working) || agent_text(f).is_some()),
+    )
+    .await;
+    assert!(!matches!(late, Ok(Ok(_))), "{late:?}");
+}

@@ -50,6 +50,11 @@ pub enum EngineMsg {
         id: u64,
         result: Result<(), String>,
     },
+    /// The engine process started in the background is ready, or couldn't start. Tagged
+    /// with the generation it was started as.
+    Connected {
+        result: Box<Result<Connection, Failure>>,
+    },
     /// A place for one more engine process came free (see `App::engine_slots`). Not
     /// tied to a connection.
     Slot {
@@ -135,6 +140,23 @@ impl Drop for Connection {
     }
 }
 
+/// Stops a task if dropped before `keep`.
+struct AbortOnDrop(Option<JoinHandle<()>>);
+
+impl AbortOnDrop {
+    fn keep(mut self) -> JoinHandle<()> {
+        self.0.take().expect("kept once")
+    }
+}
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        if let Some(task) = &self.0 {
+            task.abort();
+        }
+    }
+}
+
 struct Ready {
     cx: ConnectionTo<Agent>,
     session_id: SessionId,
@@ -170,7 +192,11 @@ impl Connection {
             resume,
             ready_tx,
         ));
+        // Let go of before it is ready (Stop), the start ends here: the driver is
+        // stopped, and the process group ended as `group` drops.
+        let starting = AbortOnDrop(Some(driver));
         let ready = tokio::time::timeout(Duration::from_secs(60), ready_rx).await;
+        let driver = starting.keep();
         let fail = |mut f: Failure| {
             driver.abort();
             let tail = log_tail(log, log_start);

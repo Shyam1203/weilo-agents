@@ -30,6 +30,8 @@ pub async fn run(opts: UpOptions) -> Result<()> {
     let Some(_lock) = try_lock(&home.lock_file())? else {
         return Err(already_running(&home));
     };
+    // The port is taken before Postgres starts, so a busy one is said at once.
+    let listener = listen(opts.port).await?;
     // Before anything starts: what a crashed run left running ends here.
     process::end_leftovers(&home.live_engines(), process::GRACE);
     process::record_in(home.live_engines());
@@ -54,7 +56,17 @@ pub async fn run(opts: UpOptions) -> Result<()> {
         pg.stop().await;
         return Err(e);
     }
-    serve(&home, pg, db, opts.port, opts.web).await
+    serve(&home, pg, db, listener, opts.web).await
+}
+
+async fn listen(port: u16) -> Result<tokio::net::TcpListener> {
+    match tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port))).await {
+        Ok(l) => Ok(l),
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+            anyhow::bail!("{}", port_taken(port))
+        }
+        Err(e) => anyhow::bail!("Weilo couldn't use port {port} ({e})."),
+    }
 }
 
 fn already_running(home: &Home) -> anyhow::Error {
@@ -72,7 +84,7 @@ async fn serve(
     home: &Home,
     pg: Postgres,
     db: db::Db,
-    port: u16,
+    listener: tokio::net::TcpListener,
     web: Option<PathBuf>,
 ) -> Result<()> {
     let app = App::new(AppParts {
@@ -91,13 +103,18 @@ async fn serve(
             app.set_db_up(up);
         }
     }));
-    let result = serve_app(home, &app, port, web).await;
+    let result = serve_app(home, &app, listener, web).await;
     pg_stop.cancel();
     let _ = pg_task.await;
     result
 }
 
-async fn serve_app(home: &Home, app: &Arc<App>, port: u16, web: Option<PathBuf>) -> Result<()> {
+async fn serve_app(
+    home: &Home,
+    app: &Arc<App>,
+    listener: tokio::net::TcpListener,
+    web: Option<PathBuf>,
+) -> Result<()> {
     let app = app.clone();
     if let Err(e) = recovery::run(&app).await {
         tracing::warn!("couldn't tidy up after the last run: {e:#}");
@@ -114,14 +131,6 @@ async fn serve_app(home: &Home, app: &Arc<App>, port: u16, web: Option<PathBuf>)
     if setup["keep_awake"].as_bool() == Some(true) {
         app.keep_awake.start();
     }
-    let listener =
-        match tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port))).await {
-            Ok(l) => l,
-            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-                anyhow::bail!("{}", port_taken(port))
-            }
-            Err(e) => anyhow::bail!("Weilo couldn't use port {port} ({e})."),
-        };
     let port = listener.local_addr()?.port();
     app.set_port(port);
     let admin = admin::listen(app.clone())?;

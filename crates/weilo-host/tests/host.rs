@@ -472,3 +472,30 @@ async fn guard_and_pairing_reject_strangers() {
         false
     );
 }
+
+#[test]
+fn a_busy_port_is_said_before_postgres_starts() {
+    let busy = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = busy.local_addr().unwrap().port();
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let started = std::time::Instant::now();
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_weilo"))
+        .args(["up", "--port", &port.to_string(), "--home"])
+        .arg(&home)
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success());
+    assert!(
+        said.contains(&format!("Another program is using port {port}")),
+        "{said}"
+    );
+    // Nothing was started first.
+    assert!(!home.join("db").exists(), "{said}");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "{:?}",
+        started.elapsed()
+    );
+}

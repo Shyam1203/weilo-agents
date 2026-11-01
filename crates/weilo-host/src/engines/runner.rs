@@ -98,6 +98,7 @@ pub fn spawn(app: Arc<App>, thread_id: Uuid) -> mpsc::UnboundedSender<Cmd> {
             slot: None,
             slots: 0,
             waiting_slot: None,
+            connecting: None,
         };
         runner.run(rx, engine_rx).await;
         // Whatever it found, it no longer waits on the database.
@@ -170,6 +171,24 @@ impl Drop for Installing {
     }
 }
 
+/// An engine process starting in the background, so Stop still works meanwhile; the
+/// message waits for it. Dropping it ends the start and the half-started process.
+struct Connecting {
+    generation: u64,
+    text: String,
+    /// The thread as it was read to start the engine (taken once it is ready).
+    ctx: Option<ThreadCtx>,
+    manifest: Manifest,
+    key: Option<String>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for Connecting {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
 struct Runner {
     app: Arc<App>,
     thread_id: Uuid,
@@ -224,6 +243,8 @@ struct Runner {
     slots: u64,
     /// The message waiting for a slot, with the wait's id and the task asking for one.
     waiting_slot: Option<WaitingSlot>,
+    /// The engine process being started, and the message waiting for it.
+    connecting: Option<Connecting>,
 }
 
 /// Something the runner writes, in order.
@@ -393,6 +414,7 @@ impl Runner {
             && self.conn.is_none()
             && self.installing.is_none()
             && self.waiting_slot.is_none()
+            && self.connecting.is_none()
             && self.now_queue.is_empty()
             && self.after_queue.is_empty()
             && self.pending.is_empty()
@@ -405,6 +427,7 @@ impl Runner {
         self.turn.is_some()
             || self.installing.is_some()
             || self.waiting_slot.is_some()
+            || self.connecting.is_some()
             || !self.now_queue.is_empty()
             || !self.after_queue.is_empty()
     }
@@ -436,7 +459,7 @@ impl Runner {
                 decision,
             } => self.decided(approval_id, decision).await,
             Cmd::Restart => {
-                if self.turn.is_none() {
+                if self.turn.is_none() && self.connecting.is_none() {
                     self.drop_conn();
                 } else {
                     self.restart = true;
@@ -476,6 +499,9 @@ impl Runner {
         let tagged = match tagged.msg {
             EngineMsg::Installed { id, result } => return self.installed(id, result).await,
             EngineMsg::Slot { id, permit } => return self.slot_free(id, permit).await,
+            EngineMsg::Connected { result } => {
+                return self.connected(tagged.generation, *result).await;
+            }
             msg => Tagged { msg, ..tagged },
         };
         if tagged.generation != self.generation {
@@ -513,14 +539,18 @@ impl Runner {
                     self.end_turn(Ok(StopReason::Cancelled)).await;
                 }
             }
-            EngineMsg::Installed { .. } | EngineMsg::Slot { .. } => {}
+            EngineMsg::Installed { .. } | EngineMsg::Slot { .. } | EngineMsg::Connected { .. } => {}
         }
     }
 
     async fn start_next(&mut self) {
-        if !*self.app.db_up.borrow() || self.installing.is_some() || self.waiting_slot.is_some() {
-            // Postgres is restarting, the engine is downloading, or every engine slot is
-            // taken; the queue waits.
+        if !*self.app.db_up.borrow()
+            || self.installing.is_some()
+            || self.waiting_slot.is_some()
+            || self.connecting.is_some()
+        {
+            // Postgres is restarting, the engine is downloading or starting, or every
+            // engine slot is taken; the queue waits.
             return;
         }
         let Some(text) = self
@@ -556,18 +586,22 @@ impl Runner {
                 Err(_) => return self.wait_for_slot(text).await,
             }
         }
-        // A new engine process: the thread as it was read to start it, so the first
-        // prompt always carries the agent's instructions.
-        let mut started_with = None;
         if self.conn.is_none() {
-            match self.connect().await {
-                Ok(ctx) => started_with = Some(ctx),
-                Err(e) => {
-                    self.slot = None;
-                    return self.start_failed(e, Some(text)).await;
-                }
+            // A new engine process starts in the background; the turn begins once it
+            // is ready (`connected`).
+            if let Err(e) = self.connect(text.clone()).await {
+                self.slot = None;
+                return self.start_failed(e, Some(text)).await;
             }
+            return;
         }
+        self.prompt(text, None).await;
+    }
+
+    /// Begins a turn on the running engine. `started_with` is the thread as it was read
+    /// to start a new engine process, so its first prompt always carries the agent's
+    /// instructions.
+    async fn prompt(&mut self, text: String, started_with: Option<ThreadCtx>) {
         self.db_wait_over().await;
         self.turns += 1;
         self.turn = Some(Turn {
@@ -754,9 +788,10 @@ impl Runner {
         }
     }
 
-    /// Starts the engine, picking up the thread's earlier engine conversation when the
-    /// engine can. Errors are explained for people (and kept whole for the log).
-    async fn connect(&mut self) -> Result<ThreadCtx, (Explained, String)> {
+    /// Starts the engine in the background, picking up the thread's earlier engine
+    /// conversation when the engine can; `text` waits for it. Errors are explained for
+    /// people (and kept whole for the log).
+    async fn connect(&mut self, text: String) -> Result<(), (Explained, String)> {
         let ctx = load_ctx(&self.app, self.thread_id)
             .await
             .map_err(internal)?;
@@ -786,25 +821,74 @@ impl Runner {
             .join(format!("engine-{}.log", manifest.name));
         self.log = Some(log.clone());
         self.generation += 1;
-        let resume = ctx.engine_session_id.clone();
-        let conn = Connection::open(
-            &spec,
-            base_env(),
-            &ctx.cwd,
-            &log,
+        let generation = self.generation;
+        let (tx, cwd, resume) = (
             self.engine_tx.clone(),
-            self.generation,
-            resume.clone(),
-        )
-        .await
-        .map_err(explained)?;
+            ctx.cwd.clone(),
+            ctx.engine_session_id.clone(),
+        );
+        let task = tokio::spawn(async move {
+            let result = Connection::open(
+                &spec,
+                base_env(),
+                &cwd,
+                &log,
+                tx.clone(),
+                generation,
+                resume,
+            )
+            .await;
+            let msg = EngineMsg::Connected {
+                result: Box::new(result),
+            };
+            let _ = tx.send(Tagged { generation, msg });
+        });
+        self.connecting = Some(Connecting {
+            generation,
+            text,
+            ctx: Some(ctx),
+            manifest,
+            key,
+            task,
+        });
+        Ok(())
+    }
+
+    /// The engine process started in the background is ready (or couldn't start).
+    async fn connected(&mut self, generation: u64, result: Result<Connection, Failure>) {
+        if self
+            .connecting
+            .as_ref()
+            .is_none_or(|c| c.generation != generation)
+        {
+            // A start that was let go (Stop): dropping it ends the process.
+            return;
+        }
+        let Some(mut c) = self.connecting.take() else {
+            return;
+        };
+        let text = std::mem::take(&mut c.text);
+        let conn = match result {
+            Ok(conn) => conn,
+            Err(f) => {
+                self.slot = None;
+                let explained = (explain(&c.manifest, &f, c.key.as_deref()), f.text);
+                return self.start_failed(explained, Some(text)).await;
+            }
+        };
+        let Some(ctx) = c.ctx.take() else {
+            return;
+        };
+        let resume = ctx.engine_session_id.clone();
         let saved = sqlx::query("UPDATE threads SET engine_session_id = $2 WHERE id = $1")
             .bind(self.thread_id)
             .bind(conn.session_id.0.as_ref())
             .execute(&self.app.db);
         if let Err(e) = self.app.bounded(saved).await {
             if !unreachable_db(&e) {
-                return Err(internal(e));
+                drop(conn);
+                self.slot = None;
+                return self.start_failed(internal(e), Some(text)).await;
             }
             // The engine is running: keep it. Only picking this conversation up after a
             // restart is lost.
@@ -822,7 +906,7 @@ impl Runner {
             self.problem("fresh_start", &message, None).await;
         }
         self.conn = Some(conn);
-        Ok(ctx)
+        self.prompt(text, Some(ctx)).await;
     }
 
     async fn on_update(&mut self, update: SessionUpdate) {
@@ -1086,6 +1170,13 @@ impl Runner {
         // A message waiting for the database to start is let go too.
         self.start_again_at = None;
         self.db_wait_since = None;
+        if self.connecting.take().is_some() {
+            // Dropping it ends the half-started engine; its prompt is never sent.
+            self.slot = None;
+            self.generation += 1;
+            self.set_state(WorkState::Idle, "").await;
+            return;
+        }
         if self.waiting_slot.take().is_some() {
             // Dropping it stops the wait.
             self.set_state(WorkState::Idle, "").await;
