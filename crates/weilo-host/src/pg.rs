@@ -190,13 +190,15 @@ impl Postgres {
                         // Server processes of the last run still holding its shared
                         // memory go away by themselves soon: try again shortly, for a
                         // while (about 5 s). Anything else, or that for longer, waits
-                        // longer each time.
+                        // longer each time, but never long: everything waits for it,
+                        // and a start that failed because Postgres was ended part way
+                        // (a crash, a shutdown) may well work the next time.
                         let held = format!("{e:#}").contains("shared memory block");
                         quick = if held { quick + 1 } else { QUICK_TRIES };
                         pause = if quick < QUICK_TRIES {
                             Duration::from_millis(250)
                         } else {
-                            (pause * 2).min(Duration::from_secs(30))
+                            (pause * 2).min(MAX_RESTART_PAUSE)
                         };
                     }
                 }
@@ -302,6 +304,8 @@ impl Drop for Postgres {
 /// How many times in a row a start held up by the last run's shared memory is tried
 /// again quickly before waiting longer each time.
 const QUICK_TRIES: u32 = 20;
+/// The longest wait between two tries to start Postgres again.
+const MAX_RESTART_PAUSE: Duration = Duration::from_secs(4);
 
 /// Sends `sig` to one process: the Postgres this host started, or one found to be a
 /// Postgres of this home folder's data. Never 0 or a negative number, which would reach

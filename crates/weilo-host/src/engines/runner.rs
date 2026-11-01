@@ -100,6 +100,8 @@ pub fn spawn(app: Arc<App>, thread_id: Uuid) -> mpsc::UnboundedSender<Cmd> {
             waiting_slot: None,
         };
         runner.run(rx, engine_rx).await;
+        // Whatever it found, it no longer waits on the database.
+        runner.app.set_db_answering(thread_id, true);
     });
     tx
 }
@@ -607,8 +609,8 @@ impl Runner {
             let saved = sqlx::query("UPDATE threads SET instructions_rev_sent = $2 WHERE id = $1")
                 .bind(self.thread_id)
                 .bind(rev)
-                .execute(&self.app.db)
-                .await;
+                .execute(&self.app.db);
+            let saved = self.app.bounded(saved).await;
             if let Err(e) = saved {
                 tracing::warn!("couldn't note the instructions sent: {e}");
             }
@@ -655,6 +657,11 @@ impl Runner {
             // Only while Weilo knows Postgres is running does the wait count: a database
             // that answers nothing that long is a problem the person hears of.
             let db_up = *self.app.db_up.borrow();
+            if db_up {
+                // Running but not answering: Weilo isn't told it's down, and what the
+                // chat says can't be written. Every device hears it straight away.
+                self.app.set_db_answering(self.thread_id, false);
+            }
             if !db_up || since.elapsed() < self.app.settings.start_give_up {
                 tracing::warn!("{} waits to start: {}", self.thread_id, e.1);
                 if let Some(text) = text {
@@ -680,6 +687,7 @@ impl Runner {
     /// The message no longer waits for the database: the live line says so.
     async fn db_wait_over(&mut self) {
         if self.db_wait_since.take().is_some() {
+            self.app.set_db_answering(self.thread_id, true);
             self.set_state(WorkState::Working, "").await;
         }
     }
@@ -793,9 +801,8 @@ impl Runner {
         let saved = sqlx::query("UPDATE threads SET engine_session_id = $2 WHERE id = $1")
             .bind(self.thread_id)
             .bind(conn.session_id.0.as_ref())
-            .execute(&self.app.db)
-            .await;
-        if let Err(e) = saved.map_err(anyhow::Error::from) {
+            .execute(&self.app.db);
+        if let Err(e) = self.app.bounded(saved).await {
             if !unreachable_db(&e) {
                 return Err(internal(e));
             }
@@ -980,7 +987,12 @@ impl Runner {
         // "allow once", for this exact command in this folder.
         let key = rule_key(&tool);
         if let Some(key) = &key
-            && approvals::always_allowed(&self.app, ctx.agent_id, key, &scope).await
+            && tokio::time::timeout(
+                self.app.settings.db_call_limit,
+                approvals::always_allowed(&self.app, ctx.agent_id, key, &scope),
+            )
+            .await
+            .unwrap_or(false)
         {
             let _ = responder.respond(selected(&request, &Decision::Allow));
             // A quiet line in the chat, so what the rule let through is still seen.
@@ -1014,8 +1026,8 @@ impl Runner {
                 scope,
                 agent_id: ctx.agent_id,
             },
-        )
-        .await;
+        );
+        let opened = self.app.bounded(opened).await;
         if let Err(e) = opened {
             tracing::error!("couldn't save an approval: {e:#}");
             self.app
@@ -1368,9 +1380,11 @@ impl Runner {
                 stopped,
             } => {
                 if *stopped {
-                    approvals::close_stopped(&self.app, *approval_id).await?;
+                    let close = approvals::close_stopped(&self.app, *approval_id);
+                    self.app.bounded(close).await?;
                 } else {
-                    approvals::close_engine_stopped(&self.app, *approval_id).await?;
+                    let close = approvals::close_engine_stopped(&self.app, *approval_id);
+                    self.app.bounded(close).await?;
                 }
                 self.app
                     .live_approvals
@@ -1392,8 +1406,12 @@ impl Runner {
             match self.write(&out).await {
                 Ok(_) => {
                     self.outbox.pop_front();
+                    self.app.set_db_answering(self.thread_id, true);
                 }
                 Err(e) if unreachable_db(&e) => {
+                    if *self.app.db_up.borrow() {
+                        self.app.set_db_answering(self.thread_id, false);
+                    }
                     if !recovering {
                         tracing::warn!(
                             "couldn't write to {} yet, will try again: {e:#}",
@@ -1454,8 +1472,9 @@ fn unreachable_db(e: &anyhow::Error) -> bool {
             | sqlx::Error::Protocol(_),
         ) => true,
         Some(sqlx::Error::Database(db)) => db.code().is_some_and(|c| {
-            // Connection problems, shutdown or crash recovery, too many connections.
-            c.starts_with("08") || c.starts_with("57P") || c == "53300"
+            // Connection problems, shutdown or crash recovery, too many connections, a
+            // statement that ran out of time (`statement_timeout`).
+            c.starts_with("08") || c.starts_with("57P") || c == "53300" || c == "57014"
         }),
         _ => false,
     }
@@ -1616,6 +1635,10 @@ fn folder_scope(cwd: &std::path::Path) -> String {
 }
 
 async fn load_ctx(app: &App, thread_id: Uuid) -> Result<ThreadCtx> {
+    app.bounded(read_ctx(app, thread_id)).await
+}
+
+async fn read_ctx(app: &App, thread_id: Uuid) -> Result<ThreadCtx> {
     let row = sqlx::query(
         "SELECT t.kind, t.agent_id, t.engine AS thread_engine, t.folder, t.worktree,
                 t.engine_session_id, t.instructions_rev_sent, a.name, a.slug,

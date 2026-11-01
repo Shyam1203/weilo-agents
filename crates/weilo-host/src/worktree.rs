@@ -77,6 +77,20 @@ fn candidates(slug: &str) -> impl Iterator<Item = String> + '_ {
     numbered.chain(random)
 }
 
+/// Removes a worktree made by `prepare`, and its branch, when its session wasn't kept.
+pub async fn discard(folder: &Path, path: &Path, branch: &str) {
+    let Some(repo) = repo_root(folder).await else {
+        return;
+    };
+    let p = path.to_string_lossy();
+    if let Err(e) = git(&repo, &["worktree", "remove", "--force", &p]).await {
+        tracing::warn!("couldn't remove the copy at {p}: {e}");
+    }
+    if let Err(e) = git(&repo, &["branch", "-D", branch]).await {
+        tracing::warn!("couldn't remove the branch {branch}: {e}");
+    }
+}
+
 /// The session branch of a worktree made by `prepare` (`weilo/<its folder name>`).
 pub fn branch_of(worktree: &str) -> Option<String> {
     let name = Path::new(worktree).file_name()?.to_str()?;

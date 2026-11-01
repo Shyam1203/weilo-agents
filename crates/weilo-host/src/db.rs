@@ -11,6 +11,9 @@ use uuid::Uuid;
 use crate::ids::new_id;
 use crate::pg::{APP_ROLE, DATABASE, OWNER_ROLE, Postgres};
 
+/// The longest one statement of the app may run.
+pub const STATEMENT_TIMEOUT: &str = "30s";
+
 static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
 /// Who may append to a thread: the owning host at its current epoch.
@@ -35,10 +38,16 @@ pub async fn open(pg: &Postgres) -> Result<Db> {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(30);
+    // No statement runs for ever: one stuck behind a lock ends after this and fails
+    // like an unreachable database (`SET LOCAL statement_timeout = 0` for the few that
+    // are long by nature).
+    let options = pg
+        .options(APP_ROLE, DATABASE)
+        .options([("statement_timeout", STATEMENT_TIMEOUT)]);
     let pool = PgPoolOptions::new()
         .max_connections(10)
         .acquire_timeout(std::time::Duration::from_secs(wait))
-        .connect_with(pg.options(APP_ROLE, DATABASE))
+        .connect_with(options)
         .await
         .context("couldn't connect as weilo_app")?;
     let fence = host_identity(&pool).await?;

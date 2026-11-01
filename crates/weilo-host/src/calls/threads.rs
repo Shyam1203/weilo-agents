@@ -149,42 +149,46 @@ pub async fn start_session(
         .filter(|t| !t.is_empty())
         .or(task_name)
         .unwrap_or_else(|| folder_name(&folder));
-    let mut tx = app.db.begin().await?;
+    let thread_id = new_id();
+    let folder_text = folder.display().to_string();
     // One session start at a time picks its name, so two started at once can't both
-    // take "shop". Held until the session is saved.
+    // take "shop". The name is saved with the session right away, and the lock let go
+    // before its copy of the repo is made (which can take a while).
+    let mut tx = app.db.begin().await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtext('weilo.session-title'))")
         .execute(&mut *tx)
         .await?;
     let title = free_session_title(&mut tx, app.space_id, title).await?;
-    let prepared = worktree::prepare(&folder, &session_slug(&title)).await;
-    let worktree = match &prepared {
-        Prepared::Worktree { path, .. } => Some(path.display().to_string()),
-        _ => None,
-    };
     let thread = NewThread {
-        id: new_id(),
+        id: thread_id,
         kind: "session",
         channel_id: s.channel_id,
         agent_id: s.agent_id,
         title,
         engine: Some(s.engine.clone()),
-        folder: Some(folder.display().to_string()),
-        worktree: worktree.clone(),
+        folder: Some(folder_text.clone()),
+        worktree: None,
         started_by: Some(started_by.unwrap_or_else(|| "you".into())),
     };
     insert_thread(app, &mut tx, &thread).await?;
-    let detail = json!({ "thread_id": thread.id, "folder": thread.folder, "engine": s.engine, "worktree": worktree });
-    let entry = audit::Entry {
-        actor: "device",
-        device_id: Some(device),
-        action: "session.start",
-        detail,
-    };
-    audit::append(&mut tx, app.space_id, entry).await?;
     tx.commit().await?;
+    // Copies are made one at a time, so two can't reach for the same folder name.
+    let prepared = {
+        let _one_at_a_time = app.worktrees.lock().await;
+        worktree::prepare(&folder, &session_slug(&thread.title)).await
+    };
+    let saved = save_session(app, device, &thread, &s.engine, &prepared).await;
+    let ev = match saved {
+        Ok(ev) => ev,
+        Err(e) => {
+            // Not saved: nothing of it is left behind.
+            forget_session(app, thread_id, &folder, &prepared).await;
+            return Err(e);
+        }
+    };
     let missing = matches!(prepared, Prepared::Missing);
-    if let Some(problem) = problem_for(&prepared) {
-        app.append(thread.id, problem, Source::Host).await?;
+    if let Some(ev) = ev {
+        app.committed(thread_id, vec![ev]).await;
     }
     app.hub.changed(Changed::Threads);
     let task = s.task.as_deref().map(str::trim).filter(|t| !t.is_empty());
@@ -195,6 +199,57 @@ pub async fn start_session(
         send(app, thread.id, task.to_string(), SendWhen::Now).await?;
     }
     read::thread(app, thread.id).await
+}
+
+/// Saves where a new session works, and says so in the audit log; a session that
+/// works in the folder itself says why in its chat (the event is returned).
+async fn save_session(
+    app: &App,
+    device: Uuid,
+    thread: &NewThread,
+    engine: &str,
+    prepared: &Prepared,
+) -> CallResult<Option<weilo_proto::Event>> {
+    let worktree = match prepared {
+        Prepared::Worktree { path, .. } => Some(path.display().to_string()),
+        _ => None,
+    };
+    let mut tx = app.db.begin().await?;
+    sqlx::query("UPDATE threads SET worktree = $2 WHERE id = $1")
+        .bind(thread.id)
+        .bind(&worktree)
+        .execute(&mut *tx)
+        .await?;
+    let detail = json!({ "thread_id": thread.id, "folder": thread.folder, "engine": engine, "worktree": worktree });
+    let entry = audit::Entry {
+        actor: "device",
+        device_id: Some(device),
+        action: "session.start",
+        detail,
+    };
+    audit::append(&mut tx, app.space_id, entry).await?;
+    let ev = match problem_for(prepared) {
+        Some(problem) => Some(
+            events::append(&mut tx, app.fence, thread.id, &problem, Source::Host, false).await?,
+        ),
+        None => None,
+    };
+    tx.commit().await?;
+    Ok(ev)
+}
+
+/// Takes back a session that couldn't be saved: its row and its copy of the repo.
+async fn forget_session(app: &App, thread_id: Uuid, folder: &std::path::Path, prepared: &Prepared) {
+    let gone = sqlx::query("DELETE FROM threads WHERE id = $1")
+        .bind(thread_id)
+        .execute(&app.db)
+        .await;
+    if let Err(e) = gone {
+        tracing::warn!("couldn't take back the session {thread_id}: {e}");
+    }
+    if let Prepared::Worktree { path, branch } = prepared {
+        worktree::discard(folder, path, branch).await;
+    }
 }
 
 /// Folders a session may not work in: Weilo's own data folder (and anything inside

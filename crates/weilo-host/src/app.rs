@@ -21,6 +21,9 @@ use crate::home::Home;
 use crate::keep_awake::KeepAwake;
 use crate::projector;
 
+/// Said to every device while Postgres runs but doesn't answer.
+pub const DB_SILENT: &str = "Weilo's database isn't answering. Your messages are kept.";
+
 /// What travels on the broadcast. Sockets filter by the threads they follow.
 #[derive(Debug, Clone)]
 pub enum HubMsg {
@@ -89,6 +92,8 @@ pub struct Settings {
     /// How long a message waits for a database that is running but doesn't answer before
     /// the person is told it didn't start.
     pub start_give_up: Duration,
+    /// The longest one database call may take before it counts as unanswered.
+    pub db_call_limit: Duration,
 }
 
 impl Settings {
@@ -115,6 +120,7 @@ impl Settings {
             runner_idle: Duration::from_secs(secs("WEILO_RUNNER_IDLE_SECS", 900)),
             start_retry: Duration::from_millis(secs("WEILO_START_RETRY_MS", 2000)),
             start_give_up: Duration::from_secs(secs("WEILO_START_GIVE_UP_SECS", 120)),
+            db_call_limit: Duration::from_secs(secs("WEILO_DB_CALL_LIMIT_SECS", 45)),
         }
     }
 }
@@ -142,6 +148,8 @@ pub struct App {
     pub engine_slots: Arc<tokio::sync::Semaphore>,
     /// Signalled when a thread waits for an engine slot: idle engines give theirs up.
     pub slot_wanted: tokio::sync::Notify,
+    /// Held while a session's copy of its repo is made.
+    pub worktrees: tokio::sync::Mutex<()>,
     /// Sessions whose changes are being brought back right now.
     pub bringing_back: Mutex<std::collections::HashSet<Uuid>>,
     /// Threads waiting for an engine slot right now; an idle engine gives its slot up
@@ -150,6 +158,11 @@ pub struct App {
     /// Approvals an engine is waiting on in this process. A pending approval not in
     /// here has no one to tell its answer to, and the job sweep closes it.
     pub live_approvals: Mutex<std::collections::HashSet<Uuid>>,
+    /// Threads whose writes or reads found Postgres running but not answering. While
+    /// any do, every device is told (that needs no database).
+    db_silent: Mutex<std::collections::HashSet<Uuid>>,
+    /// The "not ready" line devices were last told (`None`: all is well).
+    shown_status: Mutex<Option<String>>,
     port: AtomicU16,
     /// The newest seq published per thread, so deltas can name it without a query.
     seqs: Mutex<HashMap<Uuid, i64>>,
@@ -186,9 +199,12 @@ impl App {
             sockets,
             engine_slots,
             slot_wanted: tokio::sync::Notify::new(),
+            worktrees: tokio::sync::Mutex::new(()),
             bringing_back: Mutex::default(),
             slot_waiters: std::sync::atomic::AtomicUsize::new(0),
             live_approvals: Mutex::default(),
+            db_silent: Mutex::default(),
+            shown_status: Mutex::default(),
             port: AtomicU16::new(0),
             seqs: Mutex::new(HashMap::new()),
         })
@@ -203,9 +219,15 @@ impl App {
 
     /// Appends one event in its own transaction, then publishes and projects it.
     pub async fn append(&self, thread_id: Uuid, body: EventBody, source: Source) -> Result<Event> {
-        let mut tx = self.db.begin().await?;
-        let event = events::append(&mut tx, self.fence, thread_id, &body, source, false).await?;
-        tx.commit().await?;
+        let event = self
+            .bounded(async {
+                let mut tx = self.db.begin().await?;
+                let event =
+                    events::append(&mut tx, self.fence, thread_id, &body, source, false).await?;
+                tx.commit().await?;
+                anyhow::Ok(event)
+            })
+            .await?;
         self.committed(thread_id, vec![event.clone()]).await;
         Ok(event)
     }
@@ -219,18 +241,23 @@ impl App {
         body: &EventBody,
         source: Source,
     ) -> Result<Option<Event>> {
-        let mut tx = self.db.begin().await?;
-        let event = events::append_named(
-            &mut tx,
-            self.fence,
-            thread_id,
-            body,
-            source,
-            false,
-            Some(event_id),
-        )
-        .await?;
-        tx.commit().await?;
+        let event = self
+            .bounded(async {
+                let mut tx = self.db.begin().await?;
+                let event = events::append_named(
+                    &mut tx,
+                    self.fence,
+                    thread_id,
+                    body,
+                    source,
+                    false,
+                    Some(event_id),
+                )
+                .await?;
+                tx.commit().await?;
+                anyhow::Ok(event)
+            })
+            .await?;
         if let Some(event) = &event {
             self.committed(thread_id, vec![event.clone()]).await;
         }
@@ -244,14 +271,31 @@ impl App {
             let seq = seqs.entry(thread_id).or_default();
             *seq = (*seq).max(last.seq);
         }
+        // Projected first, so whoever sees the event and then reads the thread finds
+        // its state already moved on.
+        if let Err(e) = self.bounded(projector::run(self, thread_id)).await {
+            tracing::error!("projector failed for {thread_id}: {e:#}");
+        }
         for event in evs {
             self.hub.send(HubMsg::Event {
                 thread_id,
                 event: Box::new(event),
             });
         }
-        if let Err(e) = projector::run(self, thread_id).await {
-            tracing::error!("projector failed for {thread_id}: {e:#}");
+    }
+
+    /// Gives up on a database call that takes longer than `Settings::db_call_limit`: one
+    /// stuck in Postgres (which `statement_timeout` can't end when the server itself is
+    /// stuck) would otherwise hold its caller, a runner and its Stop, up for good. It
+    /// then fails as the database being out of reach.
+    pub async fn bounded<T, E: Into<anyhow::Error>>(
+        &self,
+        call: impl std::future::Future<Output = Result<T, E>>,
+    ) -> Result<T> {
+        match tokio::time::timeout(self.settings.db_call_limit, call).await {
+            Ok(result) => result.map_err(Into::into),
+            Err(_) => Err(anyhow::Error::new(sqlx::Error::PoolTimedOut)
+                .context("the database didn't answer in time")),
         }
     }
 
@@ -276,18 +320,50 @@ impl App {
 
     /// Marks the database up or down, and tells every socket.
     pub fn set_db_up(&self, up: bool) {
-        if self.db_up.send_replace(up) != up {
+        self.db_up.send_replace(up);
+        if up {
+            // Back after a restart: it answers. A thread that still finds it silent
+            // says so again.
+            self.db_silent.lock().expect("db silent lock").clear();
+        }
+        self.publish_status();
+    }
+
+    /// A thread found Postgres running but not answering (`false`), or answering again.
+    pub fn set_db_answering(&self, thread_id: Uuid, answering: bool) {
+        let changed = {
+            let mut silent = self.db_silent.lock().expect("db silent lock");
+            if answering {
+                silent.remove(&thread_id)
+            } else {
+                silent.insert(thread_id)
+            }
+        };
+        if changed {
+            self.publish_status();
+        }
+    }
+
+    /// Tells every socket the host's health, when it changed since they were last told.
+    fn publish_status(&self) {
+        let mut shown = self.shown_status.lock().expect("shown status lock");
+        let message = self.status_message();
+        if *shown != message {
+            shown.clone_from(&message);
             self.hub.send(HubMsg::Status {
-                ok: up,
-                message: self.status_message(),
+                ok: message.is_none(),
+                message,
             });
         }
     }
 
     /// The plain line to show while something is wrong, if anything is.
     pub fn status_message(&self) -> Option<String> {
-        (!*self.db_up.borrow())
-            .then(|| "Your Weilo computer is restarting its data. (a few seconds)".to_string())
+        if !*self.db_up.borrow() {
+            return Some("Your Weilo computer is restarting its data. (a few seconds)".into());
+        }
+        let silent = !self.db_silent.lock().expect("db silent lock").is_empty();
+        silent.then(|| DB_SILENT.to_string())
     }
 
     /// A temporary piece of a reply. Never stored.

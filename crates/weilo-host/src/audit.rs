@@ -66,6 +66,10 @@ pub async fn verify(pool: &PgPool, space_id: Uuid) -> sqlx::Result<Verdict> {
     sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         .execute(&mut *tx)
         .await?;
+    // A long log takes as long as it takes to read.
+    sqlx::query("SET LOCAL statement_timeout = 0")
+        .execute(&mut *tx)
+        .await?;
     let mut prev = vec![0u8; 32];
     let mut expected_seq = 1;
     {

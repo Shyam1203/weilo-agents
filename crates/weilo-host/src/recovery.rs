@@ -1,6 +1,7 @@
 //! What `weilo up` tidies before it serves: the projector catches up on every thread,
 //! approvals left waiting by the last run are closed as "restarted", and threads that
-//! were working go back to Idle with a problem the person can retry.
+//! were working go back to Idle with a problem the person can retry. Session starts cut
+//! off half way are taken back.
 
 use std::sync::Arc;
 
@@ -17,6 +18,25 @@ pub const INTERRUPTED: &str = "Weilo restarted while this was working, so it sto
 /// Each item is handled on its own: one that fails is logged and the rest still are.
 /// Errors only when the lists can't be read at all.
 pub async fn run(app: &Arc<App>) -> Result<()> {
+    // A session is saved in two steps (its name, then where it works). One cut off
+    // between them never started: it has no copy of its repo and nothing in its chat.
+    let unfinished = sqlx::query(
+        "DELETE FROM threads WHERE space_id = $1 AND kind = 'session'
+           AND worktree IS NULL AND last_seq = 0",
+    )
+    .bind(app.space_id)
+    .execute(&app.db)
+    .await;
+    match unfinished {
+        Ok(done) if done.rows_affected() > 0 => {
+            tracing::info!(
+                "took back {} unfinished session starts",
+                done.rows_affected()
+            );
+        }
+        Ok(_) => {}
+        Err(e) => tracing::warn!("couldn't take back unfinished session starts: {e}"),
+    }
     let behind: Vec<Uuid> = sqlx::query_scalar(
         "SELECT t.id FROM threads t
          LEFT JOIN projector_cursors c ON c.thread_id = t.id AND c.projection = 'threads'

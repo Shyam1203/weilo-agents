@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use common::{Client, Host, agent_text, eventually, is_state, pid_alive, send, setup_with_echo};
 use uuid::Uuid;
+use weilo_host::app::DB_SILENT;
 use weilo_proto::{
     ApprovalState, Call, CallResult, CallValue, Card, ClientFrame, Decision, Delta, EngineNeed,
     EventBody, FileChange, SendWhen, ServerFrame, WorkState,
@@ -1921,10 +1922,17 @@ async fn a_card_left_while_postgres_is_down_is_closed_when_it_is_back() {
     // SAFETY: killing the engine's group, as a crash of the engine would.
     unsafe { libc::kill(-pgid, libc::SIGKILL) };
     kill_postgres(Duration::from_secs(3)).await;
-    eventually("Postgres to come back", || {
-        host.postgres_pid().is_some_and(pid_alive)
-    })
-    .await;
+    // Restarts are tried again after a short pause that grows while they keep failing
+    // (at most a few seconds), and a start under load takes a while.
+    let back_by = std::time::Instant::now() + 2 * common::WAIT;
+    while !host.postgres_pid().is_some_and(pid_alive) {
+        assert!(
+            std::time::Instant::now() < back_by,
+            "Postgres didn't come back:\n{}",
+            host.log()
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
     // Closed as engine_stopped once Postgres is back, long before the sweep would.
     let started = std::time::Instant::now();
     loop {
@@ -1982,9 +1990,9 @@ fn postgres_backends(postmaster: i32) -> Vec<i32> {
 /// A message waiting behind a slow turn, needing a new engine process, while the
 /// database stops answering: its connections are cut and Postgres is paused, so new
 /// ones hang. Postgres itself never exits, so Weilo isn't told it's down. Returns once
-/// the message has tried to start, with Postgres still paused: the token, the thread
-/// and the paused postmaster.
-async fn wait_to_start_with_the_database_paused(host: &Host) -> (String, Uuid, i32) {
+/// the message has tried to start, with Postgres still paused: the token, the thread,
+/// the paused postmaster and the device that sent the message, still connected.
+async fn wait_to_start_with_the_database_paused(host: &Host) -> (String, Uuid, i32, Client) {
     let token = host.pair().await;
     let mut c = Client::connect(host, Some(&token)).await.unwrap();
     let thread = setup_with_echo(&mut c).await;
@@ -2024,7 +2032,7 @@ async fn wait_to_start_with_the_database_paused(host: &Host) -> (String, Uuid, i
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    (token, thread, postmaster)
+    (token, thread, postmaster, c)
 }
 
 /// A new connection once the host answers again.
@@ -2058,7 +2066,7 @@ async fn a_message_waiting_through_a_database_blip_still_runs() {
     let Some(host) = Host::start_with(&[("WEILO_DB_WAIT_SECS", "1")]).await else {
         return;
     };
-    let (token, thread, postmaster) = wait_to_start_with_the_database_paused(&host).await;
+    let (token, thread, postmaster, _c) = wait_to_start_with_the_database_paused(&host).await;
     tokio::time::sleep(Duration::from_secs(1)).await;
     // SAFETY: resuming the test host's own Postgres.
     unsafe { libc::kill(postmaster, libc::SIGCONT) };
@@ -2086,7 +2094,7 @@ async fn stop_lets_go_of_a_message_waiting_for_the_database() {
     let Some(host) = Host::start_with(&env).await else {
         return;
     };
-    let (token, thread, postmaster) = wait_to_start_with_the_database_paused(&host).await;
+    let (token, thread, postmaster, _c) = wait_to_start_with_the_database_paused(&host).await;
     // SAFETY: resuming the test host's own Postgres.
     unsafe { libc::kill(postmaster, libc::SIGCONT) };
     let mut d = reconnect(&host, &token).await;
@@ -2110,15 +2118,27 @@ async fn stop_lets_go_of_a_message_waiting_for_the_database() {
     };
     let idle_seq = event.seq;
     // And stays idle: the message that waited never runs.
-    let CallValue::Snapshot(snap) = d.ok(Call::Snapshot).await else {
-        panic!()
-    };
-    let t = snap
-        .threads
-        .iter()
-        .find(|t| t.id == thread)
-        .expect("thread");
-    assert_eq!(t.state, WorkState::Idle, "{}", host.log());
+    let started = std::time::Instant::now();
+    loop {
+        let CallValue::Snapshot(snap) = d.ok(Call::Snapshot).await else {
+            panic!()
+        };
+        let t = snap
+            .threads
+            .iter()
+            .find(|t| t.id == thread)
+            .expect("thread");
+        if t.state == WorkState::Idle {
+            break;
+        }
+        assert!(
+            started.elapsed() < common::WAIT,
+            "{:?}\n{}",
+            t.state,
+            host.log()
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
     tokio::time::sleep(Duration::from_secs(2)).await;
     let late = tokio::time::timeout(
         Duration::from_secs(1),
@@ -2140,8 +2160,18 @@ async fn a_database_that_never_answers_is_said_after_a_while() {
     let Some(host) = Host::start_with(&env).await else {
         return;
     };
-    let (token, thread, postmaster) = wait_to_start_with_the_database_paused(&host).await;
-    // Weilo still thinks Postgres runs; the message stops waiting after a while.
+    let (token, thread, postmaster, mut c) = wait_to_start_with_the_database_paused(&host).await;
+    // Weilo still thinks Postgres runs, and nothing can be written; the device that is
+    // still connected hears straight away that the database isn't answering.
+    let told = c
+        .try_next(|f| matches!(f, ServerFrame::Status { ok: false, .. }))
+        .await;
+    if !matches!(&told, Ok(ServerFrame::Status { message: Some(m), .. }) if m == DB_SILENT) {
+        // SAFETY: resuming the test host's own Postgres.
+        unsafe { libc::kill(postmaster, libc::SIGCONT) };
+        panic!("{told:?}\n{}", host.log());
+    }
+    // The message stops waiting after a while.
     let paused = std::time::Instant::now();
     while !host.log().contains("gave up waiting for the database") {
         if paused.elapsed() > Duration::from_secs(30) {
@@ -2166,4 +2196,7 @@ async fn a_database_that_never_answers_is_said_after_a_while() {
     );
     assert_eq!(problem_kind(&f).0, Some("database_away"));
     d.next(|f| is_state(f, WorkState::Idle)).await;
+    // And the device that waited through it hears all is well again.
+    c.next(|f| matches!(f, ServerFrame::Status { ok: true, .. }))
+        .await;
 }
