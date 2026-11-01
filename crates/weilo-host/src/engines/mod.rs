@@ -657,6 +657,21 @@ fn put_in_place(staging: &Path, dir: &Path, parent: &Path, name: &str) -> Result
     Ok(())
 }
 
+/// An engine that is Weilo itself starts from the very program that is running, not
+/// from its file: replacing the file meanwhile (an update, a rebuild) would otherwise
+/// leave a moment where it is missing, and the engine "isn't on this computer". Only
+/// for the program Weilo starts itself: `{self}` written anywhere else stays the path.
+fn running_self(path: String) -> String {
+    #[cfg(target_os = "linux")]
+    {
+        let running = Path::new("/proc/self/exe");
+        if running.exists() {
+            return running.display().to_string();
+        }
+    }
+    path
+}
+
 /// The install error when npm is missing (explained as "needs Node.js").
 pub const NO_NPM: &str = "npm isn't installed";
 
@@ -689,6 +704,9 @@ pub fn spec_for(
         text: e,
         ..Default::default()
     })?;
+    if m.command.first().is_some_and(|c| c == "{self}") {
+        spec.program = running_self(spec.program);
+    }
     if let Some(own) = &m.launch.own_home {
         own_home(own, &vars, &mut spec).map_err(|e| acp::Failure {
             text: format!("couldn't make {}'s own folder: {e}", m.title),

@@ -228,6 +228,13 @@ fn spawn_up(home: &std::path::Path, dir: &std::path::Path, env: &[(String, Strin
 
 impl Drop for Host {
     fn drop(&mut self) {
+        // A failed test shows what the host said, since its folder goes away.
+        if std::thread::panicking() {
+            let log = self.log();
+            let tail: Vec<&str> = log.lines().rev().take(60).collect();
+            let tail: Vec<&str> = tail.into_iter().rev().collect();
+            eprintln!("--- the host's log, last lines ---\n{}", tail.join("\n"));
+        }
         // SAFETY: signalling our own child.
         unsafe {
             libc::kill(self.child.id() as i32, libc::SIGTERM);
