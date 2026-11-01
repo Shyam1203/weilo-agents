@@ -625,7 +625,9 @@ async fn session_folders_are_checked_and_changes_come_back() {
         panic!()
     };
     let worktree = t.worktree.clone().expect("a worktree");
-    assert_eq!(t.branch.as_deref(), Some("weilo/fix-checkout"));
+    // The second "Fix checkout" is "Fix checkout 2", and its branch says so too.
+    assert_eq!(t.title, "Fix checkout 2");
+    assert_eq!(t.branch.as_deref(), Some("weilo/fix-checkout-2"));
     std::fs::write(std::path::Path::new(&worktree).join("cart.txt"), "fixed\n").unwrap();
     let CallValue::Message(said) = c.ok(Call::MergeSession { thread_id: t.id }).await else {
         panic!()
