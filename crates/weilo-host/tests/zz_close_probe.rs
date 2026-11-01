@@ -2,7 +2,7 @@
 #[allow(dead_code)]
 mod common;
 use common::Host;
-use futures_util::{SinkExt, StreamExt};
+use futures::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use weilo_proto::{ClientFrame, PROTOCOL_VERSION};
