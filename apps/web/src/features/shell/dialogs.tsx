@@ -267,7 +267,6 @@ export function MoveDialog({ open, onClose, threadId, currentChannelId }: Props 
           value={target}
           onChange={setTarget}
           placeholder="Choose a channel"
-          prefer="above"
           options={options.map((c) => ({ id: c.id, label: `#${c.slug}` }))}
         />
       </Field>

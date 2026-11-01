@@ -55,7 +55,7 @@ describe("decisions read the same everywhere", () => {
     expect(doneLine(asked, events)).toBe("You allowed it · 9:51");
     // Not known here: no time, rather than the time it was asked.
     expect(doneLine(asked, undefined)).toBe("You allowed it");
-    expect(doneLine({ ...asked, state: "denied" }, undefined)).toBe("You said no");
+    expect(doneLine({ ...asked, state: "denied" }, undefined)).toBe("You said not now");
     // The host's own time wins once it sends one.
     expect(doneLine({ ...asked, decided_at: "2026-10-28T10:05:00" } as typeof asked, events)).toBe("You allowed it · 10:05");
   });
@@ -103,7 +103,7 @@ describe("Done today says how each item ended", () => {
   const closed = item({ approval_id: "a1", state: "denied" });
 
   it("tells a no apart from a stop, a restart and no answer", () => {
-    expect(doneOutcome(closed, ev("app"))).toEqual({ text: "You said no · 8:02", yes: false });
+    expect(doneOutcome(closed, ev("app"))).toEqual({ text: "You said not now · 8:02", yes: false });
     expect(doneOutcome(closed, ev("stopped")).text).toBe("Closed when you pressed Stop · 8:02");
     expect(doneOutcome(closed, ev("restarted")).text).toBe("Closed when Weilo restarted · 8:02");
     // Older items say "interrupted": a plain "Closed".

@@ -461,8 +461,9 @@ export function closeFirstRun(): void {
 // -- One-click actions with Undo ----------------------------------------------
 
 /** "Discard" / "Not now": shown as answered at once, sent when the Undo runs out. */
-export function sayNoLater(approvalId: string, decision: Decision, draft: boolean): void {
-  doLater({ text: draft ? "You discarded the draft" : "You said no", approvalId }, () => decide(approvalId, decision));
+export function sayNoLater(approvalId: string, decision: Decision, draft: boolean, label?: string): void {
+  const words = draft ? "You discarded the draft" : label?.trim().toLowerCase() === "not now" ? "You said not now" : "You said no";
+  doLater({ text: words, approvalId }, () => decide(approvalId, decision));
 }
 
 /** "Always allow": shown as answered at once, sent when the Undo runs out (like removing one). */

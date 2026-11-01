@@ -244,8 +244,12 @@ export function outcomeWords(decision: Decision, cardKind: string, actions: Card
       const m = /^always allow\s+(.+)$/i.exec(label);
       return `You always allow this ${m ? m[1] : scopeWords(decision.scope)}`;
     }
-    case "deny":
-      return cardKind === "draft" ? "You discarded it" : "You said no";
+    case "deny": {
+      if (cardKind === "draft") return "You discarded it";
+      // The words of the button pressed: "Not now" is recorded as such, not as a firmer no.
+      const label = actions.find((a) => a.decision?.kind === "deny")?.label.trim().toLowerCase();
+      return label === "not now" ? "You said not now" : "You said no";
+    }
   }
 }
 

@@ -33,7 +33,7 @@ describe("decision times", () => {
     const expired = item({ state: "expired", decided_at: T("18:00"), decided_via: "expired" });
     expect(doneOutcome(expired, []).text).toMatch(/^No answer in time · \d{1,2}:\d\d$/);
     const said = item({ state: "denied", decided_at: T("09:47"), decided_via: "you" });
-    expect(doneOutcome(said, []).text).toMatch(/^You said no · \d{1,2}:\d\d$/);
+    expect(doneOutcome(said, []).text).toMatch(/^You said not now · \d{1,2}:\d\d$/);
   });
 });
 

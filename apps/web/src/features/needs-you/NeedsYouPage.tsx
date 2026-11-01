@@ -38,6 +38,22 @@ export function NeedsYouPage({ phone }: { phone?: boolean }) {
   const [cursor, setCursor] = useState<string | null>(null);
   const rows = useRef(new Map<string, HTMLElement>());
   const touch = useTouchOnly();
+  // When answering an item takes focus away (its buttons go), focus moves to the next item
+  // still open, where the answered one was, so a keyboard user keeps their spot.
+  const open = useMemo(() => groups.filter((g) => g.key !== "done").flatMap((g) => g.items), [groups]);
+  const lastOpen = useRef(-1);
+  useEffect(() => {
+    const i = open.findIndex((n) => n.approval_id === cursor);
+    if (i >= 0) lastOpen.current = i;
+    const a = document.activeElement;
+    if (a && a !== document.body && a.isConnected) return;
+    if (lastOpen.current < 0) return;
+    const list = open.length ? open : order;
+    const next = list[i >= 0 ? i : Math.min(lastOpen.current, list.length - 1)];
+    if (!next) return;
+    if (next.approval_id !== cursor) setCursor(next.approval_id);
+    rows.current.get(next.approval_id)?.focus();
+  }, [open, order, cursor]);
   const hidden = (["agents", "channels", "sessions"] as SectionKey[]).filter((k) => !snap.prefs[k].shown);
 
   useEffect(() => {
@@ -254,7 +270,7 @@ function AskRow({ item, snap, selected, onFocus, ref, phone }: RowProps & { phon
     if (!a.decision || away) return;
     // A no can be taken back for a few seconds (Undo in the toast).
     if (a.decision.kind === "deny") {
-      sayNoLater(item.approval_id, a.decision, item.card.kind === "draft");
+      sayNoLater(item.approval_id, a.decision, item.card.kind === "draft", a.label);
       return;
     }
     if (!small && !confirming) {
@@ -445,7 +461,7 @@ function DoneRow({ item, snap, selected, onFocus, ref, last, phone }: RowProps &
               {lead}: <Link href={pathFor(snap, item)}>{name.join(": ")}</Link>
             </>
           ) : (
-            <Link href={pathFor(snap, item)}>{lead}</Link>
+            <Link href={pathFor(snap, item)} className="focus-visible:outline-offset-[-2px]">{lead}</Link>
           )}
         </Lines>
         {thread && thread.state !== "idle" && !away && stopping !== thread.id && (

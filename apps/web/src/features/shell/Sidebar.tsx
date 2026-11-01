@@ -58,7 +58,8 @@ export function Sidebar({ route, floating, focusSearch }: { route: Route; floati
   const problems = useApp(problemLines);
   const sections = useMemo(() => buildSections(snap, "", problems), [snap, problems]);
   const everything = useMemo(() => jumpItems(snap, problems), [snap, problems]);
-  // Focused with nothing typed: recent places and the common things to do.
+  // Opened (Ctrl+K, a click, ↓) with nothing typed: recent places and the common things to do.
+  // Not on Tab focus, so tabbing on still reaches the sidebar's rows.
   const [jumpOpen, setJumpOpen] = useState(false);
   const results = useMemo(
     () => (query.trim() ? searchJump(everything, query) : jumpOpen ? startJump(everything, recentPlaces()) : []),
@@ -67,7 +68,9 @@ export function Sidebar({ route, floating, focusSearch }: { route: Route; floati
   const [active, setActive] = useState(0);
   useEffect(() => setActive(0), [query]);
   useEffect(() => {
-    if (focusSearch) search.current?.focus();
+    if (!focusSearch) return;
+    search.current?.focus();
+    setJumpOpen(true);
   }, [focusSearch]);
   const hiddenLive = useMemo(() => hiddenHasLiveWork(snap), [snap]);
   const selected = selectedId(route, snap.agents);
@@ -81,6 +84,7 @@ export function Sidebar({ route, floating, focusSearch }: { route: Route; floati
         e.preventDefault();
         search.current?.focus();
         search.current?.select();
+        setJumpOpen(true);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -121,12 +125,17 @@ export function Sidebar({ route, floating, focusSearch }: { route: Route; floati
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onFocus={() => setJumpOpen(true)}
+            onClick={() => setJumpOpen(true)}
             onBlur={() => setJumpOpen(false)}
             onKeyDown={(e) => {
               if (e.key === "Escape") {
                 if (query) setQuery("");
                 else e.currentTarget.blur();
+              }
+              if (e.key === "ArrowDown" && !jumpOpen && !query.trim()) {
+                e.preventDefault();
+                setJumpOpen(true);
+                return;
               }
               if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                 if (results.length === 0) return;

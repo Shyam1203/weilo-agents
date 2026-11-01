@@ -58,7 +58,7 @@ export function EventCard({ card, decided, threadId, detailsLabel = "Show detail
     if (!card.approval_id || away) return;
     // A no can be taken back for a few seconds (Undo in the toast).
     if (a.decision.kind === "deny") {
-      sayNoLater(card.approval_id, a.decision, draft);
+      sayNoLater(card.approval_id, a.decision, draft, a.label);
       setConfirming(null);
       return;
     }

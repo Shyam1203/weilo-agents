@@ -391,7 +391,7 @@ function CheckCard({
         </>
       )}
       {!checking && (
-        <Button variant="tertiary" size="sm" className="w-fit" onClick={onBack}>
+        <Button variant="tertiary" size="sm" className="-ml-2 w-fit" onClick={onBack}>
           Choose another AI
         </Button>
       )}
@@ -428,7 +428,7 @@ function AwakeStep({ engine, onDone, onBack }: { engine: string; onDone(): void;
         </Button>
       </div>
       {error && <ErrorLine>{error}</ErrorLine>}
-      <Button variant="tertiary" size="sm" className="w-fit" disabled={busy} onClick={onBack}>
+      <Button variant="tertiary" size="sm" className="-ml-2 w-fit" disabled={busy} onClick={onBack}>
         Choose another AI
       </Button>
     </>
