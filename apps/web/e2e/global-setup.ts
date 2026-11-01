@@ -4,7 +4,7 @@
  * installed, every test skips with a message instead.
  */
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -81,6 +81,14 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   chmodSync(dir, 0o711);
   const home = join(dir, "home");
   mkdirSync(home, { recursive: true });
+  // The run uses its own copy of the host and the web app. Both are built in the shared
+  // checkout, and another build there mid-run (`npm run build` empties dist/, cargo replaces
+  // the binary) would otherwise pull the page or the host out from under the tests.
+  const bin = join(dir, "weilo");
+  copyFileSync(BIN, bin);
+  chmodSync(bin, 0o755);
+  const web = join(dir, "web");
+  cpSync(join(WEB, "dist"), web, { recursive: true });
   // Echo is hidden from pickers; a home manifest with the same name shows it, like a real add-on.
   mkdirSync(join(home, "engines/echo"), { recursive: true });
   writeFileSync(
@@ -97,7 +105,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   );
 
   const log = join(dir, "host.log");
-  const child: ChildProcess = spawn(BIN, ["up", "--port", "0", "--home", home, "--web", join(WEB, "dist")], {
+  const child: ChildProcess = spawn(bin, ["up", "--port", "0", "--home", home, "--web", web], {
     cwd: dir,
     env: { ...process.env, WEILO_PG_BIN: pg, WEILO_JOB_POLL_MS: "200",
       // Echo's "hang" then ends with a "Try again" problem after 3 s instead of 3 minutes.
@@ -154,7 +162,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
 
   process.env.WEILO_E2E_URL = `http://127.0.0.1:${port}`;
   process.env.WEILO_E2E_HOME = home;
-  process.env.WEILO_E2E_BIN = BIN;
+  process.env.WEILO_E2E_BIN = bin;
   process.env.WEILO_E2E_STATE = join(dir, "device.json");
   process.env.WEILO_E2E_LOG = log;
   return stop;
