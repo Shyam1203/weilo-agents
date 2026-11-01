@@ -11,6 +11,34 @@ use uuid::Uuid;
 use crate::ids::new_id;
 use crate::pg::{APP_ROLE, DATABASE, OWNER_ROLE, Postgres};
 
+/// Whether an error came from Postgres being out of reach (restarting, a broken
+/// connection, no answer in time), so the same thing may work in a moment.
+pub fn unreachable(e: &anyhow::Error) -> bool {
+    let sql = e
+        .downcast_ref::<sqlx::Error>()
+        .or_else(|| match e.downcast_ref() {
+            Some(crate::events::AppendError::Db(sql)) => Some(sql),
+            _ => None,
+        });
+    sql.is_some_and(unreachable_sql)
+}
+
+/// `unreachable`, for a database error.
+pub fn unreachable_sql(e: &sqlx::Error) -> bool {
+    match e {
+        sqlx::Error::Io(_)
+        | sqlx::Error::PoolTimedOut
+        | sqlx::Error::WorkerCrashed
+        | sqlx::Error::Protocol(_) => true,
+        sqlx::Error::Database(db) => db.code().is_some_and(|c| {
+            // Connection problems, shutdown or crash recovery, too many connections, a
+            // statement that ran out of time (`statement_timeout`).
+            c.starts_with("08") || c.starts_with("57P") || c == "53300" || c == "57014"
+        }),
+        _ => false,
+    }
+}
+
 /// The longest one statement of the app may run.
 pub const STATEMENT_TIMEOUT: &str = "30s";
 

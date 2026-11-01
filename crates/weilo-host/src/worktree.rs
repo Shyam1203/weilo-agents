@@ -91,6 +91,57 @@ pub async fn discard(folder: &Path, path: &Path, branch: &str) {
     }
 }
 
+/// Removes copies `prepare` made for `folder`'s repo that no session uses (`in_use`):
+/// left by a session start cut off half way. Only an untouched one goes: no changes in
+/// it, and nothing on its branch that the repo's own work doesn't already have.
+pub async fn tidy_unused(folder: &Path, in_use: &std::collections::HashSet<PathBuf>) {
+    let Some(repo) = repo_root(folder).await else {
+        return;
+    };
+    let Some(base) = repo.parent().map(|p| p.join(".weilo-worktrees")) else {
+        return;
+    };
+    let same = |a: &Path, b: &Path| {
+        a == b || std::fs::canonicalize(a).ok() == std::fs::canonicalize(b).ok()
+    };
+    let Ok(list) = git(&repo, &["worktree", "list", "--porcelain"]).await else {
+        return;
+    };
+    for entry in list.split("\n\n") {
+        let mut path = None;
+        let mut branch = None;
+        for line in entry.lines() {
+            if let Some(p) = line.strip_prefix("worktree ") {
+                path = Some(PathBuf::from(p));
+            } else if let Some(b) = line.strip_prefix("branch refs/heads/") {
+                branch = Some(b.to_string());
+            }
+        }
+        let (Some(path), Some(branch)) = (path, branch) else {
+            continue;
+        };
+        let ours = path.parent().is_some_and(|p| same(p, &base))
+            && path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| format!("weilo/{n}"))
+                == Some(branch.clone());
+        if !ours || in_use.iter().any(|u| same(u, &path)) {
+            continue;
+        }
+        let untouched = git(&path, &["status", "--porcelain"])
+            .await
+            .is_ok_and(|s| s.is_empty())
+            && git(&repo, &["merge-base", "--is-ancestor", &branch, "HEAD"])
+                .await
+                .is_ok();
+        if untouched {
+            tracing::info!("removing the unused copy at {}", path.display());
+            discard(folder, &path, &branch).await;
+        }
+    }
+}
+
 /// The session branch of a worktree made by `prepare` (`weilo/<its folder name>`).
 pub fn branch_of(worktree: &str) -> Option<String> {
     let name = Path::new(worktree).file_name()?.to_str()?;
@@ -612,6 +663,35 @@ mod tests {
             .await
             .unwrap();
         assert!(!whole.cut && whole.stdout.len() > 500_000);
+    }
+
+    #[tokio::test]
+    async fn only_unused_untouched_copies_are_tidied() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().join("shop");
+        std::fs::create_dir(&repo).unwrap();
+        sh_git(&repo, &["init", "-q"]);
+        sh_git(&repo, &["commit", "-q", "--allow-empty", "-m", "start"]);
+        let made = |slug: &'static str| {
+            let repo = repo.clone();
+            async move {
+                let Prepared::Worktree { path, branch } = prepare(&repo, slug).await else {
+                    panic!("no worktree")
+                };
+                (path, branch)
+            }
+        };
+        let (left, left_branch) = made("left").await;
+        let (used, _) = made("used").await;
+        let (changed, _) = made("changed").await;
+        let (committed, _) = made("committed").await;
+        std::fs::write(changed.join("note.txt"), "mine\n").unwrap();
+        sh_git(&committed, &["commit", "-q", "--allow-empty", "-m", "work"]);
+        let in_use = [used.clone()].into_iter().collect();
+        tidy_unused(&repo, &in_use).await;
+        assert!(!left.exists());
+        assert!(!branch_exists(&repo, left_branch.trim_start_matches("weilo/")).await);
+        assert!(used.exists() && changed.exists() && committed.exists());
     }
 
     #[tokio::test]

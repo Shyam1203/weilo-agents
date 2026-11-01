@@ -11,7 +11,7 @@ use weilo_proto::{EventBody, WorkState};
 
 use crate::app::App;
 use crate::events::Source;
-use crate::{approvals, projector};
+use crate::{approvals, projector, worktree};
 
 pub const INTERRUPTED: &str = "Weilo restarted while this was working, so it stopped.";
 
@@ -20,19 +20,35 @@ pub const INTERRUPTED: &str = "Weilo restarted while this was working, so it sto
 pub async fn run(app: &Arc<App>) -> Result<()> {
     // A session is saved in two steps (its name, then where it works). One cut off
     // between them never started: it has no copy of its repo and nothing in its chat.
-    let unfinished = sqlx::query(
+    let unfinished: sqlx::Result<Vec<Option<String>>> = sqlx::query_scalar(
         "DELETE FROM threads WHERE space_id = $1 AND kind = 'session'
-           AND worktree IS NULL AND last_seq = 0",
+           AND worktree IS NULL AND last_seq = 0
+         RETURNING folder",
     )
     .bind(app.space_id)
-    .execute(&app.db)
+    .fetch_all(&app.db)
     .await;
     match unfinished {
-        Ok(done) if done.rows_affected() > 0 => {
-            tracing::info!(
-                "took back {} unfinished session starts",
-                done.rows_affected()
-            );
+        Ok(folders) if !folders.is_empty() => {
+            tracing::info!("took back {} unfinished session starts", folders.len());
+            // Its copy of the repo may have been made just before: removed when no
+            // session uses it and nothing was done in it.
+            let folders: std::collections::BTreeSet<String> =
+                folders.into_iter().flatten().collect();
+            match sqlx::query_scalar::<_, String>(
+                "SELECT worktree FROM threads WHERE worktree IS NOT NULL",
+            )
+            .fetch_all(&app.db)
+            .await
+            {
+                Ok(in_use) => {
+                    let in_use = in_use.iter().map(std::path::PathBuf::from).collect();
+                    for folder in folders {
+                        worktree::tidy_unused(std::path::Path::new(&folder), &in_use).await;
+                    }
+                }
+                Err(e) => tracing::warn!("couldn't read the sessions' copies: {e}"),
+            }
         }
         Ok(_) => {}
         Err(e) => tracing::warn!("couldn't take back unfinished session starts: {e}"),

@@ -46,7 +46,7 @@ use super::check::{Explained, explain, looks_like_auth, needs_sign_in};
 use super::{Cmd, Manifest, base_env, engine_home, spec_for};
 use crate::app::App;
 use crate::approvals;
-use crate::events::{AppendError, Source};
+use crate::events::Source;
 
 /// How soon a write that failed because Postgres was unreachable is tried again (also
 /// tried as soon as Postgres is back).
@@ -100,11 +100,21 @@ pub fn spawn(app: Arc<App>, thread_id: Uuid) -> mpsc::UnboundedSender<Cmd> {
             waiting_slot: None,
             connecting: None,
         };
+        // However the runner ends (a panic included), it no longer waits on the
+        // database.
+        let _answering = AnsweringOnEnd(runner.app.clone(), thread_id);
         runner.run(rx, engine_rx).await;
-        // Whatever it found, it no longer waits on the database.
-        runner.app.set_db_answering(thread_id, true);
     });
     tx
+}
+
+/// Takes a thread off the list of those finding the database silent when dropped.
+struct AnsweringOnEnd(Arc<App>, Uuid);
+
+impl Drop for AnsweringOnEnd {
+    fn drop(&mut self) {
+        self.0.set_db_answering(self.1, true);
+    }
 }
 
 /// Who the thread belongs to and where its engine works.
@@ -795,6 +805,9 @@ impl Runner {
         let ctx = load_ctx(&self.app, self.thread_id)
             .await
             .map_err(internal)?;
+        // The database answered: the message no longer waits for it, only for the
+        // engine to start.
+        self.db_wait_over().await;
         let manifest = self
             .app
             .engines
@@ -885,7 +898,7 @@ impl Runner {
             .bind(conn.session_id.0.as_ref())
             .execute(&self.app.db);
         if let Err(e) = self.app.bounded(saved).await {
-            if !unreachable_db(&e) {
+            if !crate::db::unreachable(&e) {
                 drop(conn);
                 self.slot = None;
                 return self.start_failed(internal(e), Some(text)).await;
@@ -1499,7 +1512,7 @@ impl Runner {
                     self.outbox.pop_front();
                     self.app.set_db_answering(self.thread_id, true);
                 }
-                Err(e) if unreachable_db(&e) => {
+                Err(e) if crate::db::unreachable(&e) => {
                     if *self.app.db_up.borrow() {
                         self.app.set_db_answering(self.thread_id, false);
                     }
@@ -1545,31 +1558,6 @@ impl Runner {
 /// The message said when Bring back is asked for while the session works.
 pub const STILL_WORKING: &str =
     "The session is still working. Wait for it to finish, then try again.";
-
-/// Whether a failed write failed because Postgres couldn't be reached (restarting, or
-/// the connection broke), so it is worth trying again.
-fn unreachable_db(e: &anyhow::Error) -> bool {
-    let sql = e
-        .downcast_ref::<sqlx::Error>()
-        .or_else(|| match e.downcast_ref() {
-            Some(AppendError::Db(sql)) => Some(sql),
-            _ => None,
-        });
-    match sql {
-        Some(
-            sqlx::Error::Io(_)
-            | sqlx::Error::PoolTimedOut
-            | sqlx::Error::WorkerCrashed
-            | sqlx::Error::Protocol(_),
-        ) => true,
-        Some(sqlx::Error::Database(db)) => db.code().is_some_and(|c| {
-            // Connection problems, shutdown or crash recovery, too many connections, a
-            // statement that ran out of time (`statement_timeout`).
-            c.starts_with("08") || c.starts_with("57P") || c == "53300" || c == "57014"
-        }),
-        _ => false,
-    }
-}
 
 /// pi-acp's startup notes ("pi v1.4.0", "---", what it loaded), sent as if the agent
 /// said them, and its "New version available" line: not part of any reply.
@@ -1677,7 +1665,7 @@ fn changed_instructions(ctx: &ThreadCtx) -> String {
 const DB_AWAY: &str = "the database can't be reached";
 
 fn internal(e: anyhow::Error) -> (Explained, String) {
-    let text = if unreachable_db(&e) {
+    let text = if crate::db::unreachable(&e) {
         format!("{DB_AWAY}: {e:#}")
     } else {
         format!("{e:#}")

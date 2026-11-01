@@ -158,8 +158,9 @@ pub struct App {
     /// Approvals an engine is waiting on in this process. A pending approval not in
     /// here has no one to tell its answer to, and the job sweep closes it.
     pub live_approvals: Mutex<std::collections::HashSet<Uuid>>,
-    /// Threads whose writes or reads found Postgres running but not answering. While
-    /// any do, every device is told (that needs no database).
+    /// Threads whose writes or reads found Postgres running but not answering (the nil
+    /// id: a device's call). While any do, every device is told (that needs no
+    /// database).
     db_silent: Mutex<std::collections::HashSet<Uuid>>,
     /// The "not ready" line devices were last told (`None`: all is well).
     shown_status: Mutex<Option<String>>,
@@ -228,6 +229,7 @@ impl App {
                 anyhow::Ok(event)
             })
             .await?;
+        self.db_answered();
         self.committed(thread_id, vec![event.clone()]).await;
         Ok(event)
     }
@@ -258,6 +260,7 @@ impl App {
                 anyhow::Ok(event)
             })
             .await?;
+        self.db_answered();
         if let Some(event) = &event {
             self.committed(thread_id, vec![event.clone()]).await;
         }
@@ -324,7 +327,10 @@ impl App {
         if up {
             // Back after a restart: it answers. A thread that still finds it silent
             // says so again.
-            self.db_silent.lock().expect("db silent lock").clear();
+            self.db_silent
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clear();
         }
         self.publish_status();
     }
@@ -332,7 +338,7 @@ impl App {
     /// A thread found Postgres running but not answering (`false`), or answering again.
     pub fn set_db_answering(&self, thread_id: Uuid, answering: bool) {
         let changed = {
-            let mut silent = self.db_silent.lock().expect("db silent lock");
+            let mut silent = self.db_silent.lock().unwrap_or_else(|e| e.into_inner());
             if answering {
                 silent.remove(&thread_id)
             } else {
@@ -344,9 +350,15 @@ impl App {
         }
     }
 
+    /// Something was written: a device call that found the database silent earlier no
+    /// longer counts.
+    fn db_answered(&self) {
+        self.set_db_answering(Uuid::nil(), true);
+    }
+
     /// Tells every socket the host's health, when it changed since they were last told.
     fn publish_status(&self) {
-        let mut shown = self.shown_status.lock().expect("shown status lock");
+        let mut shown = self.shown_status.lock().unwrap_or_else(|e| e.into_inner());
         let message = self.status_message();
         if *shown != message {
             shown.clone_from(&message);
@@ -362,7 +374,11 @@ impl App {
         if !*self.db_up.borrow() {
             return Some("Your Weilo computer is restarting its data. (a few seconds)".into());
         }
-        let silent = !self.db_silent.lock().expect("db silent lock").is_empty();
+        let silent = !self
+            .db_silent
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty();
         silent.then(|| DB_SILENT.to_string())
     }
 

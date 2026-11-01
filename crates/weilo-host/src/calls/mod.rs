@@ -50,6 +50,8 @@ impl CallLocks {
 
 pub async fn handle(app: &Arc<App>, device_id: Uuid, call_id: Uuid, call: Call) -> CallResult {
     let key = (device_id, call_id);
+    // Every call but this one reads or writes the database.
+    let uses_db = !matches!(call, Call::ListEngines);
     let lock = app.call_locks.get(key);
     let result = {
         let _running = lock.lock().await;
@@ -57,14 +59,25 @@ pub async fn handle(app: &Arc<App>, device_id: Uuid, call_id: Uuid, call: Call) 
     };
     drop(lock);
     app.call_locks.release(key);
+    // What the call found of the database is told to every device: one that didn't
+    // answer, or that it answers again.
+    match &result {
+        CallResult::Failed { error } if error.code == "database_away" => {
+            if *app.db_up.borrow() {
+                app.set_db_answering(Uuid::nil(), false);
+            }
+        }
+        CallResult::Done { .. } if uses_db => app.set_db_answering(Uuid::nil(), true),
+        _ => {}
+    }
     result
 }
 
 async fn run_once(app: &Arc<App>, device_id: Uuid, call_id: Uuid, call: Call) -> CallResult {
     if only_reads(&call) {
-        return finish(dispatch(app, device_id, call).await);
+        return finish(dispatch(app, device_id, call_id, call).await);
     }
-    match begin(app, device_id, call_id).await {
+    match app.bounded(begin(app, device_id, call_id)).await {
         Ok(Begun::Fresh) => {}
         Ok(Begun::Done(result)) => return *result,
         Ok(Begun::Unknown) => {
@@ -75,10 +88,15 @@ async fn run_once(app: &Arc<App>, device_id: Uuid, call_id: Uuid, call: Call) ->
         }
         Err(e) => return failed(e.into()),
     }
-    let result = finish(dispatch(app, device_id, call).await);
-    // Internal errors may pass on a retry, so they aren't kept.
-    let retry = matches!(&result, CallResult::Failed { error } if error.code == "internal");
-    if let Err(e) = end(app, device_id, call_id, &result, retry).await {
+    let result = finish(dispatch(app, device_id, call_id, call).await);
+    // Internal errors, and a database that didn't answer, may pass on a retry, so they
+    // aren't kept.
+    let retry = matches!(&result, CallResult::Failed { error }
+        if error.code == "internal" || error.code == "database_away");
+    if let Err(e) = app
+        .bounded(end(app, device_id, call_id, &result, retry))
+        .await
+    {
         tracing::error!("couldn't store call result: {e}");
     }
     result
@@ -181,7 +199,12 @@ async fn end(
     Ok(())
 }
 
-async fn dispatch(app: &Arc<App>, device: Uuid, call: Call) -> Result<CallValue, CallError> {
+async fn dispatch(
+    app: &Arc<App>,
+    device: Uuid,
+    call_id: Uuid,
+    call: Call,
+) -> Result<CallValue, CallError> {
     use CallValue as V;
     Ok(match call {
         Call::Snapshot => V::Snapshot(read::snapshot(app, device).await?),
@@ -263,7 +286,7 @@ async fn dispatch(app: &Arc<App>, device: Uuid, call: Call) -> Result<CallValue,
             text,
             when,
         } => {
-            threads::send(app, thread_id, text, when).await?;
+            threads::send(app, call_id, thread_id, text, when).await?;
             V::None
         }
         Call::Stop { thread_id } => {

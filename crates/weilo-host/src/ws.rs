@@ -14,7 +14,8 @@
 //! the socket's queue, so a long chat opens on a slow device too. A socket that falls
 //! behind on live frames (the broadcast, or its own bounded queue of frames to write)
 //! or whose backlog can't be read is closed with code 4008 and must resubscribe with
-//! `after_seq`.
+//! `after_seq`. A backlog that can't be read because the database doesn't answer is
+//! read again a little later instead: the thread's live events wait for it.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -45,6 +46,8 @@ const BACKLOG_PAGE: i64 = 500;
 const HELLO_WAIT: Duration = Duration::from_secs(5);
 /// The largest frame (or message) a device may send. Calls are small.
 const MAX_MESSAGE: usize = 1024 * 1024;
+/// How soon a backlog the database didn't give is read again.
+const CATCH_UP_AGAIN: Duration = Duration::from_secs(2);
 /// How long one frame may take to reach a device. A device that stops reading is let go
 /// after this, so it can't hold its socket's place forever.
 const WRITE_WAIT: Duration = Duration::from_secs(20);
@@ -74,6 +77,11 @@ struct Session {
     out: mpsc::Sender<Message>,
     /// Followed threads and the last `seq` sent for each.
     subs: HashMap<Uuid, i64>,
+    /// Followed threads whose backlog the database didn't give yet, and whether the
+    /// thread is still to be checked as this space's. Their live events wait for it.
+    behind: HashMap<Uuid, bool>,
+    /// When `behind` is read again.
+    again_at: Option<tokio::time::Instant>,
     calls: Arc<Semaphore>,
     rets: mpsc::Sender<ServerFrame>,
 }
@@ -128,6 +136,8 @@ impl Session {
             device_id: None,
             out,
             subs: HashMap::new(),
+            behind: HashMap::new(),
+            again_at: None,
             calls: Arc::new(Semaphore::new(MAX_CALLS)),
             rets,
         };
@@ -148,6 +158,7 @@ impl Session {
                     Err(broadcast::error::RecvError::Closed) => break None,
                 },
                 Some(frame) = rets_rx.recv() => s.send(&frame),
+                _ = sleep_until(s.again_at) => s.catch_up_behind().await,
                 _ = tokio::time::sleep_until(hello_by), if !greeted => {
                     Err(Close(CLOSE_BAD_FRAME, "Say hello first."))
                 }
@@ -201,6 +212,7 @@ impl Session {
             } => self.subscribe(thread_id, after_seq).await?,
             ClientFrame::Unsub { thread_id } => {
                 self.subs.remove(&thread_id);
+                self.behind.remove(&thread_id);
             }
             ClientFrame::Call { call_id, call } => {
                 let Ok(permit) = self.calls.clone().try_acquire_owned() else {
@@ -257,36 +269,94 @@ impl Session {
 
     /// Sends the backlog after `after_seq`, then follows the thread live.
     async fn subscribe(&mut self, thread_id: Uuid, after_seq: i64) -> Result<(), Close> {
-        let in_space: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM threads WHERE id = $1 AND space_id = $2)",
-        )
-        .bind(thread_id)
-        .bind(self.app.space_id)
-        .fetch_one(&self.app.db)
-        .await
-        .map_err(|_| BEHIND)?;
-        if !in_space {
-            return Ok(());
-        }
         let last = after_seq.max(0);
+        match self.in_space(thread_id).await {
+            Ok(true) => {}
+            Ok(false) => return Ok(()),
+            Err(e) if crate::db::unreachable_sql(&e) => {
+                // Checked, then read, once the database answers.
+                self.subs.insert(thread_id, last);
+                self.wait_for_db(thread_id, true);
+                return Ok(());
+            }
+            Err(_) => return Err(BEHIND),
+        }
         self.subs.insert(thread_id, last);
+        self.behind.remove(&thread_id);
         self.catch_up(thread_id, i64::MAX).await
     }
 
+    async fn in_space(&self, thread_id: Uuid) -> sqlx::Result<bool> {
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM threads WHERE id = $1 AND space_id = $2)")
+            .bind(thread_id)
+            .bind(self.app.space_id)
+            .fetch_one(&self.app.db)
+            .await
+    }
+
+    /// Reads a thread's backlog again a little later (`check`: and whether it is this
+    /// space's first).
+    fn wait_for_db(&mut self, thread_id: Uuid, check: bool) {
+        let check = check || self.behind.get(&thread_id) == Some(&true);
+        self.behind.insert(thread_id, check);
+        self.again_at
+            .get_or_insert_with(|| tokio::time::Instant::now() + CATCH_UP_AGAIN);
+    }
+
+    /// Reads again the backlogs the database didn't give.
+    async fn catch_up_behind(&mut self) -> Result<(), Close> {
+        self.again_at = None;
+        let waiting: Vec<(Uuid, bool)> = self.behind.iter().map(|(t, c)| (*t, *c)).collect();
+        for (thread_id, check) in waiting {
+            if check {
+                match self.in_space(thread_id).await {
+                    Ok(true) => {
+                        self.behind.insert(thread_id, false);
+                    }
+                    Ok(false) => {
+                        self.subs.remove(&thread_id);
+                        self.behind.remove(&thread_id);
+                        continue;
+                    }
+                    Err(e) if crate::db::unreachable_sql(&e) => {
+                        self.wait_for_db(thread_id, true);
+                        return Ok(());
+                    }
+                    Err(_) => return Err(BEHIND),
+                }
+            }
+            self.behind.remove(&thread_id);
+            self.catch_up(thread_id, i64::MAX).await?;
+            if self.behind.contains_key(&thread_id) {
+                // Still no answer: the rest waits too.
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
+
     /// Sends stored events after the last sent one, up to `to`, a page at a time,
-    /// waiting for room in the queue. When they can't be read, the device would miss
-    /// them: it is told to subscribe again.
+    /// waiting for room in the queue. When the database doesn't answer, the thread is
+    /// read again later (`behind`); when they can't be read otherwise, the device would
+    /// miss them: it is told to subscribe again.
     async fn catch_up(&mut self, thread_id: Uuid, to: i64) -> Result<(), Close> {
         loop {
             let Some(&from) = self.subs.get(&thread_id) else {
                 return Ok(());
             };
-            let page = events::read_page(&self.app.db, thread_id, from, to, BACKLOG_PAGE)
-                .await
-                .map_err(|e| {
-                    tracing::warn!("backlog for {thread_id}: {e}");
-                    BEHIND
-                })?;
+            let page =
+                match events::read_page(&self.app.db, thread_id, from, to, BACKLOG_PAGE).await {
+                    Ok(page) => page,
+                    Err(e) if crate::db::unreachable_sql(&e) => {
+                        tracing::info!("backlog for {thread_id} waits for the database: {e}");
+                        self.wait_for_db(thread_id, false);
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        tracing::warn!("backlog for {thread_id}: {e}");
+                        return Err(BEHIND);
+                    }
+                };
             let full = page.len() as i64 == BACKLOG_PAGE;
             for event in page {
                 if let Some(frame) = self.next_event(thread_id, event) {
@@ -336,8 +406,15 @@ impl Session {
                 let Some(&last) = self.subs.get(thread_id) else {
                     return Ok(());
                 };
+                if self.behind.contains_key(thread_id) {
+                    // Sent in order once the backlog before it is read.
+                    return Ok(());
+                }
                 if event.seq > last + 1 {
                     self.catch_up(*thread_id, event.seq - 1).await?;
+                    if self.behind.contains_key(thread_id) {
+                        return Ok(());
+                    }
                 }
                 self.send_event(*thread_id, (**event).clone())
             }
@@ -367,5 +444,13 @@ impl Session {
             }
             HubMsg::DeviceRevoked(_) => Ok(()),
         }
+    }
+}
+
+/// Sleeps until `at`, or for ever when there's nothing to wait for.
+async fn sleep_until(at: Option<tokio::time::Instant>) {
+    match at {
+        Some(at) => tokio::time::sleep_until(at).await,
+        None => std::future::pending().await,
     }
 }

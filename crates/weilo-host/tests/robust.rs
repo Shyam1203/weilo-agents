@@ -2278,3 +2278,93 @@ async fn stop_ends_an_engine_that_is_still_starting() {
     .await;
     assert!(!matches!(late, Ok(Ok(_))), "{late:?}");
 }
+
+/// Resumes a paused Postgres when dropped, so a failing test never leaves it paused.
+struct Resume(i32);
+
+impl Drop for Resume {
+    fn drop(&mut self) {
+        // SAFETY: resuming the test host's own Postgres.
+        unsafe { libc::kill(self.0, libc::SIGCONT) };
+    }
+}
+
+#[tokio::test]
+async fn a_send_the_database_doesnt_answer_says_so_and_can_be_sent_again() {
+    let Some(host) = Host::start_with(&[("WEILO_DB_WAIT_SECS", "1")]).await else {
+        return;
+    };
+    let token = host.pair().await;
+    let mut c = Client::connect(&host, Some(&token)).await.unwrap();
+    let thread = setup_with_echo(&mut c).await;
+    c.sub(thread, 0).await;
+    // Postgres runs but doesn't answer: its connections are cut and it is paused.
+    let postmaster = host.postgres_pid().expect("postgres pid");
+    // SAFETY: pausing and killing the test host's own Postgres processes.
+    unsafe {
+        libc::kill(postmaster, libc::SIGSTOP);
+        for pid in postgres_backends(postmaster) {
+            libc::kill(pid, libc::SIGKILL);
+        }
+    }
+    let paused = Resume(postmaster);
+    let call_id = Uuid::now_v7();
+    let send = || Call::Send {
+        thread_id: thread,
+        text: "are you there?".into(),
+        when: SendWhen::Now,
+    };
+    let r = c.call_with_id(call_id, send()).await;
+    assert_eq!(
+        failed_with(&r, "database_away").as_deref(),
+        Some("Weilo's database isn't answering. Try again in a moment."),
+        "{r:?}\n{}",
+        host.log()
+    );
+    // Every device hears it, while Postgres is still paused.
+    let told = c
+        .try_next(|f| matches!(f, ServerFrame::Status { ok: false, .. }))
+        .await;
+    assert!(
+        matches!(&told, Ok(ServerFrame::Status { message: Some(m), .. }) if m == DB_SILENT),
+        "{told:?}\n{}",
+        host.log()
+    );
+    // Following the chat again meanwhile keeps the connection: its history is read
+    // once the database answers.
+    c.send(&ClientFrame::Unsub { thread_id: thread }).await;
+    c.sub(thread, 0).await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    drop(paused);
+    // Sent again with the same call once it answers: it goes, once, and all is well.
+    let started = std::time::Instant::now();
+    loop {
+        let r = c.call_with_id(call_id, send()).await;
+        if matches!(r, CallResult::Done { .. }) {
+            break;
+        }
+        assert!(
+            failed_with(&r, "database_away").is_some() && started.elapsed() < common::WAIT,
+            "{r:?}\n{}",
+            host.log()
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    c.next(|f| matches!(f, ServerFrame::Status { ok: true, .. }))
+        .await;
+    c.next(|f| agent_text(f) == Some("You said: are you there?"))
+        .await;
+    let mut d = Client::connect(&host, Some(&token)).await.unwrap();
+    d.sub(thread, 0).await;
+    d.next(|f| agent_text(f) == Some("You said: are you there?"))
+        .await;
+    let sent = d
+        .seen
+        .iter()
+        .filter(|f| {
+            matches!(f, ServerFrame::Ev { event, .. }
+                if matches!(&event.body, EventBody::UserMessage { text, .. } if text == "are you there?"))
+        })
+        .count();
+    assert_eq!(sent, 1);
+}

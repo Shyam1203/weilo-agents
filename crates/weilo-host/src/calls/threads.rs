@@ -196,7 +196,7 @@ pub async fn start_session(
         && !missing
     {
         // The session's first message: nothing ran before it, so it goes as a plain one.
-        send(app, thread.id, task.to_string(), SendWhen::Now).await?;
+        send(app, new_id(), thread.id, task.to_string(), SendWhen::Now).await?;
     }
     read::thread(app, thread.id).await
 }
@@ -297,7 +297,15 @@ fn folder_name(folder: &std::path::Path) -> String {
         .unwrap_or_else(|| "Session".into())
 }
 
-pub async fn send(app: &Arc<App>, thread_id: Uuid, text: String, when: SendWhen) -> CallResult<()> {
+/// Sends a message. `call_id` names its event, so a call tried again after a lost
+/// reply never writes it twice.
+pub async fn send(
+    app: &Arc<App>,
+    call_id: Uuid,
+    thread_id: Uuid,
+    text: String,
+    when: SendWhen,
+) -> CallResult<()> {
     let text = text.trim().to_string();
     if text.is_empty() {
         return Err(CallError::invalid("Write something to send."));
@@ -323,7 +331,9 @@ pub async fn send(app: &Arc<App>, thread_id: Uuid, text: String, when: SendWhen)
         text: text.clone(),
         when,
     };
-    app.append(thread_id, body, Source::User).await?;
+    // Already written by an earlier try that then failed: its runner never had it.
+    app.append_once(thread_id, call_id, &body, Source::User)
+        .await?;
     app.runners
         .send(app, thread_id, Cmd::Message { text, when });
     Ok(())
