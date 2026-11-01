@@ -64,7 +64,10 @@ export const listener: HostListener = {
     markDirty(what);
   },
   health(ok, message) {
+    const was = store.get().paused;
     store.set((s) => setHealth(s, ok, message));
+    // Back after a pause: load what couldn't be loaded while it lasted.
+    if (ok && was) markDirty("all");
   },
 };
 
@@ -148,7 +151,8 @@ async function refresh(): Promise<void> {
     if ((what.has("all") || what.has("devices")) && store.get().devices) await loadDevices();
     if ((what.has("all") || what.has("allow_rules")) && store.get().allowRules) await loadAllowRules();
   } catch (e) {
-    if (!(e instanceof HostError && e.code === "offline")) showError(e);
+    // Offline and a silent database already show as a banner; a toast would say it twice.
+    if (!(e instanceof HostError && (e.code === "offline" || e.code === "database_away"))) showError(e);
   } finally {
     refreshing = false;
     scheduleRefresh();

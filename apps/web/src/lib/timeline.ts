@@ -135,6 +135,14 @@ export function buildBlocks(events: Event[], defaultAgentId: string | null = nul
         break;
       }
       case "step": {
+        // The host's saved record of a Stop: one "Stopped." line, on every device, after reloads.
+        if (isStoppedStep(body.step_id)) {
+          settle();
+          if (!saidStopped) say(e, "Stopped.");
+          saidStopped = true;
+          stopPending = false;
+          break;
+        }
         const existing = stepIndex.get(body.step_id);
         if (existing) {
           existing.status = body.status;
@@ -207,6 +215,11 @@ export function buildBlocks(events: Event[], defaultAgentId: string | null = nul
   return blocks;
 }
 
+/** The quiet step the host saves when a person presses Stop ("stopped-<id>"). */
+export function isStoppedStep(stepId: string): boolean {
+  return stepId.startsWith("stopped-");
+}
+
 /** Every step in a thread, newest status, for the Changes panel. Steps a reply left unfinished show as stopped. */
 export function allSteps(events: Event[]): StepItem[] {
   const map = new Map<string, StepItem>();
@@ -216,7 +229,7 @@ export function allSteps(events: Event[]): StepItem[] {
       for (const st of map.values()) if (st.status === "running") st.status = "stopped";
       continue;
     }
-    if (b.kind !== "step") continue;
+    if (b.kind !== "step" || isStoppedStep(b.step_id)) continue;
     const prev = map.get(b.step_id);
     map.set(b.step_id, { id: b.step_id, title: b.title, status: b.status, at: prev?.at ?? e.at });
   }

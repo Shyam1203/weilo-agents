@@ -16,6 +16,8 @@ export function App() {
   const conn = useApp((s) => s.conn);
   const ready = useApp((s) => s.snapshot !== null);
   const firstRun = useApp((s) => s.firstRunOpen);
+  // Connected, but the host can't load anything yet (its database isn't answering).
+  const paused = useApp((s) => s.paused);
 
   useEffect(() => {
     if (conn === "unpaired" && route.name !== "pair") navigate("/pair", { replace: true });
@@ -23,7 +25,7 @@ export function App() {
 
   let screen;
   if (route.name === "pair") screen = <PairPage code={route.code} />;
-  else if (!ready) screen = <Connecting reconnecting={conn === "reconnecting"} />;
+  else if (!ready) screen = <Connecting reconnecting={conn === "reconnecting"} paused={conn === "online" ? paused : null} />;
   else if (firstRun) screen = <FirstRun />;
   else screen = desktop ? <DesktopShell route={route} /> : <PhoneShell route={route} />;
 
@@ -35,7 +37,16 @@ export function App() {
   );
 }
 
-function Connecting({ reconnecting }: { reconnecting: boolean }) {
+function Connecting({ reconnecting, paused }: { reconnecting: boolean; paused: string | null }) {
+  if (paused) {
+    return (
+      <div className="flex h-full items-center justify-center p-4">
+        <p role="status" className="m-0 max-w-[400px] text-body-sm text-text-secondary">
+          <b className="font-semibold text-text">{paused}</b> Your chats show here as soon as it's back.
+        </p>
+      </div>
+    );
+  }
   if (!reconnecting) {
     return (
       <div className="flex h-full items-center justify-center p-4 text-body-sm text-text-secondary" role="status">

@@ -43,3 +43,21 @@ describe("typed words survive a reload", () => {
     expect(loadTyped("t1")).toBe("");
   });
 });
+
+describe("a saved Stop", () => {
+  it("draws one Stopped. line from history, with or without this device's own stop", async () => {
+    const { buildBlocks } = await import("../lib/timeline");
+    const ev = (seq: number, body: object) => ({ seq: BigInt(seq), at: "2026-11-01T10:00:00Z", source: "host", body }) as never;
+    const events = [
+      ev(1, { kind: "user_message", text: "hi", when: "now" }),
+      ev(2, { kind: "step", step_id: "s1", title: "Read it", status: "running" }),
+      ev(3, { kind: "step", step_id: "stopped-x", title: "Stopped.", status: "done" }),
+      ev(4, { kind: "state", state: "idle", line: null }),
+    ];
+    const notes = (b: ReturnType<typeof buildBlocks>) => b.flatMap((x) => (x.type === "agent" ? x.items.filter((i) => i.type === "note") : []));
+    expect(notes(buildBlocks(events)).length).toBe(1);
+    expect(notes(buildBlocks(events, null, 1n)).length).toBe(1);
+    const steps = buildBlocks(events).flatMap((x) => (x.type === "agent" ? x.items.filter((i) => i.type === "steps") : []));
+    expect(JSON.stringify(steps)).not.toContain("stopped-x");
+  });
+});
