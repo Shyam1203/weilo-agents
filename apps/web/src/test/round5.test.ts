@@ -21,8 +21,8 @@ describe("Undo for one-click actions", () => {
 
   it("shows a no at once, and sends it only when the Undo runs out", () => {
     const send = vi.fn();
-    doLater({ text: "Draft discarded", approvalId: "a1" }, send);
-    expect(store.get().undo?.text).toBe("Draft discarded");
+    doLater({ text: "You discarded the draft", approvalId: "a1" }, send);
+    expect(store.get().undo?.text).toBe("You discarded the draft");
     expect(store.get().snapshot!.needs_you[0]!.state).toBe("denied");
     // A fresh list from the host still shows it answered.
     store.set((s) => setNeedsYou(s, [item({ approval_id: "a1" })]));
@@ -36,7 +36,7 @@ describe("Undo for one-click actions", () => {
 
   it("Undo sends nothing and puts the item back", () => {
     const send = vi.fn();
-    doLater({ text: "Draft discarded", approvalId: "a1" }, send);
+    doLater({ text: "You discarded the draft", approvalId: "a1" }, send);
     undoPending();
     vi.advanceTimersByTime(10_000);
     expect(send).not.toHaveBeenCalled();
@@ -189,6 +189,7 @@ describe("Channels page lines", () => {
     expect(channelLine("c1", { agents, threads: [thread({ channel_id: "c1", state: "needs_you" })] }, now)).toEqual({ text: "Needs you", tone: "warn" });
     expect(channelLine("c1", { agents, threads: [thread({ channel_id: "c1", state: "working", agent_id: agents[0]!.id })] }, now).text).toBe("Ava is working");
     expect(channelLine("c1", { agents, threads: [thread({ channel_id: "c1", state: "idle", updated_at: "2026-10-28T09:42:00" })] }, now).text).toMatch(/^Last active today at/);
-    expect(channelLine("c1", { agents, threads: [] }, now)).toEqual({ text: "Nothing here yet", tone: "quiet" });
+    expect(channelLine("c1", { agents, threads: [] }, now)).toEqual({ text: "No chats yet", tone: "quiet" });
+    expect(channelLine("c1", { agents, threads: [] }, now, true)).toEqual({ text: "New messages", tone: "new" });
   });
 });

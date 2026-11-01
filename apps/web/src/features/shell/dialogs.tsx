@@ -236,16 +236,18 @@ export function NewSessionDialog({ open, onClose }: Props) {
 
 export function MoveDialog({ open, onClose, threadId, currentChannelId }: Props & { threadId: string; currentChannelId: string }) {
   const channels = useApp((s) => s.snapshot?.channels ?? null);
+  // Nothing chosen at first: Move stays off until a channel is picked.
   const [target, setTarget] = useState("");
-  const { busy, error, run } = useSubmit(onClose);
+  const close = () => {
+    setTarget("");
+    onClose();
+  };
+  const { busy, error, run } = useSubmit(close);
   const options = channels?.filter((c) => !c.archived && c.id !== currentChannelId) ?? [];
-  useEffect(() => {
-    if (open && !target && options[0]) setTarget(options[0].id);
-  }, [open, target, options]);
   return (
     <Dialog
       open={open}
-      onClose={onClose}
+      onClose={close}
       title="Move this chat"
       description="Ava learns from where you put things."
       submitLabel="Move"
@@ -260,7 +262,14 @@ export function MoveDialog({ open, onClose, threadId, currentChannelId }: Props 
       }
     >
       <Field label="Channel">
-        <Select label="Channel" value={target} onChange={setTarget} options={options.map((c) => ({ id: c.id, label: `#${c.slug}` }))} />
+        <Select
+          label="Channel"
+          value={target}
+          onChange={setTarget}
+          placeholder="Choose a channel"
+          prefer="above"
+          options={options.map((c) => ({ id: c.id, label: `#${c.slug}` }))}
+        />
       </Field>
     </Dialog>
   );

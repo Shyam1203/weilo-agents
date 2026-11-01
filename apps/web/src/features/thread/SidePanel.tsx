@@ -1,3 +1,4 @@
+import { useMedia } from "../../lib/useMedia";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { mergeSession, sessionChanges } from "../../lib/app";
 import { fileChangeWord, filesChangedLine, lineCounts, parseDiff, type DiffFile, type DiffLine } from "../../lib/changes";
@@ -207,7 +208,10 @@ function Counts({ added, removed }: { added: number; removed: number }) {
 /** Long files show their first lines; the rest is one click away. */
 const FIRST_LINES = 40;
 
-/** One file: its name and +N −M, then its changed parts with line numbers. Long lines wrap. */
+/**
+ * One file: its name and +N −M, then its changed parts with line numbers. Long lines keep
+ * their shape and scroll sideways in the wide panel; in a narrow one they wrap.
+ */
 function FileDiff({
   path,
   word,
@@ -222,11 +226,13 @@ function FileDiff({
   diff: DiffFile | null;
 }) {
   const [all, setAll] = useState(false);
+  // From 1280 wide the panel sits beside the chat; long lines scroll there (keys too).
+  const wide = useMedia("(min-width: 1280px)");
   const total = diff?.hunks.reduce((n, h) => n + h.lines.length, 0) ?? 0;
   let budget = all ? Infinity : FIRST_LINES;
   const name = path.split("/").pop() ?? path;
   return (
-    <div className="overflow-hidden rounded-md border border-border bg-surface">
+    <div className="ring-inset overflow-hidden rounded-md border border-border bg-surface">
       <div className="flex min-h-9 items-center gap-2 bg-surface-muted px-3 py-1.5" title={path}>
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="ellipsis font-mono text-caption text-text">{name}</span>
@@ -237,7 +243,13 @@ function FileDiff({
       </div>
       {diff?.binary && <p className="m-0 border-t border-border px-3 py-2 text-caption text-text-tertiary">This file can't be shown as text.</p>}
       {diff && diff.hunks.length > 0 && (
-        <div className="border-t border-border py-1 font-mono text-caption leading-5" aria-label={`Changes in ${name}`} role="group">
+        <div
+          className="border-t border-border py-1 font-mono text-caption leading-5 min-[1280px]:overflow-x-auto"
+          aria-label={`Changes in ${name}`}
+          role="group"
+          tabIndex={wide ? 0 : undefined}
+        >
+          <div className="min-[1280px]:w-max min-[1280px]:min-w-full">
           {diff.hunks.map((h, hi) => {
             if (budget <= 0) return null;
             const lines = h.lines.slice(0, budget);
@@ -258,12 +270,15 @@ function FileDiff({
                       {l.kind === "add" ? "+" : l.kind === "remove" ? "−" : ""}
                     </span>
                     <span className="sr-only">{l.kind === "add" ? "Added: " : l.kind === "remove" ? "Removed: " : ""}</span>
-                    <span className="min-w-0 flex-1 pr-3 whitespace-pre-wrap [overflow-wrap:anywhere]">{l.text || " "}</span>
+                    <span className="min-w-0 flex-1 pr-3 whitespace-pre-wrap [overflow-wrap:anywhere] min-[1280px]:whitespace-pre min-[1280px]:[overflow-wrap:normal]">
+                      {l.text || " "}
+                    </span>
                   </div>
                 ))}
               </div>
             );
           })}
+          </div>
           {!all && total > FIRST_LINES && (
             <button
               type="button"

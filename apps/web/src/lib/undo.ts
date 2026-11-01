@@ -1,7 +1,8 @@
 import { store, undecideLocally, decideLocally, type UndoState } from "./store";
 
 /**
- * Undo for one-click actions that can't be taken back on the host (Discard, Stop, Remove).
+ * Undo for one-click actions that can't be taken back on the host (Discard, Always allow,
+ * Stop, Remove).
  * The screen shows the action as done at once, with "Undo" in a toast; the call goes to the
  * host only when the toast runs out or is dismissed, when another such action starts, or when
  * the page is left. Undo cancels it.
@@ -17,7 +18,7 @@ export function doLater(what: Omit<UndoState, "id">, action: () => unknown, ms =
   const undo: UndoState = { ...what, id: ++seq };
   store.set((s) => {
     const next = { ...s, undo };
-    return undo.approvalId ? decideLocally(next, undo.approvalId, false) : next;
+    return undo.approvalId ? decideLocally(next, undo.approvalId, !!undo.allowed, undo.via) : next;
   });
   pending = action;
   timer = setTimeout(flushUndo, ms);
@@ -42,7 +43,7 @@ export function undoPending(): void {
   store.set((s) => {
     const u = s.undo;
     const next = { ...s, undo: null };
-    return u?.approvalId ? undecideLocally(next, u.approvalId, false) : next;
+    return u?.approvalId ? undecideLocally(next, u.approvalId, !!u.allowed) : next;
   });
 }
 

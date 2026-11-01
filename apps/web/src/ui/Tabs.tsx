@@ -77,7 +77,9 @@ export function Tabs({ items, value, onChange, label, className, panelPrefix, si
       ref={list}
       role="tablist"
       aria-label={label}
-      className={cx("flex min-w-0 items-center gap-1", scroll ? "no-scrollbar overflow-x-auto" : "overflow-hidden", className)}
+      // 4px of room on every side (taken back with negative margins), so a tab's focus ring
+      // isn't cut off by the row's own clipping.
+      className={cx("-m-1 flex min-w-0 items-center gap-1 p-1", scroll ? "no-scrollbar overflow-x-auto" : "overflow-hidden", className)}
       style={mask ? { maskImage: mask, WebkitMaskImage: mask } : undefined}
     >
       {items.map((t, i) => {

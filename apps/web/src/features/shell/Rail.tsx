@@ -24,7 +24,9 @@ const railItem = "flex w-[72px] flex-col items-center gap-1 rounded-md py-2 text
 
 /** Home · Routines · Connections, and Settings at the bottom. 80 wide. On narrow windows it also opens the sidebar. */
 export function Rail({ route, sidebar }: { route: Route; sidebar?: { open: boolean; toggle(): void } | null }) {
-  const home = ["home", "agent", "channel", "session", "channels", "agents"].includes(route.name);
+  // Home is the chats themselves. The all-channels and all-agents lists have no rail item,
+  // so nothing in the rail is marked there.
+  const home = ["home", "agent", "channel", "session"].includes(route.name);
   return (
     <nav aria-label="Pages" className="flex w-20 shrink-0 flex-col items-center border-r border-border bg-surface-muted">
       <div className="flex h-14 shrink-0 items-center justify-center">

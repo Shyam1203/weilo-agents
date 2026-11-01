@@ -1,0 +1,113 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { doneOutcome } from "../features/needs-you/NeedsYouPage";
+import { overviewLine } from "../features/thread/ChannelView";
+import { isDraftThread, takeComposerFocus, focusComposerSoon } from "../features/thread/useThread";
+import { jumpItems, searchJump } from "../lib/jump";
+import { addThreadLocally, applySnapshot, decideLocally, initialState, store, undecideLocally, type AppState } from "../lib/store";
+import { continuesGroup, type Block } from "../lib/timeline";
+import { doLater, flushUndo, undoPending } from "../lib/undo";
+import { agent, item, snapshot, thread } from "./fixtures";
+
+const T = (hm: string) => new Date(`2026-10-28T${hm}:00`).toISOString();
+
+describe("decision times", () => {
+  it("records when you answered, and when an Undo ran out", () => {
+    const s0 = applySnapshot(initialState, snapshot({ needs_you: [item({ approval_id: "a1" })] }));
+    const s1 = decideLocally(s0, "a1", false, "you", T("09:50"));
+    expect(s1.snapshot!.needs_you[0]).toMatchObject({ state: "denied", decided_at: T("09:50"), decided_via: "you" });
+    // The answer is sent when the Undo runs out: the time moves to then.
+    const s2 = decideLocally(s1, "a1", false, "you", T("09:51"));
+    expect(s2.snapshot!.needs_you[0]!.decided_at).toBe(T("09:51"));
+    const s3 = undecideLocally(s2, "a1", false);
+    expect(s3.snapshot!.needs_you[0]).toMatchObject({ state: "pending", decided_at: undefined, decided_via: undefined });
+  });
+
+  it("every finished row has a time", () => {
+    const always = { id: "always", label: "Always allow in this folder", primary: false, decision: { kind: "allow_always" as const, scope: "folder" } };
+    const allowedAlways = item({ state: "allowed", decided_at: T("09:45"), decided_via: "always", card: { actions: [always] } });
+    expect(doneOutcome(allowedAlways, []).text).toMatch(/^You always allow this in this folder · \d{1,2}:\d\d$/);
+    const expired = item({ state: "expired", decided_at: T("18:00"), decided_via: "expired" });
+    expect(doneOutcome(expired, []).text).toMatch(/^No answer in time · \d{1,2}:\d\d$/);
+    const said = item({ state: "denied", decided_at: T("09:47"), decided_via: "you" });
+    expect(doneOutcome(said, []).text).toMatch(/^You said no · \d{1,2}:\d\d$/);
+  });
+});
+
+describe("Always allow waits for its Undo too", () => {
+  let saved: AppState;
+  beforeEach(() => {
+    saved = store.get();
+    vi.useFakeTimers();
+    store.set(() => applySnapshot(initialState, snapshot({ needs_you: [item({ approval_id: "a1" })] })));
+  });
+  afterEach(() => {
+    flushUndo();
+    vi.useRealTimers();
+    store.set(() => saved);
+  });
+
+  it("shows it allowed for good at once; Undo puts it back", () => {
+    const send = vi.fn();
+    doLater({ text: "Always allowed. The agent won't ask next time", approvalId: "a1", allowed: true, via: "always" }, send);
+    expect(store.get().snapshot!.needs_you[0]).toMatchObject({ state: "allowed", decided_via: "always" });
+    undoPending();
+    vi.advanceTimersByTime(10_000);
+    expect(send).not.toHaveBeenCalled();
+    expect(store.get().snapshot!.needs_you[0]!.state).toBe("pending");
+  });
+});
+
+describe("messages close together group", () => {
+  const user = (at: string): Block => ({ type: "user", key: at, text: "hi", at: T(at), when: "now" });
+  const said = (at: string, agentId = "ava", hasText = true): Block => ({ type: "agent", key: at, agentId, at: T(at), hasText, items: [] });
+
+  it("groups the same author within five minutes", () => {
+    expect(continuesGroup(user("09:40"), user("09:44"))).toBe(true);
+    expect(continuesGroup(user("09:40"), user("09:46"))).toBe(false);
+    expect(continuesGroup(said("09:40"), said("09:41"))).toBe(true);
+    expect(continuesGroup(said("09:40"), said("09:41", "mia"))).toBe(false);
+    expect(continuesGroup(user("09:40"), said("09:41"))).toBe(false);
+    expect(continuesGroup(undefined, user("09:40"))).toBe(false);
+  });
+});
+
+describe("Ctrl+K kind words", () => {
+  const snap = snapshot({
+    threads: [thread(), thread({ id: "s1", kind: "session", title: "Fix checkout", channel_id: "c1", started_by: "ava" })],
+  });
+  it("'sess' and 'session' list sessions", () => {
+    for (const q of ["sess", "session", "sessions"]) expect(searchJump(jumpItems(snap), q).some((i) => i.kind === "session")).toBe(true);
+  });
+  it("'channel' lists channels; 'agent' lists agents", () => {
+    expect(searchJump(jumpItems(snap), "channel").some((i) => i.kind === "channel")).toBe(true);
+    expect(searchJump(jumpItems(snap), "agents").some((i) => i.kind === "agent")).toBe(true);
+  });
+});
+
+describe("Overview rows always have a second line", () => {
+  const now = new Date("2026-10-28T12:00:00");
+  it("says who and when when nothing is going on", () => {
+    const agents = [agent({ id: "mia", name: "Mia · Social" })];
+    expect(overviewLine(thread({ agent_id: "mia", live_line: "", updated_at: T("09:30") }), agents, now)).toMatch(/^Mia · last active today at \d{1,2}:\d\d$/);
+    expect(overviewLine(thread({ live_line: "Writing the post" }), agents, now)).toBe("Writing the post");
+  });
+});
+
+describe("a new chat is a draft until its first message", () => {
+  it("knows a draft id", () => {
+    expect(isDraftThread("new:ava")).toBe(true);
+    expect(isDraftThread("t1")).toBe(false);
+  });
+  it("focus waits for the named chat's message box", () => {
+    focusComposerSoon("t9");
+    expect(takeComposerFocus("t1")).toBe(false);
+    expect(takeComposerFocus("t9")).toBe(true);
+    expect(takeComposerFocus("t9")).toBe(false);
+  });
+  it("shows the new chat before the next snapshot", () => {
+    const s0 = applySnapshot(initialState, snapshot({ threads: [] }));
+    const s1 = addThreadLocally(s0, thread({ id: "t9" }));
+    expect(s1.snapshot!.threads.map((t) => t.id)).toEqual(["t9"]);
+    expect(addThreadLocally(s1, thread({ id: "t9" }))).toBe(s1);
+  });
+});

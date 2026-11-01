@@ -11,6 +11,7 @@ import { doLater } from "./undo";
 import {
   addQueued,
   addSending,
+  addThreadLocally,
   appendEvent,
   applySnapshot,
   decideLocally,
@@ -322,7 +323,7 @@ export async function stopAgent(agent: { id: string; main_thread_id: string }): 
 
 export async function decide(approvalId: string, decision: Decision): Promise<boolean> {
   const allowed = decision.kind !== "deny";
-  store.set((s) => decideLocally(s, approvalId, allowed));
+  store.set((s) => decideLocally(s, approvalId, allowed, decision.kind === "allow_always" ? "always" : "you"));
   try {
     await call({ method: "decide", params: { approval_id: approvalId, decision } });
     return true;
@@ -357,6 +358,28 @@ export async function create<T extends CallValue["type"]>(
   if (v.type !== type) throw new Error("Unexpected answer from your Weilo computer.");
   markDirty("all");
   return v as Extract<CallValue, { type: T }>;
+}
+
+/**
+ * A new chat is only a draft until its first message: the chat is made then, so an
+ * unused "New chat" never stays behind. Returns the new chat's id, or null.
+ */
+export async function startChat(channelId: string, agentId: string, text: string): Promise<string | null> {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (store.get().paused) {
+    showError(new Error(store.get().paused!));
+    return null;
+  }
+  try {
+    const v = await create({ method: "create_thread", params: { channel_id: channelId, agent_id: agentId, title: null } }, "thread");
+    store.set((s) => addThreadLocally(s, v.data));
+    void send(v.data.id, trimmed, "now");
+    return v.data.id;
+  } catch (e) {
+    showError(e);
+    return null;
+  }
 }
 
 // -- Engines --------------------------------------------------------------------
@@ -411,7 +434,15 @@ export function closeFirstRun(): void {
 
 /** "Discard" / "Not now": shown as answered at once, sent when the Undo runs out. */
 export function sayNoLater(approvalId: string, decision: Decision, draft: boolean): void {
-  doLater({ text: draft ? "Draft discarded" : "You said no", approvalId }, () => decide(approvalId, decision));
+  doLater({ text: draft ? "You discarded the draft" : "You said no", approvalId }, () => decide(approvalId, decision));
+}
+
+/** "Always allow": shown as answered at once, sent when the Undo runs out (like removing one). */
+export function allowAlwaysLater(approvalId: string, decision: Decision): void {
+  doLater(
+    { text: "Always allowed. The agent won't ask next time", approvalId, allowed: true, via: "always" },
+    () => decide(approvalId, decision),
+  );
 }
 
 /** Stop a session, with a few seconds to take it back. */

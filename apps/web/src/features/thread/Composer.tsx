@@ -26,10 +26,12 @@ export interface ComposerProps {
   /** Replaces the working hint (sessions: "⌘. stops the session · about $0.38 so far"). */
   hint?: ReactNode;
   phone?: boolean;
+  /** Sends instead of the usual path (a new chat, made on its first message). */
+  onSend?(text: string): void;
 }
 
 /** The message box: a textarea on its own row, send on a toolbar row beneath it. */
-export function Composer({ threadId, placeholder, shortPlaceholder, label, working: stateWorking, agentName, onStop, hint, phone }: ComposerProps) {
+export function Composer({ threadId, placeholder, shortPlaceholder, label, working: stateWorking, agentName, onStop, hint, phone, onSend }: ComposerProps) {
   // "After this job" only while there is a job: a thread that says it's working but has
   // nothing in it yet (a session still starting) takes its first message as a plain Send.
   const hasJob = useApp((s) => (s.feeds[threadId]?.events ?? []).some((e) => e.body.kind === "user_message" || e.body.kind === "step" || e.body.kind === "agent_message"));
@@ -62,10 +64,10 @@ export function Composer({ threadId, placeholder, shortPlaceholder, label, worki
   useEffect(() => {
     const onFocus = () => ref.current?.focus();
     // Asked for before this box was on screen (Search → Enter opens a new page).
-    if (takeComposerFocus()) onFocus();
+    if (takeComposerFocus(threadId)) onFocus();
     window.addEventListener("weilo:focus-composer", onFocus);
     return () => window.removeEventListener("weilo:focus-composer", onFocus);
-  }, []);
+  }, [threadId]);
 
   // Grow from 1 to 6 lines.
   useLayoutEffect(() => {
@@ -80,9 +82,10 @@ export function Composer({ threadId, placeholder, shortPlaceholder, label, worki
   const blocked = empty || paused !== null;
   const sendNow = useCallback(() => {
     if (!text.trim() || paused) return;
-    void send(threadId, text, "now");
+    if (onSend) onSend(text);
+    else void send(threadId, text, "now");
     setText("");
-  }, [text, threadId, paused]);
+  }, [text, threadId, paused, onSend]);
   const afterJob = useCallback(() => {
     if (!text.trim() || paused) return;
     if (working) queue(threadId, text);

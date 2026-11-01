@@ -6,9 +6,13 @@ import type { WorkState } from "../../proto/WorkState";
 
 const NO_EVENTS: Event[] = [];
 
+/** A new chat that has no message yet: "new:<agent id>". The host makes it on the first send. */
+export const DRAFT_PREFIX = "new:";
+export const isDraftThread = (id: string | null | undefined): boolean => !!id?.startsWith(DRAFT_PREFIX);
+
 /** Follows a thread while it is on screen. */
 export function useFollow(threadId: string | null | undefined): void {
-  useEffect(() => (threadId ? follow(threadId) : undefined), [threadId]);
+  useEffect(() => (threadId && !isDraftThread(threadId) ? follow(threadId) : undefined), [threadId]);
 }
 
 export function useEvents(threadId: string): Event[] {
@@ -106,22 +110,27 @@ export function focusComposer(): void {
   window.dispatchEvent(new CustomEvent("weilo:focus-composer"));
 }
 
-let composerFocusWanted = false;
+/** true: the next message box to show; a thread id: that thread's message box only. */
+let composerFocusWanted: boolean | string = false;
 
-/** Like focusComposer, for a page that is about to open: its message box takes focus when it shows. */
-export function focusComposerSoon(): void {
-  composerFocusWanted = true;
+/**
+ * Like focusComposer, for a page that is about to open: its message box takes focus when
+ * it shows. Name the thread when its page may take a moment to appear (a new chat).
+ */
+export function focusComposerSoon(threadId?: string): void {
+  composerFocusWanted = threadId ?? true;
+  if (threadId) return;
   // A page that kept its message box: no new box takes the request, so ask the open one.
   requestAnimationFrame(() =>
     requestAnimationFrame(() => {
-      if (takeComposerFocus()) focusComposer();
+      if (composerFocusWanted === true && takeComposerFocus()) focusComposer();
     }),
   );
 }
 
 /** True once after focusComposerSoon (the message box calls this when it mounts). */
-export function takeComposerFocus(): boolean {
-  const wanted = composerFocusWanted;
-  composerFocusWanted = false;
+export function takeComposerFocus(threadId?: string): boolean {
+  const wanted = composerFocusWanted === true || (threadId !== undefined && composerFocusWanted === threadId);
+  if (wanted) composerFocusWanted = false;
   return wanted;
 }

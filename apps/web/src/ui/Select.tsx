@@ -15,11 +15,17 @@ export function Select({
   value,
   options,
   onChange,
+  placeholder = "",
+  prefer,
 }: {
   label: string;
   value: string;
   options: SelectOption[];
   onChange(id: string): void;
+  /** Shown until something is chosen ("Choose a channel"). */
+  placeholder?: string;
+  /** "above": the list opens upward (in a dialog, so it doesn't cover the buttons). */
+  prefer?: "below" | "above";
 }) {
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
@@ -36,10 +42,10 @@ export function Select({
         onClick={() => setOpen((v) => !v)}
         className={cx(inputClass, "flex items-center gap-2 text-left")}
       >
-        <span className="ellipsis flex-1">{chosen?.label ?? ""}</span>
+        <span className={cx("ellipsis flex-1", !chosen && "text-text-tertiary")}>{chosen?.label ?? placeholder}</span>
         <ChevronDownIcon size={12} className="shrink-0 text-text-secondary" />
       </button>
-      <Menu open={open} onClose={close} anchor={button} label={label} align="start" matchWidth className="max-h-72 overflow-y-auto">
+      <Menu open={open} onClose={close} anchor={button} label={label} align="start" prefer={prefer} matchWidth className="max-h-72 overflow-y-auto">
         {options.map((o) => (
           <MenuItem
             key={o.id}

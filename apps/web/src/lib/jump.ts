@@ -59,10 +59,14 @@ function act(id: string, label: string, action: JumpAction, words?: string): Jum
   return { id, group: "Do", kind: "action", label, sub: null, action, words };
 }
 
+/** Typing what a thing is ("sess", "channels") lists those things. */
+const KIND_WORDS: Partial<Record<JumpItem["kind"], string>> = { agent: "agents", channel: "channels", session: "sessions" };
+
 /**
  * The items that match what was typed, best first: names that start with it, then names
  * with a word that starts with it ("ge" finds #general, not "New agent"). Only when nothing
- * starts that way does a name that merely contains it count. A leading # matches channels.
+ * starts that way does a name that merely contains it count. A leading # matches channels;
+ * a kind word ("sess", "session", "channel", "agents") lists that kind.
  */
 export function searchJump(items: JumpItem[], query: string, limit = 12): JumpItem[] {
   const raw = query.trim().toLowerCase();
@@ -81,6 +85,7 @@ export function searchJump(items: JumpItem[], query: string, limit = 12): JumpIt
     let score = -1;
     if (label.startsWith(q)) score = 0;
     else if (words.some((w) => w.startsWith(q))) score = 1;
+    else if (q.length >= 3 && KIND_WORDS[item.kind]?.startsWith(q)) score = 1;
     // Names and titles only: a status line ("working", "needs you") isn't something you jump to.
     else if (label.includes(q)) score = 2;
     if (score >= 0) scored.push({ item, score, i });

@@ -266,3 +266,14 @@ export function scopeWords(scope: string): string {
   if (s === "channel") return "in this channel";
   return s.startsWith("in ") || s.startsWith("for ") ? s : `for ${s}`;
 }
+
+/** Messages this close together from the same author draw as one group: one name and time. */
+export const GROUP_MS = 5 * 60 * 1000;
+
+/** True when `b` continues `prev`'s group: same author, said within five minutes, with words. */
+export function continuesGroup(prev: Block | undefined, b: Block): boolean {
+  if (!prev || prev.type !== b.type) return false;
+  if (b.type === "agent" && (prev.type !== "agent" || prev.agentId !== b.agentId || !b.hasText || !prev.hasText)) return false;
+  const gap = Date.parse(b.at) - Date.parse(prev.at);
+  return Number.isFinite(gap) && gap >= 0 && gap <= GROUP_MS;
+}

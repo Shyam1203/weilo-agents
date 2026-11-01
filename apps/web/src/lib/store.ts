@@ -66,10 +66,13 @@ export interface Sending {
 
 export interface UndoState {
   id: number;
-  /** "Draft discarded" — the toast says this, with Undo. */
+  /** "You discarded the draft" — the toast says this, with Undo. */
   text: string;
-  /** A no that waits: the item shows as answered until then. */
+  /** An answer that waits: the item shows as answered until then. */
   approvalId?: string;
+  /** That answer is a yes ("Always allow"); a no when left out. */
+  allowed?: boolean;
+  via?: "you" | "always";
   /** A Stop that waits: its Stop button is gone until then. */
   stopThreadId?: string;
   /** A removed "Always allow" that waits: hidden until then. */
@@ -193,6 +196,12 @@ export function applySnapshot(s: AppState, snapshot: Snapshot): AppState {
 export function patchSnapshot(s: AppState, patch: Partial<Snapshot>): AppState {
   if (!s.snapshot) return s;
   return { ...s, snapshot: { ...s.snapshot, ...patch } };
+}
+
+/** A thread the host just made, shown before the next snapshot brings it. */
+export function addThreadLocally(s: AppState, thread: ThreadSummary): AppState {
+  if (!s.snapshot || s.snapshot.threads.some((t) => t.id === thread.id)) return s;
+  return patchSnapshot(s, { threads: [...s.snapshot.threads, thread] });
 }
 
 export function setNeedsYou(s: AppState, items: NeedsYouItem[]): AppState {
@@ -323,7 +332,7 @@ export function undecideLocally(s: AppState, approvalId: string, allowed: boolea
   const mark = allowed ? "allowed" : "denied";
   if (!s.snapshot.needs_you.some((n) => n.approval_id === approvalId && n.state === mark)) return s;
   const needs_you = s.snapshot.needs_you.map((n) =>
-    n.approval_id === approvalId && n.state === mark ? { ...n, state: "pending" as const } : n,
+    n.approval_id === approvalId && n.state === mark ? { ...n, state: "pending" as const, decided_at: undefined, decided_via: undefined } : n,
   );
   return patchSnapshot(s, { needs_you });
 }
@@ -363,12 +372,22 @@ export function stopLocally(s: AppState, threadId: string): AppState {
 }
 
 /** Marks a Needs you item decided before the host confirms. */
-export function decideLocally(s: AppState, approvalId: string, allowed: boolean): AppState {
+/**
+ * Marks an item answered here at once, with the time and how (`always` for Always allow), so
+ * Done today can say "You said no · 9:42" before the host's own record arrives.
+ */
+export function decideLocally(
+  s: AppState,
+  approvalId: string,
+  allowed: boolean,
+  via: "you" | "always" = "you",
+  at: string = new Date().toISOString(),
+): AppState {
   if (!s.snapshot) return s;
+  const state = allowed ? ("allowed" as const) : ("denied" as const);
+  // Already shown as answered (an Undo that ran out): the time becomes when it was sent.
   const needs_you = s.snapshot.needs_you.map((n) =>
-    n.approval_id === approvalId && n.state === "pending"
-      ? { ...n, state: allowed ? ("allowed" as const) : ("denied" as const) }
-      : n,
+    n.approval_id === approvalId && (n.state === "pending" || n.state === state) ? { ...n, state, decided_at: at, decided_via: via } : n,
   );
   return patchSnapshot(s, { needs_you });
 }

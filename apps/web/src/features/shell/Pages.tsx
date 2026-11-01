@@ -105,10 +105,15 @@ function AddButton({ label, phone, onClick }: { label: string; phone?: boolean; 
 }
 
 /**
- * A channel's one line on the Channels page: what needs you, who is working, else when it
- * was last active.
+ * A channel's one line on the Channels page: what needs you, who is working, that there is
+ * something new, else when it was last active ("No chats yet" only when it has none).
  */
-export function channelLine(channelId: string, snap: Pick<Snapshot, "threads" | "agents">, now = new Date()): { text: string; tone: StatusTone } {
+export function channelLine(
+  channelId: string,
+  snap: Pick<Snapshot, "threads" | "agents">,
+  now = new Date(),
+  unread = false,
+): { text: string; tone: StatusTone | "new" } {
   const threads = snap.threads.filter((t) => t.channel_id === channelId);
   const waiting = threads.filter((t) => t.state === "needs_you").length;
   if (waiting > 0) return { text: waiting === 1 ? "Needs you" : `${waiting} need you`, tone: "warn" };
@@ -124,8 +129,9 @@ export function channelLine(channelId: string, snap: Pick<Snapshot, "threads" | 
     ].filter((n): n is string => !!n);
     return { text: names.length ? `${listWords(names)} ${names.length === 1 ? "is" : "are"} working` : "Working", tone: "ok" };
   }
+  if (unread) return { text: "New messages", tone: "new" };
   const last = threads.map((t) => t.updated_at).sort().pop();
-  return last ? { text: `Last active ${whenInSentence(last, now)}`, tone: "quiet" } : { text: "Nothing here yet", tone: "quiet" };
+  return last ? { text: `Last active ${whenInSentence(last, now)}`, tone: "quiet" } : { text: "No chats yet", tone: "quiet" };
 }
 
 function ChannelList({ phone }: { phone?: boolean }) {
@@ -141,20 +147,25 @@ function ChannelList({ phone }: { phone?: boolean }) {
       ) : (
         <nav aria-label="Channels" className="flex flex-col gap-0.5">
           {open.map((c) => {
-            const line = channelLine(c.id, snap);
+            const line = channelLine(c.id, snap, undefined, c.unread);
             return (
               <Link key={c.id} href={paths.channel(c.id)} className={cx(listRow, "min-h-14 py-1.5")}>
                 <span aria-hidden="true" className="w-6 self-start pt-0.5 text-center font-medium text-text-tertiary">
                   #
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="ellipsis font-medium">
-                    <span className="sr-only">#</span>
-                    {c.slug}
+                  {/* The new-messages dot sits by the name, not across the page. */}
+                  <span className="flex min-w-0 items-center gap-2 font-medium">
+                    <span className="ellipsis">
+                      <span className="sr-only">#</span>
+                      {c.slug}
+                    </span>
+                    {c.unread && <Dot label="New" />}
                   </span>
-                  <span className={cx("ellipsis text-caption", STATUS_TONE_CLASS[line.tone])}>{line.text}</span>
+                  <span className={cx("ellipsis text-caption", line.tone === "new" ? "font-medium text-accent-text" : STATUS_TONE_CLASS[line.tone])}>
+                    {line.text}
+                  </span>
                 </span>
-                {c.unread && <Dot label="New" />}
               </Link>
             );
           })}

@@ -264,6 +264,10 @@
   .ring-within :focus-visible {
     outline: none;
   }
+  /* Inside a box that clips (rounded corners, overflow hidden): the ring goes inside. */
+  .ring-inset :focus-visible {
+    outline-offset: -2px;
+  }
     .row-cv {
     content-visibility: auto;
     contain-intrinsic-size: auto 64px;
@@ -299,6 +303,18 @@
   .reveal-host:has(:focus-visible) .reveal-on-hover,
   .reveal-on-hover[aria-expanded="true"] {
     opacity: 1;
+  }
+  /* A grouped message's time: shown on hover, like Slack. Touch screens have no hover. */
+  .hover-time {
+    opacity: 0;
+  }
+  .reveal-host:hover .hover-time {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .hover-time {
+      display: none;
+    }
   }
   /* What sits under revealed buttons (a collapsed section's "1 needs you") steps aside for them. */
   .reveal-host:hover .reveal-under,

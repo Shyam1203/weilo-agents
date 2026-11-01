@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { decide, savePrefs, sayNoLater, send, showNotice, stopLater } from "../../lib/app";
+import { allowAlwaysLater, decide, savePrefs, sayNoLater, send, showNotice, stopLater } from "../../lib/app";
 import { cx, listWords, shortName, timeOf, whenLabel } from "../../lib/format";
 import { actionable, approveKey, groupNeedsYou, isHeadsUp, isSmall, yesAction, type NeedsYouGroup } from "../../lib/needsYou";
 import { navigate, threadPath } from "../../lib/router";
@@ -261,6 +261,12 @@ function AskRow({ item, snap, selected, onFocus, ref, phone }: RowProps & { phon
       setConfirming(a);
       return;
     }
+    // For good: can be taken back for a few seconds too.
+    if (a.decision.kind === "allow_always") {
+      allowAlwaysLater(item.approval_id, a.decision);
+      setConfirming(null);
+      return;
+    }
     setBusy(true);
     await decide(item.approval_id, a.decision);
     setBusy(false);
@@ -473,14 +479,18 @@ function DoneRow({ item, snap, selected, onFocus, ref, last, phone }: RowProps &
  */
 export function doneOutcome(item: NeedsYouItem, events: Event[] | undefined): { text: string; yes: boolean } {
   const found = decidedAt(events, item.approval_id);
-  const extra = item as NeedsYouItem & { decided_at?: string | null; decided_via?: string | null };
-  const via = extra.decided_via ?? found?.via ?? null;
-  const at = extra.decided_at ?? found?.at ?? null;
+  const via = item.decided_via ?? found?.via ?? null;
+  const at = item.decided_at ?? found?.at ?? null;
   const when = at ? ` · ${timeOf(at)}` : "";
-  if (item.state === "expired") return { text: `No answer in time${when}`, yes: false };
+  if (item.state === "expired" || via === "expired") return { text: `No answer in time${when}`, yes: false };
   if (via === "stopped") return { text: `Stopped${when}`, yes: false };
   if (via === "interrupted") return { text: `Closed when Weilo restarted${when}`, yes: false };
-  const decision = found?.decision ?? (item.state === "allowed" ? { kind: "allow" as const } : { kind: "deny" as const });
+  const always = item.card.actions.find((a) => a.decision?.kind === "allow_always")?.decision;
+  const decision =
+    found?.decision ??
+    (via === "always" ? always : undefined) ??
+    (item.state === "allowed" ? { kind: "allow" as const } : { kind: "deny" as const });
+  if (via === "always" && decision.kind !== "allow_always") return { text: `You always allow this${when}`, yes: true };
   return { text: `${outcomeWords(decision, item.card.kind, item.card.actions)}${when}`, yes: decision.kind !== "deny" };
 }
 

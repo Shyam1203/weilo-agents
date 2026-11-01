@@ -3,7 +3,7 @@ import { cx, timeOf } from "../../lib/format";
 import { paths } from "../../lib/router";
 import { authorName, findAgent, useApp, type Sending } from "../../lib/store";
 import { showSteps } from "../../lib/steps";
-import { buildBlocks, type AgentItem, type Block, type StepItem } from "../../lib/timeline";
+import { buildBlocks, continuesGroup, type AgentItem, type Block, type StepItem } from "../../lib/timeline";
 import { Avatar } from "../../ui/Avatar";
 import { CheckIcon, ChevronDownIcon, SpinnerIcon, StopIcon, XCircleIcon } from "../../ui/glyphs";
 import { Link } from "../../ui/Link";
@@ -57,11 +57,14 @@ export function MessageList({ threadId, agentId, kind, empty, faces = true, tail
     <div className={cx("flex flex-col", gap)}>
       {blocks.length === 0 && sending.length === 0 && empty}
       {blocks.map((b, i) => {
-        if (b.type === "user") return <UserRow key={b.key} text={b.text} at={b.at} afterJob={b.when === "after_job"} />;
-        // More from the same agent, with no new words: 12px under what it said before, as in the mock.
         const prev = blocks[i - 1];
-        const more = !phone && !b.hasText && prev?.type === "agent" && prev.agentId === b.agentId;
-        return <AgentBlockRow key={b.key} block={b} threadId={threadId} kind={kind} faces={faces} more={more} awayCard={awayCard} />;
+        // Said again within five minutes: no second name and time (shown on hover instead).
+        const grouped = continuesGroup(prev, b);
+        if (b.type === "user")
+          return <UserRow key={b.key} text={b.text} at={b.at} afterJob={b.when === "after_job"} grouped={grouped && b.when !== "after_job"} />;
+        // More from the same agent, with no new words: 12px under what it said before, as in the mock.
+        const more = !phone && (grouped || (!b.hasText && prev?.type === "agent" && prev.agentId === b.agentId));
+        return <AgentBlockRow key={b.key} block={b} threadId={threadId} kind={kind} faces={faces} more={more} grouped={grouped} awayCard={awayCard} />;
       })}
       {sending.map((m) => (
         <UserRow key={m.id} text={m.text} at={null} />
@@ -81,8 +84,20 @@ export function MessageList({ threadId, agentId, kind, empty, faces = true, tail
   );
 }
 
-const UserRow = memo(function UserRow({ text, at, afterJob }: { text: string; at: string | null; afterJob?: boolean }) {
+const UserRow = memo(function UserRow({ text, at, afterJob, grouped }: { text: string; at: string | null; afterJob?: boolean; grouped?: boolean }) {
   const phone = useVariant() === "phone";
+  if (grouped && at)
+    return (
+      <div className={cx("row-cv reveal-host flex items-end justify-end gap-2", phone ? "-mt-1" : "-mt-4")}>
+        <span className="sr-only">You · </span>
+        <time dateTime={at} className="hover-time shrink-0 pb-2 text-caption text-text-tertiary">
+          {timeOf(at)}
+        </time>
+        <div className={cx("max-w-[80%] bg-surface-muted px-3 py-2 break-words whitespace-pre-wrap", phone ? "rounded-xl" : "rounded-lg")}>
+          {text}
+        </div>
+      </div>
+    );
   return (
     <div className="row-cv flex flex-col items-end gap-1">
       {!phone || at === null ? (
@@ -98,8 +113,10 @@ const UserRow = memo(function UserRow({ text, at, afterJob }: { text: string; at
   );
 });
 
-function AgentMeta({ agentId, at }: { agentId: string | null; at: string | null }) {
+function AgentMeta({ agentId, at, hidden }: { agentId: string | null; at: string | null; hidden?: boolean }) {
   const name = useApp((s) => authorName(s, agentId));
+  // Grouped: the name stays for screen readers only.
+  if (hidden) return <span className="sr-only">{name}</span>;
   return (
     <div className="text-caption text-text-tertiary">
       <span className="font-medium text-text">{name}</span>
@@ -114,6 +131,7 @@ const AgentBlockRow = memo(function AgentBlockRow({
   kind,
   faces,
   more,
+  grouped,
   awayCard,
 }: {
   block: Extract<Block, { type: "agent" }>;
@@ -121,6 +139,8 @@ const AgentBlockRow = memo(function AgentBlockRow({
   kind: MessageListProps["kind"];
   faces: boolean;
   more?: boolean;
+  /** Continues the same agent's words from just before: no face, name or time (time on hover). */
+  grouped?: boolean;
   awayCard: string | null;
 }) {
   const agent = useApp((s) => findAgent(s, block.agentId));
@@ -130,16 +150,37 @@ const AgentBlockRow = memo(function AgentBlockRow({
   const lead = first?.type === "text" ? first : null;
   const items = lead ? rest : shown;
   const showFace = faces && !phone;
-  const face = block.hasText && agent && showFace;
+  const face = block.hasText && agent && showFace && !grouped;
   if (shown.length === 0) return null;
 
   return (
-    <div className={cx("row-cv flex", phone ? "flex-col gap-2" : "gap-3", more && (kind === "session" ? "-mt-1" : "-mt-3"))}>
-      {showFace && (face ? <Avatar name={agent.name} color={agent.color} size={32} /> : <span aria-hidden="true" className="w-8 shrink-0" />)}
+    <div
+      className={cx(
+        "row-cv flex",
+        grouped && "reveal-host",
+        phone ? "flex-col gap-2" : "gap-3",
+        more && (kind === "session" ? "-mt-1" : "-mt-3"),
+        grouped && phone && "-mt-1",
+      )}
+    >
+      {showFace &&
+        (face ? (
+          <Avatar name={agent.name} color={agent.color} size={32} />
+        ) : grouped ? (
+          <time dateTime={block.at} className="hover-time w-8 shrink-0 pt-1 text-right text-[11px] leading-4 text-text-tertiary tabular-nums">
+            {timeOf(block.at)}
+          </time>
+        ) : (
+          <span aria-hidden="true" className="w-8 shrink-0" />
+        ))}
       <div className={cx("flex min-w-0 flex-1 flex-col", phone ? "gap-2" : "gap-3")}>
         {lead && (
           <div className="flex flex-col gap-1">
-            {(!phone || faces) && <AgentMeta agentId={block.agentId} at={block.at} />}
+            {grouped ? (
+              <AgentMeta agentId={block.agentId} at={block.at} hidden />
+            ) : (
+              (!phone || faces) && <AgentMeta agentId={block.agentId} at={block.at} />
+            )}
             <TextBody text={lead.text} />
           </div>
         )}

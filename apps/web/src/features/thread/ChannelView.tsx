@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { create, showError, stop } from "../../lib/app";
-import { shortName, slugText } from "../../lib/format";
+import { setComposerDraft, startChat, stop } from "../../lib/app";
+import { shortName, slugText, startedByName, whenInSentence } from "../../lib/format";
 import { navigate, paths, threadPath } from "../../lib/router";
 import { useApp } from "../../lib/store";
 import type { AgentSummary } from "../../proto/AgentSummary";
@@ -15,7 +15,7 @@ import { Menu, MenuItem } from "../../ui/Menu";
 import { Tabs } from "../../ui/Tabs";
 import { PanelToggle, ThreadScreen } from "./ThreadScreen";
 import { BackButton } from "../mobile/TabBar";
-import { focusComposerSoon, useThreadState, useVariant } from "./useThread";
+import { DRAFT_PREFIX, focusComposerSoon, isDraftThread, useThreadState, useVariant } from "./useThread";
 import { Button } from "../../ui/Button";
 
 const OVERVIEW = "overview";
@@ -57,15 +57,11 @@ export function waitingSessions(channelId: string, agentId: string | null | unde
   return threads.filter((t) => t.kind === "session" && t.channel_id === channelId && t.started_by === agentId && t.state === "needs_you");
 }
 
-/** A new chat in a channel with an agent, opened with its message box ready. */
-async function startChat(channelId: string, agent: AgentSummary) {
-  try {
-    const v = await create({ method: "create_thread", params: { channel_id: channelId, agent_id: agent.id, title: null } }, "thread");
-    navigate(paths.channel(channelId, v.data.id));
-    focusComposerSoon();
-  } catch (e) {
-    showError(e);
-  }
+/** Opens a new chat with an agent, its message box ready. The chat is made on its first message. */
+function openNewChat(channelId: string, agent: AgentSummary) {
+  const id = `${DRAFT_PREFIX}${agent.id}`;
+  focusComposerSoon(id);
+  navigate(paths.channel(channelId, id));
 }
 
 export function ChannelView({ channel, threadId }: { channel: ChannelSummary; threadId: string | null }) {
@@ -73,19 +69,34 @@ export function ChannelView({ channel, threadId }: { channel: ChannelSummary; th
   const [panel, setPanel] = useState(false);
   const threads = useMemo(() => channelThreads(channel.id, snap.threads), [channel.id, snap.threads]);
   const members = useMemo(() => channelMembers(channel.id, snap.threads, snap.agents), [channel.id, snap.threads, snap.agents]);
+  // "new:<agent>": a chat not made yet. Leaving it leaves nothing behind.
+  const draftAgent = isDraftThread(threadId) ? snap.agents.find((a) => `${DRAFT_PREFIX}${a.id}` === threadId) : undefined;
   const active =
-    threadId && (threadId === OVERVIEW || threads.some((t) => t.id === threadId)) ? threadId : defaultTab(threads, members[0]?.id);
+    threadId && (threadId === OVERVIEW || draftAgent || threads.some((t) => t.id === threadId)) ? threadId : defaultTab(threads, members[0]?.id);
   const thread = threads.find((t) => t.id === active);
-  const owner = snap.agents.find((a) => a.id === thread?.agent_id) ?? members[0] ?? snap.agents[0];
+  const owner = draftAgent ?? snap.agents.find((a) => a.id === thread?.agent_id) ?? members[0] ?? snap.agents[0];
   const ownerName = owner ? shortName(owner.name) : "Ava";
   const state = useThreadState(thread?.id ?? "");
   const slug = slugText(channel.slug);
   const waiting = useMemo(() => waitingSessions(channel.id, thread?.agent_id, snap.threads), [channel.id, thread?.agent_id, snap.threads]);
 
   // One header for every tab, so arrow keys keep focus in the tab list.
+  const sendFirst = useCallback(
+    (text: string) => {
+      if (!draftAgent || !threadId) return;
+      const draftId = threadId;
+      void startChat(channel.id, draftAgent.id, text).then((id) => {
+        if (!id) return setComposerDraft(draftId, text);
+        focusComposerSoon(id);
+        navigate(paths.channel(channel.id, id), { replace: true });
+      });
+    },
+    [channel.id, draftAgent, threadId],
+  );
+
   return (
     <ThreadScreen
-      threadId={thread?.id ?? null}
+      threadId={draftAgent ? threadId : (thread?.id ?? null)}
       after={waiting.length > 0 ? <WaitingSessions sessions={waiting} /> : undefined}
       panelOpen={panel}
       onPanelClose={() => setPanel(false)}
@@ -93,6 +104,7 @@ export function ChannelView({ channel, threadId }: { channel: ChannelSummary; th
         <ChannelHeader
           channel={channel}
           threads={threads}
+          draft={draftAgent && threadId ? { id: threadId, agent: draftAgent } : null}
           active={active}
           members={members}
           agents={snap.agents}
@@ -100,7 +112,7 @@ export function ChannelView({ channel, threadId }: { channel: ChannelSummary; th
         />
       }
       list={{
-        agentId: thread?.agent_id ?? null,
+        agentId: draftAgent?.id ?? thread?.agent_id ?? null,
         kind: "chat",
         empty: <EmptyState title="Nothing here yet." line={`Ask ${ownerName} below.`} />,
       }}
@@ -111,6 +123,7 @@ export function ChannelView({ channel, threadId }: { channel: ChannelSummary; th
         working: state === "working",
         agentName: ownerName,
         onStop: () => thread && void stop(thread.id),
+        onSend: draftAgent ? sendFirst : undefined,
       }}
     >
       <ChannelOverview channelId={channel.id} lead={members[0] ?? snap.agents[0]} />
@@ -121,6 +134,7 @@ export function ChannelView({ channel, threadId }: { channel: ChannelSummary; th
 function ChannelHeader({
   channel,
   threads,
+  draft,
   active,
   members,
   agents,
@@ -128,6 +142,7 @@ function ChannelHeader({
 }: {
   channel: ChannelSummary;
   threads: ThreadSummary[];
+  draft: { id: string; agent: AgentSummary } | null;
   active: string;
   members: AgentSummary[];
   agents: AgentSummary[];
@@ -143,10 +158,11 @@ function ChannelHeader({
       const a = agents.find((x) => x.id === t.agent_id);
       return { id: t.id, label: t.title, lead: a ? <Avatar name={a.name} color={a.color} size={20} /> : undefined };
     }),
+    ...(draft ? [{ id: draft.id, label: "New chat", lead: <Avatar name={draft.agent.name} color={draft.agent.color} size={20} /> }] : []),
   ];
-  const newThread = async (agent: AgentSummary) => {
+  const newThread = (agent: AgentSummary) => {
     setMenu(false);
-    await startChat(channel.id, agent);
+    openNewChat(channel.id, agent);
   };
   const slug = slugText(channel.slug);
   const lead = members[0];
@@ -182,13 +198,13 @@ function ChannelHeader({
             size={28}
             aria-haspopup="menu"
             aria-expanded={menu}
-            onClick={() => (agents.length === 1 ? void newThread(agents[0]!) : setMenu((v) => !v))}
+            onClick={() => (agents.length === 1 ? newThread(agents[0]!) : setMenu((v) => !v))}
           >
             <PlusIcon />
           </IconButton>
           <Menu open={menu} onClose={closeMenu} anchor={menuButton} label="New chat" align={phone ? "end" : "start"} className="w-56">
             {agents.map((a) => (
-              <MenuItem key={a.id} onSelect={() => void newThread(a)}>
+              <MenuItem key={a.id} onSelect={() => newThread(a)}>
                 <Avatar name={a.name} color={a.color} size={20} />
                 New chat with {shortName(a.name)}
               </MenuItem>
@@ -230,10 +246,21 @@ function WaitingSessions({ sessions }: { sessions: ThreadSummary[] }) {
   );
 }
 
+/**
+ * The second line of an Overview row: what it is doing now, else who it is and when it
+ * was last active ("Mia · last active today at 9:30").
+ */
+export function overviewLine(t: ThreadSummary, agents: AgentSummary[], now = new Date()): string {
+  if (t.live_line) return t.live_line;
+  const agent = agents.find((a) => a.id === t.agent_id);
+  const who = t.kind === "session" ? `Session by ${shortName(startedByName(t.started_by, agents))}` : agent ? shortName(agent.name) : "Chat";
+  const when = whenInSentence(t.updated_at, now);
+  return when ? `${who} · last active ${when}` : who;
+}
+
 /** What is open in a channel: its chats and sessions, what needs you first. */
 function ChannelOverview({ channelId, lead }: { channelId: string; lead: AgentSummary | undefined }) {
   const snap = useApp((s) => s.snapshot)!;
-  const [busy, setBusy] = useState(false);
   const items = overviewOrder(snap.threads.filter((t) => t.channel_id === channelId && t.kind !== "agent"));
   const leadName = lead ? shortName(lead.name) : null;
   return (
@@ -245,15 +272,7 @@ function ChannelOverview({ channelId, lead }: { channelId: string; lead: AgentSu
           line={leadName ? `Start a chat with ${leadName}.` : undefined}
           action={
             lead && (
-              <Button
-                variant="primary"
-                disabled={busy}
-                onClick={async () => {
-                  setBusy(true);
-                  await startChat(channelId, lead);
-                  setBusy(false);
-                }}
-              >
+              <Button variant="primary" onClick={() => openNewChat(channelId, lead)}>
                 Start a chat
               </Button>
             )
@@ -271,7 +290,7 @@ function ChannelOverview({ channelId, lead }: { channelId: string; lead: AgentSu
             {t.kind === "session" ? <SessionMark size={32} /> : agent ? <Avatar name={agent.name} color={agent.color} size={32} /> : null}
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="ellipsis font-medium">{t.title}</span>
-              {t.live_line && <span className="ellipsis text-caption text-text-tertiary">{t.live_line}</span>}
+              <span className="ellipsis text-caption text-text-tertiary">{overviewLine(t, snap.agents)}</span>
             </span>
             <StatusPill state={t.state} />
           </Link>

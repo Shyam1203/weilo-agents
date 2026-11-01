@@ -216,6 +216,8 @@ function seedNeedsYou(): NeedsYouItem[] {
       created_at: at(16, 0, -1),
       expires_at: at(18, 0, -1),
       state: "expired",
+      decided_at: at(18, 0, -1),
+      decided_via: "expired",
     },
     {
       approval_id: "heads-fix",
@@ -234,6 +236,8 @@ function seedNeedsYou(): NeedsYouItem[] {
       created_at: at(9, 30),
       expires_at: at(9, 30, 1),
       state: "allowed",
+      decided_at: at(9, 31),
+      decided_via: "you",
     },
   ];
 }

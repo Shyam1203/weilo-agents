@@ -59,7 +59,7 @@ export function EnginePicker({
     group.current?.querySelector<HTMLElement>(`[data-engine="${CSS.escape(next.id)}"]`)?.focus();
   };
   return (
-    <div ref={group} role="radiogroup" aria-label={label} className="flex flex-col overflow-hidden rounded-md border border-border">
+    <div ref={group} role="radiogroup" aria-label={label} className="ring-inset flex flex-col overflow-hidden rounded-md border border-border">
       {list.map((e, i) => {
         const ok = canPick(e);
         const on = ok && e.id === value;

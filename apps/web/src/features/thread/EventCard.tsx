@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { decide, sayNoLater, setComposerDraft } from "../../lib/app";
+import { allowAlwaysLater, decide, sayNoLater, setComposerDraft } from "../../lib/app";
 import { cx, timeOf } from "../../lib/format";
 import { isSmall } from "../../lib/needsYou";
 import { awayLine, useApp } from "../../lib/store";
@@ -39,6 +39,9 @@ export function EventCard({ card, decided, threadId, detailsLabel = "Show detail
   const itemState = useApp((s) =>
     card.approval_id ? s.snapshot?.needs_you.find((n) => n.approval_id === card.approval_id)?.state : undefined,
   );
+  const itemAlways = useApp((s) =>
+    card.approval_id ? s.snapshot?.needs_you.find((n) => n.approval_id === card.approval_id)?.decided_via === "always" : false,
+  );
   const [confirming, setConfirming] = useState<CardAction | null>(null);
   const [busy, setBusy] = useState(false);
   const draft = card.kind === "draft";
@@ -62,6 +65,12 @@ export function EventCard({ card, decided, threadId, detailsLabel = "Show detail
       setConfirming(a);
       return;
     }
+    // For good: can be taken back for a few seconds too.
+    if (a.decision.kind === "allow_always") {
+      allowAlwaysLater(card.approval_id, a.decision);
+      setConfirming(null);
+      return;
+    }
     setBusy(true);
     await decide(card.approval_id, a.decision);
     setBusy(false);
@@ -79,7 +88,15 @@ export function EventCard({ card, decided, threadId, detailsLabel = "Show detail
     : stoppedHere
       ? { text: "Stopped", at: null, yes: false }
     : itemState === "allowed"
-      ? { text: outcomeWords({ kind: "allow" }, card.kind), at: null, yes: true }
+      ? {
+          text: outcomeWords(
+            (itemAlways && card.actions.find((a) => a.decision?.kind === "allow_always")?.decision) || { kind: "allow" },
+            card.kind,
+            card.actions,
+          ),
+          at: null,
+          yes: true,
+        }
       : itemState === "denied"
         ? { text: outcomeWords({ kind: "deny" }, card.kind), at: null, yes: false }
         : itemState === "expired"
