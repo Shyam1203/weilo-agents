@@ -36,7 +36,7 @@ enum Command {
         #[arg(long)]
         home: Option<PathBuf>,
     },
-    /// Check Weilo's activity record.
+    /// Check Weilo's audit log.
     Audit {
         #[command(subcommand)]
         audit: AuditCommand,

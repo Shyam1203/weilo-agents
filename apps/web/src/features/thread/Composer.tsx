@@ -1,3 +1,4 @@
+import { loadTyped, saveTyped } from "../../lib/typed";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { queue, send, setComposerDraft, unqueue } from "../../lib/app";
 import { cx } from "../../lib/format";
@@ -36,7 +37,9 @@ export function Composer({ threadId, placeholder, shortPlaceholder, label, worki
   // nothing in it yet (a session still starting) takes its first message as a plain Send.
   const hasJob = useApp((s) => (s.feeds[threadId]?.events ?? []).some((e) => e.body.kind === "user_message" || e.body.kind === "step" || e.body.kind === "agent_message"));
   const working = stateWorking && hasJob;
-  const [text, setText] = useState("");
+  // Kept per chat through reloads; the box is mounted once per chat.
+  const [text, setText] = useState(() => loadTyped(threadId));
+  useEffect(() => saveTyped(threadId, text), [threadId, text]);
   const [menu, setMenu] = useState(false);
   const closeMenu = useCallback(() => setMenu(false), []);
   const ref = useRef<HTMLTextAreaElement>(null);

@@ -29,6 +29,11 @@ Weilo is rebuilt from the ground up. Nothing carries over from 0.1: install it f
 - **Steady through restarts.** If Weilo, its database or an agent stops in the middle of a job,
   nothing you were sent is lost and the job says what happened.
 - **Agents' folders.** Chat agents work in `~/Weilo/agents`, away from Weilo's own data.
+- **Stop means stop.** Stop works at once, even while an agent is still starting, and messages
+  lined up for after the job go back into your message box.
+- **Nothing typed is lost.** Words in a message box stay there through a reload.
+- **Says what's wrong.** If Weilo's database stops answering, every open screen says so, and a
+  port that's already taken is named before anything starts.
 
 Not yet: reaching Weilo from your phone, voice, a sandbox around agents, routines and
 connections, and the cloud version.

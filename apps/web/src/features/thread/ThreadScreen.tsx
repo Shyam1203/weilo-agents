@@ -100,7 +100,7 @@ export function ThreadScreen({ header, threadId, list, composer, panelOpen, onPa
                 Jump to newest
               </button>
             )}
-            <Composer threadId={threadId} phone={phone} {...composer} />
+            <Composer key={threadId} threadId={threadId} phone={phone} {...composer} />
           </div>
         </Fragment>
         )}

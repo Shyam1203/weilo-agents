@@ -199,7 +199,7 @@ export class HostConnection implements HostApi {
     return new Promise<CallValue>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(callId);
-        reject(new HostError("timeout", "Your Weilo computer didn't answer in time. Try again."));
+        reject(new HostError("timeout", "Weilo didn't answer in time. Try again."));
       }, this.opts.callTimeoutMs);
       this.pending.set(callId, { frame, resolve, reject, timer });
       this.sendIfOnline(frame);

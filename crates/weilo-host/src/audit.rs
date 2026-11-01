@@ -113,7 +113,7 @@ pub async fn verify(pool: &PgPool, space_id: Uuid) -> sqlx::Result<Verdict> {
 /// What a break in the chain means, plainly.
 pub fn broken_line(seq: i64) -> String {
     format!(
-        "Weilo's activity record was changed outside Weilo, from entry {seq} on. \
+        "Weilo's audit log was changed outside Weilo, from entry {seq} on. \
          Something on this computer edited its data."
     )
 }

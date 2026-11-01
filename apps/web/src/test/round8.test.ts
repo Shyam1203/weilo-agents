@@ -23,3 +23,23 @@ describe("device lines", () => {
     expect(deviceLine(d, now, true)).toBe("Last used today at 2:27 · paired today at 2:27");
   });
 });
+
+describe("typed words survive a reload", () => {
+  it("keeps per-chat text and forgets empty text", async () => {
+    const { loadTyped, saveTyped, resetTyped, flushTyped } = await import("../lib/typed");
+    const mem = new Map<string, string>();
+    const ls = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v), removeItem: (k: string) => void mem.delete(k) };
+    Object.defineProperty(globalThis, "localStorage", { value: ls, configurable: true });
+    resetTyped();
+    saveTyped("t1", "half a thought");
+    saveTyped("t2", "   ");
+    flushTyped();
+    resetTyped();
+    expect(loadTyped("t1")).toBe("half a thought");
+    expect(loadTyped("t2")).toBe("");
+    saveTyped("t1", "");
+    flushTyped();
+    resetTyped();
+    expect(loadTyped("t1")).toBe("");
+  });
+});
