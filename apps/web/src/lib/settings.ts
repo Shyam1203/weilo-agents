@@ -4,15 +4,10 @@ import { whenInSentence } from "./format";
 /** A device's one line under its name: this one, when it was last used, or when it paired. */
 export function deviceLine(d: DeviceInfo, now = new Date(), sameName = false): string {
   // Two devices with one name: when each was paired tells them apart.
-  const paired = sameName ? ` · paired ${pairedDay(d.paired_at)}` : "";
+  const paired = sameName ? ` · paired ${whenInSentence(d.paired_at, now)}` : "";
   if (d.this_device) return `This device${paired}`;
   if (d.last_seen_at) return `Last used ${whenInSentence(d.last_seen_at, now)}${paired}`;
   return `Paired ${whenInSentence(d.paired_at, now)}`;
-}
-
-function pairedDay(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(d);
 }
 
 /** This device first, then the most recently used. */

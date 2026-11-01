@@ -21,6 +21,7 @@ import {
   lastSeqOf,
   lastUserMessage,
   removeQueued,
+  unqueueToDraft,
   removeSending,
   revertPrefs,
   saveQueued,
@@ -305,6 +306,7 @@ export function setComposerDraft(threadId: string, text: string): void {
 }
 
 export async function stop(threadId: string): Promise<void> {
+  unqueueOnStop(threadId);
   try {
     await call({ method: "stop", params: { thread_id: threadId } });
     store.set((s) => stopLocally(s, threadId));
@@ -313,8 +315,16 @@ export async function stop(threadId: string): Promise<void> {
   }
 }
 
+/** Before Stop reaches the host: nothing lined up should be sent once the agent goes idle. */
+function unqueueOnStop(threadId: string): void {
+  if (!store.get().queued[threadId]?.length) return;
+  store.set((s) => unqueueToDraft(s, threadId));
+  saveQueued(store.get().queued);
+}
+
 /** Stops an agent's work in its own chat. */
 export async function stopAgent(agent: { id: string; main_thread_id: string }): Promise<void> {
+  unqueueOnStop(agent.main_thread_id);
   try {
     await call({ method: "stop_agent", params: { agent_id: agent.id } });
     store.set((s) => stopLocally(s, agent.main_thread_id));

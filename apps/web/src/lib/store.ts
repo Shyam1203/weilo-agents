@@ -327,6 +327,14 @@ export function removeSending(s: AppState, threadId: string, id: string): AppSta
   return { ...s, sending: { ...s.sending, [threadId]: list.filter((m) => m.id !== id) } };
 }
 
+/** Stop clears what was lined up for after the job; its words go back into the message box. */
+export function unqueueToDraft(s: AppState, threadId: string): AppState {
+  const list = s.queued[threadId];
+  if (!list?.length) return s;
+  const text = [s.drafts[threadId]?.trim(), ...list.map((q) => q.text)].filter(Boolean).join("\n\n");
+  return { ...s, queued: { ...s.queued, [threadId]: [] }, drafts: { ...s.drafts, [threadId]: text } };
+}
+
 export function setDraft(s: AppState, threadId: string, text: string): AppState {
   return { ...s, drafts: { ...s.drafts, [threadId]: text } };
 }
