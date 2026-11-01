@@ -55,6 +55,8 @@ const RETRY_WRITE: std::time::Duration = std::time::Duration::from_secs(2);
 const OUTBOX_MAX: usize = 10_000;
 /// The live line while a thread waits for an engine slot.
 const WAITING_FOR_SLOT: &str = "Waiting for another agent to finish";
+/// How the chat's line begins for a request an Always allow rule let through.
+const RULE_ALLOWED: &str = "Allowed by your rule: ";
 /// The live line while a message waits for the database to answer.
 const WAITING_FOR_DB: &str = "Waiting for the database…";
 /// Said when a message waited too long for the database.
@@ -981,6 +983,10 @@ impl Runner {
             && approvals::always_allowed(&self.app, ctx.agent_id, key, &scope).await
         {
             let _ = responder.respond(selected(&request, &Decision::Allow));
+            // A quiet line in the chat, so what the rule let through is still seen.
+            let step_id = format!("rule-{}", request.tool_call.tool_call_id.0);
+            let title = format!("{RULE_ALLOWED}{}", tool.title);
+            self.step(&step_id, &title, StepStatus::Done).await;
             return;
         }
         let approval_id = crate::ids::new_id();

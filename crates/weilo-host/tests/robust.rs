@@ -260,6 +260,18 @@ async fn always_allow_is_kept_by_weilo_not_the_engine() {
         })
         .await;
     assert_eq!(agent_text(&f), Some("Allowed."), "{f:?}");
+    // The chat still shows what the rule let through, as a finished step.
+    let rule = c
+        .next(|f| matches!(f, ServerFrame::Ev { event, .. } if matches!(&event.body, EventBody::Step { step_id, .. } if step_id.starts_with("rule-"))))
+        .await;
+    let ServerFrame::Ev { event, .. } = rule else {
+        unreachable!()
+    };
+    let EventBody::Step { title, status, .. } = event.body else {
+        unreachable!()
+    };
+    assert_eq!(status, weilo_proto::StepStatus::Done);
+    assert!(title.starts_with("Allowed by your rule: "), "{title}");
 }
 
 #[tokio::test]

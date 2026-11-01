@@ -114,9 +114,14 @@ async fn serve_app(home: &Home, app: &Arc<App>, port: u16, web: Option<PathBuf>)
     if setup["keep_awake"].as_bool() == Some(true) {
         app.keep_awake.start();
     }
-    let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port)))
-        .await
-        .with_context(|| format!("port {port} is in use"))?;
+    let listener =
+        match tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port))).await {
+            Ok(l) => l,
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+                anyhow::bail!("{}", port_taken(port))
+            }
+            Err(e) => anyhow::bail!("Weilo couldn't use port {port} ({e})."),
+        };
     let port = listener.local_addr()?.port();
     app.set_port(port);
     let admin = admin::listen(app.clone())?;
@@ -174,5 +179,34 @@ async fn stop_signal() {
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {}
         _ = term.recv() => {}
+    }
+}
+
+/// What `weilo up` says when its port is taken, with a free one to try instead.
+fn port_taken(port: u16) -> String {
+    let free = (1..=50)
+        .filter_map(|n| port.checked_add(n))
+        .find(|p| std::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], *p))).is_ok());
+    match free {
+        Some(p) => format!("Another program is using port {port}. Try: weilo up --port {p}"),
+        None => {
+            format!("Another program is using port {port}. Try another one with weilo up --port")
+        }
+    }
+}
+
+#[cfg(test)]
+mod port_tests {
+    use super::*;
+
+    #[test]
+    fn a_taken_port_is_said_plainly_with_one_to_try() {
+        let held = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = held.local_addr().unwrap().port();
+        let said = port_taken(port);
+        let start = format!("Another program is using port {port}. Try: weilo up --port ");
+        assert!(said.starts_with(&start), "{said}");
+        let other: u16 = said[start.len()..].parse().unwrap();
+        assert_ne!(other, port);
     }
 }
