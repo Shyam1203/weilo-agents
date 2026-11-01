@@ -16,7 +16,7 @@ use crate::error::{CallError, CallResult};
 use crate::events::{self, Source};
 use crate::home::is_within;
 use crate::ids::new_id;
-use crate::slug::slugify;
+use crate::slug::session_slug;
 use crate::worktree::{self, Prepared};
 
 /// A chat's title until its first message names it.
@@ -149,8 +149,14 @@ pub async fn start_session(
         .filter(|t| !t.is_empty())
         .or(task_name)
         .unwrap_or_else(|| folder_name(&folder));
-    let title = free_session_title(app, title).await?;
-    let prepared = worktree::prepare(&folder, &slugify(&title)).await;
+    let mut tx = app.db.begin().await?;
+    // One session start at a time picks its name, so two started at once can't both
+    // take "shop". Held until the session is saved.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('weilo.session-title'))")
+        .execute(&mut *tx)
+        .await?;
+    let title = free_session_title(&mut tx, app.space_id, title).await?;
+    let prepared = worktree::prepare(&folder, &session_slug(&title)).await;
     let worktree = match &prepared {
         Prepared::Worktree { path, .. } => Some(path.display().to_string()),
         _ => None,
@@ -166,7 +172,6 @@ pub async fn start_session(
         worktree: worktree.clone(),
         started_by: Some(started_by.unwrap_or_else(|| "you".into())),
     };
-    let mut tx = app.db.begin().await?;
     insert_thread(app, &mut tx, &thread).await?;
     let detail = json!({ "thread_id": thread.id, "folder": thread.folder, "engine": s.engine, "worktree": worktree });
     let entry = audit::Entry {
@@ -278,14 +283,18 @@ fn task_title(task: &str) -> String {
 }
 
 /// `title`, or `title 2`, `title 3`… when another session already has it.
-async fn free_session_title(app: &App, title: String) -> CallResult<String> {
+async fn free_session_title(
+    db: &mut sqlx::PgConnection,
+    space_id: Uuid,
+    title: String,
+) -> CallResult<String> {
     let taken: Vec<String> = sqlx::query_scalar(
         "SELECT title FROM threads WHERE space_id = $1 AND kind = 'session'
-           AND (title = $2 OR title LIKE $2 || ' %')",
+           AND (title = $2 OR left(title, length($2) + 1) = $2 || ' ')",
     )
-    .bind(app.space_id)
+    .bind(space_id)
     .bind(&title)
-    .fetch_all(&app.db)
+    .fetch_all(db)
     .await?;
     if !taken.contains(&title) {
         return Ok(title);

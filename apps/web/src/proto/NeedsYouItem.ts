@@ -12,6 +12,8 @@ source: string, card: Card, created_at: string, expires_at: string, state: Appro
  */
 decided_at?: string, 
 /**
- * How it was closed: "you", "always", "stopped", "interrupted" or "expired".
+ * How it was closed: "you", "always", "stopped", "restarted" (Weilo stopped while
+ * it waited), "engine_stopped" (the engine that asked is gone) or "expired". Older
+ * ones may say "interrupted".
  */
 decided_via?: string, };

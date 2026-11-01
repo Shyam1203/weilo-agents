@@ -343,6 +343,38 @@ async fn sessions_use_a_worktree_or_report_a_missing_folder() {
     c.sub(t.id, 0).await;
     send(&mut c, t.id, "hi").await;
     c.next(|f| agent_text(f) == Some("You said: hi")).await;
+
+    // Two sessions with the same task, started at once, still get names of their own,
+    // and folders named after the words that matter.
+    let task = |_: ()| Call::StartSession {
+        folder: repo.display().to_string(),
+        engine: "echo".into(),
+        title: None,
+        channel_id: None,
+        agent_id: None,
+        task: Some("Fix the tax rounding".into()),
+    };
+    let mut d = host.connect().await;
+    let (a, b) = tokio::join!(c.ok(task(())), d.ok(task(())));
+    let (CallValue::Thread(a), CallValue::Thread(b)) = (a, b) else {
+        panic!()
+    };
+    let mut names = [a.title.clone(), b.title.clone()];
+    names.sort();
+    assert_eq!(names, ["Fix the tax rounding", "Fix the tax rounding 2"]);
+    let mut folders: Vec<String> = [a.worktree, b.worktree]
+        .into_iter()
+        .map(|w| {
+            let w = w.expect("a worktree");
+            std::path::Path::new(&w)
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    folders.sort();
+    assert_eq!(folders, ["fix-tax-rounding", "fix-tax-rounding-2"]);
 }
 
 #[tokio::test]

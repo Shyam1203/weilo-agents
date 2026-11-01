@@ -233,11 +233,20 @@ async fn always_allow_is_kept_by_weilo_not_the_engine() {
             _ => None,
         })
         .expect("an always action");
+    let approval_id = card.approval_id.unwrap();
     c.ok(Call::Decide {
-        approval_id: card.approval_id.unwrap(),
+        approval_id,
         decision: always,
     })
     .await;
+    // The chat and Needs you both say it was Always allow.
+    c.next(|f| matches!(f, ServerFrame::Ev { event, .. } if matches!(&event.body, EventBody::ApprovalDecided { via, .. } if via == "always")))
+        .await;
+    let CallValue::NeedsYou(items) = c.ok(Call::NeedsYou).await else {
+        panic!()
+    };
+    let item = items.iter().find(|i| i.approval_id == approval_id).unwrap();
+    assert_eq!(item.decided_via.as_deref(), Some("always"));
     // The engine is only ever told "allow once".
     c.next(|f| agent_text(f) == Some("Allowed.")).await;
     c.next(|f| is_state(f, WorkState::Idle)).await;
@@ -1956,13 +1965,14 @@ fn postgres_backends(postmaster: i32) -> Vec<i32> {
         .collect()
 }
 
-#[tokio::test]
-async fn a_message_waiting_through_a_database_blip_still_runs() {
-    let Some(host) = Host::start_with(&[("WEILO_DB_WAIT_SECS", "1")]).await else {
-        return;
-    };
+/// A message waiting behind a slow turn, needing a new engine process, while the
+/// database stops answering: its connections are cut and Postgres is paused, so new
+/// ones hang. Postgres itself never exits, so Weilo isn't told it's down. Returns once
+/// the message has tried to start, with Postgres still paused: the token, the thread
+/// and the paused postmaster.
+async fn wait_to_start_with_the_database_paused(host: &Host) -> (String, Uuid, i32) {
     let token = host.pair().await;
-    let mut c = Client::connect(&host, Some(&token)).await.unwrap();
+    let mut c = Client::connect(host, Some(&token)).await.unwrap();
     let thread = setup_with_echo(&mut c).await;
     let CallValue::Snapshot(snap) = c.ok(Call::Snapshot).await else {
         panic!()
@@ -1982,9 +1992,6 @@ async fn a_message_waiting_through_a_database_blip_still_runs() {
         engine: None,
     })
     .await;
-    // Before the turn ends, the database stops answering: its connections are cut and
-    // Postgres is paused, so new ones hang. Postgres itself never exits, so Weilo isn't
-    // told it's down.
     let postmaster = host.postgres_pid().expect("postgres pid");
     // SAFETY: pausing and killing the test host's own Postgres processes.
     unsafe {
@@ -2003,16 +2010,46 @@ async fn a_message_waiting_through_a_database_blip_still_runs() {
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+    (token, thread, postmaster)
+}
+
+/// A new connection once the host answers again.
+async fn reconnect(host: &Host, token: &str) -> Client {
+    let started = std::time::Instant::now();
+    loop {
+        if let Ok(c) = Client::connect(host, Some(token)).await {
+            return c;
+        }
+        assert!(
+            started.elapsed() < common::WAIT,
+            "no connection:\n{}",
+            host.log()
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
+fn live_line(f: &ServerFrame) -> Option<(WorkState, &str)> {
+    match f {
+        ServerFrame::Ev { event, .. } => match &event.body {
+            EventBody::State { state, live_line } => Some((*state, live_line.as_str())),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+#[tokio::test]
+async fn a_message_waiting_through_a_database_blip_still_runs() {
+    let Some(host) = Host::start_with(&[("WEILO_DB_WAIT_SECS", "1")]).await else {
+        return;
+    };
+    let (token, thread, postmaster) = wait_to_start_with_the_database_paused(&host).await;
     tokio::time::sleep(Duration::from_secs(1)).await;
-    // SAFETY: as above.
+    // SAFETY: resuming the test host's own Postgres.
     unsafe { libc::kill(postmaster, libc::SIGCONT) };
     // Once the database answers again, the message runs; nothing said it failed.
-    let mut d = loop {
-        if let Ok(d) = Client::connect(&host, Some(&token)).await {
-            break d;
-        }
-        tokio::time::sleep(Duration::from_millis(200)).await;
-    };
+    let mut d = reconnect(&host, &token).await;
     d.sub(thread, 0).await;
     let f = d
         .next(|f| agent_text(f) == Some("You said: hello again") || problem(f).is_some())
@@ -2023,4 +2060,96 @@ async fn a_message_waiting_through_a_database_blip_still_runs() {
         "{f:?}\n{}",
         host.log()
     );
+}
+
+#[tokio::test]
+async fn stop_lets_go_of_a_message_waiting_for_the_database() {
+    // It isn't tried again on its own during the test: only Stop can end the wait.
+    let env = [
+        ("WEILO_DB_WAIT_SECS", "1"),
+        ("WEILO_START_RETRY_MS", "600000"),
+    ];
+    let Some(host) = Host::start_with(&env).await else {
+        return;
+    };
+    let (token, thread, postmaster) = wait_to_start_with_the_database_paused(&host).await;
+    // SAFETY: resuming the test host's own Postgres.
+    unsafe { libc::kill(postmaster, libc::SIGCONT) };
+    let mut d = reconnect(&host, &token).await;
+    d.sub(thread, 0).await;
+    // The chat says what it waits for.
+    let waiting = d
+        .next(|f| live_line(f) == Some((WorkState::Working, "Waiting for the database…")))
+        .await;
+    let ServerFrame::Ev { event, .. } = &waiting else {
+        unreachable!()
+    };
+    let waiting_seq = event.seq;
+    let after =
+        |f: &ServerFrame, seq: i64| matches!(f, ServerFrame::Ev { event, .. } if event.seq > seq);
+    d.ok(Call::Stop { thread_id: thread }).await;
+    let idle = d
+        .next(|f| after(f, waiting_seq) && is_state(f, WorkState::Idle))
+        .await;
+    let ServerFrame::Ev { event, .. } = &idle else {
+        unreachable!()
+    };
+    let idle_seq = event.seq;
+    // And stays idle: the message that waited never runs.
+    let CallValue::Snapshot(snap) = d.ok(Call::Snapshot).await else {
+        panic!()
+    };
+    let t = snap
+        .threads
+        .iter()
+        .find(|t| t.id == thread)
+        .expect("thread");
+    assert_eq!(t.state, WorkState::Idle, "{}", host.log());
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let late = tokio::time::timeout(
+        Duration::from_secs(1),
+        d.try_next(|f| {
+            after(f, idle_seq) && (is_state(f, WorkState::Working) || agent_text(f).is_some())
+        }),
+    )
+    .await;
+    assert!(!matches!(late, Ok(Ok(_))), "{late:?}");
+}
+
+#[tokio::test]
+async fn a_database_that_never_answers_is_said_after_a_while() {
+    let env = [
+        ("WEILO_DB_WAIT_SECS", "1"),
+        ("WEILO_START_RETRY_MS", "500"),
+        ("WEILO_START_GIVE_UP_SECS", "3"),
+    ];
+    let Some(host) = Host::start_with(&env).await else {
+        return;
+    };
+    let (token, thread, postmaster) = wait_to_start_with_the_database_paused(&host).await;
+    // Weilo still thinks Postgres runs; the message stops waiting after a while.
+    let paused = std::time::Instant::now();
+    while !host.log().contains("gave up waiting for the database") {
+        if paused.elapsed() > Duration::from_secs(30) {
+            // SAFETY: resuming the test host's own Postgres.
+            unsafe { libc::kill(postmaster, libc::SIGCONT) };
+            panic!("the message waited on:\n{}", host.log());
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    // SAFETY: as above.
+    unsafe { libc::kill(postmaster, libc::SIGCONT) };
+    // Once written, the person sees the problem, with Try again, and the chat is idle.
+    let mut d = reconnect(&host, &token).await;
+    d.sub(thread, 0).await;
+    let f = d.next(|f| problem(f).is_some()).await;
+    assert_eq!(
+        problem(&f),
+        Some((
+            "Weilo's database didn't answer, so this message didn't start.",
+            Some("Try again")
+        ))
+    );
+    assert_eq!(problem_kind(&f).0, Some("database_away"));
+    d.next(|f| is_state(f, WorkState::Idle)).await;
 }

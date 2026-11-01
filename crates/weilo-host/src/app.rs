@@ -84,6 +84,11 @@ pub struct Settings {
     pub max_engines: usize,
     /// A thread's runner with nothing to do ends after this.
     pub runner_idle: Duration,
+    /// How soon a message that couldn't start (the database didn't answer) is tried again.
+    pub start_retry: Duration,
+    /// How long a message waits for a database that is running but doesn't answer before
+    /// the person is told it didn't start.
+    pub start_give_up: Duration,
 }
 
 impl Settings {
@@ -108,6 +113,8 @@ impl Settings {
             max_sockets: secs("WEILO_MAX_SOCKETS", 128).max(1) as usize,
             max_engines: secs("WEILO_MAX_ENGINES", 8).max(1) as usize,
             runner_idle: Duration::from_secs(secs("WEILO_RUNNER_IDLE_SECS", 900)),
+            start_retry: Duration::from_millis(secs("WEILO_START_RETRY_MS", 2000)),
+            start_give_up: Duration::from_secs(secs("WEILO_START_GIVE_UP_SECS", 120)),
         }
     }
 }

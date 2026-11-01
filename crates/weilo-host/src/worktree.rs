@@ -59,15 +59,22 @@ pub async fn prepare(folder: &Path, slug: &str) -> Prepared {
     }
 }
 
+/// `slug`, `slug-2`… `slug-50`, then a few with a short random ending, so a name
+/// used many times over still finds a free one.
 fn candidates(slug: &str) -> impl Iterator<Item = String> + '_ {
     let base = if slug.is_empty() { "session" } else { slug };
-    (1..=50).map(move |n| {
+    let numbered = (1..=50).map(move |n| {
         if n == 1 {
             base.to_string()
         } else {
             format!("{base}-{n}")
         }
-    })
+    });
+    let random = (0..5).map(move |_| {
+        let token = crate::auth::new_token();
+        format!("{base}-{}", &token[..6])
+    });
+    numbered.chain(random)
 }
 
 /// The session branch of a worktree made by `prepare` (`weilo/<its folder name>`).
@@ -540,6 +547,20 @@ async fn add_worktree(repo: &Path, path: &Path, branch: &str) -> Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_name_used_fifty_times_still_has_free_ones() {
+        let names: Vec<String> = candidates("fix-checkout").collect();
+        assert_eq!(names[0], "fix-checkout");
+        assert_eq!(names[49], "fix-checkout-50");
+        let random = &names[50..];
+        assert_eq!(random.len(), 5);
+        for name in random {
+            let end = name.strip_prefix("fix-checkout-").expect("same start");
+            assert_eq!(end.len(), 6);
+            assert!(end.chars().all(|c| c.is_ascii_hexdigit()), "{name}");
+        }
+    }
 
     fn sh_git(dir: &Path, args: &[&str]) {
         let out = std::process::Command::new("git")

@@ -55,6 +55,10 @@ const RETRY_WRITE: std::time::Duration = std::time::Duration::from_secs(2);
 const OUTBOX_MAX: usize = 10_000;
 /// The live line while a thread waits for an engine slot.
 const WAITING_FOR_SLOT: &str = "Waiting for another agent to finish";
+/// The live line while a message waits for the database to answer.
+const WAITING_FOR_DB: &str = "Waiting for the database…";
+/// Said when a message waited too long for the database.
+const DB_GAVE_UP: &str = "Weilo's database didn't answer, so this message didn't start.";
 
 pub fn spawn(app: Arc<App>, thread_id: Uuid) -> mpsc::UnboundedSender<Cmd> {
     let (tx, rx) = mpsc::unbounded_channel();
@@ -84,6 +88,7 @@ pub fn spawn(app: Arc<App>, thread_id: Uuid) -> mpsc::UnboundedSender<Cmd> {
             outbox: VecDeque::new(),
             retry_at: None,
             start_again_at: None,
+            db_wait_since: None,
             started_key: None,
             dropped: false,
             state: (WorkState::Idle, String::new()),
@@ -198,6 +203,8 @@ struct Runner {
     retry_at: Option<Instant>,
     /// When to try starting the next message again (the database was out of reach).
     start_again_at: Option<Instant>,
+    /// Since when the next message has waited for the database to answer.
+    db_wait_since: Option<Instant>,
     /// The key (provider id and value) the engine process was started with, if any:
     /// what a turn shows about a key is about this one.
     started_key: Option<(String, String)>,
@@ -327,6 +334,11 @@ impl Runner {
                 Some(msg) = engine.recv() => self.on_engine(msg).await,
                 Ok(()) = db_up.changed() => {
                     if *db_up.borrow_and_update() {
+                        // Postgres is back: a message waiting for it gets the full time
+                        // again before it counts as failed.
+                        if self.db_wait_since.is_some() {
+                            self.db_wait_since = Some(Instant::now());
+                        }
                         self.drain().await;
                         if self.turn.is_none() {
                             self.start_next().await;
@@ -514,10 +526,16 @@ impl Runner {
         else {
             return;
         };
-        self.set_state(WorkState::Working, "").await;
+        // While it waits for the database it already says so, once.
+        if self.db_wait_since.is_none() {
+            self.set_state(WorkState::Working, "").await;
+        }
         if self.conn.is_none() {
             match self.download_needed().await {
-                Ok(Some(m)) => return self.begin_install(m, text).await,
+                Ok(Some(m)) => {
+                    self.db_wait_over().await;
+                    return self.begin_install(m, text).await;
+                }
                 Ok(None) => {}
                 Err(e) => return self.start_failed(e, Some(text)).await,
             }
@@ -534,12 +552,19 @@ impl Runner {
                 Err(_) => return self.wait_for_slot(text).await,
             }
         }
-        if self.conn.is_none()
-            && let Err(e) = self.connect().await
-        {
-            self.slot = None;
-            return self.start_failed(e, Some(text)).await;
+        // A new engine process: the thread as it was read to start it, so the first
+        // prompt always carries the agent's instructions.
+        let mut started_with = None;
+        if self.conn.is_none() {
+            match self.connect().await {
+                Ok(ctx) => started_with = Some(ctx),
+                Err(e) => {
+                    self.slot = None;
+                    return self.start_failed(e, Some(text)).await;
+                }
+            }
         }
+        self.db_wait_over().await;
         self.turns += 1;
         self.turn = Some(Turn {
             id: self.turns,
@@ -556,7 +581,11 @@ impl Runner {
         });
         let mut blocks = Vec::new();
         let mut told = None;
-        match load_ctx(&self.app, self.thread_id).await {
+        let ctx = match started_with {
+            Some(ctx) => Ok(ctx),
+            None => load_ctx(&self.app, self.thread_id).await,
+        };
+        match ctx {
             Ok(ctx) => {
                 if std::mem::take(&mut self.fresh) {
                     blocks.push(preamble(&ctx));
@@ -588,6 +617,7 @@ impl Runner {
     /// waits for one in the background (Stop still works meanwhile).
     async fn wait_for_slot(&mut self, text: String) {
         tracing::info!("{} waits for a free engine slot", self.thread_id);
+        self.db_wait_since = None;
         self.set_state(WorkState::Working, WAITING_FOR_SLOT).await;
         self.slots += 1;
         let id = self.slots;
@@ -617,20 +647,39 @@ impl Runner {
     /// soon as the database is back). Otherwise the person is told, and the queues are
     /// cleared.
     async fn start_failed(&mut self, e: (Explained, String), text: Option<String>) {
+        let mut problem = (e.0.code(), e.0.message.clone(), e.0.action);
         if e.1.starts_with(DB_AWAY) {
-            tracing::warn!("{} waits to start: {}", self.thread_id, e.1);
-            if let Some(text) = text {
-                self.now_queue.push_front(text);
+            let since = *self.db_wait_since.get_or_insert_with(Instant::now);
+            // Only while Weilo knows Postgres is running does the wait count: a database
+            // that answers nothing that long is a problem the person hears of.
+            let db_up = *self.app.db_up.borrow();
+            if !db_up || since.elapsed() < self.app.settings.start_give_up {
+                tracing::warn!("{} waits to start: {}", self.thread_id, e.1);
+                if let Some(text) = text {
+                    self.now_queue.push_front(text);
+                }
+                self.start_again_at = Some(Instant::now() + self.app.settings.start_retry);
+                if self.state != (WorkState::Working, WAITING_FOR_DB.to_string()) {
+                    self.set_state(WorkState::Working, WAITING_FOR_DB).await;
+                }
+                return;
             }
-            self.start_again_at = Some(Instant::now() + RETRY_WRITE);
-            return;
+            tracing::warn!("{} gave up waiting for the database", self.thread_id);
+            problem = ("database_away", DB_GAVE_UP.to_string(), "Try again");
         }
+        self.db_wait_since = None;
         tracing::warn!("engine start failed for {}: {}", self.thread_id, e.1);
-        self.problem(e.0.code(), &e.0.message, Some(e.0.action))
-            .await;
+        self.problem(problem.0, &problem.1, Some(problem.2)).await;
         self.now_queue.clear();
         self.after_queue.clear();
         self.set_state(WorkState::Idle, "").await;
+    }
+
+    /// The message no longer waits for the database: the live line says so.
+    async fn db_wait_over(&mut self) {
+        if self.db_wait_since.take().is_some() {
+            self.set_state(WorkState::Working, "").await;
+        }
     }
 
     /// The thread's engine, when it must be downloaded before it can start.
@@ -697,7 +746,7 @@ impl Runner {
 
     /// Starts the engine, picking up the thread's earlier engine conversation when the
     /// engine can. Errors are explained for people (and kept whole for the log).
-    async fn connect(&mut self) -> Result<(), (Explained, String)> {
+    async fn connect(&mut self) -> Result<ThreadCtx, (Explained, String)> {
         let ctx = load_ctx(&self.app, self.thread_id)
             .await
             .map_err(internal)?;
@@ -764,7 +813,7 @@ impl Runner {
             self.problem("fresh_start", &message, None).await;
         }
         self.conn = Some(conn);
-        Ok(())
+        Ok(ctx)
     }
 
     async fn on_update(&mut self, update: SessionUpdate) {
@@ -911,9 +960,11 @@ impl Runner {
         let ctx = match load_ctx(&self.app, self.thread_id).await {
             Ok(ctx) => ctx,
             Err(e) => {
+                // The thread couldn't be read (the database didn't answer): nobody can
+                // be asked, and the person hears so.
                 tracing::error!("permission without a thread: {e:#}");
-                let _ = responder.respond(cancelled());
-                return;
+                let title = tool.title.clone();
+                return self.couldnt_ask(&title, &request, responder).await;
             }
         };
         // A session's rule covers its folder; an agent's chats have no folder of the
@@ -1014,6 +1065,9 @@ impl Runner {
     async fn stop(&mut self) {
         self.now_queue.clear();
         self.after_queue.clear();
+        // A message waiting for the database to start is let go too.
+        self.start_again_at = None;
+        self.db_wait_since = None;
         if self.waiting_slot.take().is_some() {
             // Dropping it stops the wait.
             self.set_state(WorkState::Idle, "").await;
@@ -1028,6 +1082,11 @@ impl Runner {
             return;
         }
         let Some(turn) = self.turn.as_mut() else {
+            // Nothing runs, but the thread may still say Working (a message was
+            // waiting to start): it is idle now.
+            if self.state.0 != WorkState::Idle {
+                self.set_state(WorkState::Idle, "").await;
+            }
             return;
         };
         if turn.stop_by.is_some() {
