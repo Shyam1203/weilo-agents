@@ -45,10 +45,13 @@ export function parseRoute(pathname: string, search = ""): Route {
   }
 }
 
+/** A path part: like encodeURIComponent, but a colon stays readable ("new:agent-ava"). */
+const pathPart = (s: string) => encodeURIComponent(s).replace(/%3A/gi, ":");
+
 export const paths = {
   home: () => "/",
   channel: (channelId: string, threadId?: string | null) =>
-    threadId ? `/c/${encodeURIComponent(channelId)}/${encodeURIComponent(threadId)}` : `/c/${encodeURIComponent(channelId)}`,
+    threadId ? `/c/${encodeURIComponent(channelId)}/${pathPart(threadId)}` : `/c/${encodeURIComponent(channelId)}`,
   overview: (channelId: string) => `/c/${encodeURIComponent(channelId)}/overview`,
   agent: (agentId: string) => `/a/${encodeURIComponent(agentId)}`,
   session: (threadId: string) => `/s/${encodeURIComponent(threadId)}`,

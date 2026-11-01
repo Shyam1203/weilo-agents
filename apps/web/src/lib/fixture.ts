@@ -562,8 +562,14 @@ export class FixtureHost implements HostApi {
   }
 
   private onSend(threadId: string, text: string): void {
-    this.push(threadId, "user", { kind: "user_message", text, when: "now" });
     const t = this.snap.threads.find((x) => x.id === threadId);
+    // Like the host: an untitled chat is named after its first message.
+    if (t && t.kind === "chat" && t.title === "New chat") {
+      const line = text.trim().split("\n")[0]!.trim();
+      t.title = [...line].length <= 40 ? line : `${[...line].slice(0, 40).join("").trimEnd()}…`;
+      this.changed("threads");
+    }
+    this.push(threadId, "user", { kind: "user_message", text, when: "now" });
     const agentId = t?.agent_id ?? null;
     if (!agentId) return;
     const reply = "On it. I'll tell you when it's done.";

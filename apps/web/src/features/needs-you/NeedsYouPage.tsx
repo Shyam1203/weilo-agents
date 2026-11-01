@@ -470,7 +470,7 @@ function DoneRow({ item, snap, selected, onFocus, ref, last, phone }: RowProps &
 
 /**
  * How a finished item ended, in the same words as the card in the chat: "You allowed it",
- * "You said no", "You always allow this for Ava", or that nobody answered: "Stopped",
+ * "You said no", "You always allow this for Ava", or that nobody answered: "Closed when you pressed Stop",
  * "Closed when Weilo restarted", "Closed when Ava's AI stopped", "No answer in time".
  * `yes` picks the tick. `ai` is whose AI it was, for that line.
  *

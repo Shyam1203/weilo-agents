@@ -88,7 +88,7 @@ export function EventCard({ card, decided, threadId, detailsLabel = "Show detail
       ? { text: closed, at: decided.at, yes: false }
       : { text: outcomeWords(decided.decision, card.kind, card.actions), at: decided.at, yes: decided.decision.kind !== "deny" }
     : stoppedHere
-      ? { text: "Stopped", at: null, yes: false }
+      ? { text: "Closed when you pressed Stop", at: null, yes: false }
     : closed
       ? { text: closed, at: null, yes: false }
     : itemState === "allowed"

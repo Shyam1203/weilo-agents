@@ -100,11 +100,18 @@ export function Menu({ open, onClose, anchor, label, className, align = "end", p
     };
   }, [open, anchor, align, prefer, matchWidth]);
 
+  // Focus waits until the menu is placed: a hidden element can't take focus.
+  const placed = pos != null;
   useEffect(() => {
-    if (!open) return;
+    if (!open || !placed) return;
     const el = ref.current;
     // The chosen one, for a menu that picks a value; else the first.
     (el?.querySelector<HTMLElement>(`[aria-checked=true]${ITEM_OK}`) ?? el?.querySelector<HTMLElement>(ITEMS_OK))?.focus();
+  }, [open, placed]);
+
+  useEffect(() => {
+    if (!open) return;
+    const el = ref.current;
     const back = () => anchor.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {

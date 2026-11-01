@@ -161,6 +161,21 @@ test("a row's menu floats over the rows below it: Stop Ava doesn't open the next
   await expect(page).toHaveURL(/needs/);
 });
 
+test("a menu works from the keyboard: Enter opens it on its first item, Escape goes back", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1, name: "Ava" })).toBeVisible();
+  const sidebar = page.getByRole("complementary", { name: "Sidebar" });
+  await sidebar.getByRole("link", { name: /^Ava/ }).hover();
+  const more = sidebar.getByRole("button", { name: "More for Ava" });
+  await more.focus();
+  await page.keyboard.press("Enter");
+  const items = page.getByRole("menu").getByRole("menuitem");
+  await expect(items.first()).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await expect(more).toBeFocused();
+});
+
 test("Settings lists this device, and won't remove the only one", async ({ page }) => {
   await page.goto("/settings");
   const devices = page.getByRole("region", { name: "Devices" });

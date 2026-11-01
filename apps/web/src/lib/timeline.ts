@@ -257,7 +257,7 @@ export function outcomeWords(decision: Decision, cardKind: string, actions: Card
 export function closedWords(via: string | null | undefined, ai?: string | null): string | null {
   switch (via) {
     case "stopped":
-      return "Stopped";
+      return "Closed when you pressed Stop";
     case "restarted":
       return "Closed when Weilo restarted";
     case "engine_stopped":

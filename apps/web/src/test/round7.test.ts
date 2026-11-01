@@ -118,7 +118,7 @@ describe("a new chat is a draft until its first message", () => {
 
 describe("how an approval closed, in plain words", () => {
   it("maps every way the host closes one", () => {
-    expect(closedWords("stopped")).toBe("Stopped");
+    expect(closedWords("stopped")).toBe("Closed when you pressed Stop");
     expect(closedWords("restarted")).toBe("Closed when Weilo restarted");
     expect(closedWords("engine_stopped", "Ava")).toBe("Closed when Ava's AI stopped");
     expect(closedWords("engine_stopped")).toBe("Closed when the AI stopped");

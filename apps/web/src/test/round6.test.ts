@@ -104,7 +104,7 @@ describe("Done today says how each item ended", () => {
 
   it("tells a no apart from a stop, a restart and no answer", () => {
     expect(doneOutcome(closed, ev("app"))).toEqual({ text: "You said no · 8:02", yes: false });
-    expect(doneOutcome(closed, ev("stopped")).text).toBe("Stopped · 8:02");
+    expect(doneOutcome(closed, ev("stopped")).text).toBe("Closed when you pressed Stop · 8:02");
     expect(doneOutcome(closed, ev("restarted")).text).toBe("Closed when Weilo restarted · 8:02");
     // Older items say "interrupted": a plain "Closed".
     expect(doneOutcome(closed, ev("interrupted")).text).toBe("Closed · 8:02");
