@@ -203,7 +203,7 @@ export function NewSessionDialog({ open, onClose }: Props) {
               value={folder}
               onChange={(e) => setFolder(e.target.value)}
               placeholder="~/Documents/shop"
-              aria-label="Folder"
+              aria-label="Project folder"
               aria-describedby={folderHelp}
               spellCheck={false}
               autoCapitalize="off"
