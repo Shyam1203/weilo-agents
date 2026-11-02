@@ -189,6 +189,18 @@ pub struct AppParts {
     pub settings: Settings,
 }
 
+tokio::task_local! {
+    /// Set while work that must not be cut off part way runs (see `patiently`).
+    static PATIENT: ();
+}
+
+/// Runs `work` so that its database calls (`App::bounded`) wait out a silent database
+/// up to `Settings::db_call_limit` instead of giving up at once: work that changes
+/// something then never stops between a write and what has to follow it.
+pub async fn patiently<T>(work: impl std::future::Future<Output = T>) -> T {
+    PATIENT.scope((), work).await
+}
+
 impl App {
     pub fn new(p: AppParts) -> Arc<Self> {
         let sockets = Arc::new(tokio::sync::Semaphore::new(p.settings.max_sockets));
@@ -248,7 +260,7 @@ impl App {
     }
 
     /// Appends an event its writer named, once: tried again after a lost reply, it
-    /// isn't written twice (`None` then).
+    /// isn't written twice (`None` then), but is still projected and told to devices.
     pub async fn append_once(
         &self,
         thread_id: Uuid,
@@ -274,8 +286,21 @@ impl App {
             })
             .await?;
         self.db_answered();
-        if let Some(event) = &event {
-            self.committed(thread_id, vec![event.clone()]).await;
+        match &event {
+            Some(event) => self.committed(thread_id, vec![event.clone()]).await,
+            None => {
+                // Written by an earlier try that stopped before what follows a write:
+                // that is done now (projecting it and telling devices more than once
+                // is harmless).
+                let earlier = self
+                    .bounded(events::read_named(&self.db, thread_id, event_id))
+                    .await;
+                match earlier {
+                    Ok(Some(earlier)) => self.committed(thread_id, vec![earlier]).await,
+                    Ok(None) => {}
+                    Err(e) => tracing::warn!("couldn't read back an event for {thread_id}: {e:#}"),
+                }
+            }
         }
         Ok(event)
     }
@@ -301,6 +326,7 @@ impl App {
     }
 
     /// Gives up on a database call that takes longer than `Settings::db_call_limit`, or
+    /// (except within `patiently`)
     /// as soon as the database is found not answering (`db_silent_now`; then it isn't
     /// tried at all): one stuck in Postgres (which `statement_timeout` can't end when
     /// the server itself is stuck) would otherwise hold its caller, a runner and its
@@ -310,6 +336,9 @@ impl App {
         &self,
         call: impl std::future::Future<Output = Result<T, E>>,
     ) -> Result<T> {
+        if PATIENT.try_with(|_| ()).is_ok() {
+            return self.within_limit(call).await;
+        }
         let away =
             |why: &'static str| Err(anyhow::Error::new(sqlx::Error::PoolTimedOut).context(why));
         if self.db_silent_now() {
@@ -322,6 +351,20 @@ impl App {
                 Err(_) => away("the database didn't answer in time"),
             },
             _ = answers.wait_for(|answers| !answers) => away("the database stopped answering"),
+        }
+    }
+
+    /// Gives up on a database call that takes longer than `Settings::db_call_limit`, but
+    /// not because the database was found silent: for work that must not be cut off
+    /// part way (a call's own bookkeeping).
+    pub async fn within_limit<T, E: Into<anyhow::Error>>(
+        &self,
+        call: impl std::future::Future<Output = Result<T, E>>,
+    ) -> Result<T> {
+        match tokio::time::timeout(self.settings.db_call_limit, call).await {
+            Ok(result) => result.map_err(Into::into),
+            Err(_) => Err(anyhow::Error::new(sqlx::Error::PoolTimedOut)
+                .context("the database didn't answer in time")),
         }
     }
 

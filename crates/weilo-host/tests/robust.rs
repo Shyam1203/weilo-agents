@@ -2395,8 +2395,9 @@ impl Drop for Frozen {
     }
 }
 
-/// How soon every device must hear that the database doesn't answer.
-const SAID_WITHIN: Duration = Duration::from_secs(8);
+/// How soon every device must hear that the database doesn't answer: two checks
+/// missed in a row (2 s apart, 3 s each, the second 0.5 s after the first), and room.
+const SAID_WITHIN: Duration = Duration::from_secs(12);
 
 async fn told_silent(c: &mut Client, host: &Host, since: std::time::Instant) {
     let told = tokio::time::timeout(
@@ -2492,6 +2493,103 @@ async fn a_database_frozen_during_a_job_is_said_at_once() {
         .await;
     // The job's end is kept and written once the database answers.
     c.next(|f| is_state(f, WorkState::Idle)).await;
+}
+
+/// How many times `text` was written to a thread as a person's message.
+async fn times_written(db: &mut sqlx::PgConnection, thread: Uuid, text: &str) -> i64 {
+    sqlx::query_scalar(
+        "SELECT count(*) FROM events WHERE thread_id = $1 AND body->>'text' = $2
+           AND source = 'user'",
+    )
+    .bind(thread)
+    .bind(text)
+    .fetch_one(db)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn a_send_the_database_stops_answering_during_is_finished_and_kept() {
+    let Some(host) = Host::start().await else {
+        return;
+    };
+    let token = host.pair().await;
+    let mut c = Client::connect(&host, Some(&token)).await.unwrap();
+    let thread = setup_with_echo(&mut c).await;
+    c.sub(thread, 0).await;
+    send(&mut c, thread, "hello").await;
+    c.next(|f| agent_text(f) == Some("You said: hello")).await;
+    c.next(|f| is_state(f, WorkState::Idle)).await;
+    // The chat's state is held, so a Send stops right after its message is written.
+    let mut holder = host.db().await;
+    let mut look = host.db().await;
+    sqlx::query("BEGIN").execute(&mut holder).await.unwrap();
+    sqlx::query(
+        "SELECT seq FROM projector_cursors WHERE projection = 'threads' AND thread_id = $1
+         FOR UPDATE",
+    )
+    .bind(thread)
+    .fetch_one(&mut holder)
+    .await
+    .unwrap();
+    let text = "are you still there?";
+    let call_id = Uuid::now_v7();
+    let send_it = || Call::Send {
+        thread_id: thread,
+        text: text.into(),
+        when: SendWhen::Now,
+    };
+    c.send(&ClientFrame::Call {
+        call_id,
+        call: send_it(),
+    })
+    .await;
+    let written = std::time::Instant::now();
+    while times_written(&mut look, thread, text).await == 0 {
+        assert!(
+            written.elapsed() < common::WAIT,
+            "never written\n{}",
+            host.log()
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    // Then the database stops answering: the device stops waiting, and hears that it
+    // may not have happened yet.
+    let frozen = Frozen::now(&host);
+    let since = std::time::Instant::now();
+    let r = tokio::time::timeout(
+        SAID_WITHIN,
+        c.try_next(|f| matches!(f, ServerFrame::Ret { call_id: id, .. } if *id == call_id)),
+    )
+    .await;
+    let Ok(Ok(ServerFrame::Ret { result: r, .. })) = r else {
+        panic!("{r:?} after {:?}\n{}", since.elapsed(), host.log());
+    };
+    assert!(
+        failed_with(&r, "unknown").is_some(),
+        "{r:?}\n{}",
+        host.log()
+    );
+    drop(frozen);
+    sqlx::query("COMMIT").execute(&mut holder).await.unwrap();
+    // The Send was finished meanwhile: asked again with the same call, it answers
+    // that it was done, and the message is there once and answered.
+    let started = std::time::Instant::now();
+    loop {
+        let r = c.call_with_id(call_id, send_it()).await;
+        if matches!(r, CallResult::Done { .. }) {
+            break;
+        }
+        assert!(
+            failed_with(&r, "database_away").is_some() && started.elapsed() < common::WAIT,
+            "{r:?}\n{}",
+            host.log()
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    c.next(|f| agent_text(f) == Some("You said: are you still there?"))
+        .await;
+    assert_eq!(times_written(&mut look, thread, text).await, 1);
 }
 
 #[tokio::test]

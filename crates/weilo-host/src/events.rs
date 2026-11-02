@@ -122,6 +122,23 @@ pub async fn append_named(
     }))
 }
 
+/// The event its writer named `event_id`, if it was written.
+pub async fn read_named<'e>(
+    exec: impl PgExecutor<'e>,
+    thread_id: Uuid,
+    event_id: Uuid,
+) -> sqlx::Result<Option<Event>> {
+    let row = sqlx::query(
+        "SELECT seq, created_at, source, tainted, body FROM events
+         WHERE thread_id = $1 AND event_id = $2",
+    )
+    .bind(thread_id)
+    .bind(event_id)
+    .fetch_optional(exec)
+    .await?;
+    row.map(event_from_row).transpose()
+}
+
 /// Events with `from < seq <= to`, in order.
 pub async fn read_range<'e>(
     exec: impl PgExecutor<'e>,

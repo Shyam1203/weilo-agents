@@ -84,6 +84,9 @@ struct Session {
     again_at: Option<tokio::time::Instant>,
     calls: Arc<Semaphore>,
     rets: mpsc::Sender<ServerFrame>,
+    /// The token of a device let in from memory while the database didn't answer, and
+    /// when it is checked again: until the database says it is still paired.
+    unchecked: Option<(String, tokio::time::Instant)>,
 }
 
 /// Ends the session, with a close frame to send first.
@@ -140,6 +143,7 @@ impl Session {
             again_at: None,
             calls: Arc::new(Semaphore::new(MAX_CALLS)),
             rets,
+            unchecked: None,
         };
         let hello_by = tokio::time::Instant::now() + HELLO_WAIT;
         // Ends the session when the writer gave up on the device.
@@ -159,6 +163,7 @@ impl Session {
                 },
                 Some(frame) = rets_rx.recv() => s.send(&frame),
                 _ = sleep_until(s.again_at) => s.catch_up_behind().await,
+                _ = sleep_until(s.unchecked.as_ref().map(|u| u.1)) => s.check_again().await,
                 _ = tokio::time::sleep_until(hello_by), if !greeted => {
                     Err(Close(CLOSE_BAD_FRAME, "Say hello first."))
                 }
@@ -261,7 +266,9 @@ impl Session {
             }
             Err(e) if crate::db::unreachable(&e) => {
                 tracing::info!("checked a device from memory: {e:#}");
-                Some(self.app.known_device(&hash).ok_or(cant_check)?)
+                let known = self.app.known_device(&hash).ok_or(cant_check)?;
+                self.unchecked = Some((token, tokio::time::Instant::now() + CHECK_AGAIN));
+                Some(known)
             }
             Err(e) => {
                 tracing::warn!("couldn't check a device: {e:#}");
@@ -322,6 +329,36 @@ impl Session {
         self.behind.insert(thread_id, check);
         self.again_at
             .get_or_insert_with(|| tokio::time::Instant::now() + CATCH_UP_AGAIN);
+    }
+
+    /// Checks again a device let in from memory, once the database answers: one no
+    /// longer paired is closed.
+    async fn check_again(&mut self) -> Result<(), Close> {
+        let Some((token, _)) = self.unchecked.take() else {
+            return Ok(());
+        };
+        let later = |token| Some((token, tokio::time::Instant::now() + CHECK_AGAIN));
+        if self.app.db_silent_now() {
+            self.unchecked = later(token);
+            return Ok(());
+        }
+        match self
+            .app
+            .bounded(auth::device_for_token(&self.app.db, &token))
+            .await
+        {
+            Ok(device) => {
+                self.app.note_device(auth::token_hash(&token), device);
+                if device.is_none() || device != self.device_id {
+                    return Err(Close(CLOSE_UNPAIRED, "This device was removed."));
+                }
+            }
+            Err(e) => {
+                tracing::info!("couldn't check a device again yet: {e:#}");
+                self.unchecked = later(token);
+            }
+        }
+        Ok(())
     }
 
     /// Reads again the backlogs the database didn't give.
@@ -469,6 +506,9 @@ impl Session {
 }
 
 /// Sleeps until `at`, or for ever when there's nothing to wait for.
+/// How often a device let in from memory is checked again until the database answers.
+const CHECK_AGAIN: Duration = Duration::from_secs(2);
+
 async fn sleep_until(at: Option<tokio::time::Instant>) {
     match at {
         Some(at) => tokio::time::sleep_until(at).await,

@@ -41,19 +41,24 @@ pub fn unreachable_sql(e: &sqlx::Error) -> bool {
 
 /// Asks Postgres something small every few seconds, on a connection of its own, and
 /// tells the app whether it answers: a database that runs but is stuck (paused, a full
-/// disk) is said to every device within seconds, and calls stop waiting on it. While
+/// disk), missing two checks in a row, is said to every device within seconds, and calls stop waiting on it. While
 /// Postgres is known to be restarting, nothing is asked. Ends when the host stops.
 pub async fn check_answers(app: std::sync::Arc<crate::app::App>, options: PgConnectOptions) {
     use sqlx::Connection;
     let (every, wait) = (app.settings.db_check_every, app.settings.db_check_wait);
     let mut conn: Option<sqlx::PgConnection> = None;
+    // Misses in a row: one alone (a slow moment) isn't said; it is asked again soon,
+    // on a new connection.
+    let mut misses = 0u32;
     loop {
+        let pause = if misses == 1 { AGAIN_AFTER_MISS } else { every };
         tokio::select! {
-            _ = tokio::time::sleep(every) => {}
+            _ = tokio::time::sleep(pause) => {}
             _ = app.shutdown.cancelled() => return,
         }
         if !*app.db_up.borrow() {
             conn = None;
+            misses = 0;
             continue;
         }
         let asked = tokio::time::timeout(wait, async {
@@ -65,20 +70,25 @@ pub async fn check_answers(app: std::sync::Arc<crate::app::App>, options: PgConn
             Ok::<(), sqlx::Error>(())
         })
         .await;
-        let answers = matches!(asked, Ok(Ok(())));
-        if !answers {
+        if matches!(asked, Ok(Ok(()))) {
+            misses = 0;
+        } else {
             // Its state is unknown: a new connection next time.
             conn = None;
-            if *app.db_answers.borrow() && *app.db_up.borrow() {
+            misses = misses.saturating_add(1);
+            if misses == 2 && *app.db_answers.borrow() && *app.db_up.borrow() {
                 tracing::warn!("the database doesn't answer: {asked:?}");
             }
         }
         // Postgres may have gone down meanwhile: then that is what is said.
-        if *app.db_up.borrow() {
-            app.set_db_answers(answers);
+        if *app.db_up.borrow() && misses != 1 {
+            app.set_db_answers(misses == 0);
         }
     }
 }
+
+/// How soon a database that missed one check is asked again.
+const AGAIN_AFTER_MISS: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// The longest one statement of the app may run.
 pub const STATEMENT_TIMEOUT: &str = "30s";
