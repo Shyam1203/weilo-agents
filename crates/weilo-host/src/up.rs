@@ -172,8 +172,9 @@ async fn serve_app(
     app.shutdown.cancel();
     admin.abort();
     worker.abort();
-    // Calls under way finish first (a message being sent reaches its agent), while the
-    // runners and the database still work.
+    // Calls under way finish first, while the runners and the database still work, so their
+    // results are saved. A message saved here doesn't get its answer before the stop: after the
+    // restart its chat says Weilo restarted, with Try again.
     app.call_locks.finish(CALLS_FINISH).await;
     let runners = app.clone();
     let _ = tokio::task::spawn_blocking(move || runners.runners.shutdown(process::GRACE)).await;
