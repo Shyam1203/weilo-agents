@@ -26,10 +26,19 @@ pub struct UpOptions {
 
 pub async fn run(opts: UpOptions) -> Result<()> {
     let home = Home::resolve(opts.home)?;
-    home.ensure(0o700)?;
+    // The lock comes first: a second `up` that finds Weilo running changes nothing
+    // (as root, Postgres's own user needs the folder as Weilo set it).
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(home.root())?;
+    }
     let Some(_lock) = try_lock(&home.lock_file())? else {
         return Err(already_running(&home));
     };
+    home.ensure(0o700)?;
     // The port is taken before Postgres starts, so a busy one is said at once.
     let listener = listen(opts.port).await?;
     // Before anything starts: what a crashed run left running ends here.

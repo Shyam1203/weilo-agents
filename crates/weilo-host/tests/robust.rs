@@ -280,8 +280,15 @@ async fn a_second_up_says_where_weilo_runs() {
     let Some(host) = Host::start().await else {
         return;
     };
+    let mode = || {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(&host.home).unwrap().permissions().mode() & 0o777
+    };
+    let before = mode();
     let out = host.second_up();
     assert!(!out.status.success());
+    // It changed nothing: Postgres (as root, its own user) still reaches the folder.
+    assert_eq!(format!("{:o}", mode()), format!("{before:o}"));
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
         err.contains(&format!(
@@ -290,9 +297,24 @@ async fn a_second_up_says_where_weilo_runs() {
         )),
         "{err}"
     );
-    // The first one is unharmed.
-    let mut c = host.connect().await;
-    setup_with_echo(&mut c).await;
+    // The first one is unharmed, and its Postgres still comes back after a crash.
+    let token = host.pair().await;
+    let mut c = Client::connect(&host, Some(&token)).await.unwrap();
+    let thread = setup_with_echo(&mut c).await;
+    let pid = host.postgres_pid().expect("postgres pid");
+    // SAFETY: killing the test host's Postgres.
+    unsafe {
+        libc::kill(pid, libc::SIGKILL);
+    }
+    eventually("Postgres to come back", || {
+        host.postgres_pid().is_some_and(|p| p != pid) && host.log().contains("Postgres is back")
+    })
+    .await;
+    let mut c = Client::connect(&host, Some(&token)).await.unwrap();
+    c.sub(thread, 0).await;
+    send(&mut c, thread, "still there?").await;
+    c.next(|f| agent_text(f) == Some("You said: still there?"))
+        .await;
 }
 
 #[tokio::test]
