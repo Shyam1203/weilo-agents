@@ -55,7 +55,13 @@ export function Tabs({ items, value, onChange, label, className, panelPrefix, si
   const selectedIndex = items.findIndex((t) => t.id === value);
   useEffect(() => {
     if (!scroll || selectedIndex < 0) return;
-    refs.current[selectedIndex]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    // Scrolls the row itself: scrollIntoView would also move where the next Tab starts.
+    const row = list.current;
+    const tab = refs.current[selectedIndex];
+    if (!row || !tab) return;
+    const left = tab.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft;
+    if (left < row.scrollLeft) row.scrollLeft = left;
+    else if (left + tab.offsetWidth > row.scrollLeft + row.clientWidth) row.scrollLeft = left + tab.offsetWidth - row.clientWidth;
   }, [scroll, selectedIndex]);
   const mask =
     scroll && (more.start || more.end)

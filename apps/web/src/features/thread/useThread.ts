@@ -128,6 +128,25 @@ export function focusComposerSoon(threadId?: string): void {
   );
 }
 
+/**
+ * After a jump: if nothing on the new page took focus (no message box there), focus lands on
+ * the page's heading, so the keyboard keeps its place instead of falling back to the page.
+ */
+export function focusPageSoon(): void {
+  const lost = () => !document.activeElement || document.activeElement === document.body;
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (!lost()) return;
+        const h = document.querySelector<HTMLElement>("main h1");
+        if (!h) return;
+        if (!h.hasAttribute("tabindex")) h.tabIndex = -1;
+        h.focus({ preventScroll: true });
+      }),
+    ),
+  );
+}
+
 /** True once after focusComposerSoon (the message box calls this when it mounts). */
 export function takeComposerFocus(threadId?: string): boolean {
   const wanted = composerFocusWanted === true || (threadId !== undefined && composerFocusWanted === threadId);

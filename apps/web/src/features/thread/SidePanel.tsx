@@ -270,7 +270,7 @@ function FileDiff({
                       {l.kind === "add" ? "+" : l.kind === "remove" ? "−" : ""}
                     </span>
                     <span className="sr-only">{l.kind === "add" ? "Added: " : l.kind === "remove" ? "Removed: " : ""}</span>
-                    <span className="min-w-0 flex-1 pr-3 whitespace-pre-wrap [overflow-wrap:anywhere] min-[1280px]:whitespace-pre min-[1280px]:[overflow-wrap:normal]">
+                    <span className="min-w-0 flex-1 pr-3 whitespace-pre-wrap [overflow-wrap:anywhere]">
                       {l.text || " "}
                     </span>
                   </div>

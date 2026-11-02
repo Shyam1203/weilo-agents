@@ -45,6 +45,19 @@ export function saveTyped(threadId: string, text: string): void {
   if (!timer) timer = setTimeout(flushTyped, 400);
 }
 
+/** Forgets words kept for chats that are gone (drafts of new chats stay). */
+export function forgetTypedExcept(threadIds: Iterable<string>): void {
+  const keep = new Set(threadIds);
+  const map = all();
+  let changed = false;
+  for (const id of Object.keys(map)) {
+    if (id.startsWith("new:") || keep.has(id)) continue;
+    delete map[id];
+    changed = true;
+  }
+  if (changed && !timer) timer = setTimeout(flushTyped, 400);
+}
+
 /** For tests. */
 export function resetTyped(): void {
   cache = null;

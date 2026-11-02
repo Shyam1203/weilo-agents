@@ -61,3 +61,19 @@ describe("a saved Stop", () => {
     expect(JSON.stringify(steps)).not.toContain("stopped-x");
   });
 });
+
+describe("typed words for gone chats", () => {
+  it("are forgotten, drafts of new chats stay", async () => {
+    const { loadTyped, saveTyped, resetTyped, flushTyped, forgetTypedExcept } = await import("../lib/typed");
+    resetTyped();
+    saveTyped("gone", "old words");
+    saveTyped("here", "keep me");
+    saveTyped("new:agent-ava", "draft");
+    forgetTypedExcept(["here"]);
+    flushTyped();
+    resetTyped();
+    expect(loadTyped("gone")).toBe("");
+    expect(loadTyped("here")).toBe("keep me");
+    expect(loadTyped("new:agent-ava")).toBe("draft");
+  });
+});

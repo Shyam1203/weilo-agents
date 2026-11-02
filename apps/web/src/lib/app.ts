@@ -1,3 +1,4 @@
+import { forgetTypedExcept } from "./typed";
 import type { Call } from "../proto/Call";
 import type { CallValue } from "../proto/CallValue";
 import type { Changed } from "../proto/Changed";
@@ -179,6 +180,7 @@ export async function loadSnapshot(): Promise<void> {
     (v) => {
       if (v.type !== "snapshot") return;
       store.set((s) => applySnapshot(s, v.data));
+      forgetTypedExcept([...v.data.threads.map((t) => t.id), ...v.data.agents.map((a) => a.main_thread_id)]);
       watchThreads(v.data);
       for (const t of v.data.threads) flushQueued(t.id);
     },

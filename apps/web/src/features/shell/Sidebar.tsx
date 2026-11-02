@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { savePrefs } from "../../lib/app";
 import { cx, shortName } from "../../lib/format";
 import { navigate, paths, type Route } from "../../lib/router";
@@ -22,7 +23,7 @@ import { IconButton } from "../../ui/IconButton";
 import { Link } from "../../ui/Link";
 import { Menu, MenuItem } from "../../ui/Menu";
 import { shortcut, useTouchOnly } from "../../lib/platform";
-import { focusComposerSoon } from "../thread/useThread";
+import { focusComposerSoon, focusPageSoon } from "../thread/useThread";
 import { CustomizeSidebar } from "./CustomizeSidebar";
 import { NewAgentDialog, NewChannelDialog, NewSessionDialog } from "./dialogs";
 import { SidebarRow } from "./SidebarRow";
@@ -101,6 +102,7 @@ export function Sidebar({ route, floating, focusSearch }: { route: Route; floati
     if (a.type === "go") {
       navigate(a.href);
       if (item.kind !== "page") focusComposerSoon();
+      focusPageSoon();
     } else if (a.type === "new") {
       setDialog(a.what === "agent" ? "agents" : a.what === "channel" ? "channels" : "sessions");
     } else {
@@ -128,6 +130,14 @@ export function Sidebar({ route, floating, focusSearch }: { route: Route; floati
             onClick={() => setJumpOpen(true)}
             onBlur={() => setJumpOpen(false)}
             onKeyDown={(e) => {
+              if (e.key === "Tab" && !e.shiftKey && searching) {
+                // The rows are hidden behind the list: show them before the browser moves on.
+                flushSync(() => {
+                  setJumpOpen(false);
+                  setQuery("");
+                });
+                return;
+              }
               if (e.key === "Escape") {
                 if (query) setQuery("");
                 else e.currentTarget.blur();
