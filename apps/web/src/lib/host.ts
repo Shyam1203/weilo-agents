@@ -46,7 +46,8 @@ export interface HostApi {
   stop(): void;
   subscribe(threadId: string, afterSeq?: bigint): void;
   unsubscribe(threadId: string): void;
-  call(call: Call): Promise<CallValue>;
+  /** `callId`: the same id again asks the host for the first try's answer instead of doing it twice. */
+  call(call: Call, callId?: string): Promise<CallValue>;
   presence(threadId: string | null): void;
 }
 
@@ -193,8 +194,8 @@ export class HostConnection implements HostApi {
     return this.subs.get(threadId)?.lastSeq ?? 0n;
   }
 
-  call(call: Call): Promise<CallValue> {
-    const callId = this.opts.newId();
+  call(call: Call, givenId?: string): Promise<CallValue> {
+    const callId = givenId ?? this.opts.newId();
     const frame: ClientFrame = { t: "call", call_id: callId, call };
     return new Promise<CallValue>((resolve, reject) => {
       const timer = setTimeout(() => {

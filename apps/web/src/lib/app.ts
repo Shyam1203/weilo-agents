@@ -89,8 +89,8 @@ function need(): HostApi {
   return host;
 }
 
-export function call(c: Call): Promise<CallValue> {
-  return need().call(c);
+export function call(c: Call, callId?: string): Promise<CallValue> {
+  return need().call(c, callId);
 }
 
 /** Something you asked for didn't work: said as an alert. */
@@ -261,15 +261,39 @@ export async function send(threadId: string, text: string, when: SendWhen = "now
   }
   const id = localId();
   store.set((s) => addSending(s, threadId, { id, text: trimmed, afterSeq: lastSeqOf(s, threadId) }));
+  const c: Call = { method: "send", params: { thread_id: threadId, text: trimmed, when } };
+  const callId = crypto.randomUUID();
   try {
     // The placeholder stays until the host echoes the message (appendEvent drops it then).
-    await call({ method: "send", params: { thread_id: threadId, text: trimmed, when } });
+    await call(c, callId);
     return true;
   } catch (e) {
+    // It may have gone through: ask again with the same id until the host knows. The same id
+    // never posts it twice, so the message stays as Sending… rather than going back in the box.
+    if (e instanceof HostError && UNSURE.has(e.code) && (await sendSettles(c, callId))) return true;
     store.set((s) => setDraft(removeSending(s, threadId, id), threadId, trimmed));
     showError(e instanceof HostError ? e : new Error("Couldn't send that. Try again."));
     return false;
   }
+}
+
+/** Answers that don't say whether a send happened. */
+const UNSURE = new Set(["unknown", "timeout"]);
+const SETTLE_TRIES = 60;
+
+/** Re-asks a send whose outcome is unknown, every few seconds for a few minutes. True once the host says it's done. */
+async function sendSettles(c: Call, callId: string): Promise<boolean> {
+  for (let i = 0; i < SETTLE_TRIES; i++) {
+    await new Promise((r) => setTimeout(r, 3000));
+    try {
+      await call(c, callId);
+      return true;
+    } catch (e) {
+      // Still unsure, or the host or its database is away: keep asking. Anything else is an answer.
+      if (!(e instanceof HostError && (UNSURE.has(e.code) || e.code === "database_away" || e.code === "offline"))) return false;
+    }
+  }
+  return false;
 }
 
 /** "After this job": kept as Next up until the agent is free. */

@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { connect, send } from "../lib/app";
+import { HostError, type HostApi } from "../lib/host";
+import type { Call } from "../proto/Call";
+import type { CallValue } from "../proto/CallValue";
 import { initialState, unqueueToDraft } from "../lib/store";
 import { deviceLine } from "../lib/settings";
 import type { DeviceInfo } from "../proto/DeviceInfo";
@@ -91,5 +95,38 @@ describe("an approval shows once", () => {
     ]);
     const titles = blocks.flatMap((b) => (b.type === "agent" ? b.items.flatMap((i) => (i.type === "steps" ? i.steps.map((s) => s.title) : [])) : []));
     expect(titles).toEqual(["Read the notes"]);
+  });
+});
+
+describe("a send that may have gone", () => {
+  it("is asked again with the same id until the host knows, and is not put back in the box", async () => {
+    vi.useFakeTimers();
+    try {
+      const ids: (string | undefined)[] = [];
+      const answers: (() => Promise<CallValue>)[] = [
+        () => Promise.reject(new HostError("unknown", "Not sure.")),
+        () => Promise.reject(new HostError("database_away", "Away.")),
+        () => Promise.resolve({ type: "done" } as unknown as CallValue),
+      ];
+      const host: HostApi = {
+        start() {},
+        stop() {},
+        subscribe() {},
+        unsubscribe() {},
+        presence() {},
+        call: (_c: Call, id?: string) => {
+          ids.push(id);
+          return answers.shift()!();
+        },
+      };
+      connect(host);
+      const sent = send("t-settle", "hello");
+      await vi.advanceTimersByTimeAsync(7000);
+      expect(await sent).toBe(true);
+      expect(ids).toHaveLength(3);
+      expect(new Set(ids).size).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
