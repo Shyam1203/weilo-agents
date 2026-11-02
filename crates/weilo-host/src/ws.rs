@@ -230,10 +230,12 @@ impl Session {
                     return self.send(&ServerFrame::Ret { call_id, result });
                 };
                 let (app, rets) = (self.app.clone(), self.rets.clone());
+                // The place is kept until the call's work ends, even when the device
+                // stopped waiting for it first.
                 tokio::spawn(async move {
-                    let result = calls::handle(&app, device_id, call_id, call).await;
+                    let result = calls::handle_holding(&app, device_id, call_id, call, permit);
+                    let result = result.await;
                     let _ = rets.send(ServerFrame::Ret { call_id, result }).await;
-                    drop(permit);
                 });
             }
             ClientFrame::Presence { .. } => {}
@@ -255,15 +257,8 @@ impl Session {
         // doesn't answer: it hears so (`Status`) instead of waiting.
         let hash = auth::token_hash(&token);
         let cant_check = Close(1011, "Weilo can't check this device right now.");
-        let device = match self
-            .app
-            .bounded(auth::device_for_token(&self.app.db, &token))
-            .await
-        {
-            Ok(device) => {
-                self.app.note_device(hash, device);
-                device
-            }
+        let device = match self.check_token(&token, &hash).await {
+            Ok(device) => device,
             Err(e) if crate::db::unreachable(&e) => {
                 tracing::info!("checked a device from memory: {e:#}");
                 let known = self.app.known_device(&hash).ok_or(cant_check)?;
@@ -331,6 +326,22 @@ impl Session {
             .get_or_insert_with(|| tokio::time::Instant::now() + CATCH_UP_AGAIN);
     }
 
+    /// Asks the database which device a token is, and notes it. A device removed while
+    /// it was being asked is asked about again, so it isn't let in (or remembered).
+    async fn check_token(&self, token: &str, hash: &[u8]) -> anyhow::Result<Option<Uuid>> {
+        for _ in 0..3 {
+            let removals = self.app.device_removals();
+            let device = self
+                .app
+                .bounded(auth::device_for_token(&self.app.db, token))
+                .await?;
+            if self.app.note_device(hash.to_vec(), device, removals) {
+                return Ok(device);
+            }
+        }
+        anyhow::bail!("devices kept being removed while one was checked")
+    }
+
     /// Checks again a device let in from memory, once the database answers: one no
     /// longer paired is closed.
     async fn check_again(&mut self) -> Result<(), Close> {
@@ -342,13 +353,8 @@ impl Session {
             self.unchecked = later(token);
             return Ok(());
         }
-        match self
-            .app
-            .bounded(auth::device_for_token(&self.app.db, &token))
-            .await
-        {
+        match self.check_token(&token, &auth::token_hash(&token)).await {
             Ok(device) => {
-                self.app.note_device(auth::token_hash(&token), device);
                 if device.is_none() || device != self.device_id {
                     return Err(Close(CLOSE_UNPAIRED, "This device was removed."));
                 }

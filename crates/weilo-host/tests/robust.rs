@@ -2645,3 +2645,196 @@ async fn stop_is_kept_in_the_chat() {
     assert_eq!(title, "Stopped.");
     assert_eq!(status, weilo_proto::StepStatus::Done);
 }
+
+async fn times_answered(db: &mut sqlx::PgConnection, thread: Uuid, text: &str) -> i64 {
+    sqlx::query_scalar(
+        "SELECT count(*) FROM events WHERE thread_id = $1 AND kind = 'agent_message'
+           AND body->>'text' = $2",
+    )
+    .bind(thread)
+    .bind(format!("You said: {text}"))
+    .fetch_one(db)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn a_send_cut_off_by_a_stop_reaches_its_agent_after_the_restart() {
+    let Some(mut host) = Host::start().await else {
+        return;
+    };
+    let token = host.pair().await;
+    let mut c = Client::connect(&host, Some(&token)).await.unwrap();
+    let thread = setup_with_echo(&mut c).await;
+    c.sub(thread, 0).await;
+    send(&mut c, thread, "hello").await;
+    c.next(|f| agent_text(f) == Some("You said: hello")).await;
+    c.next(|f| is_state(f, WorkState::Idle)).await;
+    // The chat's state is held, so a Send stops right after its message is written,
+    // and stays stopped while Weilo stops.
+    let mut holder = host.db().await;
+    sqlx::query("BEGIN").execute(&mut holder).await.unwrap();
+    sqlx::query(
+        "SELECT seq FROM projector_cursors WHERE projection = 'threads' AND thread_id = $1
+         FOR UPDATE",
+    )
+    .bind(thread)
+    .fetch_one(&mut holder)
+    .await
+    .unwrap();
+    let text = "did you get this?";
+    let call_id = Uuid::now_v7();
+    let send_it = || Call::Send {
+        thread_id: thread,
+        text: text.into(),
+        when: SendWhen::Now,
+    };
+    c.send(&ClientFrame::Call {
+        call_id,
+        call: send_it(),
+    })
+    .await;
+    {
+        let mut look = host.db().await;
+        let written = std::time::Instant::now();
+        while times_written(&mut look, thread, text).await == 0 {
+            assert!(
+                written.elapsed() < common::WAIT,
+                "never written\n{}",
+                host.log()
+            );
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+    drop(c);
+    host.stop();
+    drop(holder);
+    host.restart_with(&[]).await;
+    let mut look = host.db().await;
+    let running: bool = sqlx::query_scalar("SELECT running FROM call_results WHERE call_id = $1")
+        .bind(call_id)
+        .fetch_one(&mut look)
+        .await
+        .unwrap();
+    assert!(running, "the send was meant to be cut off\n{}", host.log());
+    // Asked again with the same call: it was done, and the agent answers it once.
+    let mut c = Client::connect(&host, Some(&token)).await.unwrap();
+    c.sub(thread, 0).await;
+    let r = c.call_with_id(call_id, send_it()).await;
+    assert!(
+        matches!(r, CallResult::Done { .. }),
+        "{r:?}\n{}",
+        host.log()
+    );
+    c.next(|f| agent_text(f) == Some("You said: did you get this?"))
+        .await;
+    let r = c.call_with_id(call_id, send_it()).await;
+    assert!(matches!(r, CallResult::Done { .. }), "{r:?}");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(times_written(&mut look, thread, text).await, 1);
+    assert_eq!(times_answered(&mut look, thread, text).await, 1);
+}
+
+#[tokio::test]
+async fn an_unfinished_send_whose_message_wasnt_written_runs_again() {
+    let Some(host) = Host::start().await else {
+        return;
+    };
+    let token = host.pair().await;
+    let mut c = Client::connect(&host, Some(&token)).await.unwrap();
+    let thread = setup_with_echo(&mut c).await;
+    c.sub(thread, 0).await;
+    let call_id = Uuid::now_v7();
+    let mut look = host.db().await;
+    sqlx::query(
+        "INSERT INTO call_results (device_id, call_id, result, running) VALUES ($1, $2, 'null', true)",
+    )
+    .bind(c.device_id)
+    .bind(call_id)
+    .execute(&mut look)
+    .await
+    .unwrap();
+    let text = "first try lost";
+    let send_it = || Call::Send {
+        thread_id: thread,
+        text: text.into(),
+        when: SendWhen::Now,
+    };
+    let r = c.call_with_id(call_id, send_it()).await;
+    assert!(
+        matches!(r, CallResult::Done { .. }),
+        "{r:?}\n{}",
+        host.log()
+    );
+    c.next(|f| agent_text(f) == Some("You said: first try lost"))
+        .await;
+    let r = c.call_with_id(call_id, send_it()).await;
+    assert!(matches!(r, CallResult::Done { .. }), "{r:?}");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(times_written(&mut look, thread, text).await, 1);
+    assert_eq!(times_answered(&mut look, thread, text).await, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stopping_waits_for_a_send_under_way() {
+    let Some(mut host) = Host::start().await else {
+        return;
+    };
+    let token = host.pair().await;
+    let mut c = Client::connect(&host, Some(&token)).await.unwrap();
+    let thread = setup_with_echo(&mut c).await;
+    c.sub(thread, 0).await;
+    send(&mut c, thread, "hello").await;
+    c.next(|f| is_state(f, WorkState::Idle)).await;
+    // The chat's state is held, so a Send waits right after its message is written;
+    // it is let go a moment after Weilo is told to stop.
+    let mut holder = host.db().await;
+    sqlx::query("BEGIN").execute(&mut holder).await.unwrap();
+    sqlx::query(
+        "SELECT seq FROM projector_cursors WHERE projection = 'threads' AND thread_id = $1
+         FOR UPDATE",
+    )
+    .bind(thread)
+    .fetch_one(&mut holder)
+    .await
+    .unwrap();
+    let text = "wait for me";
+    let call_id = Uuid::now_v7();
+    c.send(&ClientFrame::Call {
+        call_id,
+        call: Call::Send {
+            thread_id: thread,
+            text: text.into(),
+            when: SendWhen::Now,
+        },
+    })
+    .await;
+    {
+        let mut look = host.db().await;
+        let written = std::time::Instant::now();
+        while times_written(&mut look, thread, text).await == 0 {
+            assert!(
+                written.elapsed() < common::WAIT,
+                "never written\n{}",
+                host.log()
+            );
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+    let release = tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        sqlx::query("COMMIT").execute(&mut holder).await.unwrap();
+    });
+    tokio::task::block_in_place(|| host.stop());
+    release.await.unwrap();
+    host.restart_with(&[]).await;
+    let mut look = host.db().await;
+    let (running, result): (bool, serde_json::Value) =
+        sqlx::query_as("SELECT running, result FROM call_results WHERE call_id = $1")
+            .bind(call_id)
+            .fetch_one(&mut look)
+            .await
+            .unwrap();
+    assert!(!running, "{result}\n{}", host.log());
+    assert_eq!(result["ok"], "done", "{result}");
+}

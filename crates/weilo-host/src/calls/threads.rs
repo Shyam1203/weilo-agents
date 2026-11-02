@@ -322,8 +322,8 @@ pub async fn send(
     .bind(thread_id)
     .bind(chat_title(&text))
     .bind(NEW_CHAT)
-    .execute(&app.db)
-    .await?;
+    .execute(&app.db);
+    let named = app.bounded(named).await?;
     if named.rows_affected() > 0 {
         app.hub.changed(Changed::Threads);
     }
@@ -336,7 +336,47 @@ pub async fn send(
         .await?;
     app.runners
         .send(app, thread_id, Cmd::Message { text, when });
+    app.call_locks.note_handed(call_id);
     Ok(())
+}
+
+/// A send an earlier try left unfinished (Weilo stopped part way, say). True when its
+/// message was written: then its agent gets it, unless the agent already had it or
+/// something in the thread came after it (a reply, or a turn the restart cut off).
+/// False when it wasn't written, so the send can run again.
+pub async fn settle_unfinished(
+    app: &Arc<App>,
+    call_id: Uuid,
+    thread_id: Uuid,
+) -> anyhow::Result<bool> {
+    let written = app
+        .bounded(events::read_named(&app.db, thread_id, call_id))
+        .await?;
+    let Some(event) = written else {
+        return Ok(false);
+    };
+    let EventBody::UserMessage { text, when } = event.body.clone() else {
+        return Ok(true);
+    };
+    if app.call_locks.was_handed(call_id) {
+        return Ok(true);
+    }
+    let answered = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM events WHERE thread_id = $1 AND seq > $2
+                          AND source <> 'user')",
+    )
+    .bind(thread_id)
+    .bind(event.seq)
+    .fetch_one(&app.db);
+    if app.bounded(answered).await? {
+        return Ok(true);
+    }
+    // Told to devices and projected again: harmless twice.
+    app.committed(thread_id, vec![event]).await;
+    app.runners
+        .send(app, thread_id, Cmd::Message { text, when });
+    app.call_locks.note_handed(call_id);
+    Ok(true)
 }
 
 /// A session's name from its task: its first five words, without a closing stop.
@@ -383,12 +423,12 @@ fn chat_title(text: &str) -> String {
 
 /// A session whose folder is missing can't run.
 async fn session_problem(app: &App, thread_id: Uuid) -> CallResult<Option<CallError>> {
-    let dir: Option<Option<String>> = sqlx::query_scalar(
+    let dir = sqlx::query_scalar::<_, Option<String>>(
         "SELECT COALESCE(worktree, folder) FROM threads WHERE id = $1 AND kind = 'session'",
     )
     .bind(thread_id)
-    .fetch_optional(&app.db)
-    .await?;
+    .fetch_optional(&app.db);
+    let dir = app.bounded(dir).await?;
     Ok(match dir {
         Some(Some(dir)) if !PathBuf::from(&dir).is_dir() => {
             Some(CallError::invalid("This session's folder doesn't exist."))
@@ -502,11 +542,11 @@ pub async fn stop(app: &App, thread_id: Uuid) -> CallResult<()> {
 
 async fn require(app: &App, table: &str, id: Uuid, missing: &str) -> CallResult<()> {
     let sql = format!("SELECT EXISTS (SELECT 1 FROM {table} WHERE id = $1 AND space_id = $2)");
-    let found: bool = sqlx::query_scalar(&sql)
+    let found = sqlx::query_scalar::<_, bool>(&sql)
         .bind(id)
         .bind(app.space_id)
-        .fetch_one(&app.db)
-        .await?;
+        .fetch_one(&app.db);
+    let found = app.bounded(found).await?;
     if found {
         Ok(())
     } else {

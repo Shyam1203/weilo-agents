@@ -172,6 +172,9 @@ async fn serve_app(
     app.shutdown.cancel();
     admin.abort();
     worker.abort();
+    // Calls under way finish first (a message being sent reaches its agent), while the
+    // runners and the database still work.
+    app.call_locks.finish(CALLS_FINISH).await;
     let runners = app.clone();
     let _ = tokio::task::spawn_blocking(move || runners.runners.shutdown(process::GRACE)).await;
     app.keep_awake.stop();
@@ -182,6 +185,9 @@ async fn serve_app(
         .ok();
     served.context("server failed")
 }
+
+/// How long stopping waits for calls under way.
+const CALLS_FINISH: Duration = Duration::from_secs(8);
 
 /// Checks the audit log's chain at start. A break is reported (in the log and in the
 /// terminal), not fatal: Weilo still starts.

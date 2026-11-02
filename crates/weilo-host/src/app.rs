@@ -171,8 +171,9 @@ pub struct App {
     /// What the regular check last found: false while Postgres runs but doesn't answer.
     pub db_answers: tokio::sync::watch::Sender<bool>,
     /// Devices whose tokens were checked in this run (by token hash), so a device can
-    /// still connect while the database doesn't answer.
-    known_devices: Mutex<HashMap<Vec<u8>, Uuid>>,
+    /// still connect while the database doesn't answer; and how many devices were
+    /// removed in this run.
+    known_devices: Mutex<(HashMap<Vec<u8>, Uuid>, u64)>,
     /// The "not ready" line devices were last told (`None`: all is well).
     shown_status: Mutex<Option<String>>,
     port: AtomicU16,
@@ -396,29 +397,44 @@ impl App {
         self.known_devices
             .lock()
             .unwrap_or_else(|e| e.into_inner())
+            .0
             .get(token_hash)
             .copied()
     }
 
-    /// Notes what the database said of a token (`None`: no such device).
-    pub fn note_device(&self, token_hash: Vec<u8>, device: Option<Uuid>) {
+    /// How many devices were removed in this run: read before a token is checked, and
+    /// given to `note_device`.
+    pub fn device_removals(&self) -> u64 {
+        self.known_devices
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .1
+    }
+
+    /// Notes what the database said of a token (`None`: no such device). False, with
+    /// nothing noted, when a device was removed since `removals` was read: the answer
+    /// may predate that removal, so the token is asked about again.
+    pub fn note_device(&self, token_hash: Vec<u8>, device: Option<Uuid>, removals: u64) -> bool {
         let mut known = self.known_devices.lock().unwrap_or_else(|e| e.into_inner());
+        if known.1 != removals {
+            return false;
+        }
         match device {
             Some(id) => {
-                known.insert(token_hash, id);
+                known.0.insert(token_hash, id);
             }
             None => {
-                known.remove(&token_hash);
+                known.0.remove(&token_hash);
             }
         }
+        true
     }
 
     /// A device was removed: its token no longer counts, even unchecked.
     pub fn forget_device(&self, device: Uuid) {
-        self.known_devices
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .retain(|_, id| *id != device);
+        let mut known = self.known_devices.lock().unwrap_or_else(|e| e.into_inner());
+        known.0.retain(|_, id| *id != device);
+        known.1 += 1;
     }
 
     /// Forgets a thread's cached seq (its runner ended); it is read again when needed.
