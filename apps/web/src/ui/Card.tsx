@@ -1,8 +1,8 @@
-import type { HTMLAttributes } from "react";
+import type { HTMLAttributes, Ref } from "react";
 import { cx } from "../lib/format";
 
 /** Cards: surface, a hairline border, radius 12 (16 on phones), e1. */
-export function Card({ className, phone, ...rest }: HTMLAttributes<HTMLElement> & { phone?: boolean }) {
+export function Card({ className, phone, ...rest }: HTMLAttributes<HTMLElement> & { phone?: boolean; ref?: Ref<HTMLElement> }) {
   return (
     <section
       className={cx(

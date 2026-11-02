@@ -270,29 +270,42 @@ export async function send(threadId: string, text: string, when: SendWhen = "now
   } catch (e) {
     // It may have gone through: ask again with the same id until the host knows. The same id
     // never posts it twice, so the message stays as Sending… rather than going back in the box.
-    if (e instanceof HostError && UNSURE.has(e.code) && (await sendSettles(c, callId))) return true;
+    let err = e;
+    if (e instanceof HostError && UNSURE.has(e.code)) {
+      try {
+        if (await sendSettles(c, callId)) return true;
+      } catch (later) {
+        err = later;
+      }
+    }
     store.set((s) => setDraft(removeSending(s, threadId, id), threadId, trimmed));
-    showError(e instanceof HostError ? e : new Error("Couldn't send that. Try again."));
+    showError(err instanceof HostError ? err : new Error("Couldn't send that. Try again."));
     return false;
   }
 }
 
 /** Answers that don't say whether a send happened. */
 const UNSURE = new Set(["unknown", "timeout"]);
-const SETTLE_TRIES = 60;
+/** How long to keep asking about an unsure send: the host keeps its answer far longer. */
+const SETTLE_FOR_MS = 3 * 60_000;
 
-/** Re-asks a send whose outcome is unknown, every few seconds for a few minutes. True once the host says it's done. */
+/** Re-asks a send whose outcome is unknown, every few seconds for a few minutes. True once the host says
+ *  it's done; otherwise throws the last answer. */
 async function sendSettles(c: Call, callId: string): Promise<boolean> {
-  for (let i = 0; i < SETTLE_TRIES; i++) {
+  const until = Date.now() + SETTLE_FOR_MS;
+  let last: unknown = null;
+  while (Date.now() < until) {
     await new Promise((r) => setTimeout(r, 3000));
     try {
       await call(c, callId);
       return true;
     } catch (e) {
+      last = e;
       // Still unsure, or the host or its database is away: keep asking. Anything else is an answer.
-      if (!(e instanceof HostError && (UNSURE.has(e.code) || e.code === "database_away" || e.code === "offline"))) return false;
+      if (!(e instanceof HostError && (UNSURE.has(e.code) || e.code === "database_away" || e.code === "offline"))) throw e;
     }
   }
+  if (last) throw last;
   return false;
 }
 

@@ -8,6 +8,7 @@ import { AlertIcon, CheckIcon } from "../../ui/glyphs";
 import { EngineHelpDialog } from "../engines/EngineHelpDialog";
 import { KeyDialog } from "../engines/KeyDialog";
 import { NewSessionDialog } from "../shell/dialogs";
+import { useKeepFocus } from "../../ui/keepFocus";
 
 /**
  * Something went wrong, in one line, with the host's button. Once it was dealt with (a
@@ -41,16 +42,17 @@ export function Problem({
   const owner = useApp((s) => aiOwner(s.snapshot, threadId, agentId));
   const titles = useApp(engineTitles);
   const plain = plainProblem(message, owner, titles, code);
+  const keep = useKeepFocus<HTMLDivElement>();
   if (fixed)
     return (
-      <div className="flex flex-wrap items-center gap-2 rounded-md bg-surface-muted px-3 py-2 text-body-sm text-text-secondary" role="note">
+      <div {...keep} className="flex flex-wrap items-center gap-2 rounded-md bg-surface-muted px-3 py-2 text-body-sm text-text-secondary outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" role="note">
         <CheckIcon className="shrink-0 text-success" />
         <span className="min-w-0 flex-1">{resolved ? "Key updated" : "Key updated. Try again"}</span>
         {!resolved && <ProblemButton threadId={threadId} agentId={agentId} action="Try again" size="sm" />}
       </div>
     );
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-md bg-surface-muted px-3 py-2 text-body-sm text-text-secondary" role="note">
+    <div {...keep} className="flex flex-wrap items-center gap-2 rounded-md bg-surface-muted px-3 py-2 text-body-sm text-text-secondary outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" role="note">
       <AlertIcon className="shrink-0" />
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <TextWithCode text={plain.line} />

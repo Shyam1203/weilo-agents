@@ -10,6 +10,7 @@ import { Button, type ButtonVariant } from "../../ui/Button";
 import { Card } from "../../ui/Card";
 import { CheckIcon, ChevronDownIcon, MailIcon, XCircleIcon } from "../../ui/glyphs";
 import { RiskLine } from "../../ui/RiskLine";
+import { useKeepFocus } from "../../ui/keepFocus";
 import { focusComposer, useVariant } from "./useThread";
 
 export interface EventCardProps {
@@ -107,6 +108,7 @@ export function EventCard({ card, decided, threadId, detailsLabel = "Show detail
           ? { text: "No answer in time", at: null, yes: false }
           : null;
 
+  const keep = useKeepFocus<HTMLElement>();
   const [titleText, ...meta] = draft ? card.title.split(" · ") : [card.title];
   const [subject, ...rest] = draft && card.body ? card.body.split("\n") : [];
 
@@ -138,7 +140,7 @@ export function EventCard({ card, decided, threadId, detailsLabel = "Show detail
 
   if (draft) {
     return (
-      <Card phone={phone} aria-label={titleText}>
+      <Card phone={phone} aria-label={titleText} {...keep} className="outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
         <div className="flex min-h-11 items-center gap-2 border-b border-border px-4 py-2">
           <MailIcon className="shrink-0 text-text-secondary" />
           <span className="flex-1 text-title-sm font-semibold">{titleText}</span>
@@ -155,7 +157,7 @@ export function EventCard({ card, decided, threadId, detailsLabel = "Show detail
   }
 
   return (
-    <Card phone={phone} aria-label={card.kind === "question" ? "Question" : "Approval"} className="flex flex-col gap-3 p-4">
+    <Card phone={phone} aria-label={card.kind === "question" ? "Question" : "Approval"} {...keep} className="flex flex-col gap-3 p-4 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
       <div className="text-title-sm font-semibold">{card.title}</div>
       {card.body && <div className="whitespace-pre-wrap text-text-secondary">{card.body}</div>}
       {details}
