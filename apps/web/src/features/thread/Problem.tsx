@@ -35,7 +35,8 @@ export function Problem({
   seq?: bigint | null;
   resolved?: boolean;
 }) {
-  const fixed = useApp((s) => !resolved && seq !== null && keyFixedFor(s, threadId, { seq }));
+  // A key saved since fixes it: "Key updated. Try again", then just "Key updated" once it worked.
+  const fixed = useApp((s) => seq !== null && keyFixedFor(s, threadId, { seq }));
   // Said about the agent; the AI app's own words stay under Details.
   const owner = useApp((s) => aiOwner(s.snapshot, threadId, agentId));
   const titles = useApp(engineTitles);
@@ -44,8 +45,8 @@ export function Problem({
     return (
       <div className="flex flex-wrap items-center gap-2 rounded-md bg-surface-muted px-3 py-2 text-body-sm text-text-secondary" role="note">
         <CheckIcon className="shrink-0 text-success" />
-        <span className="min-w-0 flex-1">Key updated. Try again</span>
-        <ProblemButton threadId={threadId} agentId={agentId} action="Try again" size="sm" />
+        <span className="min-w-0 flex-1">{resolved ? "Key updated" : "Key updated. Try again"}</span>
+        {!resolved && <ProblemButton threadId={threadId} agentId={agentId} action="Try again" size="sm" />}
       </div>
     );
   return (

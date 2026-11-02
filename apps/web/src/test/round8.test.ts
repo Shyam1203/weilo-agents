@@ -77,3 +77,19 @@ describe("typed words for gone chats", () => {
     expect(loadTyped("new:agent-ava")).toBe("draft");
   });
 });
+
+describe("an approval shows once", () => {
+  it("hides the step that has the same name as the card", async () => {
+    const { buildBlocks } = await import("../lib/timeline");
+    const ev = (seq: number, body: object) => ({ seq: BigInt(seq), at: "2026-11-01T10:00:00Z", source: "engine", body }) as never;
+    const card = { kind: "approval", approval_id: "ap1", title: "Run the shop's checks", body: null, details: null, risk: "local", risk_line: "", actions: [], fallback_text: "" };
+    const blocks = buildBlocks([
+      ev(1, { kind: "user_message", text: "go", when: "now" }),
+      ev(2, { kind: "step", step_id: "t1", title: "Run the shop's checks", status: "running" }),
+      ev(3, { kind: "card", card }),
+      ev(4, { kind: "step", step_id: "t2", title: "Read the notes", status: "done" }),
+    ]);
+    const titles = blocks.flatMap((b) => (b.type === "agent" ? b.items.flatMap((i) => (i.type === "steps" ? i.steps.map((s) => s.title) : [])) : []));
+    expect(titles).toEqual(["Read the notes"]);
+  });
+});

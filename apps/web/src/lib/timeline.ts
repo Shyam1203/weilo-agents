@@ -212,6 +212,17 @@ export function buildBlocks(events: Event[], defaultAgentId: string | null = nul
     say(events[events.length - 1]!, "Stopped.");
   }
   for (const b of blocks) if (b.type === "agent" && b.agentId === null) b.agentId = defaultAgentId;
+  // An approval shows once: as its card, not also as the step of the same name beside it.
+  for (const b of blocks) {
+    if (b.type !== "agent") continue;
+    const asked = new Set(b.items.flatMap((i) => (i.type === "card" && i.card.approval_id ? [i.card.title.trim()] : [])));
+    if (asked.size === 0) continue;
+    b.items = b.items.flatMap((i): AgentItem[] => {
+      if (i.type !== "steps") return [i];
+      const steps = i.steps.filter((st) => !asked.has(st.title.trim()));
+      return steps.length ? [{ ...i, steps }] : [];
+    });
+  }
   return blocks;
 }
 
