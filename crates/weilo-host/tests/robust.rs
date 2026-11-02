@@ -2265,6 +2265,9 @@ async fn stop_ends_an_engine_that_is_still_starting() {
     c.sub(thread, 0).await;
     send(&mut c, thread, "hello").await;
     c.next(|f| is_state(f, WorkState::Working)).await;
+    // The chat says the engine is starting, not that it is replying.
+    c.next(|f| live_line(f) == Some((WorkState::Working, "Starting up…")))
+        .await;
     eventually("the engine to begin starting", || pid_file.exists()).await;
     let pid: i32 = loop {
         if let Ok(pid) = std::fs::read_to_string(&pid_file).unwrap().trim().parse() {

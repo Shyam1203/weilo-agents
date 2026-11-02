@@ -63,6 +63,8 @@ pub const STOPPED: &str = "Stopped.";
 pub const STOPPED_STEP: &str = "stopped-";
 /// The live line while a message waits for the database to answer.
 const WAITING_FOR_DB: &str = "Waiting for the database…";
+/// The live line while the engine starts, before the message reaches it.
+const STARTING: &str = "Starting up…";
 /// Said when a message waited too long for the database.
 const DB_GAVE_UP: &str = "Weilo's database didn't answer, so this message didn't start.";
 
@@ -607,6 +609,7 @@ impl Runner {
                 self.slot = None;
                 return self.start_failed(e, Some(text)).await;
             }
+            self.set_state(WorkState::Working, STARTING).await;
             return;
         }
         self.prompt(text, None).await;
@@ -923,6 +926,9 @@ impl Runner {
             self.problem("fresh_start", &message, None).await;
         }
         self.conn = Some(conn);
+        if self.state.1 == STARTING {
+            self.set_state(WorkState::Working, "").await;
+        }
         self.prompt(text, Some(ctx)).await;
     }
 
