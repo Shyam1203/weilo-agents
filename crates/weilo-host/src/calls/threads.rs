@@ -1,0 +1,564 @@
+//! Threads, sessions and messages.
+
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use serde_json::json;
+use sqlx::PgConnection;
+use uuid::Uuid;
+use weilo_proto::{Changed, EventBody, SendWhen, SessionChanges, ThreadSummary};
+
+use super::read;
+use crate::app::App;
+use crate::audit;
+use crate::engines::{Cmd, expand_tilde};
+use crate::error::{CallError, CallResult};
+use crate::events::{self, Source};
+use crate::home::is_within;
+use crate::ids::new_id;
+use crate::slug::session_slug;
+use crate::worktree::{self, Prepared};
+
+/// A chat's title until its first message names it.
+const NEW_CHAT: &str = "New chat";
+
+#[derive(Default)]
+pub struct NewThread {
+    pub id: Uuid,
+    pub kind: &'static str,
+    pub channel_id: Option<Uuid>,
+    pub agent_id: Option<Uuid>,
+    pub title: String,
+    pub engine: Option<String>,
+    pub folder: Option<String>,
+    pub worktree: Option<String>,
+    pub started_by: Option<String>,
+}
+
+pub async fn insert_thread(app: &App, tx: &mut PgConnection, t: &NewThread) -> sqlx::Result<()> {
+    sqlx::query(
+        "INSERT INTO threads (id, space_id, kind, channel_id, agent_id, owner_host, owner_epoch,
+                              title, engine, folder, worktree, started_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+    )
+    .bind(t.id)
+    .bind(app.space_id)
+    .bind(t.kind)
+    .bind(t.channel_id)
+    .bind(t.agent_id)
+    .bind(app.fence.host)
+    .bind(app.fence.epoch)
+    .bind(&t.title)
+    .bind(&t.engine)
+    .bind(&t.folder)
+    .bind(&t.worktree)
+    .bind(&t.started_by)
+    .execute(tx)
+    .await?;
+    Ok(())
+}
+
+pub async fn create(
+    app: &App,
+    channel_id: Uuid,
+    agent_id: Uuid,
+    title: Option<String>,
+) -> CallResult<ThreadSummary> {
+    require(app, "channels", channel_id, "That channel is gone.").await?;
+    require(app, "agents", agent_id, "That agent is gone.").await?;
+    let title = title
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty());
+    let thread = NewThread {
+        id: new_id(),
+        kind: "chat",
+        channel_id: Some(channel_id),
+        agent_id: Some(agent_id),
+        title: title.unwrap_or_else(|| NEW_CHAT.into()),
+        ..NewThread::default()
+    };
+    let mut tx = app.db.begin().await?;
+    insert_thread(app, &mut tx, &thread).await?;
+    tx.commit().await?;
+    app.hub.changed(Changed::Threads);
+    read::thread(app, thread.id).await
+}
+
+pub async fn move_to(app: &App, thread_id: Uuid, channel_id: Uuid) -> CallResult<ThreadSummary> {
+    require(app, "channels", channel_id, "That channel is gone.").await?;
+    let mut tx = app.db.begin().await?;
+    let done = sqlx::query("UPDATE threads SET channel_id = $2 WHERE id = $1 AND space_id = $3")
+        .bind(thread_id)
+        .bind(channel_id)
+        .bind(app.space_id)
+        .execute(&mut *tx)
+        .await?;
+    if done.rows_affected() == 0 {
+        return Err(CallError::not_found("That thread is gone."));
+    }
+    let body = EventBody::Filed { channel_id };
+    let ev = events::append(&mut tx, app.fence, thread_id, &body, Source::User, false).await?;
+    tx.commit().await?;
+    app.committed(thread_id, vec![ev]).await;
+    app.hub.changed(Changed::Threads);
+    read::thread(app, thread_id).await
+}
+
+pub struct NewSession {
+    pub folder: String,
+    pub engine: String,
+    pub title: Option<String>,
+    pub channel_id: Option<Uuid>,
+    pub agent_id: Option<Uuid>,
+    /// Sent as the first message.
+    pub task: Option<String>,
+}
+
+pub async fn start_session(
+    app: &Arc<App>,
+    device: Uuid,
+    s: NewSession,
+) -> CallResult<ThreadSummary> {
+    if app.engines.get(&s.engine).is_none() {
+        return Err(CallError::invalid("That engine isn't available."));
+    }
+    let folder = expand_tilde(s.folder.trim());
+    if !folder.is_absolute() {
+        return Err(CallError::invalid("Use a full folder path."));
+    }
+    if !folder.is_dir() {
+        return Err(CallError::invalid("This folder doesn't exist."));
+    }
+    if let Some(why) = off_limits(app, &folder) {
+        return Err(CallError::invalid(why));
+    }
+    if let Some(channel_id) = s.channel_id {
+        require(app, "channels", channel_id, "That channel is gone.").await?;
+    }
+    let started_by = match s.agent_id {
+        Some(id) => Some(agent_name(app, id).await?),
+        None => None,
+    };
+    // A name it was given; else what it's asked to do, in a few words; else the
+    // folder's name. Two sessions never share one ("shop", "shop 2").
+    let task_name = s.task.as_deref().map(task_title).filter(|t| !t.is_empty());
+    let title = s
+        .title
+        .clone()
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
+        .or(task_name)
+        .unwrap_or_else(|| folder_name(&folder));
+    let thread_id = new_id();
+    let folder_text = folder.display().to_string();
+    // One session start at a time picks its name, so two started at once can't both
+    // take "shop". The name is saved with the session right away, and the lock let go
+    // before its copy of the repo is made (which can take a while).
+    let mut tx = app.db.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('weilo.session-title'))")
+        .execute(&mut *tx)
+        .await?;
+    let title = free_session_title(&mut tx, app.space_id, title).await?;
+    let thread = NewThread {
+        id: thread_id,
+        kind: "session",
+        channel_id: s.channel_id,
+        agent_id: s.agent_id,
+        title,
+        engine: Some(s.engine.clone()),
+        folder: Some(folder_text.clone()),
+        worktree: None,
+        started_by: Some(started_by.unwrap_or_else(|| "you".into())),
+    };
+    insert_thread(app, &mut tx, &thread).await?;
+    tx.commit().await?;
+    // Copies are made one at a time, so two can't reach for the same folder name.
+    let prepared = {
+        let _one_at_a_time = app.worktrees.lock().await;
+        worktree::prepare(&folder, &session_slug(&thread.title)).await
+    };
+    let saved = save_session(app, device, &thread, &s.engine, &prepared).await;
+    let ev = match saved {
+        Ok(ev) => ev,
+        Err(e) => {
+            // Not saved: nothing of it is left behind.
+            forget_session(app, thread_id, &folder, &prepared).await;
+            return Err(e);
+        }
+    };
+    let missing = matches!(prepared, Prepared::Missing);
+    if let Some(ev) = ev {
+        app.committed(thread_id, vec![ev]).await;
+    }
+    app.hub.changed(Changed::Threads);
+    let task = s.task.as_deref().map(str::trim).filter(|t| !t.is_empty());
+    if let Some(task) = task
+        && !missing
+    {
+        // The session's first message: nothing ran before it, so it goes as a plain one.
+        send(app, new_id(), thread.id, task.to_string(), SendWhen::Now).await?;
+    }
+    read::thread(app, thread.id).await
+}
+
+/// Saves where a new session works, and says so in the audit log; a session that
+/// works in the folder itself says why in its chat (the event is returned).
+async fn save_session(
+    app: &App,
+    device: Uuid,
+    thread: &NewThread,
+    engine: &str,
+    prepared: &Prepared,
+) -> CallResult<Option<weilo_proto::Event>> {
+    let worktree = match prepared {
+        Prepared::Worktree { path, .. } => Some(path.display().to_string()),
+        _ => None,
+    };
+    let mut tx = app.db.begin().await?;
+    sqlx::query("UPDATE threads SET worktree = $2 WHERE id = $1")
+        .bind(thread.id)
+        .bind(&worktree)
+        .execute(&mut *tx)
+        .await?;
+    let detail = json!({ "thread_id": thread.id, "folder": thread.folder, "engine": engine, "worktree": worktree });
+    let entry = audit::Entry {
+        actor: "device",
+        device_id: Some(device),
+        action: "session.start",
+        detail,
+    };
+    audit::append(&mut tx, app.space_id, entry).await?;
+    let ev = match problem_for(prepared) {
+        Some(problem) => Some(
+            events::append(&mut tx, app.fence, thread.id, &problem, Source::Host, false).await?,
+        ),
+        None => None,
+    };
+    tx.commit().await?;
+    Ok(ev)
+}
+
+/// Takes back a session that couldn't be saved: its row and its copy of the repo.
+async fn forget_session(app: &App, thread_id: Uuid, folder: &std::path::Path, prepared: &Prepared) {
+    let gone = sqlx::query("DELETE FROM threads WHERE id = $1")
+        .bind(thread_id)
+        .execute(&app.db)
+        .await;
+    if let Err(e) = gone {
+        tracing::warn!("couldn't take back the session {thread_id}: {e}");
+    }
+    if let Prepared::Worktree { path, branch } = prepared {
+        worktree::discard(folder, path, branch).await;
+    }
+}
+
+/// Folders a session may not work in: Weilo's own data folder (and anything inside
+/// it), any folder that holds it, and the whole home folder.
+fn off_limits(app: &App, folder: &std::path::Path) -> Option<&'static str> {
+    let data = app.home.root();
+    if is_within(folder, data) {
+        return Some("That's Weilo's own data folder. Choose a project folder.");
+    }
+    if is_within(data, folder) {
+        return Some("That folder holds Weilo's data. Choose a project folder inside it.");
+    }
+    if dirs::home_dir().is_some_and(|home| is_within(&home, folder)) {
+        return Some("Choose a project folder, not your whole home folder.");
+    }
+    None
+}
+
+fn problem_for(p: &Prepared) -> Option<EventBody> {
+    let (code, message) = match p {
+        Prepared::Missing => ("folder_missing", "This folder doesn't exist."),
+        Prepared::Plain => (
+            "not_git",
+            "This folder isn't a git repo, so changes go straight into it.",
+        ),
+        Prepared::Failed { .. } => (
+            "no_copy",
+            "Couldn't make a separate copy of the repo, so this session works in the folder itself.",
+        ),
+        _ => return None,
+    };
+    let action = matches!(p, Prepared::Missing).then(|| "Choose another folder".to_string());
+    Some(EventBody::Problem {
+        message: message.into(),
+        action,
+        code: Some(code.into()),
+        engine: None,
+    })
+}
+
+fn folder_name(folder: &std::path::Path) -> String {
+    folder
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "Session".into())
+}
+
+/// Sends a message. `call_id` names its event, so a call tried again after a lost
+/// reply never writes it twice.
+pub async fn send(
+    app: &Arc<App>,
+    call_id: Uuid,
+    thread_id: Uuid,
+    text: String,
+    when: SendWhen,
+) -> CallResult<()> {
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return Err(CallError::invalid("Write something to send."));
+    }
+    require(app, "threads", thread_id, "That thread is gone.").await?;
+    if let Some(problem) = session_problem(app, thread_id).await? {
+        return Err(problem);
+    }
+    // An untitled chat is named after its first message.
+    let named = sqlx::query(
+        "UPDATE threads SET title = $2 WHERE id = $1 AND kind = 'chat' AND title = $3
+           AND NOT EXISTS (SELECT 1 FROM events WHERE thread_id = $1 AND kind = 'user_message')",
+    )
+    .bind(thread_id)
+    .bind(chat_title(&text))
+    .bind(NEW_CHAT)
+    .execute(&app.db);
+    let named = app.bounded(named).await?;
+    if named.rows_affected() > 0 {
+        app.hub.changed(Changed::Threads);
+    }
+    let body = EventBody::UserMessage {
+        text: text.clone(),
+        when,
+    };
+    // Already written by an earlier try that then failed: its runner never had it.
+    app.append_once(thread_id, call_id, &body, Source::User)
+        .await?;
+    app.runners
+        .send(app, thread_id, Cmd::Message { text, when });
+    app.call_locks.note_handed(call_id);
+    Ok(())
+}
+
+/// A send an earlier try left unfinished (Weilo stopped part way, say). True when its
+/// message was written: then its agent gets it, unless the agent already had it or
+/// something in the thread came after it (a reply, or a turn the restart cut off).
+/// False when it wasn't written, so the send can run again.
+pub async fn settle_unfinished(
+    app: &Arc<App>,
+    call_id: Uuid,
+    thread_id: Uuid,
+) -> anyhow::Result<bool> {
+    let written = app
+        .bounded(events::read_named(&app.db, thread_id, call_id))
+        .await?;
+    let Some(event) = written else {
+        return Ok(false);
+    };
+    let EventBody::UserMessage { text, when } = event.body.clone() else {
+        return Ok(true);
+    };
+    if app.call_locks.was_handed(call_id) {
+        return Ok(true);
+    }
+    let answered = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM events WHERE thread_id = $1 AND seq > $2
+                          AND source <> 'user')",
+    )
+    .bind(thread_id)
+    .bind(event.seq)
+    .fetch_one(&app.db);
+    if app.bounded(answered).await? {
+        return Ok(true);
+    }
+    // Told to devices and projected again: harmless twice.
+    app.committed(thread_id, vec![event]).await;
+    app.runners
+        .send(app, thread_id, Cmd::Message { text, when });
+    app.call_locks.note_handed(call_id);
+    Ok(true)
+}
+
+/// A session's name from its task: its first five words, without a closing stop.
+fn task_title(task: &str) -> String {
+    let words: Vec<&str> = task.split_whitespace().take(5).collect();
+    let name = words.join(" ");
+    let name = name.trim_end_matches(['.', ',', ':', ';', '!', '?']);
+    chat_title(name)
+}
+
+/// `title`, or `title 2`, `title 3`… when another session already has it.
+async fn free_session_title(
+    db: &mut sqlx::PgConnection,
+    space_id: Uuid,
+    title: String,
+) -> CallResult<String> {
+    let taken: Vec<String> = sqlx::query_scalar(
+        "SELECT title FROM threads WHERE space_id = $1 AND kind = 'session'
+           AND (title = $2 OR left(title, length($2) + 1) = $2 || ' ')",
+    )
+    .bind(space_id)
+    .bind(&title)
+    .fetch_all(db)
+    .await?;
+    if !taken.contains(&title) {
+        return Ok(title);
+    }
+    let free = (2..)
+        .map(|n| format!("{title} {n}"))
+        .find(|t| !taken.contains(t))
+        .expect("a free name");
+    Ok(free)
+}
+
+/// The first line of a message, cut to a short title.
+fn chat_title(text: &str) -> String {
+    let line = text.lines().next().unwrap_or_default().trim();
+    if line.chars().count() <= 40 {
+        return line.to_string();
+    }
+    let cut: String = line.chars().take(40).collect();
+    format!("{}…", cut.trim_end())
+}
+
+/// A session whose folder is missing can't run.
+async fn session_problem(app: &App, thread_id: Uuid) -> CallResult<Option<CallError>> {
+    let dir = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT COALESCE(worktree, folder) FROM threads WHERE id = $1 AND kind = 'session'",
+    )
+    .bind(thread_id)
+    .fetch_optional(&app.db);
+    let dir = app.bounded(dir).await?;
+    Ok(match dir {
+        Some(Some(dir)) if !PathBuf::from(&dir).is_dir() => {
+            Some(CallError::invalid("This session's folder doesn't exist."))
+        }
+        _ => None,
+    })
+}
+
+/// Marks a session as being brought back while it lives.
+struct BringingBack<'a> {
+    app: &'a App,
+    thread_id: Uuid,
+}
+
+impl Drop for BringingBack<'_> {
+    fn drop(&mut self) {
+        let mut set = self.app.bringing_back.lock().expect("bring back lock");
+        set.remove(&self.thread_id);
+    }
+}
+
+/// Brings a session's changes back into its folder (see `worktree::merge_back`). The
+/// thread's runner does the merge between turns, so a message sent meanwhile waits for
+/// it; a second Bring back at the same time is told one is under way.
+pub async fn merge_session(app: &Arc<App>, device: Uuid, thread_id: Uuid) -> CallResult<String> {
+    let row: Option<(Option<String>, Option<String>, String)> = sqlx::query_as(
+        "SELECT folder, worktree, title FROM threads
+         WHERE id = $1 AND space_id = $2 AND kind = 'session'",
+    )
+    .bind(thread_id)
+    .bind(app.space_id)
+    .fetch_optional(&app.db)
+    .await?;
+    let Some((Some(folder), worktree, title)) = row else {
+        return Err(CallError::not_found("That session is gone."));
+    };
+    let Some(worktree) = worktree else {
+        return Err(CallError::invalid(
+            "This session works in the folder itself, so its changes are already there.",
+        ));
+    };
+    let first = app
+        .bringing_back
+        .lock()
+        .expect("bring back lock")
+        .insert(thread_id);
+    if !first {
+        return Err(CallError::conflict("Already bringing these changes back."));
+    }
+    let _marked = BringingBack {
+        app: app.as_ref(),
+        thread_id,
+    };
+    let (reply, answer) = tokio::sync::oneshot::channel();
+    let cmd = Cmd::BringBack {
+        folder: PathBuf::from(&folder),
+        worktree: PathBuf::from(&worktree),
+        title,
+        reply,
+    };
+    app.runners.send(app, thread_id, cmd);
+    let result = answer
+        .await
+        .unwrap_or_else(|_| Err("Couldn't bring the changes back. Try again.".into()));
+    if result.as_ref().err().map(String::as_str) == Some(crate::engines::STILL_WORKING) {
+        return Err(CallError::conflict(crate::engines::STILL_WORKING));
+    }
+    let mut tx = app.db.begin().await?;
+    let entry = audit::Entry {
+        actor: "device",
+        device_id: Some(device),
+        action: "session.merge",
+        detail: json!({ "thread_id": thread_id, "worktree": worktree, "ok": result.is_ok() }),
+    };
+    audit::append(&mut tx, app.space_id, entry).await?;
+    tx.commit().await?;
+    result.map_err(CallError::conflict)
+}
+
+/// What a session changed so far, read from its copy of the repo (or its folder).
+pub async fn session_changes(app: &App, thread_id: Uuid) -> CallResult<SessionChanges> {
+    let row: Option<(
+        Option<String>,
+        Option<String>,
+        chrono::DateTime<chrono::Utc>,
+    )> = sqlx::query_as(
+        "SELECT folder, worktree, created_at FROM threads
+             WHERE id = $1 AND space_id = $2 AND kind = 'session'",
+    )
+    .bind(thread_id)
+    .bind(app.space_id)
+    .fetch_optional(&app.db)
+    .await?;
+    let Some((Some(folder), worktree, started)) = row else {
+        return Err(CallError::not_found("That session is gone."));
+    };
+    let changes = worktree::changes(
+        std::path::Path::new(&folder),
+        worktree.as_deref().map(std::path::Path::new),
+        started.into(),
+    )
+    .await;
+    changes.map_err(CallError::conflict)
+}
+
+pub async fn stop(app: &App, thread_id: Uuid) -> CallResult<()> {
+    require(app, "threads", thread_id, "That thread is gone.").await?;
+    app.runners.send_if_running(thread_id, Cmd::Stop);
+    Ok(())
+}
+
+async fn require(app: &App, table: &str, id: Uuid, missing: &str) -> CallResult<()> {
+    let sql = format!("SELECT EXISTS (SELECT 1 FROM {table} WHERE id = $1 AND space_id = $2)");
+    let found = sqlx::query_scalar::<_, bool>(&sql)
+        .bind(id)
+        .bind(app.space_id)
+        .fetch_one(&app.db);
+    let found = app.bounded(found).await?;
+    if found {
+        Ok(())
+    } else {
+        Err(CallError::not_found(missing))
+    }
+}
+
+async fn agent_name(app: &App, id: Uuid) -> CallResult<String> {
+    sqlx::query_scalar("SELECT name FROM agents WHERE id = $1 AND space_id = $2")
+        .bind(id)
+        .bind(app.space_id)
+        .fetch_optional(&app.db)
+        .await?
+        .ok_or_else(|| CallError::not_found("That agent is gone."))
+}

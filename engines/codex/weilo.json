@@ -1,0 +1,20 @@
+{
+  "apiVersion": 1,
+  "kind": "engine",
+  "name": "codex",
+  "title": "Codex",
+  "description": "OpenAI's coding agent, with your own sign-in.",
+  "install": { "npm": ["@zed-industries/codex-acp@0.16.0"] },
+  "command": ["{install}/node_modules/.bin/codex-acp"],
+  "passEnv": ["OPENAI_API_KEY", "CODEX_API_KEY"],
+  "keys": [{ "id": "openai", "title": "OpenAI", "env": "OPENAI_API_KEY" }],
+  "signIn": {
+    "files": ["~/.codex/auth.json"],
+    "how": "Open Terminal, run `codex` and sign in.",
+    "command": "codex",
+    "get": "Install it from Terminal: npm install -g @openai/codex."
+  },
+  "model": { "env": { "CODEX_MODEL": "{model}" } },
+  "detect": { "commands": ["codex"], "paths": ["~/.codex"] },
+  "bindsApprovals": true
+}

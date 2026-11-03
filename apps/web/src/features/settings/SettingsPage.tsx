@@ -1,0 +1,247 @@
+import { useEffect, useState, type ReactNode } from "react";
+import { loadAllowRules, loadDevices, revokeAllowRuleLater, revokeDevice, savePrefs } from "../../lib/app";
+import { deviceLine, removeDeviceLine, repeatedNames, sortDevices } from "../../lib/settings";
+import type { AllowRuleInfo } from "../../proto/AllowRuleInfo";
+import type { DeviceInfo } from "../../proto/DeviceInfo";
+import { SECTION_KEYS, SECTION_TITLES, withSection } from "../../lib/sidebar";
+import { useApp } from "../../lib/store";
+import { setTheme, useTheme, type Theme } from "../../lib/theme";
+import { Button } from "../../ui/Button";
+import { Switch } from "../../ui/Switch";
+import { Tabs } from "../../ui/Tabs";
+import { canPick, needKind, statusLine } from "../../lib/engines";
+import { engineTitle, whenInSentence } from "../../lib/format";
+import type { EngineInfo } from "../../proto/EngineInfo";
+import { ErrorLine, TextWithCode } from "../../ui/bits";
+import { EngineHelpDialog } from "../engines/EngineHelpDialog";
+import { useEngineList } from "../engines/EnginePicker";
+import { KeyDialog } from "../engines/KeyDialog";
+import { PageFrame } from "../shell/PageFrame";
+
+function Group({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section aria-label={title} className="flex flex-col gap-2">
+      <h2 className="m-0 flex h-7 items-center text-caption font-medium text-text-tertiary">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+/** Kept small: how it looks, what the sidebar shows, the AI apps and this computer. */
+export function SettingsPage({ phone }: { phone?: boolean }) {
+  const prefs = useApp((s) => s.snapshot!.prefs);
+  const hostName = useApp((s) => s.hostName);
+  const keepAwake = useApp((s) => s.snapshot!.setup.keep_awake);
+  const theme = useTheme();
+
+  return (
+    <PageFrame title={phone ? "You" : "Settings"} phone={phone}>
+      <Group title="Look">
+        <Tabs
+          label="Theme"
+          size={phone ? "phone" : "md"}
+          value={theme}
+          onChange={(v) => setTheme(v as Theme)}
+          items={[
+            { id: "system", label: "Same as this device" },
+            { id: "light", label: "Light" },
+            { id: "dark", label: "Dark" },
+          ]}
+        />
+      </Group>
+
+      <Group title="Sidebar">
+        <div className="flex flex-col">
+          {SECTION_KEYS.map((k) => (
+            <div key={k} className="flex h-11 items-center gap-2 shadow-line">
+              <span className="flex-1">{SECTION_TITLES[k]}</span>
+              <Switch checked={prefs[k].shown} label={`Show ${SECTION_TITLES[k]}`} onChange={(shown) => void savePrefs(withSection(prefs, k, { shown }))} />
+            </div>
+          ))}
+        </div>
+        <p className="m-0 text-caption text-text-secondary">Hidden sections still send alerts to Needs you.</p>
+      </Group>
+
+      <Group title="AI">
+        <EngineRows phone={phone} />
+      </Group>
+
+      <Group title="Always allowed">
+        <AllowRules phone={phone} />
+      </Group>
+
+      <Group title="Devices">
+        <Devices phone={phone} />
+        <p className="m-0 text-caption text-text-secondary">Using Weilo on your phone is coming in the next version.</p>
+      </Group>
+
+      <Group title="Your Weilo computer">
+        <p className="m-0 text-body-sm text-text-secondary">
+          {hostName ?? "This computer"} · {keepAwake ? "Stays awake while charging." : "Your agents pause when it sleeps."}
+        </p>
+      </Group>
+
+    </PageFrame>
+  );
+}
+
+/**
+ * The AI apps Weilo can use, each with its one status line. Keys are added, replaced or
+ * removed in the key dialog, which only ever says "Saved", never the key.
+ */
+function EngineRows({ phone }: { phone?: boolean }) {
+  const engines = useEngineList();
+  if (!engines) return <p className="m-0 text-body-sm text-text-secondary">Looking for AI apps…</p>;
+  return (
+    <div className="flex flex-col">
+      {engines.map((e) => (
+        <EngineRow key={e.id} engine={e} phone={phone} />
+      ))}
+    </div>
+  );
+}
+
+function EngineRow({ engine: e, phone }: { engine: EngineInfo; phone?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const keys = e.key_providers ?? [];
+  const saved = keys.filter((k) => k.has_key).length;
+  const need = e.ready ? null : needKind(e.needs);
+  const help = need === "sign_in" || need === "install" ? need : null;
+  // Keys only for an AI that is on this computer; one that isn't gets Install help first.
+  const keyed = keys.length > 0 && need !== "install";
+  const size = phone ? "phone" : "md";
+  return (
+    <div className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 py-2 shadow-line">
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className={canPick(e) ? "font-medium" : "font-medium text-text-secondary"}>{engineTitle(e.id, [e])}</span>
+        <span className="text-caption text-text-secondary">
+          <TextWithCode text={statusLine(e)} />
+          {keyed && saved > 0 ? ` Key saved for ${keys.filter((k) => k.has_key).map((k) => k.title).join(" and ")}.` : ""}
+        </span>
+      </span>
+      {keyed ? (
+        <Button size={size} onClick={() => setOpen(true)}>
+          {saved > 0 ? "Keys" : "Add a key"}
+        </Button>
+      ) : help ? (
+        <Button size={size} onClick={() => setOpen(true)}>
+          {help === "sign_in" ? "Sign in" : "Install"}
+        </Button>
+      ) : null}
+      {keyed && <KeyDialog open={open} onClose={() => setOpen(false)} engineId={e.id} />}
+      {!keyed && help && <EngineHelpDialog open={open} onClose={() => setOpen(false)} engineId={e.id} kind={help} />}
+    </div>
+  );
+}
+
+/** Things you said yes to for good. Remove one and the agent asks again next time. */
+function AllowRules({ phone }: { phone?: boolean }) {
+  const all = useApp((s) => s.allowRules);
+  // One just removed is hidden while its Undo is showing.
+  const waiting = useApp((s) => s.undo?.ruleId);
+  const rules = all && all.filter((r) => r.id !== waiting);
+  useEffect(() => {
+    loadAllowRules().catch(() => {});
+  }, []);
+  if (!rules) return <p className="m-0 text-body-sm text-text-secondary">Looking…</p>;
+  if (rules.length === 0)
+    return <p className="m-0 text-body-sm text-text-secondary">Nothing yet. When you choose Always allow, it shows here.</p>;
+  return (
+    <div className="flex flex-col">
+      {rules.map((r) => (
+        <AllowRuleRow key={r.id} rule={r} phone={phone} />
+      ))}
+    </div>
+  );
+}
+
+function AllowRuleRow({ rule, phone }: { rule: AllowRuleInfo; phone?: boolean }) {
+  return (
+    <div className="flex min-h-14 flex-col justify-center gap-1 py-2 shadow-line">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span>
+            <TextWithCode text={rule.description} />
+          </span>
+          <span className="text-caption text-text-secondary">Added {whenInSentence(rule.created_at)}</span>
+        </span>
+        <Button size={phone ? "phone" : "md"} onClick={() => revokeAllowRuleLater(rule.id)}>
+          Remove
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** The browsers and phones paired with this Weilo computer. Removing one asks first. */
+function Devices({ phone }: { phone?: boolean }) {
+  const devices = useApp((s) => s.devices);
+  useEffect(() => {
+    loadDevices().catch(() => {});
+  }, []);
+  if (!devices) return <p className="m-0 text-body-sm text-text-secondary">Looking…</p>;
+  const twice = repeatedNames(devices);
+  return (
+    <div className="flex flex-col">
+      {sortDevices(devices).map((d) => (
+        <DeviceRow key={d.id} device={d} phone={phone} sameName={twice.has(d.name)} />
+      ))}
+    </div>
+  );
+}
+
+function DeviceRow({ device: d, phone, sameName }: { device: DeviceInfo; phone?: boolean; sameName?: boolean }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const size = phone ? "phone" : "md";
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await revokeDevice(d.id);
+    } catch (e) {
+      // The host refuses to remove the last device, and says why.
+      setError(e instanceof Error ? e.message : "That didn't work. Try again.");
+      setConfirming(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex min-h-14 flex-col justify-center gap-2 py-2 shadow-line">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="ellipsis font-medium">{d.name}</span>
+          <span className="text-caption text-text-secondary">{deviceLine(d, new Date(), sameName)}</span>
+        </span>
+        {!confirming && (
+          <Button size={size} onClick={() => setConfirming(true)}>
+            Remove
+          </Button>
+        )}
+      </div>
+      {confirming && (
+        <div role="group" aria-label={`Remove ${d.name}?`} className="flex flex-col gap-2">
+          <p className="m-0 text-body-sm">
+            <b className="font-semibold">Remove {d.this_device ? "this device" : d.name}?</b>{" "}
+            <span className="text-text-secondary">{removeDeviceLine(d)}</span>
+          </p>
+          <div className="flex gap-2">
+            <Button size={size} variant="tertiary" onClick={() => setConfirming(false)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button size={size} variant="danger-solid" onClick={() => void remove()} disabled={busy} autoFocus>
+              {busy ? "Removing…" : "Remove"}
+            </Button>
+          </div>
+        </div>
+      )}
+      {error && (
+        <ErrorLine>
+          <TextWithCode text={error} />
+        </ErrorLine>
+      )}
+    </div>
+  );
+}

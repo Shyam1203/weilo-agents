@@ -1,0 +1,13 @@
+[package]
+name = "weilo-proto"
+description = "The one protocol between Weilo's host and its apps. TypeScript is generated from it."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+ts-rs.workspace = true
+uuid.workspace = true

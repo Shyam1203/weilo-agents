@@ -1,0 +1,183 @@
+//! The event store. Appends are fenced by the thread's owner and epoch, and gap-free:
+//! `last_seq` is bumped and the event inserted in one transaction.
+
+use chrono::{DateTime, Utc};
+use sqlx::{PgConnection, PgExecutor, Row};
+use uuid::Uuid;
+use weilo_proto::{Event, EventBody};
+
+use crate::db::Fence;
+
+#[derive(Debug, thiserror::Error)]
+pub enum AppendError {
+    /// The thread is missing, or another host (or a newer epoch) owns it.
+    #[error("this host doesn't own the thread")]
+    Fenced,
+    #[error(transparent)]
+    Db(#[from] sqlx::Error),
+}
+
+/// Who wrote an event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Source {
+    User,
+    Agent,
+    Engine,
+    Host,
+}
+
+impl Source {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Source::User => "user",
+            Source::Agent => "agent",
+            Source::Engine => "engine",
+            Source::Host => "host",
+        }
+    }
+}
+
+/// The `kind` tag of a body (`user_message`, `step`…).
+pub fn kind_of(body: &EventBody) -> String {
+    serde_json::to_value(body)
+        .ok()
+        .and_then(|v| v.get("kind").and_then(|k| k.as_str()).map(str::to_owned))
+        .unwrap_or_default()
+}
+
+/// Appends one event inside the caller's transaction. Publish it after commit.
+pub async fn append(
+    tx: &mut PgConnection,
+    fence: Fence,
+    thread_id: Uuid,
+    body: &EventBody,
+    source: Source,
+    tainted: bool,
+) -> Result<Event, AppendError> {
+    append_named(tx, fence, thread_id, body, source, tainted, None)
+        .await
+        .map(|e| e.expect("an unnamed event is always written"))
+}
+
+/// Like `append`, for an event named by its writer (`event_id`): `None` when an event
+/// of that name is already in the thread, so trying again never writes it twice. The
+/// check comes before `last_seq` moves, so seqs stay gap-free.
+pub async fn append_named(
+    tx: &mut PgConnection,
+    fence: Fence,
+    thread_id: Uuid,
+    body: &EventBody,
+    source: Source,
+    tainted: bool,
+    event_id: Option<Uuid>,
+) -> Result<Option<Event>, AppendError> {
+    if let Some(id) = event_id {
+        let written: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM events WHERE thread_id = $1 AND event_id = $2)",
+        )
+        .bind(thread_id)
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if written {
+            return Ok(None);
+        }
+    }
+    let row = sqlx::query(
+        "UPDATE threads SET last_seq = last_seq + 1, updated_at = now(),
+                tainted = tainted OR $4
+         WHERE id = $1 AND owner_host = $2 AND owner_epoch = $3
+         RETURNING last_seq, space_id",
+    )
+    .bind(thread_id)
+    .bind(fence.host)
+    .bind(fence.epoch)
+    .bind(tainted)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(AppendError::Fenced)?;
+    let seq: i64 = row.get("last_seq");
+    let space_id: Uuid = row.get("space_id");
+    let json = serde_json::to_value(body).map_err(|e| sqlx::Error::Encode(Box::new(e)))?;
+    let at: DateTime<Utc> = sqlx::query_scalar(
+        "INSERT INTO events (thread_id, seq, space_id, source, tainted, kind, body, event_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING created_at",
+    )
+    .bind(thread_id)
+    .bind(seq)
+    .bind(space_id)
+    .bind(source.as_str())
+    .bind(tainted)
+    .bind(kind_of(body))
+    .bind(&json)
+    .bind(event_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    Ok(Some(Event {
+        seq,
+        at: at.to_rfc3339(),
+        source: source.as_str().into(),
+        tainted,
+        body: body.clone(),
+    }))
+}
+
+/// The event its writer named `event_id`, if it was written.
+pub async fn read_named<'e>(
+    exec: impl PgExecutor<'e>,
+    thread_id: Uuid,
+    event_id: Uuid,
+) -> sqlx::Result<Option<Event>> {
+    let row = sqlx::query(
+        "SELECT seq, created_at, source, tainted, body FROM events
+         WHERE thread_id = $1 AND event_id = $2",
+    )
+    .bind(thread_id)
+    .bind(event_id)
+    .fetch_optional(exec)
+    .await?;
+    row.map(event_from_row).transpose()
+}
+
+/// Events with `from < seq <= to`, in order.
+pub async fn read_range<'e>(
+    exec: impl PgExecutor<'e>,
+    thread_id: Uuid,
+    from: i64,
+    to: i64,
+) -> sqlx::Result<Vec<Event>> {
+    read_page(exec, thread_id, from, to, i64::MAX).await
+}
+
+/// The first `limit` events with `from < seq <= to`, in order.
+pub async fn read_page<'e>(
+    exec: impl PgExecutor<'e>,
+    thread_id: Uuid,
+    from: i64,
+    to: i64,
+    limit: i64,
+) -> sqlx::Result<Vec<Event>> {
+    let rows = sqlx::query(
+        "SELECT seq, created_at, source, tainted, body FROM events
+         WHERE thread_id = $1 AND seq > $2 AND seq <= $3 ORDER BY seq LIMIT $4",
+    )
+    .bind(thread_id)
+    .bind(from)
+    .bind(to)
+    .bind(limit)
+    .fetch_all(exec)
+    .await?;
+    rows.into_iter().map(event_from_row).collect()
+}
+
+fn event_from_row(row: sqlx::postgres::PgRow) -> sqlx::Result<Event> {
+    let body: serde_json::Value = row.get("body");
+    let at: DateTime<Utc> = row.get("created_at");
+    Ok(Event {
+        seq: row.get("seq"),
+        at: at.to_rfc3339(),
+        source: row.get("source"),
+        tainted: row.get("tainted"),
+        body: serde_json::from_value(body).map_err(|e| sqlx::Error::Decode(Box::new(e)))?,
+    })
+}

@@ -1,0 +1,238 @@
+//! Agents: a teammate with its own chat (its main thread).
+
+use std::sync::Arc;
+
+use serde_json::json;
+use sqlx::PgConnection;
+use uuid::Uuid;
+use weilo_proto::{AgentSummary, Changed};
+
+use super::read;
+use super::threads::{NewThread, insert_thread};
+use crate::app::App;
+use crate::audit;
+use crate::engines::Cmd;
+use crate::error::{CallError, CallResult};
+use crate::ids::new_id;
+use crate::slug::{slugify, unique};
+
+const COLORS: [&str; 4] = ["violet", "sky", "rose", "teal"];
+
+pub async fn create(
+    app: &App,
+    device: Uuid,
+    name: &str,
+    engine: &str,
+    model: Option<String>,
+) -> CallResult<AgentSummary> {
+    let mut tx = app.db.begin().await?;
+    let id = create_in(app, &mut tx, device, name, engine, model).await?;
+    tx.commit().await?;
+    app.hub.changed(Changed::Agents);
+    app.hub.changed(Changed::Threads);
+    read::agent(app, id).await
+}
+
+/// Inserts the agent and its main thread. Returns the agent's id.
+pub async fn create_in(
+    app: &App,
+    tx: &mut PgConnection,
+    device: Uuid,
+    name: &str,
+    engine: &str,
+    model: Option<String>,
+) -> CallResult<Uuid> {
+    let name = clean_name(name)?;
+    if app.engines.get(engine).is_none() {
+        return Err(CallError::invalid("That engine isn't available."));
+    }
+    let taken: Vec<String> = sqlx::query_scalar("SELECT slug FROM agents WHERE space_id = $1")
+        .bind(app.space_id)
+        .fetch_all(&mut *tx)
+        .await?;
+    let slug = unique(&slugify(&name), |s| taken.iter().any(|t| t == s));
+    let color = COLORS[taken.len() % COLORS.len()];
+    let (id, thread_id) = (new_id(), new_id());
+    sqlx::query(
+        "INSERT INTO agents (id, space_id, name, slug, color, engine, model, main_thread_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+    )
+    .bind(id)
+    .bind(app.space_id)
+    .bind(&name)
+    .bind(&slug)
+    .bind(color)
+    .bind(engine)
+    .bind(&model)
+    .bind(thread_id)
+    .execute(&mut *tx)
+    .await?;
+    let thread = NewThread {
+        id: thread_id,
+        kind: "agent",
+        agent_id: Some(id),
+        title: name.clone(),
+        ..NewThread::default()
+    };
+    insert_thread(app, tx, &thread).await?;
+    let detail = json!({ "agent_id": id, "name": name, "engine": engine });
+    audit::append(
+        tx,
+        app.space_id,
+        audit::Entry {
+            actor: "device",
+            device_id: Some(device),
+            action: "agent.create",
+            detail,
+        },
+    )
+    .await?;
+    Ok(id)
+}
+
+/// What `update` changes; `None` keeps the current value.
+pub struct Change {
+    pub name: Option<String>,
+    pub model: Option<String>,
+    pub instructions: Option<String>,
+    pub engine: Option<String>,
+}
+
+pub async fn update(
+    app: &Arc<App>,
+    device: Uuid,
+    agent_id: Uuid,
+    change: Change,
+) -> CallResult<AgentSummary> {
+    let Change {
+        name,
+        model,
+        instructions,
+        engine,
+    } = change;
+    let name = name.map(|n| clean_name(&n)).transpose()?;
+    if let Some(engine) = &engine
+        && app.engines.get(engine).is_none()
+    {
+        return Err(CallError::invalid("That engine isn't available."));
+    }
+    let mut tx = app.db.begin().await?;
+    let done = sqlx::query(
+        "UPDATE agents SET name = COALESCE($3, name), model = COALESCE($4, model),
+                instructions = COALESCE($5, instructions), engine = COALESCE($6, engine),
+                instructions_rev = instructions_rev
+                    + CASE WHEN $5::text IS NOT NULL AND $5 IS DISTINCT FROM instructions
+                           THEN 1 ELSE 0 END
+         WHERE id = $1 AND space_id = $2 AND stopped_at IS NULL",
+    )
+    .bind(agent_id)
+    .bind(app.space_id)
+    .bind(&name)
+    .bind(&model)
+    .bind(&instructions)
+    .bind(&engine)
+    .execute(&mut *tx)
+    .await?;
+    if done.rows_affected() == 0 {
+        return Err(CallError::not_found("That agent is gone."));
+    }
+    // A new engine or model: the next message starts a new engine process (a new engine
+    // can't pick up another's conversation). New instructions need no restart: the
+    // thread's next message carries them (see `instructions_rev`).
+    let restart = engine.is_some() || model.is_some();
+    let agent_threads: Vec<Uuid> = if restart {
+        let reset = if engine.is_some() {
+            "UPDATE threads SET engine_session_id = NULL
+             WHERE agent_id = $1 AND kind <> 'session' RETURNING id"
+        } else {
+            "SELECT id FROM threads WHERE agent_id = $1 AND kind <> 'session'"
+        };
+        sqlx::query_scalar(reset)
+            .bind(agent_id)
+            .fetch_all(&mut *tx)
+            .await?
+    } else {
+        Vec::new()
+    };
+    if let Some(name) = &name {
+        sqlx::query("UPDATE threads SET title = $2 WHERE agent_id = $1 AND kind = 'agent'")
+            .bind(agent_id)
+            .bind(name)
+            .execute(&mut *tx)
+            .await?;
+    }
+    let detail = json!({ "agent_id": agent_id, "name": name, "model": model, "engine": engine, "instructions_changed": instructions.is_some() });
+    audit::append(
+        &mut tx,
+        app.space_id,
+        audit::Entry {
+            actor: "device",
+            device_id: Some(device),
+            action: "agent.update",
+            detail,
+        },
+    )
+    .await?;
+    tx.commit().await?;
+    for thread_id in agent_threads {
+        app.runners.send_if_running(thread_id, Cmd::Restart);
+    }
+    app.hub.changed(Changed::Agents);
+    read::agent(app, agent_id).await
+}
+
+/// Takes the agent out of the sidebar and stops what it is doing. Its threads and
+/// history are kept.
+pub async fn archive(app: &Arc<App>, device: Uuid, agent_id: Uuid) -> CallResult<()> {
+    let mut tx = app.db.begin().await?;
+    let done = sqlx::query(
+        "UPDATE agents SET stopped_at = now()
+         WHERE id = $1 AND space_id = $2 AND stopped_at IS NULL",
+    )
+    .bind(agent_id)
+    .bind(app.space_id)
+    .execute(&mut *tx)
+    .await?;
+    if done.rows_affected() == 0 {
+        return Err(CallError::not_found("That agent is gone."));
+    }
+    let entry = audit::Entry {
+        actor: "device",
+        device_id: Some(device),
+        action: "agent.archive",
+        detail: json!({ "agent_id": agent_id }),
+    };
+    audit::append(&mut tx, app.space_id, entry).await?;
+    tx.commit().await?;
+    stop(app, agent_id).await?;
+    app.hub.changed(Changed::Agents);
+    app.hub.changed(Changed::Threads);
+    Ok(())
+}
+
+/// Stops whatever the agent is doing, in every thread it owns.
+pub async fn stop(app: &Arc<App>, agent_id: Uuid) -> CallResult<()> {
+    let threads: Vec<Uuid> =
+        sqlx::query_scalar("SELECT id FROM threads WHERE agent_id = $1 AND space_id = $2")
+            .bind(agent_id)
+            .bind(app.space_id)
+            .fetch_all(&app.db)
+            .await?;
+    if threads.is_empty() {
+        return Err(CallError::not_found("That agent is gone."));
+    }
+    for thread_id in threads {
+        app.runners.send_if_running(thread_id, Cmd::Stop);
+    }
+    Ok(())
+}
+
+fn clean_name(name: &str) -> CallResult<String> {
+    let name = name.trim();
+    if name.is_empty() || name.chars().count() > 40 {
+        return Err(CallError::invalid(
+            "Give the agent a name of up to 40 letters.",
+        ));
+    }
+    Ok(name.to_string())
+}

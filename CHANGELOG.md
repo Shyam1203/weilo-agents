@@ -2,6 +2,42 @@
 
 Versions follow [SemVer](https://semver.org). While the version starts with 0, a minor version may change how things work.
 
+## 0.2.0
+
+Weilo is rebuilt from the ground up. Nothing carries over from 0.1: install it fresh.
+
+- **No Docker.** Weilo is one program for macOS and Linux, installed with one command. It keeps its
+  data in a Postgres it starts and stops by itself.
+- **Bring your own agent.** Agents run on Claude Code, Codex, Gemini or pi (the default), whichever
+  you already use and pay for.
+- **#channels.** Give work to an agent in a channel; its threads and coding sessions stay there.
+  Sidebar sections fold, and you choose which ones show.
+- **Coding sessions.** Each session gets its own copy of the project (a git worktree), with a
+  side panel for what the agent is doing.
+- **Needs you.** Every question from every agent in one list, with keys to move through it. Answer
+  once from any device; the others see it's done.
+- **Tell now or after this job.** Say something to a working agent right away, or line it up for
+  when it finishes.
+- **Phone-ready.** The app fits a phone screen, with a tab bar and Needs you on top. Reaching
+  your computer from your phone comes next.
+- **Paired devices only.** Connect a browser with a one-time code from `weilo pair`. Each device
+  shows by name (like "Chrome on Mac") in Settings, where you can remove it.
+- **Setup that ends working.** Setup checks your AI before going on. With no AI app, paste a key
+  and Weilo downloads its built-in AI. A key the provider turns down isn't saved.
+- **See what changed.** A coding session lists each changed file before you copy the changes
+  into your project.
+- **Steady through restarts.** If Weilo, its database or an agent stops in the middle of a job,
+  nothing you were sent is lost and the job says what happened.
+- **Agents' folders.** Chat agents work in `~/Weilo/agents`, away from Weilo's own data.
+- **Stop means stop.** Stop works at once, even while an agent is still starting, and messages
+  lined up for after the job go back into your message box.
+- **Nothing typed is lost.** Words in a message box stay there through a reload.
+- **Says what's wrong.** If Weilo's database stops answering, every open screen says so, and a
+  port that's already taken is named before anything starts.
+
+Not yet: reaching Weilo from your phone, voice, a sandbox around agents, routines and
+connections, and the cloud version.
+
 ## 0.1.2
 
 - Settings > Memory has one switch beside its title that turns memory on or off, in place of the "Notes about you" row. Settings > About no longer has a line under its title.

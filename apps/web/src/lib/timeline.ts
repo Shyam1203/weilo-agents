@@ -1,0 +1,330 @@
+import type { Card } from "../proto/Card";
+import type { CardAction } from "../proto/CardAction";
+import type { Decision } from "../proto/Decision";
+import type { Event } from "../proto/Event";
+import type { SendWhen } from "../proto/SendWhen";
+import type { StepStatus } from "../proto/StepStatus";
+
+// Problems the host sends that only say how things are set up ("This folder isn't a git
+// repo…"): a quiet line in the chat, not something that went wrong.
+const NOTE_CODES = new Set(["not_git", "no_copy", "fresh_start"]);
+
+/** True for a problem event that is only a note. */
+export function isNoteProblem(code: string | null | undefined): boolean {
+  return !!code && NOTE_CODES.has(code);
+}
+
+/** A step's status as drawn: "stopped" when its reply ended (a problem, Stop) before it finished. */
+export type ShownStatus = StepStatus | "stopped";
+
+export interface StepItem {
+  id: string;
+  title: string;
+  status: ShownStatus;
+  at: string;
+}
+
+export interface Decided {
+  decision: Decision;
+  at: string;
+  via: string;
+}
+
+export type AgentItem =
+  | { type: "text"; key: string; text: string }
+  | { type: "steps"; key: string; steps: StepItem[] }
+  | { type: "card"; key: string; card: Card; decided: Decided | null }
+  | { type: "filed"; key: string; channelId: string }
+  /** `resolved`: a later reply or a message sent again dealt with it, so it has no button. */
+  | { type: "problem"; key: string; seq: bigint; message: string; action: string | null; code: string | null; engine: string | null; resolved: boolean }
+  | { type: "note"; key: string; text: string };
+
+export type Block =
+  | { type: "user"; key: string; text: string; at: string; when: SendWhen }
+  | { type: "agent"; key: string; agentId: string | null; at: string; hasText: boolean; items: AgentItem[] };
+
+/**
+ * Turns durable events into what the conversation draws: the person's messages, and agent turns
+ * that hold text, steps, cards and notices. Steps update in place by `step_id`; a decision is
+ * attached to its card. State and usage events draw nothing.
+ *
+ * When a reply ends early (a problem, or Stop) its unfinished steps show as stopped, not
+ * spinning. `stoppedAt` is the newest seq when this device pressed Stop: a "Stopped." line
+ * goes where that reply ended (the next idle state), as it does for an approval the host
+ * closed because of Stop.
+ */
+export function buildBlocks(events: Event[], defaultAgentId: string | null = null, stoppedAt: bigint | null = null): Block[] {
+  const blocks: Block[] = [];
+  const decided = new Map<string, Decided>();
+  for (const e of events) {
+    if (e.body.kind === "approval_decided") {
+      decided.set(e.body.approval_id, { decision: e.body.decision, at: e.at, via: e.body.via });
+    }
+  }
+  const stepIndex = new Map<string, StepItem>();
+  // Set by Stop (here or a stop that closed an approval); cleared once "Stopped." is drawn.
+  let stopPending = false;
+  let stopSeq: bigint | null = null;
+  // One "Stopped." per reply: a later sign of the same stop doesn't draw a second line.
+  let saidStopped = false;
+  let notes = 0;
+  const problems: Array<Extract<AgentItem, { type: "problem" }>> = [];
+  const resolveProblems = () => {
+    for (const p of problems) p.resolved = true;
+  };
+
+  const settle = () => {
+    for (const st of stepIndex.values()) if (st.status === "running") st.status = "stopped";
+  };
+  const say = (e: Event, text: string) => {
+    agentBlock(e, null).items.push({ type: "note", key: `n${e.seq}.${notes++}`, text });
+  };
+
+  const agentBlock = (e: Event, agentId: string | null): Extract<Block, { type: "agent" }> => {
+    const last = blocks[blocks.length - 1];
+    if (last && last.type === "agent" && (agentId === null || last.agentId === null || last.agentId === agentId)) {
+      if (last.agentId === null && agentId) last.agentId = agentId;
+      return last;
+    }
+    const b: Extract<Block, { type: "agent" }> = {
+      type: "agent",
+      key: `a${e.seq}`,
+      agentId,
+      at: e.at,
+      hasText: false,
+      items: [],
+    };
+    blocks.push(b);
+    return b;
+  };
+
+  for (const e of events) {
+    const body = e.body;
+    if (stoppedAt !== null && stopSeq === null && e.seq > stoppedAt) {
+      stopSeq = stoppedAt;
+      stopPending = !saidStopped;
+    }
+    switch (body.kind) {
+      case "user_message":
+        saidStopped = false;
+        resolveProblems();
+        blocks.push({ type: "user", key: `u${e.seq}`, text: body.text, at: e.at, when: body.when });
+        break;
+      case "agent_message": {
+        resolveProblems();
+        const last = blocks[blocks.length - 1];
+        const id = body.agent_id ?? defaultAgentId;
+        // A new message from the agent starts a new turn unless the turn so far holds no text.
+        const b =
+          last && last.type === "agent" && !last.hasText && (last.agentId === null || last.agentId === id)
+            ? last
+            : null;
+        const block = b ?? {
+          type: "agent" as const,
+          key: `a${e.seq}`,
+          agentId: id,
+          at: e.at,
+          hasText: false,
+          items: [],
+        };
+        if (!b) blocks.push(block);
+        block.agentId = block.agentId ?? id;
+        if (!block.hasText) block.at = e.at;
+        block.hasText = true;
+        block.items.push({ type: "text", key: `t${e.seq}`, text: body.text });
+        break;
+      }
+      case "step": {
+        // The host's saved record of a Stop: one "Stopped." line, on every device, after reloads.
+        if (isStoppedStep(body.step_id)) {
+          settle();
+          if (!saidStopped) say(e, "Stopped.");
+          saidStopped = true;
+          stopPending = false;
+          break;
+        }
+        const existing = stepIndex.get(body.step_id);
+        if (existing) {
+          existing.status = body.status;
+          existing.title = body.title;
+          break;
+        }
+        const b = agentBlock(e, null);
+        const step: StepItem = { id: body.step_id, title: body.title, status: body.status, at: e.at };
+        stepIndex.set(body.step_id, step);
+        const last = b.items[b.items.length - 1];
+        if (last && last.type === "steps") last.steps.push(step);
+        else b.items.push({ type: "steps", key: `s${e.seq}`, steps: [step] });
+        break;
+      }
+      case "card": {
+        const b = agentBlock(e, null);
+        const id = body.card.approval_id;
+        b.items.push({ type: "card", key: `c${e.seq}`, card: body.card, decided: id ? (decided.get(id) ?? null) : null });
+        break;
+      }
+      case "filed":
+        agentBlock(e, null).items.push({ type: "filed", key: `f${e.seq}`, channelId: body.channel_id });
+        break;
+      case "problem":
+        if (isNoteProblem(body.code)) {
+          say(e, body.message);
+          break;
+        }
+        // A problem ends the reply: nothing in it is still going.
+        settle();
+        {
+          const item = {
+            type: "problem" as const,
+            key: `p${e.seq}`,
+            seq: e.seq,
+            message: body.message,
+            action: body.action,
+            code: body.code ?? null,
+            engine: body.engine ?? null,
+            resolved: false,
+          };
+          problems.push(item);
+          agentBlock(e, null).items.push(item);
+        }
+        break;
+      case "approval_decided":
+        if (body.via === "stopped" && !saidStopped) stopPending = true;
+        break;
+      case "state":
+        if (body.state === "idle") {
+          settle();
+          if (stopPending) {
+            say(e, "Stopped.");
+            stopPending = false;
+            saidStopped = true;
+          }
+        }
+        break;
+      case "usage":
+        break;
+    }
+  }
+  // Stopped, and the host hasn't said the reply ended yet.
+  if (stoppedAt !== null && stopSeq === null && !saidStopped) stopPending = true;
+  if (stopPending && events.length > 0) {
+    settle();
+    say(events[events.length - 1]!, "Stopped.");
+  }
+  for (const b of blocks) if (b.type === "agent" && b.agentId === null) b.agentId = defaultAgentId;
+  // An approval shows once: as its card, not also as the step of the same name beside it.
+  for (const b of blocks) {
+    if (b.type !== "agent") continue;
+    const asked = new Set(b.items.flatMap((i) => (i.type === "card" && i.card.approval_id ? [i.card.title.trim()] : [])));
+    if (asked.size === 0) continue;
+    b.items = b.items.flatMap((i): AgentItem[] => {
+      if (i.type !== "steps") return [i];
+      const steps = i.steps.filter((st) => !asked.has(st.title.trim()));
+      return steps.length ? [{ ...i, steps }] : [];
+    });
+  }
+  return blocks;
+}
+
+/** The quiet step the host saves when a person presses Stop ("stopped-<id>"). */
+export function isStoppedStep(stepId: string): boolean {
+  return stepId.startsWith("stopped-");
+}
+
+/** Every step in a thread, newest status, for the Changes panel. Steps a reply left unfinished show as stopped. */
+export function allSteps(events: Event[]): StepItem[] {
+  const map = new Map<string, StepItem>();
+  for (const e of events) {
+    const b = e.body;
+    if ((b.kind === "problem" && !isNoteProblem(b.code)) || (b.kind === "state" && b.state === "idle")) {
+      for (const st of map.values()) if (st.status === "running") st.status = "stopped";
+      continue;
+    }
+    if (b.kind !== "step" || isStoppedStep(b.step_id)) continue;
+    const prev = map.get(b.step_id);
+    map.set(b.step_id, { id: b.step_id, title: b.title, status: b.status, at: prev?.at ?? e.at });
+  }
+  return [...map.values()];
+}
+
+/** Total cost so far, in micro-dollars. */
+export function totalCost(events: Event[]): bigint {
+  let sum = 0n;
+  for (const e of events) if (e.body.kind === "usage") sum += e.body.cost_micros;
+  return sum;
+}
+
+/**
+ * Plain words for a decision, the same under a decided card and in Needs you: "You allowed
+ * it", "You said no" (drafts: "You approved it", "You discarded it"). "Always allow" follows
+ * the card's own button ("Always allow for Ava" becomes "You always allow this for Ava").
+ */
+export function outcomeWords(decision: Decision, cardKind: string, actions: CardAction[] = []): string {
+  switch (decision.kind) {
+    case "allow":
+      return cardKind === "draft" ? "You approved it" : "You allowed it";
+    case "allow_always": {
+      const label = actions.find((a) => a.decision?.kind === "allow_always")?.label.trim() ?? "";
+      const m = /^always allow\s+(.+)$/i.exec(label);
+      return `You always allow this ${m ? m[1] : scopeWords(decision.scope)}`;
+    }
+    case "deny": {
+      if (cardKind === "draft") return "You discarded it";
+      // The words of the button pressed: "Not now" is recorded as such, not as a firmer no.
+      const label = actions.find((a) => a.decision?.kind === "deny")?.label.trim().toLowerCase();
+      return label === "not now" ? "You said not now" : "You said no";
+    }
+  }
+}
+
+/**
+ * Why an approval closed with nobody answering, in plain words, or null when someone
+ * answered (you, the app, an Always allow). `ai` is whose AI it was ("Ava").
+ * "interrupted" is the older word for a restart that some saved items still carry.
+ */
+export function closedWords(via: string | null | undefined, ai?: string | null): string | null {
+  switch (via) {
+    case "stopped":
+      return "Closed when you pressed Stop";
+    case "restarted":
+      return "Closed when Weilo restarted";
+    case "engine_stopped":
+      return ai ? `Closed when ${ai}'s AI stopped` : "Closed when the AI stopped";
+    case "interrupted":
+      return "Closed";
+    case "expired":
+      return "No answer in time";
+    default:
+      return null;
+  }
+}
+
+/** When an approval was answered, from its thread's events (the host doesn't list it with the item). */
+export function decidedAt(events: Event[] | undefined, approvalId: string): { at: string; decision: Decision; via: string } | null {
+  if (!events) return null;
+  for (let i = events.length - 1; i >= 0; i--) {
+    const b = events[i]!.body;
+    if (b.kind === "approval_decided" && b.approval_id === approvalId) return { at: events[i]!.at, decision: b.decision, via: b.via };
+  }
+  return null;
+}
+
+export function scopeWords(scope: string): string {
+  const s = scope.trim().toLowerCase();
+  if (s === "folder") return "in this folder";
+  if (s === "agent") return "for this agent";
+  if (s === "site") return "for this site";
+  if (s === "channel") return "in this channel";
+  return s.startsWith("in ") || s.startsWith("for ") ? s : `for ${s}`;
+}
+
+/** Messages this close together from the same author draw as one group: one name and time. */
+export const GROUP_MS = 5 * 60 * 1000;
+
+/** True when `b` continues `prev`'s group: same author, said within five minutes, with words. */
+export function continuesGroup(prev: Block | undefined, b: Block): boolean {
+  if (!prev || prev.type !== b.type) return false;
+  if (b.type === "agent" && (prev.type !== "agent" || prev.agentId !== b.agentId || !b.hasText || !prev.hasText)) return false;
+  const gap = Date.parse(b.at) - Date.parse(prev.at);
+  return Number.isFinite(gap) && gap >= 0 && gap <= GROUP_MS;
+}

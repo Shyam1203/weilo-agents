@@ -1,0 +1,243 @@
+//! `weilo up`: start Postgres, the engines' runners, the job worker and the server.
+//!
+//! One host per home: `up` holds an exclusive lock on `HOME/lock` while it runs, so a
+//! second `up` stops before it touches Postgres.
+
+use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+
+use anyhow::{Context, Result, anyhow};
+use serde_json::json;
+use tokio_util::sync::CancellationToken;
+
+use crate::app::{App, AppParts, Settings};
+use crate::engines::{Registry, process};
+use crate::home::{Home, try_lock, write_private};
+use crate::pg::Postgres;
+use crate::{admin, audit, db, http, jobs, recovery};
+
+pub struct UpOptions {
+    pub home: Option<PathBuf>,
+    pub port: u16,
+    pub web: Option<PathBuf>,
+}
+
+pub async fn run(opts: UpOptions) -> Result<()> {
+    let home = Home::resolve(opts.home)?;
+    // The lock comes first: a second `up` that finds Weilo running changes nothing
+    // (as root, Postgres's own user needs the folder as Weilo set it).
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(home.root())?;
+    }
+    let Some(_lock) = try_lock(&home.lock_file())? else {
+        return Err(already_running(&home));
+    };
+    home.ensure(0o700)?;
+    // The port is taken before Postgres starts, so a busy one is said at once.
+    let listener = listen(opts.port).await?;
+    // Before anything starts: what a crashed run left running ends here.
+    process::end_leftovers(&home.live_engines(), process::GRACE);
+    process::record_in(home.live_engines());
+    let mut pg = Postgres::start(&home).await?;
+    if !pg.layout.data_dir.starts_with(home.root()) {
+        // As root, when Postgres's own user can't reach the Weilo folder.
+        println!(
+            "Weilo's database is in {} (Postgres can't reach {}).",
+            pg.layout.data_dir.display(),
+            home.root().display()
+        );
+    }
+    let db = match db::open(&pg).await {
+        Ok(db) => db,
+        Err(e) => {
+            pg.stop().await;
+            return Err(e);
+        }
+    };
+    // Setup is done: from here on only the app's role may sign in.
+    if let Err(e) = pg.lock_down().await {
+        pg.stop().await;
+        return Err(e);
+    }
+    serve(&home, pg, db, listener, opts.web).await
+}
+
+async fn listen(port: u16) -> Result<tokio::net::TcpListener> {
+    match tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port))).await {
+        Ok(l) => Ok(l),
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+            anyhow::bail!("{}", port_taken(port))
+        }
+        Err(e) => anyhow::bail!("Weilo couldn't use port {port} ({e})."),
+    }
+}
+
+fn already_running(home: &Home) -> anyhow::Error {
+    let port = std::fs::read(home.host_file())
+        .ok()
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .and_then(|v| v["port"].as_u64());
+    match port {
+        Some(port) => anyhow!("Weilo is already running at http://127.0.0.1:{port}"),
+        None => anyhow!("Weilo is already running for {}.", home.root().display()),
+    }
+}
+
+async fn serve(
+    home: &Home,
+    pg: Postgres,
+    db: db::Db,
+    listener: tokio::net::TcpListener,
+    web: Option<PathBuf>,
+) -> Result<()> {
+    let app = App::new(AppParts {
+        home: home.clone(),
+        db: db.pool.clone(),
+        fence: db.fence,
+        space_id: db.space_id,
+        engines: Registry::load(home),
+        settings: Settings::from_env(),
+    });
+    // Asked every few seconds whether it answers, on a connection of its own.
+    let check = tokio::spawn(db::check_answers(
+        app.clone(),
+        pg.options(crate::pg::APP_ROLE, crate::pg::DATABASE),
+    ));
+    // Postgres is watched from here on; turns wait while it restarts.
+    let pg_stop = CancellationToken::new();
+    let weak = Arc::downgrade(&app);
+    let pg_task = tokio::spawn(pg.supervise(pg_stop.clone(), move |up| {
+        if let Some(app) = weak.upgrade() {
+            app.set_db_up(up);
+        }
+    }));
+    let result = serve_app(home, &app, listener, web).await;
+    check.abort();
+    pg_stop.cancel();
+    let _ = pg_task.await;
+    result
+}
+
+async fn serve_app(
+    home: &Home,
+    app: &Arc<App>,
+    listener: tokio::net::TcpListener,
+    web: Option<PathBuf>,
+) -> Result<()> {
+    let app = app.clone();
+    if let Err(e) = recovery::run(&app).await {
+        tracing::warn!("couldn't tidy up after the last run: {e:#}");
+    }
+    check_audit(&app).await;
+    // Keys whose provider couldn't be asked last time are asked again now.
+    for m in app.engines.manifests() {
+        crate::engines::check::recheck_keys(&app, m);
+    }
+    if let Err(e) = jobs::schedule_prune(&app, chrono::Utc::now()).await {
+        tracing::warn!("couldn't schedule the daily tidy-up: {e}");
+    }
+    let setup = db::get_setting(&app.db, "setup").await?.unwrap_or_default();
+    if setup["keep_awake"].as_bool() == Some(true) {
+        app.keep_awake.start();
+    }
+    let port = listener.local_addr()?.port();
+    app.set_port(port);
+    let admin = admin::listen(app.clone())?;
+    let worker = jobs::spawn_worker(app.clone());
+    let info = json!({ "port": port, "pid": std::process::id() });
+    write_private(&home.host_file(), info.to_string().as_bytes())?;
+
+    let web = http::find_web_dir(web);
+    if web.is_none() {
+        tracing::warn!("the web app isn't built; serving a placeholder page");
+    }
+    println!("Weilo is running at http://127.0.0.1:{port}");
+    println!("To connect a browser, run: weilo pair");
+
+    let router = http::router(app.clone(), web);
+    let stopping = app.shutdown.clone();
+    let server = axum::serve(listener, router).with_graceful_shutdown(async move {
+        stop_signal().await;
+        stopping.cancel();
+    });
+    let served = server.await;
+
+    tracing::info!("stopping");
+    app.shutdown.cancel();
+    admin.abort();
+    worker.abort();
+    // Calls under way finish first, while the runners and the database still work, so their
+    // results are saved. A message saved here doesn't get its answer before the stop: after the
+    // restart its chat says Weilo restarted, with Try again.
+    app.call_locks.finish(CALLS_FINISH).await;
+    let runners = app.clone();
+    let _ = tokio::task::spawn_blocking(move || runners.runners.shutdown(process::GRACE)).await;
+    app.keep_awake.stop();
+    let _ = std::fs::remove_file(home.admin_socket());
+    let _ = std::fs::remove_file(home.host_file());
+    tokio::time::timeout(Duration::from_secs(5), app.db.close())
+        .await
+        .ok();
+    served.context("server failed")
+}
+
+/// How long stopping waits for calls under way.
+const CALLS_FINISH: Duration = Duration::from_secs(8);
+
+/// Checks the audit log's chain at start. A break is reported (in the log and in the
+/// terminal), not fatal: Weilo still starts.
+async fn check_audit(app: &App) {
+    match audit::verify(&app.db, app.space_id).await {
+        Ok(audit::Verdict::Intact { .. }) => {}
+        Ok(audit::Verdict::BrokenAt { seq }) => {
+            let line = audit::broken_line(seq);
+            tracing::warn!("{line}");
+            println!("Warning: {line}");
+        }
+        Err(e) => tracing::warn!("couldn't check the audit log: {e}"),
+    }
+}
+
+async fn stop_signal() {
+    let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        .expect("SIGTERM handler");
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {}
+        _ = term.recv() => {}
+    }
+}
+
+/// What `weilo up` says when its port is taken, with a free one to try instead.
+fn port_taken(port: u16) -> String {
+    let free = (1..=50)
+        .filter_map(|n| port.checked_add(n))
+        .find(|p| std::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], *p))).is_ok());
+    match free {
+        Some(p) => format!("Another program is using port {port}. Try: weilo up --port {p}"),
+        None => {
+            format!("Another program is using port {port}. Try another one with weilo up --port")
+        }
+    }
+}
+
+#[cfg(test)]
+mod port_tests {
+    use super::*;
+
+    #[test]
+    fn a_taken_port_is_said_plainly_with_one_to_try() {
+        let held = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = held.local_addr().unwrap().port();
+        let said = port_taken(port);
+        let start = format!("Another program is using port {port}. Try: weilo up --port ");
+        assert!(said.starts_with(&start), "{said}");
+        let other: u16 = said[start.len()..].parse().unwrap();
+        assert_ne!(other, port);
+    }
+}

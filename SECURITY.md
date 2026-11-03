@@ -1,14 +1,50 @@
 # Security
 
-Weilo Agents runs AI agents on your own computer with your keys and your data, so its security model is part of the product. [docs/security.html](docs/security.html) describes it in full; in short:
+Weilo runs AI agents on your own computer with your files and your accounts, so its security
+model is part of the product. In short:
 
-- The app listens on `127.0.0.1` only, checks `Host`, `Origin` and `Sec-Fetch-Site`, and answers only paired devices.
-- No agent holds a provider's API key, an account sign-in's token, a plugin's secret or sign-in, or a key it asked you for: the app adds them to the agent's requests. A saved key goes only to the one https:// site you saved it for, never on a redirect, and is taken out of the answer.
-- Each agent is a Linux user of its own, and so is each plugin program a regular agent uses, so one plugin cannot read another's secrets. Root never follows a link an agent put in place of a folder or a chat file, and checks the real path of a file it has opened before serving it. Agents get only a short allow-list of the app's environment variables. Isolated agents, and the plugins they use, run in a separate sandbox container, each in namespaces of its own (processes, mounts, `/tmp`), with only their own folder. Set `WEILO_SANDBOX_RUNTIME=runsc` to give the sandbox gVisor's kernel.
-- Both containers have process and memory limits (`WEILO_CORE_PIDS`, `WEILO_CORE_MEMORY`, `WEILO_SANDBOX_PIDS`, `WEILO_SANDBOX_MEMORY`).
-- Releases are built from pinned inputs (pi from a lockfile with hashes, the base image by digest, GitHub Actions by commit SHA), smoke-tested before they are pushed, and carry provenance and an SBOM.
-- Every change made through the API, and every question an agent asks you, is recorded in `~/.weilo-agents/agent/audit.jsonl` (Settings > Security & devices).
+- **Only this computer can reach it.** Weilo listens on `127.0.0.1` only and checks `Host`,
+  `Origin` and `Sec-Fetch-Site` on every request. Only paired devices can use it. A pairing code
+  works once and for 10 minutes, and only `weilo pair`, run as the same user on the same computer,
+  can make one.
+  After a wrong code the next try waits a second, and after 10 wrong codes pairing stops for 10
+  minutes. A paired browser gets its key only in the answer to pairing and keeps it in its own
+  storage for this one address, so other web pages on your computer never receive it. You can
+  remove a paired device in Settings; it is disconnected at once.
+- **Agents ask first, when their engine asks.** When an agent asks to do something (run a
+  command, change or delete files, open a web page), the question waits in Needs you. An answer is recorded once: a second
+  answer from another device is refused. A question no one answers within a day expires and the
+  agent is told no. "Always allow" rules are kept and checked by Weilo, per agent and per exact
+  command, and can be removed in Settings; the agent itself is only ever told "yes, this once".
+- **Agents get little.** Each agent runs as its own process group with a short list of
+  environment variables, and Weilo ends the whole group when it stops. A coding session in a git
+  project works in its own copy (a git worktree) until you bring the changes back; in other
+  folders it edits the folder directly, and the app says so. Sessions can't be started in your
+  home folder or in Weilo's own folder. Chat agents work in their own folders in `~/Weilo/agents`,
+  away from Weilo's data. Agents are installed from npm with install scripts
+  turned off, from lockfiles that pin every package by its hash. API keys you give Weilo are kept
+  in files only your user can read, and are only ever sent to their own provider.
+- **Data stays local.** Postgres listens on a Unix socket that only its own user can open, not on
+  the network, and lets in only Weilo's user: no database password exists. The socket is in
+  your Weilo folder, or in a private temporary folder when that path is too long. While Weilo
+  runs, it signs in only with a database role that can't change the schema and can only add to
+  the audit log and the event log. Every change and every answer you give is written to a
+  hash-chained audit log, checked when Weilo starts and with `weilo audit verify`.
+- **Releases are traceable.** Release files are built by GitHub Actions pinned to commit SHAs,
+  come with SHA-256 checksums that the installer checks, and carry build provenance.
+
+**What this does not protect against.** There is no sandbox around agents in this release. They
+run as your user, with your files and the sign-ins you already have for Claude Code, Codex or
+Gemini. Anything that runs as your user, an agent included, can do what you can: run `weilo pair`
+to pair a device, read Weilo's files, or change Weilo's data, including adding an "Always allow"
+rule or answering a question for you. The audit check only shows when past entries of the audit
+log were edited; it can't show new changes made this way. An agent only asks first when its
+engine asks; it can do other things without asking. The questions in Needs you are a safety net,
+not a wall. A cloud version comes later.
 
 ## Reporting a vulnerability
 
-Please report it privately, through GitHub's [private vulnerability reporting](https://github.com/Shyam1203/weilo-agents/security/advisories/new), not in a public issue. Say what you found, how to reproduce it, and the version (Settings > General). You will get an answer within a week.
+Please report it privately through GitHub's
+[private vulnerability reporting](https://github.com/Shyam1203/weilo-agents/security/advisories/new),
+not in a public issue. Say what you found, how to reproduce it, and the version (`weilo version`).
+You'll get an answer within a week.

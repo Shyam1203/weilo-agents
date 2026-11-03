@@ -1,0 +1,133 @@
+import { useState } from "react";
+import { retryLast } from "../../lib/app";
+import { problemKind } from "../../lib/engines";
+import { aiOwner, engineOfThread, engineTitles, keyFixedFor, plainProblem, useApp } from "../../lib/store";
+import { Disclosure, TextWithCode } from "../../ui/bits";
+import { Button, type ButtonSize } from "../../ui/Button";
+import { AlertIcon, CheckIcon } from "../../ui/glyphs";
+import { EngineHelpDialog } from "../engines/EngineHelpDialog";
+import { KeyDialog } from "../engines/KeyDialog";
+import { NewSessionDialog } from "../shell/dialogs";
+import { useKeepFocus } from "../../ui/keepFocus";
+
+/**
+ * Something went wrong, in one line, with the host's button. Once it was dealt with (a
+ * later reply, or the message sent again) the line stays, quietly, without a button.
+ */
+export function Problem({
+  threadId,
+  agentId,
+  message,
+  action,
+  code = null,
+  engine = null,
+  seq = null,
+  resolved,
+}: {
+  threadId: string;
+  agentId: string | null;
+  message: string;
+  action: string | null;
+  /** The host's kind of problem ("not_responding"…), when it sent one. */
+  code?: string | null;
+  /** The AI app it is about, by id. */
+  engine?: string | null;
+  /** Which event it is: a key saved since fixes a key problem. */
+  seq?: bigint | null;
+  resolved?: boolean;
+}) {
+  // A key saved since fixes it: "Key updated. Try again", then just "Key updated" once it worked.
+  const fixed = useApp((s) => seq !== null && keyFixedFor(s, threadId, { seq }));
+  // Said about the agent; the AI app's own words stay under Details.
+  const owner = useApp((s) => aiOwner(s.snapshot, threadId, agentId));
+  const titles = useApp(engineTitles);
+  const plain = plainProblem(message, owner, titles, code);
+  const keep = useKeepFocus<HTMLDivElement>();
+  if (fixed)
+    return (
+      <div {...keep} className="flex flex-wrap items-center gap-2 rounded-md bg-surface-muted px-3 py-2 text-body-sm text-text-secondary outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" role="note">
+        <CheckIcon className="shrink-0 text-success" />
+        <span className="min-w-0 flex-1">{resolved ? "Key updated" : "Key updated. Try again"}</span>
+        {!resolved && <ProblemButton threadId={threadId} agentId={agentId} action="Try again" size="sm" />}
+      </div>
+    );
+  return (
+    <div {...keep} className="flex flex-wrap items-center gap-2 rounded-md bg-surface-muted px-3 py-2 text-body-sm text-text-secondary outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" role="note">
+      <AlertIcon className="shrink-0" />
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <TextWithCode text={plain.line} />
+        {plain.named && (
+          <Disclosure label="Details" className="text-caption">
+            <TextWithCode text={message} />
+          </Disclosure>
+        )}
+      </span>
+      {!resolved && <ProblemButton threadId={threadId} agentId={agentId} action={action} engine={engine} message={message} size="sm" />}
+    </div>
+  );
+}
+
+/**
+ * A problem's own button: Try again sends the last message again; Sign in and Install say
+ * how (in a small dialog); Add a key opens the key dialog; Choose another folder starts a
+ * new session. A label we don't know gets no button rather than one that does nothing.
+ */
+export function ProblemButton({
+  threadId,
+  agentId,
+  action,
+  engine: problemEngine = null,
+  message = null,
+  size = "sm",
+  className,
+}: {
+  threadId: string;
+  agentId: string | null;
+  action: string | null;
+  /** The AI app the problem is about; else the chat's. */
+  engine?: string | null;
+  /** The problem's words: they say whose key didn't work. */
+  message?: string | null;
+  size?: ButtonSize;
+  className?: string;
+}) {
+  const kind = problemKind(action);
+  const threadEngine = useApp((s) => engineOfThread(s, threadId, agentId));
+  const engine = problemEngine ?? threadEngine;
+  const paused = useApp((s) => s.paused !== null);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const needsEngine = kind === "sign_in" || kind === "key" || kind === "install";
+  if (kind === null || (needsEngine && !engine)) return null;
+
+  const onClick = async () => {
+    if (kind === "retry") {
+      setBusy(true);
+      await retryLast(threadId);
+      setBusy(false);
+      return;
+    }
+    setOpen(true);
+  };
+
+  return (
+    <>
+      <Button size={size} className={className} onClick={() => void onClick()} disabled={busy || (kind === "retry" && paused)}>
+        {action}
+      </Button>
+      {engine && kind === "key" && (
+        <KeyDialog
+          open={open}
+          onClose={() => setOpen(false)}
+          engineId={engine}
+          change={/^change/i.test(action?.trim() ?? "")}
+          problem={message}
+        />
+      )}
+      {engine && (kind === "sign_in" || kind === "install") && (
+        <EngineHelpDialog open={open} onClose={() => setOpen(false)} engineId={engine} kind={kind} />
+      )}
+      {kind === "folder" && <NewSessionDialog open={open} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
