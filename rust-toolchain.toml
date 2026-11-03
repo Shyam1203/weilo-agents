@@ -1,4 +1,5 @@
 # The Rust used to build, test and release Weilo. CI and the release read this file.
+# rust-version in Cargo.toml says the same version (CI checks), and so does the README.
 [toolchain]
 channel = "1.97.0"
 components = ["clippy", "rustfmt"]

@@ -1,15 +1,32 @@
+# Weekly updates. Minor and patch updates come grouped in one pull request per ecosystem;
+# each major update comes on its own, since it may need code changes.
 version: 2
 updates:
   - package-ecosystem: cargo
     directory: /
     schedule: { interval: weekly }
     groups:
-      cargo: { patterns: ["*"] }
+      cargo:
+        update-types: [minor, patch]
+
   - package-ecosystem: npm
     directory: /apps/web
     schedule: { interval: weekly }
     groups:
-      web: { patterns: ["*"] }
+      web:
+        update-types: [minor, patch]
+
+  # The AI apps Weilo installs for its engines (engines/gemini has no lockfile).
+  - package-ecosystem: npm
+    directories: [/engines/pi, /engines/claude-code, /engines/codex]
+    schedule: { interval: weekly }
+    groups:
+      engines:
+        update-types: [minor, patch]
+
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    groups:
+      actions:
+        update-types: [minor, patch]
